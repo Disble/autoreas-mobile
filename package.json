@@ -26,6 +26,7 @@
     "expo": "^55.0.5",
     "expo-blur": "~55.0.8",
     "expo-constants": "~55.0.7",
+    "expo-dev-client": "~55.0.22",
     "expo-font": "~55.0.4",
     "expo-glass-effect": "~55.0.7",
     "expo-haptics": "~55.0.8",

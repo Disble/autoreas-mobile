@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "HeroUI Native Example",
-    "slug": "heroui-native-example",
+    "name": "Autoreas Mobile",
+    "slug": "autoreas-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "heroui-native-example",
+    "scheme": "autoreas-mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.disble.autoreasmobile"
     },
     "web": {
       "output": "static",
@@ -44,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cdc8f673-b612-4eeb-921b-c939718f7174"
+      }
     }
   }
 }
