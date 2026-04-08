@@ -1,6 +1,11 @@
 import { syncPendingOperations } from '../../../src/features/sync/use-reconcile';
 import * as dbClient from '../../../src/infrastructure/db/client';
 
+jest.mock('expo-sqlite', () => ({
+  useSQLiteContext: jest.fn(),
+  openDatabaseSync: jest.fn(),
+}));
+
 // Mock everything from client
 jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),

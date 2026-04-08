@@ -23,7 +23,7 @@ const { createDrizzleDb: mockCreateDrizzleDb, withExclusiveWrite: mockWithExclus
     withExclusiveWrite: jest.Mock;
   };
 
-const { useMutateAnime } = require('../../../src/features/animes/use-mutate-anime') as typeof import('../../../src/features/animes/use-mutate-anime');
+import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
 
 type MockDb = {
   update: jest.Mock;
