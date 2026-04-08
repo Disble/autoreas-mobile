@@ -131,6 +131,40 @@ describe('useMutateAnime', () => {
       nrocapvisto: 4,
       fechaUltCapVisto: now,
       fechaEstreno: now,
+      primeravez: 0,
+    });
+  });
+
+  it('capPlus autofinaliza y registra estado_change cuando nrocapvisto + 1 == totalcap', async () => {
+    const dbMocks = createDbMocks();
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlus({ ...baseAnime, nrocapvisto: 11, totalcap: 12 });
+    });
+
+    expect(dbMocks.set).toHaveBeenCalledWith({
+      nrocapvisto: 12,
+      fechaUltCapVisto: now,
+      estado: 1,
+    });
+
+    expect(dbMocks.values).toHaveBeenCalledTimes(2);
+    expect(dbMocks.values).toHaveBeenNthCalledWith(1, {
+      animeId: 'anime-1',
+      operation: 'cap_plus',
+      payload: JSON.stringify({ nrocapvisto: 12 }),
+      status: 'pending',
+      createdAt: now,
+    });
+    expect(dbMocks.values).toHaveBeenNthCalledWith(2, {
+      animeId: 'anime-1',
+      operation: 'estado_change',
+      payload: JSON.stringify({ estado: 1 }),
+      status: 'pending',
+      createdAt: now,
     });
   });
 

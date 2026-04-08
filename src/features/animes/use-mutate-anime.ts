@@ -13,9 +13,14 @@ export function useMutateAnime() {
   const capPlus = async (input: Anime): Promise<void> => {
     const anime = AnimeSchema.parse(input);
     const now = Date.now();
+    const newCap = anime.nrocapvisto + 1;
+    
+    const isFirstTime = anime.primeravez === 1;
+    const isFinished = anime.totalcap != null && anime.totalcap > 0 && newCap === anime.totalcap;
+
     const patch = {
-      nrocapvisto: anime.nrocapvisto + 1,
-      ...(anime.primeravez === 1 ? { fechaEstreno: now } : {}),
+      nrocapvisto: newCap,
+      ...(isFinished ? { estado: 1 } : {}),
     };
     const bridgePatch = AnimePatchSchema.parse(patch);
 
@@ -25,17 +30,28 @@ export function useMutateAnime() {
         .set({
           nrocapvisto: bridgePatch.nrocapvisto,
           fechaUltCapVisto: now,
-          ...(anime.primeravez === 1 ? { fechaEstreno: now } : {}),
+          ...(isFirstTime ? { fechaEstreno: now, primeravez: 0 } : {}),
+          ...(isFinished ? { estado: 1 } : {}),
         })
         .where(eq(animes._id, anime._id));
 
       await txDb.insert(operationLog).values({
         animeId: anime._id,
         operation: 'cap_plus',
-        payload: JSON.stringify(bridgePatch),
+        payload: JSON.stringify({ nrocapvisto: bridgePatch.nrocapvisto }),
         status: 'pending',
         createdAt: now,
       });
+
+      if (isFinished) {
+        await txDb.insert(operationLog).values({
+          animeId: anime._id,
+          operation: 'estado_change',
+          payload: JSON.stringify({ estado: 1 }),
+          status: 'pending',
+          createdAt: now,
+        });
+      }
     });
   };
 
