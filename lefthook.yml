@@ -1,0 +1,9 @@
+pre-commit:
+  commands:
+    lint:
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs}"
+      run: bunx eslint {staged_files}
+    typecheck:
+      run: bunx tsc --noEmit
+    test:
+      run: bun run test
