@@ -5,10 +5,20 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Slot } from 'expo-router';
+import { Slot, type Href, useRouter } from 'expo-router';
+import { SQLiteProvider } from 'expo-sqlite';
 import * as SplashScreen from 'expo-splash-screen';
 import { HeroUINativeProvider } from 'heroui-native';
-import { useCallback } from 'react';
+import {
+  createContext,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
@@ -16,18 +26,63 @@ import {
   KeyboardProvider,
 } from 'react-native-keyboard-controller';
 import '../../global.css';
+import {
+  DATABASE_NAME,
+  getBridgeConfigSnapshot,
+  runMigrations,
+} from '../infrastructure/db/client';
 import { AppThemeProvider } from '../contexts/app-theme-context';
+
+type BootTarget = Href;
+
+interface BootState {
+  initialized: boolean;
+  target: BootTarget | null;
+}
+
+const BootStateContext = createContext<BootState>({
+  initialized: false,
+  target: null,
+});
 
 SplashScreen.setOptions({
   duration: 300,
   fade: true,
 });
 
+void SplashScreen.preventAutoHideAsync();
+
+function useBootState() {
+  return useContext(BootStateContext);
+}
+
+function BootRouter() {
+  const router = useRouter();
+  const { initialized, target } = useBootState();
+  const hasNavigatedRef = useRef(false);
+
+  useEffect(() => {
+    if (!initialized || !target || hasNavigatedRef.current) {
+      return;
+    }
+
+    hasNavigatedRef.current = true;
+    router.replace(target);
+    void SplashScreen.hideAsync();
+  }, [initialized, router, target]);
+
+  if (!initialized) {
+    return null;
+  }
+
+  return <Slot />;
+}
+
 /**
  * Component that wraps app content inside KeyboardProvider
  * Contains the contentWrapper and HeroUINativeProvider configuration
  */
-function AppContent() {
+function AppContent({ bootState }: { bootState: BootState }) {
   const contentWrapper = useCallback(
     (children: React.ReactNode) => (
       <KeyboardAvoidingView
@@ -43,20 +98,22 @@ function AppContent() {
   );
 
   return (
-    <AppThemeProvider>
-      <HeroUINativeProvider
-        config={{
-          textProps: {
-            maxFontSizeMultiplier: 2,
-          },
-          toast: {
-            contentWrapper,
-          },
-        }}
-      >
-        <Slot />
-      </HeroUINativeProvider>
-    </AppThemeProvider>
+    <BootStateContext.Provider value={bootState}>
+      <AppThemeProvider>
+        <HeroUINativeProvider
+          config={{
+            textProps: {
+              maxFontSizeMultiplier: 2,
+            },
+            toast: {
+              contentWrapper,
+            },
+          }}
+        >
+          <BootRouter />
+        </HeroUINativeProvider>
+      </AppThemeProvider>
+    </BootStateContext.Provider>
   );
 }
 
@@ -67,6 +124,27 @@ export default function Layout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  const [bootState, setBootState] = useState<BootState>({
+    initialized: false,
+    target: null,
+  });
+
+  const initDatabase = useCallback(async (rawDb: Parameters<NonNullable<React.ComponentProps<typeof SQLiteProvider>['onInit']>>[0]) => {
+    await rawDb.execAsync('PRAGMA journal_mode = WAL;');
+    await runMigrations(rawDb);
+
+    const bridgeConfig = await getBridgeConfigSnapshot(rawDb);
+
+    setBootState({
+      initialized: true,
+      target: bridgeConfig?.deviceId ? ('/(tabs)' as Href) : ('/setup' as Href),
+    });
+  }, []);
+
+  const sqliteOptions = useMemo(
+    () => ({ enableChangeListener: true }),
+    []
+  );
 
   if (!fonts) {
     return null;
@@ -75,7 +153,16 @@ export default function Layout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <KeyboardProvider>
-        <AppContent />
+        <Suspense fallback={null}>
+          <SQLiteProvider
+            databaseName={DATABASE_NAME}
+            onInit={initDatabase}
+            options={sqliteOptions}
+            useSuspense
+          >
+            <AppContent bootState={bootState} />
+          </SQLiteProvider>
+        </Suspense>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );

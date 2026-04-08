@@ -1,21 +1,41 @@
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { useSQLiteContext } from 'expo-sqlite';
+import { Pressable, View } from 'react-native';
 import { AppText } from '../../components/app-text';
 import { ScreenScrollView } from '../../components/screen-scroll-view';
 import { useAppTheme } from '../../contexts/app-theme-context';
+import { createDrizzleDb, insertDummyAnime } from '../../infrastructure/db/client';
+import { animes } from '../../infrastructure/db/schema';
 
 export default function HomeScreen() {
   const { isDark } = useAppTheme();
+  const rawDb = useSQLiteContext();
+  const db = createDrizzleDb(rawDb);
+  const { data } = useLiveQuery(db.select().from(animes));
+
+  const animeCount = data.length;
 
   return (
     <ScreenScrollView>
       <View className="flex-1 items-center justify-center py-20">
         <AppText className="text-foreground text-2xl font-bold">
-          Autoreas Mobile
+          Animes en SQLite: {animeCount}
         </AppText>
         <AppText className="text-muted text-base text-center mt-4">
-          Offline-first anime tracker
+          Tracer bullet SQLite activo
         </AppText>
+        <Pressable
+          accessibilityRole="button"
+          className="mt-6 rounded-xl bg-foreground px-5 py-3"
+          onPress={() => {
+            void insertDummyAnime(rawDb);
+          }}
+        >
+          <AppText className="text-background font-semibold">
+            Insert Dummy Anime
+          </AppText>
+        </Pressable>
       </View>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ScreenScrollView>

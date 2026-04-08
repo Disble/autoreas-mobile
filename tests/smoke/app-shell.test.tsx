@@ -2,6 +2,27 @@ import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 import HomeScreen from '../../src/app/(home)/index';
 
+jest.mock('expo-sqlite', () => ({
+  useSQLiteContext: () => ({
+    withExclusiveTransactionAsync: jest.fn(),
+  }),
+}));
+
+jest.mock('drizzle-orm/expo-sqlite', () => ({
+  useLiveQuery: () => ({
+    data: [{ _id: 'anime-1' }, { _id: 'anime-2' }],
+  }),
+}));
+
+jest.mock('../../src/infrastructure/db/client', () => ({
+  createDrizzleDb: () => ({
+    select: () => ({
+      from: () => [],
+    }),
+  }),
+  insertDummyAnime: jest.fn(),
+}));
+
 jest.mock('../../src/contexts/app-theme-context', () => ({
   useAppTheme: () => ({ isDark: false }),
 }));
@@ -20,10 +41,11 @@ jest.mock('../../src/components/app-text', () => ({
 }));
 
 describe('app shell bootstrap', () => {
-  it('renders the current Autoreas home shell copy', () => {
+  it('renders the tracer shell with sqlite count and action', () => {
     render(<HomeScreen />);
 
-    expect(screen.getByText('Autoreas Mobile')).toBeOnTheScreen();
-    expect(screen.getByText('Offline-first anime tracker')).toBeOnTheScreen();
+    expect(screen.getByText('Animes en SQLite: 2')).toBeOnTheScreen();
+    expect(screen.getByText('Tracer bullet SQLite activo')).toBeOnTheScreen();
+    expect(screen.getByText('Insert Dummy Anime')).toBeOnTheScreen();
   });
 });
