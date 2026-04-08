@@ -1,16 +1,20 @@
 import { eq } from 'drizzle-orm';
-import { useSQLiteContext } from 'expo-sqlite';
-import { createDrizzleDb, withExclusiveWrite } from '../../infrastructure/db/client';
+import { withExclusiveWrite } from '../../infrastructure/db/client';
+import {
+  getExpoSQLiteUnavailableError,
+  useOptionalSQLiteContext,
+} from '../../infrastructure/db/native-runtime';
 import { animes, operationLog } from '../../infrastructure/db/schema';
 import { AnimePatchSchema, AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 
 export function useMutateAnime() {
-  const rawDb = useSQLiteContext();
-  const db = createDrizzleDb(rawDb);
-
-  void db;
+  const rawDb = useOptionalSQLiteContext();
 
   const capPlus = async (input: Anime): Promise<void> => {
+    if (!rawDb) {
+      throw getExpoSQLiteUnavailableError();
+    }
+
     const anime = AnimeSchema.parse(input);
     const now = Date.now();
     const newCap = anime.nrocapvisto + 1;
@@ -56,6 +60,10 @@ export function useMutateAnime() {
   };
 
   const capMinus = async (input: Anime): Promise<void> => {
+    if (!rawDb) {
+      throw getExpoSQLiteUnavailableError();
+    }
+
     const anime = AnimeSchema.parse(input);
     const now = Date.now();
     const patch = AnimePatchSchema.parse({

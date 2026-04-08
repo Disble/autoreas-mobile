@@ -6,7 +6,6 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { Slot, type Href, useRouter } from 'expo-router';
-import { SQLiteProvider } from 'expo-sqlite';
 import * as SplashScreen from 'expo-splash-screen';
 import { HeroUINativeProvider } from 'heroui-native';
 import {
@@ -21,16 +20,19 @@ import {
 } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   KeyboardAvoidingView,
   KeyboardProvider,
 } from 'react-native-keyboard-controller';
 import '../../global.css';
+import { SQLiteUnavailableScreen } from '../components/sqlite-unavailable-screen';
 import {
   DATABASE_NAME,
   getBridgeConfigSnapshot,
   runMigrations,
 } from '../infrastructure/db/client';
+import { getSQLiteProvider } from '../infrastructure/db/native-runtime';
 import { AppThemeProvider } from '../contexts/app-theme-context';
 
 type BootTarget = Href;
@@ -117,6 +119,14 @@ function AppContent({ bootState }: { bootState: BootState }) {
   );
 }
 
+function MissingSQLiteRoot() {
+  useEffect(() => {
+    void SplashScreen.hideAsync();
+  }, []);
+
+  return <SQLiteUnavailableScreen />;
+}
+
 export default function Layout() {
   const fonts = useFonts({
     Inter_400Regular,
@@ -128,8 +138,9 @@ export default function Layout() {
     initialized: false,
     target: null,
   });
+  const SQLiteProvider = getSQLiteProvider();
 
-  const initDatabase = useCallback(async (rawDb: Parameters<NonNullable<React.ComponentProps<typeof SQLiteProvider>['onInit']>>[0]) => {
+  const initDatabase = useCallback(async (rawDb: SQLiteDatabase) => {
     await rawDb.execAsync('PRAGMA journal_mode = WAL;');
     await runMigrations(rawDb);
 
@@ -148,6 +159,10 @@ export default function Layout() {
 
   if (!fonts) {
     return null;
+  }
+
+  if (!SQLiteProvider) {
+    return <MissingSQLiteRoot />;
   }
 
   return (

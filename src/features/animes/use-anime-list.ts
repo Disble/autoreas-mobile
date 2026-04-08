@@ -1,15 +1,17 @@
 import { eq, desc, and } from 'drizzle-orm';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useMemo } from 'react';
 import { createDrizzleDb } from '../../infrastructure/db/client';
-import { animes } from '../../infrastructure/db/schema';
+import {
+  useOptionalLiveQuery,
+  useOptionalSQLiteContext,
+} from '../../infrastructure/db/native-runtime';
+import { animes, type Anime as AnimeRow } from '../../infrastructure/db/schema';
 
 export type AnimeTab = 'viendo' | 'estrenos' | 'todos';
 
 export function useAnimeList(tab: AnimeTab = 'viendo') {
-  const rawDb = useSQLiteContext();
-  const db = useMemo(() => createDrizzleDb(rawDb), [rawDb]);
+  const rawDb = useOptionalSQLiteContext();
+  const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);
 
   const condition = useMemo(() => {
     switch (tab) {
@@ -24,6 +26,10 @@ export function useAnimeList(tab: AnimeTab = 'viendo') {
   }, [tab]);
 
   const query = useMemo(() => {
+    if (!db) {
+      return null;
+    }
+
     return db
       .select()
       .from(animes)
@@ -31,7 +37,7 @@ export function useAnimeList(tab: AnimeTab = 'viendo') {
       .orderBy(desc(animes.fechaUltCapVisto));
   }, [db, condition]);
 
-  const { data } = useLiveQuery(query);
+  const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);
 
   return {
     data: data ?? [],

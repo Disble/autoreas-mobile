@@ -9,7 +9,6 @@ jest.mock('expo-sqlite', () => ({
 }));
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
-  createDrizzleDb: jest.fn(),
   withExclusiveWrite: jest.fn(),
 }));
 
@@ -17,11 +16,11 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
   useSQLiteContext: jest.Mock;
 };
 
-const { createDrizzleDb: mockCreateDrizzleDb, withExclusiveWrite: mockWithExclusiveWrite } =
-  jest.requireMock('../../../src/infrastructure/db/client') as {
-    createDrizzleDb: jest.Mock;
-    withExclusiveWrite: jest.Mock;
-  };
+const { withExclusiveWrite: mockWithExclusiveWrite } = jest.requireMock(
+  '../../../src/infrastructure/db/client'
+) as {
+  withExclusiveWrite: jest.Mock;
+};
 
 import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
 
@@ -51,8 +50,6 @@ function createDbMocks(options?: { insertError?: Error }) {
 
 const now = 1710000000000;
 const rawDb = { name: 'raw-db' };
-const drizzleDb = { name: 'drizzle-db' };
-
 const baseAnime: Anime = {
   _id: 'anime-1',
   nombre: 'One Piece',
@@ -69,7 +66,6 @@ describe('useMutateAnime', () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(now);
     mockUseSQLiteContext.mockReturnValue(rawDb);
-    mockCreateDrizzleDb.mockReturnValue(drizzleDb);
   });
 
   afterEach(() => {
@@ -86,7 +82,6 @@ describe('useMutateAnime', () => {
       await result.current.capPlus(baseAnime);
     });
 
-    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
     expect(mockWithExclusiveWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(dbMocks.update).toHaveBeenCalledWith(animes);
     expect(dbMocks.set).toHaveBeenCalledWith({

@@ -1,18 +1,25 @@
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, View } from 'react-native';
 import { AppText } from '../../components/app-text';
 import { ScreenScrollView } from '../../components/screen-scroll-view';
+import { SQLiteUnavailableScreen } from '../../components/sqlite-unavailable-screen';
 import { useAppTheme } from '../../contexts/app-theme-context';
 import { createDrizzleDb, insertDummyAnime } from '../../infrastructure/db/client';
+import {
+  useOptionalLiveQuery,
+  useOptionalSQLiteContext,
+} from '../../infrastructure/db/native-runtime';
 import { animes } from '../../infrastructure/db/schema';
 
 export default function HomeScreen() {
   const { isDark } = useAppTheme();
-  const rawDb = useSQLiteContext();
-  const db = createDrizzleDb(rawDb);
-  const { data } = useLiveQuery(db.select().from(animes));
+  const rawDb = useOptionalSQLiteContext();
+  const db = rawDb ? createDrizzleDb(rawDb) : null;
+  const { data } = useOptionalLiveQuery(db?.select().from(animes) ?? null, []);
+
+  if (!rawDb) {
+    return <SQLiteUnavailableScreen />;
+  }
 
   const animeCount = data.length;
 

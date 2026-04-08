@@ -1,24 +1,30 @@
-import { drizzle } from 'drizzle-orm/expo-sqlite';
-import { migrate } from 'drizzle-orm/expo-sqlite/migrator';
 import { desc } from 'drizzle-orm';
-import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import * as schema from './schema';
 import migrations from './migrations/migrations';
+import {
+  getDrizzleFactory,
+  getDrizzleMigrator,
+  getOpenDatabaseSync,
+} from './native-runtime';
 
 export const DATABASE_NAME = 'autoreas.db';
 
 export type AppDatabase = ReturnType<typeof createDrizzleDb>;
 
 export function openAppDatabaseSync() {
+  const openDatabaseSync = getOpenDatabaseSync();
   return openDatabaseSync(DATABASE_NAME, { enableChangeListener: true });
 }
 
 export function createDrizzleDb(rawDb: SQLiteDatabase) {
+  const drizzle = getDrizzleFactory();
   return drizzle(rawDb, { schema });
 }
 
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
+  const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
   return db;
 }

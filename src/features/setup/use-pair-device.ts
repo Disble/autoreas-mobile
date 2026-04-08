@@ -1,6 +1,9 @@
-import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { withExclusiveWrite } from '../../infrastructure/db/client';
+import {
+  getExpoSQLiteUnavailableError,
+  useOptionalSQLiteContext,
+} from '../../infrastructure/db/native-runtime';
 import { bridgeConfig } from '../../infrastructure/db/schema';
 
 interface PairParams {
@@ -16,7 +19,7 @@ interface PairResponse {
 }
 
 export function usePairDevice() {
-  const rawDb = useSQLiteContext();
+  const rawDb = useOptionalSQLiteContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +29,10 @@ export function usePairDevice() {
       setError(null);
 
       try {
+        if (!rawDb) {
+          throw getExpoSQLiteUnavailableError();
+        }
+
         const url = `http://${ip}:${port}/api/devices/pair`;
         const response = await fetch(url, {
           method: 'POST',

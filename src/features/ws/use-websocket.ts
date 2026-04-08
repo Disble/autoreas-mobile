@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { useSQLiteContext } from 'expo-sqlite';
+import { type SQLiteDatabase } from 'expo-sqlite';
 import { and, eq, sql } from 'drizzle-orm';
 import { getBridgeConfigSnapshot, withExclusiveWrite } from '../../infrastructure/db/client';
+import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import { animes, operationLog } from '../../infrastructure/db/schema';
 import { z } from 'zod';
 
@@ -27,13 +28,17 @@ interface UseWebSocketProps {
 }
 
 export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
-  const rawDb = useSQLiteContext();
+  const rawDb = useOptionalSQLiteContext();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
+    if (!rawDb) {
+      return;
+    }
+
     let isMounted = true;
 
     const connect = async () => {
@@ -163,7 +168,7 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
       subscription.remove();
       disconnect();
     };
-  }, [rawDb, onSyncRequired]);
+  }, [onSyncRequired, rawDb]);
 
   return {};
 }
