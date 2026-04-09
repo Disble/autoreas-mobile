@@ -13,6 +13,7 @@ export const ReconcileResponseSchema = z.object({
   status: z.string(),
   bridge_changes: z.array(ReconcileAnimeChangeSchema),
   conflicts: z.array(z.unknown()),
+  last_changelog_id: z.number().optional(),
 });
 
 export type ReconcileAnimeChange = z.infer<typeof ReconcileAnimeChangeSchema>;

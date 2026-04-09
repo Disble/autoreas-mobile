@@ -20,6 +20,7 @@ export function useAnimeListScreen(
 
   // 2. State
   const [tab, setTab] = useState<AnimeTab>('viendo');
+  const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<Record<string, boolean>>({});
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
@@ -41,17 +42,51 @@ export function useAnimeListScreen(
   }, []);
 
   const handleCapPlus = useCallback(
-    (animeId: string) => {
-      void capPlus(animeId);
+    async (animeId: string) => {
+      if (isMutatingAnimeById[animeId]) {
+        return;
+      }
+
+      setIsMutatingAnimeById((current) => ({
+        ...current,
+        [animeId]: true,
+      }));
+
+      try {
+        await capPlus(animeId);
+      } finally {
+        setIsMutatingAnimeById((current) => {
+          const nextState = { ...current };
+          delete nextState[animeId];
+          return nextState;
+        });
+      }
     },
-    [capPlus],
+    [capPlus, isMutatingAnimeById],
   );
 
   const handleCapMinus = useCallback(
-    (animeId: string) => {
-      void capMinus(animeId);
+    async (animeId: string) => {
+      if (isMutatingAnimeById[animeId]) {
+        return;
+      }
+
+      setIsMutatingAnimeById((current) => ({
+        ...current,
+        [animeId]: true,
+      }));
+
+      try {
+        await capMinus(animeId);
+      } finally {
+        setIsMutatingAnimeById((current) => {
+          const nextState = { ...current };
+          delete nextState[animeId];
+          return nextState;
+        });
+      }
     },
-    [capMinus],
+    [capMinus, isMutatingAnimeById],
   );
 
   const handleOpenSettings = useCallback(() => {
@@ -63,6 +98,7 @@ export function useAnimeListScreen(
 
   return {
     animes,
+    isMutatingAnimeById,
     isDark,
     isEmpty,
     settingsHref,

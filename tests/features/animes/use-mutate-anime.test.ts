@@ -13,9 +13,8 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
   withExclusiveWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/use-reconcile', () => ({
+jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn().mockResolvedValue(0),
-  useReconcile: jest.fn(),
 }));
 
 const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite') as {
@@ -143,7 +142,7 @@ describe('useMutateAnime', () => {
 
   it('capPlus dispara syncPendingOperations en background después de mutar', async () => {
     const { syncPendingOperations: mockSync } = jest.requireMock(
-      '../../../src/features/sync/use-reconcile'
+      '../../../src/features/sync/reconcile.helpers'
     ) as { syncPendingOperations: jest.Mock };
     mockSync.mockResolvedValue(1);
 
@@ -281,7 +280,7 @@ describe('useMutateAnime', () => {
 
   it('capMinus dispara syncPendingOperations en background después de mutar', async () => {
     const { syncPendingOperations: mockSync } = jest.requireMock(
-      '../../../src/features/sync/use-reconcile'
+      '../../../src/features/sync/reconcile.helpers'
     ) as { syncPendingOperations: jest.Mock };
     mockSync.mockResolvedValue(1);
 

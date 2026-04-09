@@ -39,6 +39,7 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   token: text("token"),
   deviceId: text("device_id"),
   deviceName: text("device_name"),
+  lastChangelogId: integer("last_changelog_id").default(0),
 });
 
 export type AnimeRow = typeof animes.$inferSelect;

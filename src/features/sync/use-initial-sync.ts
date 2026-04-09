@@ -5,12 +5,16 @@ import {
   getBridgeConfigSnapshot,
   withExclusiveWrite,
 } from "../../infrastructure/db/client";
-import { animes } from "../../infrastructure/db/schema";
+import { animes, bridgeConfig } from "../../infrastructure/db/schema";
 import { AnimeSchema, type Anime } from "../../infrastructure/validation/anime-schema";
 import {
   AnimeListSchema,
   IncrementalChangesResponseSchema,
 } from "./initial-sync.schema";
+import {
+  getLastChangelogId,
+  shouldPersistLastChangelogId,
+} from "./last-changelog.helpers";
 
 export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
@@ -99,13 +103,16 @@ export async function deleteAnimeLocally(
  */
 export async function incrementalSync(
   rawDb: SQLiteDatabase,
-  sinceMs: number = 0,
+  sinceMs?: number,
 ): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) return 0;
 
+  const lastChangelogId = getLastChangelogId(config);
+  const since = sinceMs ?? lastChangelogId;
+
   try {
-    const url = `http://${config.ip}:${config.port}/api/animes/changes?since=${sinceMs}`;
+    const url = `http://${config.ip}:${config.port}/api/animes/changes?since=${since}`;
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -130,8 +137,6 @@ export async function incrementalSync(
 
     const { changes, last_changelog_id: lastChangelogId } = parsed.data;
 
-    if (changes.length === 0) return lastChangelogId;
-
     await withExclusiveWrite(rawDb, async (db) => {
       for (const change of changes) {
         if (change.change_type === "delete") {
@@ -139,6 +144,13 @@ export async function incrementalSync(
         } else if (change.snapshot) {
           await upsertAnime(db, change.snapshot);
         }
+      }
+
+      if (shouldPersistLastChangelogId(getLastChangelogId(config), lastChangelogId)) {
+        await db
+          .update(bridgeConfig)
+          .set({ lastChangelogId })
+          .where(eq(bridgeConfig.id, config.id));
       }
     });
 

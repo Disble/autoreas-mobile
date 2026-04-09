@@ -15,7 +15,7 @@ import {
   serializeMutationOperation,
   toLocalAnimeUpdate,
 } from "./anime-mutation.helpers";
-import { syncPendingOperations } from "../sync/use-reconcile";
+import { syncPendingOperations } from "../sync/reconcile.helpers";
 
 export function useMutateAnime() {
   const rawDb = useOptionalSQLiteContext();
@@ -55,7 +55,7 @@ export function useMutateAnime() {
       if (!didMutate) return;
 
       // Sincroniza en background — no bloquea la UI
-      void syncPendingOperations(rawDb).catch((err) => {
+      void syncPendingOperations(rawDb).catch((err: unknown) => {
         console.warn("[capPlus] Sync failed:", err);
       });
     },
@@ -97,7 +97,7 @@ export function useMutateAnime() {
       if (!didMutate) return;
 
       // Sincroniza en background — no bloquea la UI
-      void syncPendingOperations(rawDb).catch((err) => {
+      void syncPendingOperations(rawDb).catch((err: unknown) => {
         console.warn("[capMinus] Sync failed:", err);
       });
     },

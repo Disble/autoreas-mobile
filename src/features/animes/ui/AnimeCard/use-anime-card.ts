@@ -22,13 +22,13 @@ export function useAnimeCard(props: AnimeCardProps) {
   const isCompleted = useMemo(() => getIsCompleted(progress), [progress]);
 
   const disableDecrease = useMemo(
-    () => !canDecrease(props.anime.nrocapvisto),
-    [props.anime.nrocapvisto]
+    () => props.isMutating || !canDecrease(props.anime.nrocapvisto),
+    [props.anime.nrocapvisto, props.isMutating]
   );
 
   const disableIncrease = useMemo(
-    () => !canIncrease(props.anime.nrocapvisto, props.anime.totalcap),
-    [props.anime.nrocapvisto, props.anime.totalcap]
+    () => props.isMutating || !canIncrease(props.anime.nrocapvisto, props.anime.totalcap),
+    [props.anime.nrocapvisto, props.anime.totalcap, props.isMutating]
   );
 
   const daysList = props.anime.dias || [];

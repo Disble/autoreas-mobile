@@ -1,5 +1,25 @@
-import type { OperationLogRow } from '../../infrastructure/db/schema';
-import type { ReconcileAnimeChange } from './reconcile.schema';
+import { eq, inArray } from 'drizzle-orm';
+import type { SQLiteDatabase } from 'expo-sqlite';
+import { upsertAnime } from '../../infrastructure/db/anime-repository';
+import {
+  getBridgeConfigSnapshot,
+  withExclusiveWrite,
+} from '../../infrastructure/db/client';
+import {
+  animes,
+  bridgeConfig,
+  operationLog,
+  type OperationLogRow,
+} from '../../infrastructure/db/schema';
+import {
+  getLastChangelogId,
+  shouldPersistLastChangelogId,
+} from './last-changelog.helpers';
+import { syncStateByDatabase } from './reconcile.constants';
+import {
+  ReconcileResponseSchema,
+  type ReconcileAnimeChange,
+} from './reconcile.schema';
 
 /**
  * Builds the reconcile request body from persisted operation-log rows.
@@ -73,4 +93,149 @@ function parseOperationPayload(payload: string): Record<string, unknown> {
   }
 
   return {};
+}
+
+/**
+ * Orchestrates the mobile reconcile cycle against the bridge using a per-database in-flight guard.
+ * It moves pending rows to processing, confirms only evidenced operations, reapplies bridge changes, and advances the changelog cursor without regressing it.
+ */
+export async function syncPendingOperations(rawDb: SQLiteDatabase) {
+  const syncKey = rawDb as object;
+  const syncState = syncStateByDatabase.get(syncKey) ?? {
+    inFlight: null,
+    rerunRequested: false,
+  };
+
+  if (syncState.inFlight) {
+    syncState.rerunRequested = true;
+    syncStateByDatabase.set(syncKey, syncState);
+    return syncState.inFlight;
+  }
+
+  const run = async (): Promise<number> => {
+    let totalConfirmed = 0;
+
+    do {
+      syncState.rerunRequested = false;
+      totalConfirmed += await performSyncPendingOperations(rawDb);
+    } while (syncState.rerunRequested);
+
+    return totalConfirmed;
+  };
+
+  syncState.inFlight = run().finally(() => {
+    syncState.inFlight = null;
+    syncState.rerunRequested = false;
+  });
+  syncStateByDatabase.set(syncKey, syncState);
+
+  return syncState.inFlight;
+}
+
+async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
+  const config = await getBridgeConfigSnapshot(rawDb);
+  if (!config?.ip || !config?.port || !config?.token) {
+    throw new Error('Bridge config is missing or incomplete');
+  }
+
+  let pendingOps: OperationLogRow[] = [];
+
+  await withExclusiveWrite(rawDb, async (writeDb) => {
+    pendingOps = await writeDb
+      .select()
+      .from(operationLog)
+      .where(eq(operationLog.status, 'pending'));
+
+    if (pendingOps.length === 0) {
+      return;
+    }
+
+    await writeDb
+      .update(operationLog)
+      .set({ status: 'processing' })
+      .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+  });
+
+  const baseUrl = `http://${config.ip}:${config.port}`;
+  const lastChangelogId = getLastChangelogId(config);
+  const requestBody = buildReconcileRequestBody(
+    config.deviceId ?? undefined,
+    lastChangelogId,
+    pendingOps,
+  );
+
+  try {
+    const response = await fetch(`${baseUrl}/api/sync/reconcile`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.token}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Reconcile failed: ${response.status}`);
+    }
+
+    const raw = await response.json();
+    const parsed = ReconcileResponseSchema.safeParse(raw);
+
+    if (!parsed.success) {
+      throw new Error(`Invalid reconcile response: ${parsed.error.message}`);
+    }
+
+    const { bridge_changes, last_changelog_id: responseLastChangelogId } = parsed.data;
+    const nextLastChangelogId = bridge_changes.reduce((max, change) => {
+      return Math.max(max, change.timestamp);
+    }, responseLastChangelogId ?? lastChangelogId);
+    const confirmedIds = getConfirmedOperationIds(pendingOps, bridge_changes);
+    const unconfirmedIds = pendingOps
+      .map((operation) => operation.id)
+      .filter((id) => !confirmedIds.includes(id));
+
+    await withExclusiveWrite(rawDb, async (writeDb) => {
+      for (const change of bridge_changes) {
+        if (change.change_type === 'delete') {
+          await writeDb.delete(animes).where(eq(animes._id, change.record_id));
+        } else if (change.snapshot) {
+          await upsertAnime(writeDb, change.snapshot);
+        }
+      }
+
+      if (confirmedIds.length > 0) {
+        await writeDb
+          .update(operationLog)
+          .set({ status: 'synced' })
+          .where(inArray(operationLog.id, confirmedIds));
+      }
+
+      if (unconfirmedIds.length > 0) {
+        await writeDb
+          .update(operationLog)
+          .set({ status: 'pending' })
+          .where(inArray(operationLog.id, unconfirmedIds));
+      }
+
+      if (shouldPersistLastChangelogId(lastChangelogId, nextLastChangelogId)) {
+        await writeDb
+          .update(bridgeConfig)
+          .set({ lastChangelogId: nextLastChangelogId })
+          .where(eq(bridgeConfig.id, config.id));
+      }
+    });
+
+    return confirmedIds.length;
+  } catch (error) {
+    if (pendingOps.length > 0) {
+      await withExclusiveWrite(rawDb, async (writeDb) => {
+        await writeDb
+          .update(operationLog)
+          .set({ status: 'pending' })
+          .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+      });
+    }
+
+    throw error;
+  }
 }

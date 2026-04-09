@@ -67,9 +67,17 @@ export function buildCapMinusPatch(
   anime: Anime,
   now: number,
 ): AnimeMutationSyncPatch {
+  const nextCap = Math.max(0, anime.nrocapvisto - 1);
+  const shouldReopenCompletedAnime =
+    anime.estado === 1 &&
+    anime.totalcap != null &&
+    anime.totalcap > 0 &&
+    anime.nrocapvisto === anime.totalcap;
+
   return {
-    nrocapvisto: Math.max(0, anime.nrocapvisto - 1),
+    nrocapvisto: nextCap,
     fechaUltCapVisto: now,
+    ...(shouldReopenCompletedAnime ? { estado: 0 } : {}),
   };
 }
 

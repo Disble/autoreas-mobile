@@ -6,6 +6,7 @@ export type AnimeListScreenProps = Record<never, never>;
 
 export interface AnimeListScreenViewModel {
   readonly animes: Anime[];
+  readonly isMutatingAnimeById: Readonly<Record<string, boolean>>;
   readonly isDark: boolean;
   readonly isEmpty: boolean;
   readonly settingsHref: Href;

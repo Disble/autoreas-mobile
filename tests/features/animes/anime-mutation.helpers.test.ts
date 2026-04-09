@@ -73,6 +73,24 @@ describe('anime mutation helpers', () => {
     });
   });
 
+  it('buildCapMinusPatch reabre anime auto-finalizado cuando baja desde totalcap', () => {
+    expect(
+      buildCapMinusPatch(
+        {
+          ...baseAnime,
+          estado: 1,
+          nrocapvisto: 12,
+          totalcap: 12,
+        },
+        now,
+      ),
+    ).toEqual({
+      nrocapvisto: 11,
+      fechaUltCapVisto: now,
+      estado: 0,
+    });
+  });
+
   it('serializeMutationOperation normaliza al contrato update', () => {
     expect(
       serializeMutationOperation({

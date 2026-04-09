@@ -12,6 +12,7 @@ import { useAnimeListScreen } from './use-anime-list-screen';
 export function AnimeListScreen(props: AnimeListScreenProps) {
   const {
     animes,
+    isMutatingAnimeById,
     isDark,
     isEmpty,
     tab,
@@ -66,6 +67,7 @@ export function AnimeListScreen(props: AnimeListScreenProps) {
           renderItem={({ item }) => (
             <AnimeCard
               anime={item}
+              isMutating={!!isMutatingAnimeById[item._id]}
               onCapMinus={() => handleCapMinus(item._id)}
               onCapPlus={() => handleCapPlus(item._id)}
             />

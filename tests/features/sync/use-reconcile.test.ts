@@ -1,4 +1,4 @@
-import { syncPendingOperations } from '../../../src/features/sync/use-reconcile';
+import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import * as dbClient from '../../../src/infrastructure/db/client';
 
 jest.mock('expo-sqlite', () => ({
@@ -153,6 +153,7 @@ describe('syncPendingOperations', () => {
           },
         ],
         conflicts: [],
+        last_changelog_id: 99,
       }),
     });
 
