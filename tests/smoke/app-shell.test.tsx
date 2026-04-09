@@ -51,6 +51,10 @@ jest.mock("expo-router", () => ({
   },
 }));
 
+jest.mock("../../src/features/animes/ui/AnimeListScreen", () => ({
+  AnimeListScreen: () => null,
+}));
+
 describe("app shell bootstrap", () => {
   it("renders the tracer shell with sqlite count and action", () => {
     render(<HomeScreen />);

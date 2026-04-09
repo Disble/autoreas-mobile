@@ -1,27 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Tabs } from 'heroui-native';
+import { Button, Select } from 'heroui-native';
 import { FlatList, Pressable, View } from 'react-native';
 import { AnimeCard } from '../AnimeCard';
 import { AnimeEmptyState } from '../AnimeEmptyState';
-import { TAB_OPTIONS } from '../../anime.constants';
-import type { AnimeListScreenProps } from './anime-list-screen.types';
-import { useAnimeListScreen } from './use-anime-list-screen';
+import type { AnimeListScreenViewProps } from './anime-list-screen.types';
+import { renderAnimeListItem } from './anime-list-screen.helpers';
 
-export function AnimeListScreen(props: AnimeListScreenProps) {
+export function AnimeListScreenView(props: AnimeListScreenViewProps) {
   const {
     animes,
+    filterOptions,
     isMutatingAnimeById,
     isDark,
     isEmpty,
-    tab,
+    isRefreshing,
+    refreshAccessibilityLabel,
+    selectedFilterOption,
+    selectListLabel,
+    selectPlaceholder,
     themeColorForeground,
     handleCapMinus,
     handleCapPlus,
     handleOpenSettings,
-    handleTabChange,
-  } = useAnimeListScreen(props);
+    handleRefresh,
+    handleSelectedFilterChange,
+  } = props;
 
   return (
     <View className="flex-1 min-w-[320px] bg-background">
@@ -44,34 +49,57 @@ export function AnimeListScreen(props: AnimeListScreenProps) {
         }}
       />
 
-      <View className="px-4 pb-2 pt-4">
-        <Tabs value={tab} onValueChange={handleTabChange}>
-          <Tabs.List className="w-full">
-            <Tabs.Indicator />
-            {TAB_OPTIONS.map((tabOption) => (
-              <Tabs.Trigger key={tabOption.value} value={tabOption.value}>
-                <Tabs.Label>{tabOption.label}</Tabs.Label>
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-        </Tabs>
+      <View className="flex-row items-center gap-2 px-4 pb-2 pt-4">
+        <View className="flex-1">
+          <Select
+            onValueChange={handleSelectedFilterChange}
+            presentation="bottom-sheet"
+            value={selectedFilterOption}
+          >
+            <Select.Trigger>
+              <Select.Value placeholder={selectPlaceholder} />
+              <Select.TriggerIndicator />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Overlay />
+              <Select.Content presentation="bottom-sheet" snapPoints={['50%']}>
+                <Select.ListLabel>{selectListLabel}</Select.ListLabel>
+                {filterOptions.map((filterOption) => (
+                  <Select.Item
+                    key={filterOption.value}
+                    label={filterOption.label}
+                    value={filterOption.value}
+                  />
+                ))}
+              </Select.Content>
+            </Select.Portal>
+          </Select>
+        </View>
+
+        <Button
+          accessibilityLabel={refreshAccessibilityLabel}
+          isDisabled={isRefreshing}
+          isIconOnly
+          onPress={() => {
+            void handleRefresh();
+          }}
+          size="sm"
+          variant="secondary"
+        >
+          <Ionicons name="refresh" size={18} />
+        </Button>
       </View>
 
       {isEmpty ? (
-        <AnimeEmptyState tab={tab} />
+        <AnimeEmptyState filter={selectedFilterOption.value} />
       ) : (
         <FlatList
           contentContainerClassName="px-4 pt-2 pb-10"
           data={animes}
           keyExtractor={(item) => item._id}
-          renderItem={({ item }) => (
-            <AnimeCard
-              anime={item}
-              isMutating={!!isMutatingAnimeById[item._id]}
-              onCapMinus={() => handleCapMinus(item._id)}
-              onCapPlus={() => handleCapPlus(item._id)}
-            />
-          )}
+          renderItem={({ item }) =>
+            renderAnimeListItem(item, isMutatingAnimeById, handleCapMinus, handleCapPlus)
+          }
           showsVerticalScrollIndicator={false}
         />
       )}

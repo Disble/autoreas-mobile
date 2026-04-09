@@ -1,29 +1,17 @@
-import { and, desc, eq } from "drizzle-orm";
-import { useMemo } from "react";
-import { createDrizzleDb } from "../../infrastructure/db/client";
+import { eq } from 'drizzle-orm';
+import { useMemo } from 'react';
+import { createDrizzleDb } from '../../infrastructure/db/client';
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from "../../infrastructure/db/native-runtime";
-import { animes, type AnimeRow } from "../../infrastructure/db/schema";
-import { parseAnimeRow } from "./anime.helpers";
-import type { AnimeTab } from "./anime.types";
+} from '../../infrastructure/db/native-runtime';
+import { animes, type AnimeRow } from '../../infrastructure/db/schema';
+import { parseAnimeRow, sortAnimesBySelectedDay } from './anime.helpers';
+import type { AnimeDayFilter } from './anime.types';
 
-export function useAnimeList(tab: AnimeTab = "viendo") {
+export function useAnimeList(filter: AnimeDayFilter) {
   const rawDb = useOptionalSQLiteContext();
   const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);
-
-  const condition = useMemo(() => {
-    switch (tab) {
-      case "viendo":
-        return and(eq(animes.activo, 1), eq(animes.estado, 0));
-      case "estrenos":
-        return and(eq(animes.activo, 1), eq(animes.primeravez, 1));
-      case "todos":
-      default:
-        return eq(animes.activo, 1);
-    }
-  }, [tab]);
 
   const query = useMemo(() => {
     if (!db) {
@@ -33,16 +21,15 @@ export function useAnimeList(tab: AnimeTab = "viendo") {
     return db
       .select()
       .from(animes)
-      .where(condition)
-      .orderBy(desc(animes.fechaUltCapVisto));
-  }, [db, condition]);
+      .where(eq(animes.activo, 1));
+  }, [db]);
 
   const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);
 
   const parsedData = useMemo(() => {
     if (!data) return [];
-    return data.map(parseAnimeRow);
-  }, [data]);
+    return sortAnimesBySelectedDay(data.map(parseAnimeRow), filter);
+  }, [data, filter]);
 
   return {
     data: parsedData,

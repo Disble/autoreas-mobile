@@ -3,11 +3,10 @@ import { View } from 'react-native';
 import { Surface } from 'heroui-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../../../../components/app-text';
-import type { AnimeEmptyStateProps } from './anime-empty-state.types';
-import { useAnimeEmptyState } from './use-anime-empty-state';
+import type { AnimeEmptyStateViewProps } from './anime-empty-state.types';
 
-export function AnimeEmptyState(props: AnimeEmptyStateProps) {
-  const { icon, message, hint } = useAnimeEmptyState(props);
+export function AnimeEmptyStateView(props: AnimeEmptyStateViewProps) {
+  const { icon, message, hint } = props;
 
   return (
     <View className="flex-1 items-center justify-center px-6 py-20">

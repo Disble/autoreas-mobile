@@ -1,7 +1,50 @@
-import type { AnimeTab } from './anime.types';
+import type {
+  AnimeDayFilter,
+  AnimeDayFilterOption,
+  AnimePseudoDayFilter,
+  AnimeWeekdayFilter,
+} from './anime.types';
 
-export const TAB_OPTIONS: { value: AnimeTab; label: string }[] = [
-  { value: 'viendo', label: 'Viendo' },
-  { value: 'estrenos', label: 'Estrenos' },
-  { value: 'todos', label: 'Todos' },
+export const ANIME_WEEKDAY_FILTERS: readonly AnimeWeekdayFilter[] = [
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+  'Domingo',
 ];
+
+export const ANIME_PSEUDO_DAY_FILTERS: readonly AnimePseudoDayFilter[] = [
+  'Sin ver',
+  'Ver hoy',
+  'Visto',
+];
+
+export const ANIME_DAY_FILTER_OPTIONS: readonly AnimeDayFilterOption[] = [
+  ...ANIME_WEEKDAY_FILTERS.map((value) => ({ value, label: value })),
+  ...ANIME_PSEUDO_DAY_FILTERS.map((value) => ({ value, label: value })),
+];
+
+export const WEEKDAY_INDEX_TO_FILTER: Readonly<Record<number, AnimeWeekdayFilter>> = {
+  0: 'Domingo',
+  1: 'Lunes',
+  2: 'Martes',
+  3: 'Miércoles',
+  4: 'Jueves',
+  5: 'Viernes',
+  6: 'Sábado',
+};
+
+export const ANIME_DAY_FILTER_LABELS: Readonly<Record<AnimeDayFilter, string>> = {
+  Lunes: 'Lunes',
+  Martes: 'Martes',
+  Miércoles: 'Miércoles',
+  Jueves: 'Jueves',
+  Viernes: 'Viernes',
+  Sábado: 'Sábado',
+  Domingo: 'Domingo',
+  'Sin ver': 'Sin ver',
+  'Ver hoy': 'Ver hoy',
+  Visto: 'Visto',
+};
