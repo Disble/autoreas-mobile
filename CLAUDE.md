@@ -23,6 +23,14 @@ This project follows Spec-Driven Development (SDD), but architecture drift betwe
    - When delegating `apply` or `bugfix` work, provide exact reproduction steps, acceptance (happy path) examples, and negative/rejection examples.
 3. **Verification Boundary**: After `verify` passes, the orchestrating agent MUST create the commit before reporting the change as fully verified. Commit-time hooks and validations are part of the true verification boundary.
 
+### UI Library: HeroUI Native (Mandatory)
+
+- **HeroUI Native es la librería de UI principal del proyecto**. Todos los componentes de interfaz DEBEN usar primitivas de HeroUI Native (`Button`, `Card`, `Chip`, `Tabs`, `Alert`, `TextField`, `Input`, `Label`, `Spinner`, `Badge`, `Divider`, `Switch`, `Avatar`, `Progress`, `Text`, etc.) en lugar de primitivas crudas de React Native (`TouchableOpacity`, `TextInput`, `Pressable`).
+- Usar `cn()` de `heroui-native` para composición de clases Tailwind.
+- Usar `useThemeColor()` de `heroui-native` para acceder a colores del tema dinámicamente.
+- Los componentes wrapper (`AppText`, `ScreenScrollView`) existen para funcionalidad adicional (accesibilidad, safe areas), NO como reemplazo de HeroUI Native.
+- Nunca usar `StyleSheet.create()` para estilos que se puedan resolver con clases Tailwind/Uniwind.
+
 ### Practical Warning
 
 Do not assume a specific architecture pattern (e.g., standard clean architecture or specific state management) without checking the code first. Always start your context gathering by reading core entry points and main configuration files.

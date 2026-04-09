@@ -26,7 +26,7 @@ Este documento define los cimientos arquitectónicos de Autoreas Mobile. Las dec
 | **ORM / Acceso a Datos**| Drizzle ORM | Tipado estricto, migraciones nativas, hooks reactivos (`useLiveQuery`). |
 | **Validación (ACL)** | Zod | Validación en runtime para payloads de red y DB. |
 | **Estado UI (Efímero)**| Zustand | Store ultraligero exclusivo para estado de interfaz (filtros, theme, red). |
-| **UI Library** | HeroUI Native v3 | Componentes nativos alineados visualmente con el Bridge Web UI. |
+| **UI Library (Principal)** | HeroUI Native v3 | **Librería de UI principal del proyecto.** Todos los componentes de interfaz DEBEN usar primitivas de HeroUI Native. |
 | **Networking (REST)** | TanStack Query | Caching, retries automáticos, deduplicación de requests. |
 | **Networking (Realtime)**| Native WebSocket | Conexión persistente para eventos del Bridge. |
 | **Testing** | Jest + RNTL | Tests de integración rápidos con mock in-memory de SQLite. |

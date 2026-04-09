@@ -14,6 +14,14 @@
   - Other SDD phases (propose, spec, design, tasks, apply) may use sub-agents when appropriate.
   - After `verify` passes, the orchestrating agent MUST create the commit before reporting the change as fully verified. Commit-time hooks and validations are part of the true verification boundary and save the user an extra round-trip.
 
+## UI Library: HeroUI Native (Mandatory)
+
+- **HeroUI Native es la librería de UI principal del proyecto**. Todo componente nuevo o refactorizado DEBE usar primitivas de HeroUI Native en lugar de componentes crudos de React Native.
+- Componentes disponibles: `Button`, `Card`, `Chip`, `Tabs`, `Alert`, `TextField`, `Input`, `Label`, `Spinner`, `Badge`, `Divider`, `Switch`, `Avatar`, `Progress`, `Text`, entre otros.
+- Usar `cn()` de `heroui-native` para composición de clases Tailwind.
+- Usar `useThemeColor()` para acceder a colores del tema.
+- Al delegar tareas de UI a sub-agentes, incluir esta regla explícitamente en el prompt de delegación.
+
 ## Documentation References & Source of Truth
 
 - **Verify Before Assuming**: Do not assume the documented target architecture already exists in code. Verify against the filesystem and runtime wiring first.
