@@ -17,6 +17,7 @@ import {
 } from './last-changelog.helpers';
 import { syncStateByDatabase } from './reconcile.constants';
 import {
+  type ReconcileAppliedOperation,
   ReconcileResponseSchema,
   type ReconcileAnimeChange,
 } from './reconcile.schema';
@@ -48,17 +49,29 @@ export function buildReconcileRequestBody(
  */
 export function getConfirmedOperationIds(
   processingOperations: OperationLogRow[],
+  appliedOperations: ReconcileAppliedOperation[] | undefined,
   bridgeChanges: ReconcileAnimeChange[],
 ): number[] {
   return processingOperations
-    .filter((operation) => isOperationConfirmed(operation, bridgeChanges))
+    .filter((operation) => isOperationConfirmed(operation, appliedOperations, bridgeChanges))
     .map((operation) => operation.id);
 }
 
 function isOperationConfirmed(
   operation: OperationLogRow,
+  appliedOperations: ReconcileAppliedOperation[] | undefined,
   bridgeChanges: ReconcileAnimeChange[],
 ): boolean {
+  const appliedOperation = appliedOperations?.find(
+    (candidate) =>
+      candidate.anime_id === operation.animeId &&
+      candidate.operation === operation.operation,
+  );
+
+  if (appliedOperation) {
+    return appliedOperation.applied;
+  }
+
   const payload = parseOperationPayload(operation.payload);
   const payloadKeys = Object.keys(payload);
 
@@ -185,11 +198,19 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
       throw new Error(`Invalid reconcile response: ${parsed.error.message}`);
     }
 
-    const { bridge_changes, last_changelog_id: responseLastChangelogId } = parsed.data;
+    const {
+      applied_operations,
+      bridge_changes,
+      last_changelog_id: responseLastChangelogId,
+    } = parsed.data;
     const nextLastChangelogId = bridge_changes.reduce((max, change) => {
       return Math.max(max, change.timestamp);
     }, responseLastChangelogId ?? lastChangelogId);
-    const confirmedIds = getConfirmedOperationIds(pendingOps, bridge_changes);
+    const confirmedIds = getConfirmedOperationIds(
+      pendingOps,
+      applied_operations,
+      bridge_changes,
+    );
     const unconfirmedIds = pendingOps
       .map((operation) => operation.id)
       .filter((id) => !confirmedIds.includes(id));

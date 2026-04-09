@@ -128,7 +128,7 @@ describe('syncPendingOperations', () => {
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
-  it('Conexion exitosa -> solo marca synced las operaciones confirmadas por bridge_changes', async () => {
+  it('Conexion exitosa -> prioriza applied_operations para marcar synced', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
@@ -144,6 +144,13 @@ describe('syncPendingOperations', () => {
       ok: true,
       json: async () => ({
         status: 'accepted',
+        applied_operations: [
+          {
+            anime_id: 'anime1',
+            operation: 'update',
+            applied: true,
+          },
+        ],
         bridge_changes: [
           {
             record_id: 'anime1',
@@ -173,6 +180,48 @@ describe('syncPendingOperations', () => {
     expect(dbClient.withExclusiveWrite).toHaveBeenCalled();
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
+  });
+
+  it('No marca synced si applied_operations rechaza la operación aunque haya bridge_changes', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+    });
+
+    mockDb.where.mockResolvedValue([
+      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
+    ]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'accepted',
+        applied_operations: [
+          {
+            anime_id: 'anime1',
+            operation: 'update',
+            applied: false,
+          },
+        ],
+        bridge_changes: [
+          {
+            record_id: 'anime1',
+            change_type: 'update',
+            changed_fields: ['nrocapvisto'],
+            timestamp: Date.now(),
+          },
+        ],
+        conflicts: [],
+        last_changelog_id: 99,
+      }),
+    });
+
+    const syncedCount = await syncPendingOperations(rawDb);
+
+    expect(syncedCount).toBe(0);
+    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
   });
 
   it('No marca synced si bridge no devuelve evidencia de aplicación', async () => {

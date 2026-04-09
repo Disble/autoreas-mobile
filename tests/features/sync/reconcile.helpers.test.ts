@@ -37,7 +37,7 @@ describe('reconcile helpers', () => {
 
   it('getConfirmedOperationIds confirma updates cuando bridge refleja los campos aplicados', () => {
     expect(
-      getConfirmedOperationIds([baseOperation], [
+      getConfirmedOperationIds([baseOperation], undefined, [
         {
           record_id: 'anime-1',
           change_type: 'update',
@@ -48,9 +48,48 @@ describe('reconcile helpers', () => {
     ).toEqual([1]);
   });
 
+  it('getConfirmedOperationIds prioriza applied_operations cuando bridge manda ack explícito', () => {
+    expect(
+      getConfirmedOperationIds(
+        [baseOperation],
+        [
+          {
+            anime_id: 'anime-1',
+            operation: 'update',
+            applied: true,
+          },
+        ],
+        [],
+      ),
+    ).toEqual([1]);
+  });
+
+  it('getConfirmedOperationIds no confirma cuando applied_operations dice applied=false', () => {
+    expect(
+      getConfirmedOperationIds(
+        [baseOperation],
+        [
+          {
+            anime_id: 'anime-1',
+            operation: 'update',
+            applied: false,
+          },
+        ],
+        [
+          {
+            record_id: 'anime-1',
+            change_type: 'update',
+            changed_fields: ['nrocapvisto', 'fechaUltCapVisto'],
+            timestamp: 1710000001000,
+          },
+        ],
+      ),
+    ).toEqual([]);
+  });
+
   it('getConfirmedOperationIds no confirma operaciones sin evidencia de aplicación', () => {
     expect(
-      getConfirmedOperationIds([baseOperation], [
+      getConfirmedOperationIds([baseOperation], undefined, [
         {
           record_id: 'otro-anime',
           change_type: 'update',
