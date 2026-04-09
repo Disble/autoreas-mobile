@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { eq, inArray } from "drizzle-orm";
 import { type SQLiteDatabase } from "expo-sqlite";
-import { z } from "zod";
 import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   createDrizzleDb,
@@ -9,21 +8,7 @@ import {
   withExclusiveWrite,
 } from "../../infrastructure/db/client";
 import { animes, operationLog } from "../../infrastructure/db/schema";
-import { AnimeSchema } from "../../infrastructure/validation/anime-schema";
-
-const AnimeChangeSchema = z.object({
-  record_id: z.string(),
-  change_type: z.enum(["create", "update", "delete"]),
-  changed_fields: z.array(z.string()),
-  snapshot: AnimeSchema.optional(),
-  timestamp: z.number(),
-});
-
-const ReconcileResponseSchema = z.object({
-  status: z.string(),
-  bridge_changes: z.array(AnimeChangeSchema),
-  conflicts: z.array(z.unknown()),
-});
+import { ReconcileResponseSchema } from "./reconcile.schema";
 
 export async function syncPendingOperations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);

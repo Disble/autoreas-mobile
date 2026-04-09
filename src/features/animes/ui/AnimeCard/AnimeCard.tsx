@@ -1,49 +1,45 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { Button, Card, Chip, Separator } from "heroui-native";
-import { View } from "react-native";
-import { type Anime } from "../../infrastructure/validation/anime-schema";
-import { AppText } from "../app-text";
+import React from 'react';
+import { View } from 'react-native';
+import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
+import { Button, Card, Chip, Separator } from 'heroui-native';
+import { AppText } from '../../../../components/app-text';
+import { useAnimeCard } from './use-anime-card';
+import type { AnimeCardProps } from './anime-card.types';
 
-interface AnimeCardProps {
-  anime: Anime;
-  onCapPlus: () => void;
-  onCapMinus: () => void;
-}
-
-export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
-  const { nombre, nrocapvisto, totalcap, generos, dias, portada } = anime;
-
-  const daysList = dias || [];
-  const genresList = generos || [];
-  const progress =
-    totalcap && totalcap > 0
-      ? Math.round((nrocapvisto / totalcap) * 100)
-      : null;
-  const isCompleted = progress !== null && progress >= 100;
+export function AnimeCard(props: AnimeCardProps) {
+  const { anime, onCapMinus, onCapPlus } = props;
+  const {
+    progress,
+    isCompleted,
+    disableDecrease,
+    disableIncrease,
+    daysList,
+    genresList,
+  } = useAnimeCard(props);
 
   return (
     <Card className="mb-3 overflow-hidden">
       <Card.Body className="flex-row p-0">
         <Image
-          source={{ uri: portada || "https://via.placeholder.com/100x150" }}
-          className="w-[90px] h-[130px]"
+          source={{ uri: anime.portada || 'https://via.placeholder.com/100x150' }}
+          className="h-[130px] w-[90px]"
           contentFit="cover"
         />
 
-        <View className="flex-1 p-3 justify-between">
+        <View className="flex-1 justify-between p-3">
           <View>
             <AppText
               className="text-foreground text-base font-bold leading-tight"
               numberOfLines={2}
             >
-              {nombre}
+              {anime.nombre}
             </AppText>
 
-            <View className="flex-row items-center mt-1.5 gap-2">
+            <View className="mt-1.5 flex-row items-center gap-2">
               <AppText className="text-muted text-sm">
-                Cap. {nrocapvisto}
-                {totalcap ? ` / ${totalcap}` : ""}
+                Cap. {anime.nrocapvisto}
+                {anime.totalcap ? ` / ${anime.totalcap}` : ''}
               </AppText>
               {isCompleted && (
                 <Chip size="sm" variant="secondary" color="success">
@@ -54,9 +50,9 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
 
             {progress !== null && !isCompleted && (
               <View className="mt-2">
-                <View className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden">
+                <View className="bg-surface-tertiary h-1.5 overflow-hidden rounded-full">
                   <View
-                    className="h-full rounded-full bg-accent"
+                    className="bg-accent h-full rounded-full"
                     style={{ width: `${Math.min(progress, 100)}%` }}
                   />
                 </View>
@@ -69,12 +65,7 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
               <Separator className="my-2" />
               <View className="flex-row flex-wrap gap-1">
                 {daysList.map((d) => (
-                  <Chip
-                    key={d.dia}
-                    size="sm"
-                    variant="secondary"
-                    color="accent"
-                  >
+                  <Chip key={d.dia} size="sm" variant="secondary" color="accent">
                     <Chip.Label>{d.dia}</Chip.Label>
                   </Chip>
                 ))}
@@ -94,19 +85,19 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
         </View>
       </Card.Body>
 
-      <View className="flex-row items-center justify-end px-3 pb-2 gap-2">
+      <View className="flex-row items-center justify-end gap-2 px-3 pb-2">
         <Button
           accessibilityLabel="Decrease chapter"
           variant="danger-soft"
           size="sm"
           isIconOnly
           onPress={onCapMinus}
-          isDisabled={nrocapvisto <= 0}
+          isDisabled={disableDecrease}
         >
           <Ionicons name="remove" size={18} />
         </Button>
-        <AppText className="text-foreground font-semibold text-sm min-w-[28px] text-center">
-          {nrocapvisto}
+        <AppText className="text-foreground min-w-[28px] text-center text-sm font-semibold">
+          {anime.nrocapvisto}
         </AppText>
         <Button
           accessibilityLabel="Increase chapter"
@@ -114,7 +105,7 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
           size="sm"
           isIconOnly
           onPress={onCapPlus}
-          isDisabled={totalcap != null && nrocapvisto >= totalcap}
+          isDisabled={disableIncrease}
           className="bg-success/20"
         >
           <Ionicons name="add" size={18} />

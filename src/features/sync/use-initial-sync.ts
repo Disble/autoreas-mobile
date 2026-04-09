@@ -1,15 +1,16 @@
 import { eq } from "drizzle-orm";
 import type { SQLiteDatabase } from "expo-sqlite";
-import { z } from "zod";
 import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   getBridgeConfigSnapshot,
   withExclusiveWrite,
 } from "../../infrastructure/db/client";
 import { animes } from "../../infrastructure/db/schema";
-import { AnimeSchema } from "../../infrastructure/validation/anime-schema";
-
-const AnimeListSchema = z.array(AnimeSchema);
+import { AnimeSchema, type Anime } from "../../infrastructure/validation/anime-schema";
+import {
+  AnimeListSchema,
+  IncrementalChangesResponseSchema,
+} from "./initial-sync.schema";
 
 export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
@@ -51,7 +52,7 @@ export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
 export async function fetchAnimeById(
   rawDb: SQLiteDatabase,
   animeId: string,
-): Promise<z.infer<typeof AnimeSchema> | null> {
+): Promise<Anime | null> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) return null;
 
@@ -120,15 +121,14 @@ export async function incrementalSync(
     }
 
     const raw = await response.json();
+    const parsed = IncrementalChangesResponseSchema.safeParse(raw);
 
-    // Shape: { changes: AnimeChange[], last_changelog_id: number }
-    const changes: {
-      record_id: string;
-      change_type: "create" | "update" | "delete";
-      snapshot?: z.infer<typeof AnimeSchema>;
-    }[] = raw?.changes ?? [];
+    if (!parsed.success) {
+      console.warn('[IncrementalSync] Invalid changes payload:', parsed.error.message);
+      return 0;
+    }
 
-    const lastChangelogId: number = raw?.last_changelog_id ?? 0;
+    const { changes, last_changelog_id: lastChangelogId } = parsed.data;
 
     if (changes.length === 0) return lastChangelogId;
 

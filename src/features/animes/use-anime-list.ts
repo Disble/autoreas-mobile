@@ -6,17 +6,8 @@ import {
   useOptionalSQLiteContext,
 } from "../../infrastructure/db/native-runtime";
 import { animes, type AnimeRow } from "../../infrastructure/db/schema";
-import type { Anime } from "../../infrastructure/validation/anime-schema";
-
-export type AnimeTab = "viendo" | "estrenos" | "todos";
-
-function parseAnimeRow(row: AnimeRow): Anime {
-  return {
-    ...row,
-    dias: row.dias ? JSON.parse(row.dias) : [],
-    generos: row.generos ? JSON.parse(row.generos) : [],
-  };
-}
+import { parseAnimeRow } from "./anime.helpers";
+import type { AnimeTab } from "./anime.types";
 
 export function useAnimeList(tab: AnimeTab = "viendo") {
   const rawDb = useOptionalSQLiteContext();

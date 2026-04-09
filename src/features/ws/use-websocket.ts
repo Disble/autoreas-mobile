@@ -1,42 +1,13 @@
 import { useEffect, useRef } from "react";
 import { AppState, AppStateStatus } from "react-native";
-import { z } from "zod";
 import { getBridgeConfigSnapshot } from "../../infrastructure/db/client";
 import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
 import {
   deleteAnimeLocally,
   upsertAnimeFromBridge,
 } from "../sync/use-initial-sync";
-
-const AnimeChangedEventSchema = z.object({
-  type: z.literal("anime_changed"),
-  anime_id: z.string(),
-});
-
-const AnimeCreatedEventSchema = z.object({
-  type: z.literal("anime_created"),
-  anime_id: z.string(),
-});
-
-const AnimeDeletedEventSchema = z.object({
-  type: z.literal("anime_deleted"),
-  anime_id: z.string(),
-});
-
-const SyncRequiredEventSchema = z.object({
-  type: z.literal("sync_required"),
-});
-
-const WsMessageSchema = z.union([
-  AnimeChangedEventSchema,
-  AnimeCreatedEventSchema,
-  AnimeDeletedEventSchema,
-  SyncRequiredEventSchema,
-]);
-
-interface UseWebSocketProps {
-  onSyncRequired?: () => void;
-}
+import { WsMessageSchema } from "./websocket.schema";
+import type { UseWebSocketProps } from "./websocket.types";
 
 export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
   const rawDb = useOptionalSQLiteContext();

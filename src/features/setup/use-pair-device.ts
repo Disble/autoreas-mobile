@@ -5,18 +5,7 @@ import {
   useOptionalSQLiteContext,
 } from '../../infrastructure/db/native-runtime';
 import { bridgeConfig } from '../../infrastructure/db/schema';
-
-interface PairParams {
-  ip: string;
-  port: number | string;
-  token: string;
-}
-
-interface PairResponse {
-  device_id: string;
-  device_name: string;
-  auth_token: string;
-}
+import type { PairParams, PairResponse } from './pair-device.types';
 
 export function usePairDevice() {
   const rawDb = useOptionalSQLiteContext();

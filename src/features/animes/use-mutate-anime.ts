@@ -1,8 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { SQLiteDatabase } from "expo-sqlite";
 import { useCallback } from "react";
 import {
-  createDrizzleDb,
   withExclusiveWrite,
 } from "../../infrastructure/db/client";
 import {
@@ -10,35 +8,11 @@ import {
   useOptionalSQLiteContext,
 } from "../../infrastructure/db/native-runtime";
 import { animes, operationLog } from "../../infrastructure/db/schema";
-import type { Anime } from "../../infrastructure/validation/anime-schema";
 import {
   AnimePatchSchema,
-  AnimeSchema,
 } from "../../infrastructure/validation/anime-schema";
+import { fetchParsedAnime } from "./anime-mutation.helpers";
 import { syncPendingOperations } from "../sync/use-reconcile";
-
-async function fetchParsedAnime(
-  rawDb: SQLiteDatabase,
-  animeId: string,
-): Promise<Anime | null> {
-  const db = createDrizzleDb(rawDb);
-  const [row] = await db
-    .select()
-    .from(animes)
-    .where(eq(animes._id, animeId))
-    .limit(1);
-  if (!row) return null;
-
-  return AnimeSchema.parse({
-    ...row,
-    dias:
-      typeof row.dias === "string" ? JSON.parse(row.dias) : (row.dias ?? []),
-    generos:
-      typeof row.generos === "string"
-        ? JSON.parse(row.generos)
-        : (row.generos ?? []),
-  });
-}
 
 export function useMutateAnime() {
   const rawDb = useOptionalSQLiteContext();

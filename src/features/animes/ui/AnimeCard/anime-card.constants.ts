@@ -1,0 +1,3 @@
+export const ANIMECARD_CONSTANTS = {
+  DEFAULT_TIMEOUT: 3000,
+};

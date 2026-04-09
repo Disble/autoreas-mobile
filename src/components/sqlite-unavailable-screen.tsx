@@ -2,9 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Alert, Surface } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from './app-text';
-import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../infrastructure/db/native-runtime';
+import { useSQLiteUnavailableMessage } from '../features/setup/use-sqlite-unavailable-message';
 
 export function SQLiteUnavailableScreen() {
+  const { message } = useSQLiteUnavailableMessage();
+
   return (
     <View className="flex-1 items-center justify-center bg-background px-6">
       <Surface variant="secondary" className="rounded-full p-5 mb-6">
@@ -18,7 +20,7 @@ export function SQLiteUnavailableScreen() {
       <Alert status="warning" className="w-full mt-2">
         <Alert.Indicator />
         <Alert.Content>
-          <Alert.Description>{EXPO_SQLITE_UNAVAILABLE_MESSAGE}</Alert.Description>
+          <Alert.Description>{message}</Alert.Description>
         </Alert.Content>
       </Alert>
 

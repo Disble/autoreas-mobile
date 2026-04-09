@@ -1,0 +1,1 @@
+export type AnimeTab = 'viendo' | 'estrenos' | 'todos';
