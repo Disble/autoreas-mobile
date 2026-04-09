@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { Button, Card } from 'heroui-native';
+import { Button, Card, Separator, Surface } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../components/app-text';
 import { ScreenScrollView } from '../../components/screen-scroll-view';
@@ -26,19 +27,32 @@ export default function HomeScreen() {
 
   return (
     <ScreenScrollView>
-      <View className="flex-1 items-center justify-center py-20">
-        <Card className="w-full p-6 items-center">
-          <Card.Body className="items-center gap-3">
-            <AppText className="text-foreground text-2xl font-bold">
-              Animes en SQLite: {animeCount}
+      <View className="flex-1 items-center justify-center py-12">
+        <Card className="w-full">
+          <Card.Body className="items-center gap-4 p-6">
+            <Surface variant="secondary" className="rounded-full p-4">
+              <Ionicons name="server-outline" size={28} color="#6366f1" />
+            </Surface>
+
+            <View className="items-center gap-1">
+              <AppText className="text-foreground text-3xl font-bold">
+                {animeCount}
+              </AppText>
+              <AppText className="text-muted text-sm">
+                Animes en SQLite
+              </AppText>
+            </View>
+
+            <Separator className="w-full" />
+
+            <AppText className="text-muted text-xs text-center">
+              Tracer bullet — pantalla de diagnóstico
             </AppText>
-            <AppText className="text-muted text-base text-center">
-              Tracer bullet SQLite activo
-            </AppText>
+
             <Button
               variant="primary"
               size="lg"
-              className="mt-4"
+              className="w-full mt-2"
               onPress={() => {
                 void insertDummyAnime(rawDb);
               }}

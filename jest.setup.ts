@@ -97,6 +97,7 @@ jest.mock('heroui-native', () => {
   // Simple components
   const Spinner = () => React.createElement(RN.ActivityIndicator);
   const Separator = wrap('heroui-separator');
+  const Surface = wrap('heroui-surface');
   const Skeleton = ({ children, isLoading, ...props }: any) =>
     React.createElement(RN.View, props, children);
 
@@ -112,6 +113,7 @@ jest.mock('heroui-native', () => {
     Input,
     Spinner,
     Separator,
+    Surface,
     Skeleton,
     // Keep real utilities
     cn: actual.cn,
@@ -119,10 +121,10 @@ jest.mock('heroui-native', () => {
       if (Array.isArray(args[0])) return args[0].map(() => '#000000');
       return '#000000';
     },
-    useToast: () => ({
+    useToast: jest.fn(() => ({
       toast: { show: jest.fn(), hide: jest.fn() },
       isToastVisible: false,
-    }),
+    })),
   };
 });
 

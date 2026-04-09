@@ -44,8 +44,8 @@ describe('app shell bootstrap', () => {
   it('renders the tracer shell with sqlite count and action', () => {
     render(<HomeScreen />);
 
-    expect(screen.getByText('Animes en SQLite: 2')).toBeOnTheScreen();
-    expect(screen.getByText('Tracer bullet SQLite activo')).toBeOnTheScreen();
+    expect(screen.getByText('2')).toBeOnTheScreen();
+    expect(screen.getByText('Animes en SQLite')).toBeOnTheScreen();
     expect(screen.getByText('Insert Dummy Anime')).toBeOnTheScreen();
   });
 });

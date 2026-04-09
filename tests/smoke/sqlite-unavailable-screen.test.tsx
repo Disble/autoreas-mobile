@@ -37,7 +37,7 @@ describe('sqlite unavailable fallback', () => {
 
       const view = render(React.createElement(HomeScreen));
 
-      expect(view.getByText('SQLite nativo no disponible')).toBeOnTheScreen();
+      expect(view.getByText('SQLite no disponible')).toBeOnTheScreen();
       expect(
         view.getByText(/development build o recompila la app nativa/i)
       ).toBeOnTheScreen();

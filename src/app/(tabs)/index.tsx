@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { Tabs } from 'heroui-native';
+import { Surface, Tabs } from 'heroui-native';
 import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { AnimeCard } from '../../components/anime/AnimeCard';
 import { AppText } from '../../components/app-text';
 import { useAppTheme } from '../../contexts/app-theme-context';
@@ -20,16 +20,33 @@ const TAB_OPTIONS: { value: AnimeTab; label: string }[] = [
 ];
 
 function EmptyState({ tab }: { tab: AnimeTab }) {
+  const icons: Record<AnimeTab, keyof typeof Ionicons.glyphMap> = {
+    viendo: 'play-circle-outline',
+    estrenos: 'sparkles-outline',
+    todos: 'film-outline',
+  };
   const messages: Record<AnimeTab, string> = {
     viendo: 'No tenés animes en progreso.',
     estrenos: 'No hay estrenos disponibles.',
     todos: 'No hay animes cargados todavía.',
   };
+  const hints: Record<AnimeTab, string> = {
+    viendo: 'Los animes que estés viendo aparecerán acá.',
+    estrenos: 'Los estrenos se sincronizan desde el Bridge.',
+    todos: 'Conectá el Bridge para sincronizar tu lista.',
+  };
 
   return (
-    <View className="flex-1 items-center justify-center py-20">
-      <Ionicons name="film-outline" size={48} className="text-muted mb-4" />
-      <AppText className="text-muted text-base text-center">{messages[tab]}</AppText>
+    <View className="flex-1 items-center justify-center px-6 py-20">
+      <Surface variant="secondary" className="items-center rounded-2xl px-8 py-10 w-full">
+        <Ionicons name={icons[tab]} size={56} color="#9ca3af" />
+        <AppText className="text-foreground text-lg font-semibold mt-4 text-center">
+          {messages[tab]}
+        </AppText>
+        <AppText className="text-muted text-sm mt-2 text-center">
+          {hints[tab]}
+        </AppText>
+      </Surface>
     </View>
   );
 }
@@ -43,7 +60,6 @@ export default function AnimeListScreen() {
 
   const handleSyncRequired = useCallback(() => {
     if (!rawDb) return;
-    // Sync incremental desde 0 — en el futuro se puede persistir el last_changelog_id
     void incrementalSync(rawDb, 0);
   }, [rawDb]);
 
@@ -58,7 +74,7 @@ export default function AnimeListScreen() {
   }, [capMinus]);
 
   return (
-    <View className="flex-1 bg-background" style={styles.container}>
+    <View className="flex-1 bg-background min-w-[320px]">
       <View className="px-4 pt-4 pb-2">
         <Tabs value={tab} onValueChange={(v) => setTab(v as AnimeTab)}>
           <Tabs.List className="w-full">
@@ -90,7 +106,7 @@ export default function AnimeListScreen() {
               />
             );
           }}
-          contentContainerStyle={styles.listContent}
+          contentContainerClassName="px-4 pt-2 pb-10"
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -98,13 +114,3 @@ export default function AnimeListScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    minWidth: 320,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-});

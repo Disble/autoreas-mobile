@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useURL } from 'expo-linking';
 import { Href, useRouter } from 'expo-router';
 import {
@@ -6,18 +7,22 @@ import {
   Card,
   Input,
   Label,
+  Separator,
   Spinner,
+  Surface,
   TextField,
   cn,
+  useToast,
 } from 'heroui-native';
 import { useEffect, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 import { AppText } from '../../components/app-text';
 import { usePairDevice } from '../../features/setup/use-pair-device';
 
 export default function SetupScreen() {
   const router = useRouter();
   const { pair, isLoading, error } = usePairDevice();
+  const { toast } = useToast();
   const url = useURL();
 
   const [ip, setIp] = useState('');
@@ -40,47 +45,77 @@ export default function SetupScreen() {
           if (ipParam) setIp(ipParam);
           if (portParam) setPort(portParam);
           if (tokenParam) setToken(tokenParam);
+
+          toast.show({
+            variant: 'accent',
+            label: 'Deep link detectado',
+            description: 'Campos completados automáticamente.',
+            duration: 3000,
+          });
         }
       } catch {
         console.warn('Invalid deep link URL:', url);
       }
     }
-  }, [url]);
+  }, [url, toast]);
 
   const handlePair = async () => {
     if (!ip || !port || !token) {
-      Alert.alert('Error', 'Todos los campos son obligatorios');
+      toast.show({
+        variant: 'warning',
+        label: 'Campos incompletos',
+        description: 'Todos los campos son obligatorios.',
+        duration: 3000,
+      });
       return;
     }
 
     const portNumber = parseInt(port, 10);
     if (isNaN(portNumber)) {
-      Alert.alert('Error', 'El puerto debe ser un número válido');
+      toast.show({
+        variant: 'warning',
+        label: 'Puerto inválido',
+        description: 'El puerto debe ser un número válido.',
+        duration: 3000,
+      });
       return;
     }
 
     const { success, error: pairError } = await pair({ ip, port: portNumber, token });
 
     if (success) {
+      toast.show({
+        variant: 'success',
+        label: 'Emparejado correctamente',
+        duration: 2000,
+      });
       router.replace('/(tabs)' as Href);
     } else {
-      Alert.alert('Error de conexión', pairError || 'No se pudo conectar con el Bridge');
+      toast.show({
+        variant: 'danger',
+        label: 'Error de conexión',
+        description: pairError || 'No se pudo conectar con el Bridge.',
+        duration: 5000,
+      });
     }
   };
 
   return (
     <View className="flex-1 justify-center bg-background px-6">
-      <View className="mb-10 items-center">
-        <AppText className="mb-2 text-4xl font-bold text-foreground tracking-tight">
+      <View className="mb-8 items-center">
+        <Surface variant="secondary" className="rounded-full p-4 mb-4">
+          <Ionicons name="link-outline" size={32} color="#6366f1" />
+        </Surface>
+        <AppText className="mb-1 text-3xl font-bold text-foreground tracking-tight">
           Autoreas
         </AppText>
-        <AppText className="text-center text-base text-muted">
-          Ingresa los datos de tu Bridge para emparejar el dispositivo.
+        <AppText className="text-center text-sm text-muted max-w-[260px]">
+          Conectá tu dispositivo con el Bridge para sincronizar tu lista de animes.
         </AppText>
       </View>
 
       <Card className="p-5">
-        <Card.Body className="gap-5">
+        <Card.Body className="gap-4">
           <TextField>
             <Label>
               <Label.Text>Dirección IP</Label.Text>
@@ -128,12 +163,14 @@ export default function SetupScreen() {
             </HeroAlert>
           ) : null}
 
+          <Separator className="my-1" />
+
           <Button
             variant="primary"
             size="lg"
             onPress={handlePair}
             isDisabled={isLoading}
-            className={cn('mt-2 w-full', isLoading && 'opacity-80')}
+            className={cn('w-full', isLoading && 'opacity-80')}
           >
             {isLoading ? (
               <Spinner className="text-white" />
@@ -143,6 +180,10 @@ export default function SetupScreen() {
           </Button>
         </Card.Body>
       </Card>
+
+      <AppText className="text-center text-xs text-muted mt-6">
+        También podés usar el deep link autoreas://pair desde el Bridge.
+      </AppText>
     </View>
   );
 }

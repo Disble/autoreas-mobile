@@ -39,7 +39,7 @@ describe('AnimeCard', () => {
     );
 
     expect(getByText('Test Anime')).toBeTruthy();
-    expect(getByText('Capítulo: 5 / 12')).toBeTruthy();
+    expect(getByText(/Cap\. 5/)).toBeTruthy();
     expect(getByText('Action')).toBeTruthy();
     expect(getByText('Monday')).toBeTruthy();
   });

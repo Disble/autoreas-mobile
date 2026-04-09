@@ -1,6 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Button, Card, Chip } from 'heroui-native';
-import { StyleSheet, View } from 'react-native';
+import { Button, Card, Chip, Separator } from 'heroui-native';
+import { View } from 'react-native';
 import { type Anime } from '../../infrastructure/validation/anime-schema';
 import { AppText } from '../app-text';
 
@@ -19,80 +20,97 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
     totalcap && totalcap > 0
       ? Math.round((nrocapvisto / totalcap) * 100)
       : null;
+  const isCompleted = progress !== null && progress >= 100;
 
   return (
-    <Card className="mb-4 min-w-[320px]">
-      <Card.Body className="flex-row p-3">
+    <Card className="mb-3 overflow-hidden">
+      <Card.Body className="flex-row p-0">
         <Image
           source={{ uri: portada || 'https://via.placeholder.com/100x150' }}
-          style={styles.cover}
-          className="rounded-lg mr-3"
+          className="w-[90px] h-[130px]"
+          contentFit="cover"
         />
 
-        <View className="flex-1 flex-col justify-between">
+        <View className="flex-1 p-3 justify-between">
           <View>
-            <AppText className="text-foreground text-lg font-bold" numberOfLines={2}>
+            <AppText className="text-foreground text-base font-bold leading-tight" numberOfLines={2}>
               {nombre}
             </AppText>
 
-            <View className="flex-row items-center mt-1 gap-2">
+            <View className="flex-row items-center mt-1.5 gap-2">
               <AppText className="text-muted text-sm">
-                Capítulo: {nrocapvisto} {totalcap ? `/ ${totalcap}` : ''}
+                Cap. {nrocapvisto}{totalcap ? ` / ${totalcap}` : ''}
               </AppText>
-              {progress !== null && (
-                <Chip size="sm" variant="secondary" color={progress >= 100 ? 'success' : 'accent'}>
-                  <Chip.Label>{progress}%</Chip.Label>
+              {isCompleted && (
+                <Chip size="sm" variant="secondary" color="success">
+                  <Chip.Label>Completo</Chip.Label>
                 </Chip>
               )}
             </View>
 
-            <View className="flex-row flex-wrap mt-2 gap-1">
-              {genresList.map((g: string) => (
-                <Chip key={g} size="sm" variant="tertiary">
-                  <Chip.Label>{g}</Chip.Label>
-                </Chip>
-              ))}
-              {daysList.map((d: any) => (
-                <Chip key={d.dia || String(d)} size="sm" variant="secondary" color="accent">
-                  <Chip.Label>{d.dia || d}</Chip.Label>
-                </Chip>
-              ))}
-            </View>
+            {progress !== null && !isCompleted && (
+              <View className="mt-2">
+                <View className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden">
+                  <View
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${Math.min(progress, 100)}%` }}
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
-          <View className="flex-row mt-3 items-center justify-end gap-2">
-            <Button
-              accessibilityLabel="Decrease chapter"
-              variant="danger-soft"
-              size="sm"
-              isIconOnly
-              onPress={() => onCapMinus()}
-              isDisabled={nrocapvisto <= 0}
-            >
-              <AppText className="text-danger font-bold text-lg">-</AppText>
-            </Button>
-            <Button
-              accessibilityLabel="Increase chapter"
-              variant="secondary"
-              size="sm"
-              isIconOnly
-              onPress={() => onCapPlus()}
-              isDisabled={totalcap != null && nrocapvisto >= totalcap}
-              className="bg-success/20"
-            >
-              <AppText className="text-success font-bold text-lg">+</AppText>
-            </Button>
-          </View>
+          {(genresList.length > 0 || daysList.length > 0) && (
+            <>
+              <Separator className="my-2" />
+              <View className="flex-row flex-wrap gap-1">
+                {daysList.map((d: any) => (
+                  <Chip key={d.dia || String(d)} size="sm" variant="secondary" color="accent">
+                    <Chip.Label>{d.dia || d}</Chip.Label>
+                  </Chip>
+                ))}
+                {genresList.slice(0, 3).map((g: string) => (
+                  <Chip key={g} size="sm" variant="tertiary">
+                    <Chip.Label>{g}</Chip.Label>
+                  </Chip>
+                ))}
+                {genresList.length > 3 && (
+                  <Chip size="sm" variant="tertiary">
+                    <Chip.Label>+{genresList.length - 3}</Chip.Label>
+                  </Chip>
+                )}
+              </View>
+            </>
+          )}
         </View>
       </Card.Body>
+
+      <View className="flex-row items-center justify-end px-3 pb-2 gap-2">
+        <Button
+          accessibilityLabel="Decrease chapter"
+          variant="danger-soft"
+          size="sm"
+          isIconOnly
+          onPress={onCapMinus}
+          isDisabled={nrocapvisto <= 0}
+        >
+          <Ionicons name="remove" size={18} />
+        </Button>
+        <AppText className="text-foreground font-semibold text-sm min-w-[28px] text-center">
+          {nrocapvisto}
+        </AppText>
+        <Button
+          accessibilityLabel="Increase chapter"
+          variant="secondary"
+          size="sm"
+          isIconOnly
+          onPress={onCapPlus}
+          isDisabled={totalcap != null && nrocapvisto >= totalcap}
+          className="bg-success/20"
+        >
+          <Ionicons name="add" size={18} />
+        </Button>
+      </View>
     </Card>
   );
 }
-
-const styles = StyleSheet.create({
-  cover: {
-    width: 80,
-    height: 120,
-    backgroundColor: '#e1e4e8',
-  },
-});
