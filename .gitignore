@@ -42,3 +42,4 @@ yarn-error.*
 
 app-example-src
 resources/autoreas-data/*.dat
+deprecated/
