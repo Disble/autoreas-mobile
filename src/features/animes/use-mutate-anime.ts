@@ -9,9 +9,12 @@ import {
 } from "../../infrastructure/db/native-runtime";
 import { animes, operationLog } from "../../infrastructure/db/schema";
 import {
-  AnimePatchSchema,
-} from "../../infrastructure/validation/anime-schema";
-import { fetchParsedAnime } from "./anime-mutation.helpers";
+  buildCapMinusPatch,
+  buildCapPlusPatch,
+  fetchParsedAnime,
+  serializeMutationOperation,
+  toLocalAnimeUpdate,
+} from "./anime-mutation.helpers";
 import { syncPendingOperations } from "../sync/use-reconcile";
 
 export function useMutateAnime() {
@@ -23,53 +26,33 @@ export function useMutateAnime() {
         throw getExpoSQLiteUnavailableError();
       }
 
-      const anime = await fetchParsedAnime(rawDb, animeId);
-      if (!anime) return;
-
       const now = Date.now();
-      const newCap = anime.nrocapvisto + 1;
+      let didMutate = false;
 
-      const isFirstTime = anime.primeravez === 1;
-      const isFinished =
-        anime.totalcap != null &&
-        anime.totalcap > 0 &&
-        newCap === anime.totalcap;
+      await withExclusiveWrite(rawDb, async (txDb, tx) => {
+        const anime = await fetchParsedAnime(tx, animeId);
+        if (!anime) return;
 
-      const patch = {
-        nrocapvisto: newCap,
-        ...(isFinished ? { estado: 1 } : {}),
-      };
-      const bridgePatch = AnimePatchSchema.parse(patch);
+        const bridgePatch = buildCapPlusPatch(anime, now);
+        const operation = serializeMutationOperation(bridgePatch);
 
-      await withExclusiveWrite(rawDb, async (txDb) => {
         await txDb
           .update(animes)
-          .set({
-            nrocapvisto: bridgePatch.nrocapvisto,
-            fechaUltCapVisto: now,
-            ...(isFirstTime ? { fechaEstreno: now, primeravez: 0 } : {}),
-            ...(isFinished ? { estado: 1 } : {}),
-          })
+          .set(toLocalAnimeUpdate(bridgePatch))
           .where(eq(animes._id, anime._id));
 
         await txDb.insert(operationLog).values({
           animeId: anime._id,
-          operation: "cap_plus",
-          payload: JSON.stringify({ nrocapvisto: bridgePatch.nrocapvisto }),
+          operation: operation.operation,
+          payload: operation.payload,
           status: "pending",
           createdAt: now,
         });
 
-        if (isFinished) {
-          await txDb.insert(operationLog).values({
-            animeId: anime._id,
-            operation: "estado_change",
-            payload: JSON.stringify({ estado: 1 }),
-            status: "pending",
-            createdAt: now,
-          });
-        }
+        didMutate = true;
       });
+
+      if (!didMutate) return;
 
       // Sincroniza en background — no bloquea la UI
       void syncPendingOperations(rawDb).catch((err) => {
@@ -85,31 +68,33 @@ export function useMutateAnime() {
         throw getExpoSQLiteUnavailableError();
       }
 
-      const anime = await fetchParsedAnime(rawDb, animeId);
-      if (!anime) return;
-
       const now = Date.now();
-      const patch = AnimePatchSchema.parse({
-        nrocapvisto: Math.max(0, anime.nrocapvisto - 1),
-      });
+      let didMutate = false;
 
-      await withExclusiveWrite(rawDb, async (txDb) => {
+      await withExclusiveWrite(rawDb, async (txDb, tx) => {
+        const anime = await fetchParsedAnime(tx, animeId);
+        if (!anime) return;
+
+        const bridgePatch = buildCapMinusPatch(anime, now);
+        const operation = serializeMutationOperation(bridgePatch);
+
         await txDb
           .update(animes)
-          .set({
-            nrocapvisto: patch.nrocapvisto,
-            fechaUltCapVisto: now,
-          })
+          .set(toLocalAnimeUpdate(bridgePatch))
           .where(eq(animes._id, anime._id));
 
         await txDb.insert(operationLog).values({
           animeId: anime._id,
-          operation: "cap_minus",
-          payload: JSON.stringify(patch),
+          operation: operation.operation,
+          payload: operation.payload,
           status: "pending",
           createdAt: now,
         });
+
+        didMutate = true;
       });
+
+      if (!didMutate) return;
 
       // Sincroniza en background — no bloquea la UI
       void syncPendingOperations(rawDb).catch((err) => {

@@ -47,4 +47,51 @@ describe("db client tracer helpers", () => {
     expect(result).toBe("ok");
     expect(rawDb.withExclusiveTransactionAsync).toHaveBeenCalledTimes(1);
   });
+
+  it("serializa writes concurrentes sobre la misma db", async () => {
+    const executionOrder: string[] = [];
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const rawDb = {
+      withExclusiveTransactionAsync: jest.fn(
+        async (task: (tx: unknown) => Promise<void>) => {
+          executionOrder.push("start");
+          await task(rawDb);
+          executionOrder.push("end");
+        },
+      ),
+    };
+
+    const firstWrite = withExclusiveWrite(rawDb as never, async () => {
+      executionOrder.push("task-1");
+      await firstDone;
+      executionOrder.push("task-1-done");
+      return "first";
+    });
+
+    const secondWrite = withExclusiveWrite(rawDb as never, async () => {
+      executionOrder.push("task-2");
+      return "second";
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(executionOrder).toEqual(["start", "task-1"]);
+
+    releaseFirst();
+
+    await expect(firstWrite).resolves.toBe("first");
+    await expect(secondWrite).resolves.toBe("second");
+    expect(executionOrder).toEqual([
+      "start",
+      "task-1",
+      "task-1-done",
+      "end",
+      "start",
+      "task-2",
+      "end",
+    ]);
+  });
 });

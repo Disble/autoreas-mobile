@@ -9,6 +9,7 @@ import {
 import * as schema from "./schema";
 
 export const DATABASE_NAME = "autoreas.db";
+const writeQueueByDatabase = new WeakMap<object, Promise<unknown>>();
 
 export type AppDatabase = ReturnType<typeof createDrizzleDb>;
 
@@ -51,14 +52,23 @@ export async function withExclusiveWrite<T>(
   rawDb: SQLiteDatabase,
   task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
 ) {
-  let result!: T;
+  const queueKey = rawDb as object;
+  const previousWrite = writeQueueByDatabase.get(queueKey) ?? Promise.resolve();
 
-  await rawDb.withExclusiveTransactionAsync(async (tx) => {
-    result = await task(
-      createDrizzleDb(tx as SQLiteDatabase),
-      tx as SQLiteDatabase,
-    );
+  const nextWrite = previousWrite.catch(() => undefined).then(async () => {
+    let result!: T;
+
+    await rawDb.withExclusiveTransactionAsync(async (tx) => {
+      result = await task(
+        createDrizzleDb(tx as SQLiteDatabase),
+        tx as SQLiteDatabase,
+      );
+    });
+
+    return result;
   });
 
-  return result;
+  writeQueueByDatabase.set(queueKey, nextWrite.catch(() => undefined));
+
+  return nextWrite;
 }

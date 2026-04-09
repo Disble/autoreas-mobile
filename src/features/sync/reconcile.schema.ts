@@ -14,3 +14,6 @@ export const ReconcileResponseSchema = z.object({
   bridge_changes: z.array(ReconcileAnimeChangeSchema),
   conflicts: z.array(z.unknown()),
 });
+
+export type ReconcileAnimeChange = z.infer<typeof ReconcileAnimeChangeSchema>;
+export type ReconcileResponse = z.infer<typeof ReconcileResponseSchema>;

@@ -116,8 +116,8 @@ describe('useMutateAnime', () => {
       await result.current.capPlus('anime-1');
     });
 
-    // Must SELECT current state before writing
-    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
+    // Must SELECT current state using the transactional db acquired by withExclusiveWrite
+    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(undefined);
     expect(selectMock.select).toHaveBeenCalled();
 
     expect(mockWithExclusiveWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
@@ -131,11 +131,14 @@ describe('useMutateAnime', () => {
     const insertPayload = txMocks.values.mock.calls[0][0];
     expect(insertPayload).toMatchObject({
       animeId: 'anime-1',
-      operation: 'cap_plus',
+      operation: 'update',
       status: 'pending',
       createdAt: now,
     });
-    expect(JSON.parse(insertPayload.payload)).toEqual({ nrocapvisto: 4 });
+    expect(JSON.parse(insertPayload.payload)).toEqual({
+      nrocapvisto: 4,
+      fechaUltCapVisto: now,
+    });
   });
 
   it('capPlus dispara syncPendingOperations en background después de mutar', async () => {
@@ -197,7 +200,7 @@ describe('useMutateAnime', () => {
     });
   });
 
-  it('capPlus autofinaliza y registra estado_change cuando nrocapvisto + 1 == totalcap', async () => {
+  it('capPlus autofinaliza en un solo patch absoluto cuando nrocapvisto + 1 == totalcap', async () => {
     const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 11, totalcap: 12 });
     const txMocks = createTxDbMocks();
 
@@ -216,18 +219,15 @@ describe('useMutateAnime', () => {
       estado: 1,
     });
 
-    expect(txMocks.values).toHaveBeenCalledTimes(2);
+    expect(txMocks.values).toHaveBeenCalledTimes(1);
     expect(txMocks.values).toHaveBeenNthCalledWith(1, {
       animeId: 'anime-1',
-      operation: 'cap_plus',
-      payload: JSON.stringify({ nrocapvisto: 12 }),
-      status: 'pending',
-      createdAt: now,
-    });
-    expect(txMocks.values).toHaveBeenNthCalledWith(2, {
-      animeId: 'anime-1',
-      operation: 'estado_change',
-      payload: JSON.stringify({ estado: 1 }),
+      operation: 'update',
+      payload: JSON.stringify({
+        nrocapvisto: 12,
+        fechaUltCapVisto: now,
+        estado: 1,
+      }),
       status: 'pending',
       createdAt: now,
     });
@@ -271,9 +271,12 @@ describe('useMutateAnime', () => {
     });
 
     const insertPayload = txMocks.values.mock.calls[0][0];
-    expect(insertPayload.operation).toBe('cap_minus');
+    expect(insertPayload.operation).toBe('update');
     expect(insertPayload.status).toBe('pending');
-    expect(JSON.parse(insertPayload.payload)).toEqual({ nrocapvisto: 2 });
+    expect(JSON.parse(insertPayload.payload)).toEqual({
+      nrocapvisto: 2,
+      fechaUltCapVisto: now,
+    });
   });
 
   it('capMinus dispara syncPendingOperations en background después de mutar', async () => {
