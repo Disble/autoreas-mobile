@@ -41,9 +41,10 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
 }
 
 export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
-  await withExclusiveWrite(rawDb, async (db) => {
-    await db.delete(schema.bridgeConfig);
-  });
+  // Usa runAsync directo en lugar de withExclusiveTransactionAsync para evitar
+  // "database is locked" cuando hay un live query reactivo activo sobre el mismo rawDb.
+  // Un DELETE sobre una tabla pequeña es atómico en SQLite sin necesitar lock exclusivo.
+  await rawDb.runAsync('DELETE FROM bridge_config');
 }
 
 export async function withExclusiveWrite<T>(
