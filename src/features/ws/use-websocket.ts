@@ -1,27 +1,38 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { type SQLiteDatabase } from 'expo-sqlite';
-import { and, eq, sql } from 'drizzle-orm';
-import { getBridgeConfigSnapshot, withExclusiveWrite } from '../../infrastructure/db/client';
-import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
-import { animes, operationLog } from '../../infrastructure/db/schema';
 import { z } from 'zod';
+import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
+import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import {
+  upsertAnimeFromBridge,
+  deleteAnimeLocally,
+} from '../sync/use-initial-sync';
 
 const AnimeChangedEventSchema = z.object({
   type: z.literal('anime_changed'),
   anime_id: z.string(),
-  payload: z.object({
-    estado: z.number().optional(),
-    nrocapvisto: z.number().optional(),
-    dias: z.string().optional(),
-  }),
+});
+
+const AnimeCreatedEventSchema = z.object({
+  type: z.literal('anime_created'),
+  anime_id: z.string(),
+});
+
+const AnimeDeletedEventSchema = z.object({
+  type: z.literal('anime_deleted'),
+  anime_id: z.string(),
 });
 
 const SyncRequiredEventSchema = z.object({
   type: z.literal('sync_required'),
 });
 
-const WsMessageSchema = z.union([AnimeChangedEventSchema, SyncRequiredEventSchema]);
+const WsMessageSchema = z.union([
+  AnimeChangedEventSchema,
+  AnimeCreatedEventSchema,
+  AnimeDeletedEventSchema,
+  SyncRequiredEventSchema,
+]);
 
 interface UseWebSocketProps {
   onSyncRequired?: () => void;
@@ -50,7 +61,7 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
         if (!config?.ip || !config?.port || !config?.token || !isMounted) return;
 
         const url = `ws://${config.ip}:${config.port}/ws`;
-        
+
         // Native React Native WebSocket supports passing headers as third param options
         const ws = new (WebSocket as any)(url, null, {
           headers: {
@@ -71,32 +82,17 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
 
             if (parsed.type === 'sync_required') {
               onSyncRequired?.();
-            } else if (parsed.type === 'anime_changed') {
-              const { anime_id, payload } = parsed;
-
-              if (Object.keys(payload).length === 0) return;
-
-              await withExclusiveWrite(rawDb, async (db) => {
-                const result = await db
-                  .select({ count: sql<number>`cast(count(*) as integer)` })
-                  .from(operationLog)
-                  .where(
-                    and(
-                      eq(operationLog.animeId, anime_id),
-                      eq(operationLog.status, 'pending')
-                    )
-                  );
-
-                const count = result[0]?.count ?? 0;
-
-                if (count === 0) {
-                  await db
-                    .update(animes)
-                    .set(payload)
-                    .where(eq(animes._id, anime_id));
-                }
-              });
+              return;
             }
+
+            if (parsed.type === 'anime_deleted') {
+              await deleteAnimeLocally(rawDb, parsed.anime_id);
+              return;
+            }
+
+            // anime_changed y anime_created: fetch snapshot completo desde el bridge
+            // Evita aplicar payloads parciales que pueden dejar el registro en estado inconsistente
+            await upsertAnimeFromBridge(rawDb, parsed.anime_id);
           } catch (err) {
             console.error('Error processing WS message', err);
           }
@@ -124,10 +120,10 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      
+
       const backoffSecs = Math.min(Math.pow(2, reconnectAttemptRef.current), 30);
       reconnectAttemptRef.current += 1;
-      
+
       reconnectTimeoutRef.current = setTimeout(() => {
         if (isMounted && appStateRef.current === 'active') {
           connect();

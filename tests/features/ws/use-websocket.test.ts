@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 import * as dbClient from '../../../src/infrastructure/db/client';
+import * as initialSync from '../../../src/features/sync/use-initial-sync';
 import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
 // AppState listeners registry — shared between mock and tests
@@ -14,6 +15,11 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn(),
   createDrizzleDb: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/use-initial-sync', () => ({
+  upsertAnimeFromBridge: jest.fn(),
+  deleteAnimeLocally: jest.fn(),
 }));
 
 jest.mock('react-native', () => ({
@@ -112,20 +118,8 @@ describe('useWebSocket', () => {
     expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
 
-  it('Optimistic Ignorance: drops anime_changed if pending operation exists for that anime', async () => {
-    const mockUpdateWhere = jest.fn();
-    const mockUpdateSet = jest.fn().mockReturnValue({ where: mockUpdateWhere });
-    const mockDbForWs = {
-      select: jest.fn().mockReturnThis(),
-      from: jest.fn().mockReturnThis(),
-      // count returns 1 → pending exists
-      where: jest.fn().mockResolvedValue([{ count: 1 }]),
-      update: jest.fn().mockReturnValue({ set: mockUpdateSet }),
-    };
-
-    (dbClient.withExclusiveWrite as jest.Mock).mockImplementation(async (_rawDb: unknown, task: (db: typeof mockDbForWs, raw: unknown) => Promise<unknown>) =>
-      task(mockDbForWs, _rawDb)
-    );
+  it('calls upsertAnimeFromBridge when anime_changed arrives', async () => {
+    (initialSync.upsertAnimeFromBridge as jest.Mock).mockResolvedValue(undefined);
 
     renderHook(() => useWebSocket());
     await act(async () => { await Promise.resolve(); });
@@ -133,35 +127,16 @@ describe('useWebSocket', () => {
 
     await act(async () => {
       mockWs.onmessage?.({
-        data: JSON.stringify({
-          type: 'anime_changed',
-          anime_id: 'anime-1',
-          payload: { nrocapvisto: 4 },
-        }),
+        data: JSON.stringify({ type: 'anime_changed', anime_id: 'anime-1' }),
       } as MessageEvent);
       await Promise.resolve();
     });
 
-    // select was called to check count
-    expect(mockDbForWs.select).toHaveBeenCalled();
-    // update NOT called — event dropped
-    expect(mockDbForWs.update).not.toHaveBeenCalled();
+    expect(initialSync.upsertAnimeFromBridge).toHaveBeenCalledWith(rawDb, 'anime-1');
   });
 
-  it('updates anime when anime_changed arrives and NO pending operation exists', async () => {
-    const mockUpdateWhere = jest.fn().mockResolvedValue(undefined);
-    const mockUpdateSet = jest.fn().mockReturnValue({ where: mockUpdateWhere });
-    const mockDbForWs = {
-      select: jest.fn().mockReturnThis(),
-      from: jest.fn().mockReturnThis(),
-      // count returns 0 → no pending
-      where: jest.fn().mockResolvedValue([{ count: 0 }]),
-      update: jest.fn().mockReturnValue({ set: mockUpdateSet }),
-    };
-
-    (dbClient.withExclusiveWrite as jest.Mock).mockImplementation(async (_rawDb: unknown, task: (db: typeof mockDbForWs, raw: unknown) => Promise<unknown>) =>
-      task(mockDbForWs, _rawDb)
-    );
+  it('calls upsertAnimeFromBridge when anime_created arrives', async () => {
+    (initialSync.upsertAnimeFromBridge as jest.Mock).mockResolvedValue(undefined);
 
     renderHook(() => useWebSocket());
     await act(async () => { await Promise.resolve(); });
@@ -169,19 +144,28 @@ describe('useWebSocket', () => {
 
     await act(async () => {
       mockWs.onmessage?.({
-        data: JSON.stringify({
-          type: 'anime_changed',
-          anime_id: 'anime-1',
-          payload: { nrocapvisto: 4 },
-        }),
+        data: JSON.stringify({ type: 'anime_created', anime_id: 'anime-2' }),
       } as MessageEvent);
       await Promise.resolve();
     });
 
-    // select was called to check count
-    expect(mockDbForWs.select).toHaveBeenCalled();
-    // update WAS called — anime patched
-    expect(mockDbForWs.update).toHaveBeenCalled();
-    expect(mockUpdateSet).toHaveBeenCalledWith({ nrocapvisto: 4 });
+    expect(initialSync.upsertAnimeFromBridge).toHaveBeenCalledWith(rawDb, 'anime-2');
+  });
+
+  it('calls deleteAnimeLocally when anime_deleted arrives', async () => {
+    (initialSync.deleteAnimeLocally as jest.Mock).mockResolvedValue(undefined);
+
+    renderHook(() => useWebSocket());
+    await act(async () => { await Promise.resolve(); });
+    act(() => { mockWs.onopen?.({} as Event); });
+
+    await act(async () => {
+      mockWs.onmessage?.({
+        data: JSON.stringify({ type: 'anime_deleted', anime_id: 'anime-3' }),
+      } as MessageEvent);
+      await Promise.resolve();
+    });
+
+    expect(initialSync.deleteAnimeLocally).toHaveBeenCalledWith(rawDb, 'anime-3');
   });
 });

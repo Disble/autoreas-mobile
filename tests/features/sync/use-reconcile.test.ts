@@ -53,68 +53,93 @@ describe('syncPendingOperations', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('No hace requests si no hay pending operations', async () => {
+  it('Siempre hace POST a /api/sync/reconcile aunque no haya pending operations', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
-      token: 'token123'
+      token: 'token123',
+      deviceId: 'device-abc',
     });
     mockDb.where.mockResolvedValue([]); // pendingOps = []
 
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
+    });
+
     const result = await syncPendingOperations(rawDb);
     expect(result).toBe(0);
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://192.168.1.10:8080/api/sync/reconcile',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer token123' }),
+      })
+    );
   });
 
-  it('Si hay error de red o fetch falla, mantiene logs en pending y no llama a withExclusiveWrite', async () => {
+  it('Si hay error de red, lanza error y no llama a withExclusiveWrite', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
-      token: 'token123'
+      token: 'token123',
     });
-    
+
     mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending' },
-      { id: 2, animeId: 'anime2', payload: JSON.stringify({ estado: 1 }), status: 'pending' },
+      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
     ]);
 
-    // First fetch fails, second fetch returns 500
-    (global.fetch as jest.Mock)
-      .mockRejectedValueOnce(new TypeError('Network Error'))
-      .mockResolvedValueOnce({ ok: false, status: 500 });
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Network Error'));
 
-    const syncedCount = await syncPendingOperations(rawDb);
-
-    expect(syncedCount).toBe(0);
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Network Error');
     expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
   });
 
-  it('Conexion exitosa -> marca los logs como synced', async () => {
+  it('Si el bridge responde con error HTTP, lanza error y no llama a withExclusiveWrite', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
-      token: 'token123'
+      token: 'token123',
     });
-    
+
     mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending' }
+      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
     ]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({ ok: true });
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Reconcile failed: 500');
+    expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
+  });
+
+  it('Conexion exitosa -> aplica bridge_changes y marca los logs como synced', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+    });
+
+    mockDb.where.mockResolvedValue([
+      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
+    ]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
+    });
 
     const syncedCount = await syncPendingOperations(rawDb);
 
     expect(syncedCount).toBe(1);
     expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/animes/anime1',
+      'http://192.168.1.10:8080/api/sync/reconcile',
       expect.objectContaining({
-        method: 'PATCH',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer token123',
+          Authorization: 'Bearer token123',
         },
-        body: JSON.stringify({ nrocapvisto: 5 })
       })
     );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalled();

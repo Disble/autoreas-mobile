@@ -1,13 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { Tabs } from 'heroui-native';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { AnimeCard } from '../../components/anime/AnimeCard';
 import { AppText } from '../../components/app-text';
 import { useAppTheme } from '../../contexts/app-theme-context';
 import { useAnimeList, type AnimeTab } from '../../features/animes/use-anime-list';
 import { useMutateAnime } from '../../features/animes/use-mutate-anime';
+import { incrementalSync } from '../../features/sync/use-initial-sync';
+import { useWebSocket } from '../../features/ws/use-websocket';
+import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import type { Anime } from '../../infrastructure/validation/anime-schema';
 
 const TAB_OPTIONS: { value: AnimeTab; label: string }[] = [
@@ -36,6 +39,15 @@ export default function AnimeListScreen() {
   const { data: animes } = useAnimeList(tab);
   const { capPlus, capMinus } = useMutateAnime();
   const { isDark } = useAppTheme();
+  const rawDb = useOptionalSQLiteContext();
+
+  const handleSyncRequired = useCallback(() => {
+    if (!rawDb) return;
+    // Sync incremental desde 0 — en el futuro se puede persistir el last_changelog_id
+    void incrementalSync(rawDb, 0);
+  }, [rawDb]);
+
+  useWebSocket({ onSyncRequired: handleSyncRequired });
 
   const handleCapPlus = (anime: Anime) => {
     void capPlus(anime);

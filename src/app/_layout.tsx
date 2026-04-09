@@ -34,6 +34,7 @@ import {
 } from '../infrastructure/db/client';
 import { getSQLiteProvider } from '../infrastructure/db/native-runtime';
 import { AppThemeProvider } from '../contexts/app-theme-context';
+import { initialSync } from '../features/sync/use-initial-sync';
 
 type BootTarget = Href;
 
@@ -145,6 +146,15 @@ export default function Layout() {
     await runMigrations(rawDb);
 
     const bridgeConfig = await getBridgeConfigSnapshot(rawDb);
+
+    if (bridgeConfig?.deviceId) {
+      try {
+        await initialSync(rawDb);
+      } catch (err) {
+        // No bloquea el boot — si el bridge no está disponible, la app arranca con lo que tiene en SQLite
+        console.warn('[Boot] Initial sync failed:', err);
+      }
+    }
 
     setBootState({
       initialized: true,
