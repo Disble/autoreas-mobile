@@ -2,6 +2,7 @@ import {
   buildReconcileRequestBody,
   getConfirmedOperationIds,
 } from '../../../src/features/sync/reconcile.helpers';
+import { ReconcileResponseSchema } from '../../../src/features/sync/reconcile.schema';
 
 describe('reconcile helpers', () => {
   const baseOperation = {
@@ -98,5 +99,67 @@ describe('reconcile helpers', () => {
         },
       ]),
     ).toEqual([]);
+  });
+
+  it('ReconcileResponseSchema acepta changed_fields null y lo normaliza a array vacío', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [],
+      bridge_changes: [
+        {
+          record_id: 'anime-1',
+          change_type: 'update',
+          changed_fields: null,
+          timestamp: 1710000001000,
+        },
+      ],
+      conflicts: [],
+      last_changelog_id: 10,
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.bridge_changes[0]?.changed_fields).toEqual([]);
+  });
+
+  it('ReconcileResponseSchema normaliza colecciones top-level null a arrays vacíos', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: null,
+      bridge_changes: null,
+      conflicts: null,
+      last_changelog_id: 10,
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations).toEqual([]);
+    expect(parsed.data.bridge_changes).toEqual([]);
+    expect(parsed.data.conflicts).toEqual([]);
+  });
+
+  it('ReconcileResponseSchema normaliza colecciones top-level ausentes a arrays vacíos', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      last_changelog_id: 10,
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations).toEqual([]);
+    expect(parsed.data.bridge_changes).toEqual([]);
+    expect(parsed.data.conflicts).toEqual([]);
   });
 });

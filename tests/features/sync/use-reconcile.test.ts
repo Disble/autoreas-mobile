@@ -128,6 +128,95 @@ describe('syncPendingOperations', () => {
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
+  it('Si el bridge responde con 400, mueve processing a dead_letter y loguea el payload rechazado', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+    });
+
+    mockDb.where.mockResolvedValue([
+      {
+        id: 1,
+        animeId: 'anime1',
+        operation: 'update',
+        payload: JSON.stringify({ nrocapvisto: -1 }),
+        status: 'pending',
+        createdAt: 1710000000000,
+      },
+    ]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
+    });
+
+    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Reconcile failed: 400');
+    expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
+    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter' });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[syncPendingOperations] Reconcile request failed',
+      expect.objectContaining({
+        url: 'http://192.168.1.10:8080/api/sync/reconcile',
+        status: 400,
+        responseBody: JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
+      })
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it('sanea lastChangelogId inválido antes de serializar el request body', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      id: 1,
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+      lastChangelogId: 'last_changelog_id',
+    });
+
+    mockDb.where.mockResolvedValue([
+      {
+        id: 1,
+        animeId: 'anime1',
+        operation: 'update',
+        payload: JSON.stringify({ nrocapvisto: 5 }),
+        status: 'pending',
+        createdAt: 1710000000000,
+      },
+    ]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
+    });
+
+    await syncPendingOperations(rawDb);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://192.168.1.10:8080/api/sync/reconcile',
+      expect.objectContaining({
+        body: JSON.stringify({
+          device_id: 'device-abc',
+          last_changelog_id: 0,
+          pending_operations: [
+            {
+              anime_id: 'anime1',
+              operation: 'update',
+              payload: { nrocapvisto: 5 },
+              created_at: 1710000000000,
+            },
+          ],
+        }),
+      })
+    );
+  });
+
   it('Conexion exitosa -> prioriza applied_operations para marcar synced', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',

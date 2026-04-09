@@ -1,4 +1,5 @@
-import { withExclusiveWrite } from "../../src/infrastructure/db/client";
+import { migrate } from "drizzle-orm/expo-sqlite/migrator";
+import { runMigrations, withExclusiveWrite } from "../../src/infrastructure/db/client";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -26,12 +27,92 @@ jest.mock("drizzle-orm/expo-sqlite/migrator", () => ({
 jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
   __esModule: true,
   default: {
-    journal: { entries: [] },
-    migrations: {},
+    journal: {
+      entries: [
+        { idx: 0, tag: "0000_moaning_maximus" },
+        { idx: 1, tag: "0001_add_bridge_config_last_changelog_id" },
+      ],
+    },
+    migrations: {
+      m0000: "CREATE TABLE `bridge_config` (`id` integer PRIMARY KEY DEFAULT 1 NOT NULL);",
+      m0001: "ALTER TABLE `bridge_config` ADD COLUMN `last_changelog_id` integer DEFAULT 0;",
+    },
   },
 }));
 
 describe("db client tracer helpers", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("runMigrations ejecuta el journal completo incluyendo la migración formal nueva", async () => {
+    const rawDb = {
+      getAllAsync: jest.fn().mockResolvedValue([{ name: "id" }, { name: "last_changelog_id" }]),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(migrate).toHaveBeenCalledTimes(1);
+    expect(migrate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        journal: expect.objectContaining({
+          entries: expect.arrayContaining([
+            expect.objectContaining({ tag: "0001_add_bridge_config_last_changelog_id" }),
+          ]),
+        }),
+        migrations: expect.objectContaining({
+          m0001: expect.stringContaining('ALTER TABLE `bridge_config` ADD COLUMN `last_changelog_id` integer DEFAULT 0;'),
+        }),
+      })
+    );
+  });
+
+  it("repara bridge_config legacy agregando last_changelog_id y sanea valores inválidos", async () => {
+    const rawDb = {
+      getAllAsync: jest.fn().mockResolvedValue([
+        { name: "id" },
+        { name: "ip" },
+        { name: "port" },
+        { name: "token" },
+        { name: "device_id" },
+        { name: "device_name" },
+      ]),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(migrate).toHaveBeenCalledTimes(1);
+    expect(rawDb.getAllAsync).toHaveBeenCalledWith("PRAGMA table_info(bridge_config)");
+    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
+      1,
+      "ALTER TABLE bridge_config ADD COLUMN last_changelog_id INTEGER DEFAULT 0"
+    );
+    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
+      2,
+      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+    );
+  });
+
+  it("no altera bridge_config cuando last_changelog_id ya existe", async () => {
+    const rawDb = {
+      getAllAsync: jest.fn().mockResolvedValue([
+        { name: "id" },
+        { name: "last_changelog_id" },
+      ]),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+    );
+  });
+
   it("devuelve el resultado del callback exclusivo", async () => {
     const rawDb = {
       __state: { animes: [] as Record<string, unknown>[] },

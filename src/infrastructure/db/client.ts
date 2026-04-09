@@ -23,10 +23,26 @@ export function createDrizzleDb(rawDb: SQLiteDatabase) {
   return drizzle(rawDb, { schema });
 }
 
+async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(bridge_config)');
+  const hasLastChangelogId = columns.some((column) => column.name === 'last_changelog_id');
+
+  if (!hasLastChangelogId) {
+    await rawDb.runAsync(
+      'ALTER TABLE bridge_config ADD COLUMN last_changelog_id INTEGER DEFAULT 0'
+    );
+  }
+
+  await rawDb.runAsync(
+    "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+  );
+}
+
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
+  await ensureBridgeConfigLastChangelogId(rawDb);
   return db;
 }
 

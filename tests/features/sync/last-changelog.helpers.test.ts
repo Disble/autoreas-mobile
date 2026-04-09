@@ -14,6 +14,12 @@ describe('last changelog helpers', () => {
     expect(getLastChangelogId({ lastChangelogId: 42 })).toBe(42);
   });
 
+  it('getLastChangelogId sanea valores inválidos y cae a 0', () => {
+    expect(getLastChangelogId({ lastChangelogId: Number.NaN })).toBe(0);
+    expect(getLastChangelogId({ lastChangelogId: Number.POSITIVE_INFINITY })).toBe(0);
+    expect(getLastChangelogId({ lastChangelogId: 'last_changelog_id' as never })).toBe(0);
+  });
+
   it('shouldPersistLastChangelogId solo persiste avances reales', () => {
     expect(shouldPersistLastChangelogId(0, 0)).toBe(false);
     expect(shouldPersistLastChangelogId(5, 4)).toBe(false);

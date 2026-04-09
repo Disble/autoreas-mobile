@@ -3,9 +3,11 @@
  * This keeps reconcile and incremental sync aligned on the same resume point.
  */
 export function getLastChangelogId(
-  config: { lastChangelogId?: number | null } | null,
+  config: { lastChangelogId?: number | null | unknown } | null,
 ): number {
-  return config?.lastChangelogId ?? 0;
+  const value = config?.lastChangelogId;
+
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 /**

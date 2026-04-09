@@ -22,6 +22,18 @@ import {
   type ReconcileAnimeChange,
 } from './reconcile.schema';
 
+class ReconcileHttpError extends Error {
+  readonly status: number;
+  readonly responseBody: string | null;
+
+  constructor(status: number, responseBody: string | null) {
+    super(`Reconcile failed: ${status}`);
+    this.name = 'ReconcileHttpError';
+    this.status = status;
+    this.responseBody = responseBody;
+  }
+}
+
 /**
  * Builds the reconcile request body from persisted operation-log rows.
  * Keeping this serialization pure makes the network workflow easier to test and evolve.
@@ -108,6 +120,33 @@ function parseOperationPayload(payload: string): Record<string, unknown> {
   return {};
 }
 
+function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {
+  return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
+}
+
+async function readResponseBody(response: Response): Promise<string | null> {
+  if (typeof response.text !== 'function') {
+    return null;
+  }
+
+  const body = await response.text();
+
+  return body.length > 0 ? body : null;
+}
+
+function logReconcileHttpError(
+  url: string,
+  requestBody: ReturnType<typeof buildReconcileRequestBody>,
+  error: ReconcileHttpError,
+) {
+  console.warn('[syncPendingOperations] Reconcile request failed', {
+    url,
+    requestBody,
+    status: error.status,
+    responseBody: error.responseBody,
+  });
+}
+
 /**
  * Orchestrates the mobile reconcile cycle against the bridge using a per-database in-flight guard.
  * It moves pending rows to processing, confirms only evidenced operations, reapplies bridge changes, and advances the changelog cursor without regressing it.
@@ -170,6 +209,7 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
   });
 
   const baseUrl = `http://${config.ip}:${config.port}`;
+  const reconcileUrl = `${baseUrl}/api/sync/reconcile`;
   const lastChangelogId = getLastChangelogId(config);
   const requestBody = buildReconcileRequestBody(
     config.deviceId ?? undefined,
@@ -178,7 +218,7 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
   );
 
   try {
-    const response = await fetch(`${baseUrl}/api/sync/reconcile`, {
+    const response = await fetch(reconcileUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -188,7 +228,11 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
     });
 
     if (!response.ok) {
-      throw new Error(`Reconcile failed: ${response.status}`);
+      const responseBody = await readResponseBody(response);
+      const error = new ReconcileHttpError(response.status, responseBody);
+
+      logReconcileHttpError(reconcileUrl, requestBody, error);
+      throw error;
     }
 
     const raw = await response.json();
@@ -252,7 +296,7 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
       await withExclusiveWrite(rawDb, async (writeDb) => {
         await writeDb
           .update(operationLog)
-          .set({ status: 'pending' })
+          .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })
           .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
       });
     }
