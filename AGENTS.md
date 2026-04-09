@@ -1,3 +1,18 @@
+## CRITICAL ARCHITECTURE CONSTRAINTS (DO NOT IGNORE)
+
+1. **Dumb UI Rule**: Files with `.tsx` extensions MUST only return JSX and use HeroUI Native primitives + Tailwind classes (`cn()`). ZERO business logic, no `useEffect`, and no database calls are allowed in `.tsx` files.
+2. **Hook Anatomy Rule (10 Steps)**: Custom hooks (`use-*.ts`) MUST follow this strict top-to-bottom order: Imports -> Signature -> 1. Refs -> 2. State -> 3. Context/3rd Party Hooks -> 4. Queries/Mutations -> 5. Derived State (`useMemo`) -> 6. Callbacks (`useCallback` calling pure helpers) -> 7. Effects -> Return.
+3. **Strict Colocation**: Each complex feature UI must be an independent folder with an `index.ts` (public contract), `.tsx` (UI), `use-*.ts` (Logic), `*.helpers.ts` (Pure functions), `*.schema.ts` when Zod is needed, and an isolated `__tests__/` folder.
+   - *ESLint Enforcement*: You are FORBIDDEN from putting `interface`, `type`, root-level `const`, root-level helper functions, or inline Zod schemas in `use-*.ts` or `.tsx` files. Move them to `.types.ts`, `.constants.ts`, `.helpers.ts`, and `.schema.ts` respectively. The linter will fail if you ignore this.
+   - *Function Export Rule*: Feature `.tsx` and `use-*.ts` files MUST export the main symbol as a named `function`, never as a root-level `const` arrow function.
+4. **Delivery Layer Rule**: Files under `src/app/**` are routing/composition only. They MUST NOT import custom hooks, MUST NOT use React state/effect hooks, and MUST NOT contain business logic. Move screen behavior into a feature entrypoint.
+5. **Readonly Props Rule**: Every property in any `*Props` interface inside `*.types.ts` MUST be declared as `readonly`.
+6. **Mandatory JSDoc on Helpers**: All exported functions in `*.helpers.ts` MUST have a JSDoc block explaining what the function does and why. ESLint (`jsdoc/require-jsdoc`) will fail your build if you omit this.
+7. **TDD Mandate**: You are PROHIBITED from modifying or creating a helper or hook without first creating or updating its corresponding test file in the `__tests__/` directory.
+8. **The 500-Line Rule**: If any file exceeds 500 lines, it must be refactored immediately (extract into sub-components or use Facade Hooks).
+9. **Reference Feature**: If in doubt about how to structure code, look at the `src/features/animes` directory as your ABSOLUTE SOURCE OF TRUTH.
+10. **Scaffolding Generators**: NEVER create feature folders manually. You MUST use `npm run generate:feature <name>` to scaffold new components.
+
 ## Spec-Driven Development (SDD) & Delegation Guardrails
 
 - **Autonomous SDD Workflow (Mandatory Override)**:
