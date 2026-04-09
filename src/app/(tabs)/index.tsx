@@ -49,13 +49,13 @@ export default function AnimeListScreen() {
 
   useWebSocket({ onSyncRequired: handleSyncRequired });
 
-  const handleCapPlus = (anime: Anime) => {
-    void capPlus(anime);
-  };
+  const handleCapPlus = useCallback((animeId: string) => {
+    void capPlus(animeId);
+  }, [capPlus]);
 
-  const handleCapMinus = (anime: Anime) => {
-    void capMinus(anime);
-  };
+  const handleCapMinus = useCallback((animeId: string) => {
+    void capMinus(animeId);
+  }, [capMinus]);
 
   return (
     <View className="flex-1 bg-background" style={styles.container}>
@@ -81,17 +81,12 @@ export default function AnimeListScreen() {
           renderItem={({ item }) => {
             const diasArray = item.dias ? JSON.parse(item.dias) : [];
             const generosArray = item.generos ? JSON.parse(item.generos) : [];
-            const anime: Anime = {
-              ...item,
-              dias: diasArray,
-              generos: generosArray,
-            } as Anime;
 
             return (
               <AnimeCard
-                anime={anime}
-                onCapPlus={handleCapPlus}
-                onCapMinus={handleCapMinus}
+                anime={{ ...item, dias: diasArray, generos: generosArray } as Anime}
+                onCapPlus={() => handleCapPlus(item._id)}
+                onCapMinus={() => handleCapMinus(item._id)}
               />
             );
           }}

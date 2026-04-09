@@ -56,9 +56,9 @@ describe('AnimeCard', () => {
     const minusBtn = getByLabelText('Decrease chapter');
 
     fireEvent.press(plusBtn);
-    expect(onPlus).toHaveBeenCalledWith(mockAnime);
+    expect(onPlus).toHaveBeenCalledTimes(1);
 
     fireEvent.press(minusBtn);
-    expect(onMinus).toHaveBeenCalledWith(mockAnime);
+    expect(onMinus).toHaveBeenCalledTimes(1);
   });
 });

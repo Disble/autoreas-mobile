@@ -2,34 +2,78 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, renderHook } from '@testing-library/react-native';
 import { animes, operationLog } from '../../../src/infrastructure/db/schema';
-import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
+import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
 
 jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),
 }));
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
+  createDrizzleDb: jest.fn(),
   withExclusiveWrite: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/use-reconcile', () => ({
+  syncPendingOperations: jest.fn().mockResolvedValue(0),
+  useReconcile: jest.fn(),
 }));
 
 const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite') as {
   useSQLiteContext: jest.Mock;
 };
 
-const { withExclusiveWrite: mockWithExclusiveWrite } = jest.requireMock(
-  '../../../src/infrastructure/db/client'
-) as {
-  withExclusiveWrite: jest.Mock;
-};
+const { createDrizzleDb: mockCreateDrizzleDb, withExclusiveWrite: mockWithExclusiveWrite } =
+  jest.requireMock('../../../src/infrastructure/db/client') as {
+    createDrizzleDb: jest.Mock;
+    withExclusiveWrite: jest.Mock;
+  };
 
-import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
-
-type MockDb = {
+type MockTxDb = {
   update: jest.Mock;
   insert: jest.Mock;
 };
 
-function createDbMocks(options?: { insertError?: Error }) {
+const now = 1710000000000;
+const rawDb = { name: 'raw-db' };
+
+// Base anime as it comes from SQLite (dias/generos as strings, activo/primeravez as integers)
+// Typed as Record to allow overrides like { totalcap: 12 } without TS narrowing null literals
+const baseAnimeRow: Record<string, unknown> = {
+  _id: 'anime-1',
+  nombre: 'One Piece',
+  estado: 0,
+  nrocapvisto: 3,
+  activo: 1,
+  primeravez: 0,
+  generos: '[]',
+  dias: '[]',
+  totalcap: null,
+  fechaUltCapVisto: null,
+  fechaEstreno: null,
+  fechaCreacion: null,
+  fechaEliminacion: null,
+  portada: null,
+  pagina: null,
+  carpeta: null,
+  estudios: null,
+  origen: null,
+  duracion: null,
+  tipo: null,
+};
+
+/**
+ * Builds the Drizzle query-builder mock that returns a single row on `.limit(1)`.
+ * Used to simulate the SELECT before mutating.
+ */
+function buildSelectMock(row: Record<string, unknown> | null) {
+  const limit = jest.fn().mockResolvedValue(row ? [row] : []);
+  const where = jest.fn(() => ({ limit }));
+  const from = jest.fn(() => ({ where }));
+  const select = jest.fn(() => ({ from }));
+  return { select, from, where, limit };
+}
+
+function createTxDbMocks(options?: { insertError?: Error }) {
   const where = jest.fn().mockResolvedValue(undefined);
   const set = jest.fn(() => ({ where }));
   const update = jest.fn(() => ({ set }));
@@ -39,7 +83,7 @@ function createDbMocks(options?: { insertError?: Error }) {
   const insert = jest.fn(() => ({ values }));
 
   return {
-    db: { update, insert } satisfies MockDb,
+    txDb: { update, insert } satisfies MockTxDb,
     where,
     set,
     update,
@@ -47,19 +91,6 @@ function createDbMocks(options?: { insertError?: Error }) {
     insert,
   };
 }
-
-const now = 1710000000000;
-const rawDb = { name: 'raw-db' };
-const baseAnime: Anime = {
-  _id: 'anime-1',
-  nombre: 'One Piece',
-  estado: 0,
-  nrocapvisto: 3,
-  activo: 1,
-  primeravez: 0,
-  generos: [],
-  dias: [],
-};
 
 describe('useMutateAnime', () => {
   beforeEach(() => {
@@ -72,25 +103,32 @@ describe('useMutateAnime', () => {
     jest.restoreAllMocks();
   });
 
-  it('capPlus actualiza el anime y crea operation_log pendiente', async () => {
-    const dbMocks = createDbMocks();
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+  it('capPlus lee el estado actual de SQLite, actualiza el anime y crea operation_log pendiente', async () => {
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capPlus(baseAnime);
+      await result.current.capPlus('anime-1');
     });
 
+    // Must SELECT current state before writing
+    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
+    expect(selectMock.select).toHaveBeenCalled();
+
     expect(mockWithExclusiveWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(dbMocks.update).toHaveBeenCalledWith(animes);
-    expect(dbMocks.set).toHaveBeenCalledWith({
+    expect(txMocks.update).toHaveBeenCalledWith(animes);
+    expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 4,
       fechaUltCapVisto: now,
     });
-    expect(dbMocks.insert).toHaveBeenCalledWith(operationLog);
+    expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
 
-    const insertPayload = dbMocks.values.mock.calls[0][0];
+    const insertPayload = txMocks.values.mock.calls[0][0];
     expect(insertPayload).toMatchObject({
       animeId: 'anime-1',
       operation: 'cap_plus',
@@ -100,29 +138,58 @@ describe('useMutateAnime', () => {
     expect(JSON.parse(insertPayload.payload)).toEqual({ nrocapvisto: 4 });
   });
 
-  it('propaga el error si falla el insert del operation_log', async () => {
-    const insertError = new Error('operation log insert failed');
-    const dbMocks = createDbMocks({ insertError });
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+  it('capPlus dispara syncPendingOperations en background después de mutar', async () => {
+    const { syncPendingOperations: mockSync } = jest.requireMock(
+      '../../../src/features/sync/use-reconcile'
+    ) as { syncPendingOperations: jest.Mock };
+    mockSync.mockResolvedValue(1);
 
-    const { result } = renderHook(() => useMutateAnime());
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
 
-    await expect(result.current.capPlus(baseAnime)).rejects.toThrow(insertError);
-    expect(dbMocks.update).toHaveBeenCalledWith(animes);
-    expect(dbMocks.insert).toHaveBeenCalledWith(operationLog);
-  });
-
-  it('capPlus agrega fechaEstreno cuando primeravez es 1', async () => {
-    const dbMocks = createDbMocks();
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capPlus({ ...baseAnime, primeravez: 1 });
+      await result.current.capPlus('anime-1');
+      // flush microtasks so the fire-and-forget promise settles
+      await Promise.resolve();
     });
 
-    expect(dbMocks.set).toHaveBeenCalledWith({
+    expect(mockSync).toHaveBeenCalledWith(rawDb);
+  });
+
+  it('propaga el error si falla el insert del operation_log', async () => {
+    const insertError = new Error('operation log insert failed');
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks({ insertError });
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
+    expect(txMocks.update).toHaveBeenCalledWith(animes);
+    expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
+  });
+
+  it('capPlus agrega fechaEstreno cuando primeravez es 1', async () => {
+    const selectMock = buildSelectMock({ ...baseAnimeRow, primeravez: 1 });
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlus('anime-1');
+    });
+
+    expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 4,
       fechaUltCapVisto: now,
       fechaEstreno: now,
@@ -131,30 +198,33 @@ describe('useMutateAnime', () => {
   });
 
   it('capPlus autofinaliza y registra estado_change cuando nrocapvisto + 1 == totalcap', async () => {
-    const dbMocks = createDbMocks();
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 11, totalcap: 12 });
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capPlus({ ...baseAnime, nrocapvisto: 11, totalcap: 12 });
+      await result.current.capPlus('anime-1');
     });
 
-    expect(dbMocks.set).toHaveBeenCalledWith({
+    expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 12,
       fechaUltCapVisto: now,
       estado: 1,
     });
 
-    expect(dbMocks.values).toHaveBeenCalledTimes(2);
-    expect(dbMocks.values).toHaveBeenNthCalledWith(1, {
+    expect(txMocks.values).toHaveBeenCalledTimes(2);
+    expect(txMocks.values).toHaveBeenNthCalledWith(1, {
       animeId: 'anime-1',
       operation: 'cap_plus',
       payload: JSON.stringify({ nrocapvisto: 12 }),
       status: 'pending',
       createdAt: now,
     });
-    expect(dbMocks.values).toHaveBeenNthCalledWith(2, {
+    expect(txMocks.values).toHaveBeenNthCalledWith(2, {
       animeId: 'anime-1',
       operation: 'estado_change',
       payload: JSON.stringify({ estado: 1 }),
@@ -164,40 +234,68 @@ describe('useMutateAnime', () => {
   });
 
   it('capMinus nunca baja nrocapvisto de cero', async () => {
-    const dbMocks = createDbMocks();
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 0 });
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capMinus({ ...baseAnime, nrocapvisto: 0 });
+      await result.current.capMinus('anime-1');
     });
 
-    expect(dbMocks.set).toHaveBeenCalledWith({
+    expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 0,
       fechaUltCapVisto: now,
     });
   });
 
   it('capMinus actualiza fechaUltCapVisto y registra cap_minus', async () => {
-    const dbMocks = createDbMocks();
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(dbMocks.db));
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capMinus(baseAnime);
+      await result.current.capMinus('anime-1');
     });
 
-    expect(dbMocks.set).toHaveBeenCalledWith({
+    expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 2,
       fechaUltCapVisto: now,
     });
 
-    const insertPayload = dbMocks.values.mock.calls[0][0];
+    const insertPayload = txMocks.values.mock.calls[0][0];
     expect(insertPayload.operation).toBe('cap_minus');
     expect(insertPayload.status).toBe('pending');
     expect(JSON.parse(insertPayload.payload)).toEqual({ nrocapvisto: 2 });
+  });
+
+  it('capMinus dispara syncPendingOperations en background después de mutar', async () => {
+    const { syncPendingOperations: mockSync } = jest.requireMock(
+      '../../../src/features/sync/use-reconcile'
+    ) as { syncPendingOperations: jest.Mock };
+    mockSync.mockResolvedValue(1);
+
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capMinus('anime-1');
+      await Promise.resolve();
+    });
+
+    expect(mockSync).toHaveBeenCalledWith(rawDb);
   });
 
   it('reusa client y schema sin imports incorrectos ni migraciones en el hook', () => {
@@ -207,9 +305,10 @@ describe('useMutateAnime', () => {
     );
     const source = readFileSync(sourcePath, 'utf8');
 
-    expect(source).toContain("from '../../infrastructure/db/client'");
-    expect(source).toContain("from '../../infrastructure/db/schema'");
-    expect(source).not.toContain("from '../../db/schema'");
+    // Path checks are quote-style agnostic (lefthook may reformat to double quotes)
+    expect(source).toMatch(/from ['"]\.\.\/\.\.\/infrastructure\/db\/client['"]/);
+    expect(source).toMatch(/from ['"]\.\.\/\.\.\/infrastructure\/db\/schema['"]/);
+    expect(source).not.toMatch(/from ['"]\.\.\/\.\.\/db\/schema['"]/);
     expect(source).not.toContain('runMigrations');
     expect(source).not.toContain('.transaction(');
   });

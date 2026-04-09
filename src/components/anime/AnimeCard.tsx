@@ -6,8 +6,8 @@ import { AppText } from '../app-text';
 
 interface AnimeCardProps {
   anime: Anime;
-  onCapPlus: (anime: Anime) => void;
-  onCapMinus: (anime: Anime) => void;
+  onCapPlus: () => void;
+  onCapMinus: () => void;
 }
 
 export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
@@ -66,7 +66,7 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
               variant="danger-soft"
               size="sm"
               isIconOnly
-              onPress={() => onCapMinus(anime)}
+              onPress={() => onCapMinus()}
               isDisabled={nrocapvisto <= 0}
             >
               <AppText className="text-danger font-bold text-lg">-</AppText>
@@ -76,7 +76,7 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
               variant="secondary"
               size="sm"
               isIconOnly
-              onPress={() => onCapPlus(anime)}
+              onPress={() => onCapPlus()}
               isDisabled={totalcap != null && nrocapvisto >= totalcap}
               className="bg-success/20"
             >
