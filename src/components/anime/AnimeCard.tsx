@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { Button, Card, Chip, Separator } from 'heroui-native';
-import { View } from 'react-native';
-import { type Anime } from '../../infrastructure/validation/anime-schema';
-import { AppText } from '../app-text';
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { Button, Card, Chip, Separator } from "heroui-native";
+import { View } from "react-native";
+import { type Anime } from "../../infrastructure/validation/anime-schema";
+import { AppText } from "../app-text";
 
 interface AnimeCardProps {
   anime: Anime;
@@ -26,20 +26,24 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
     <Card className="mb-3 overflow-hidden">
       <Card.Body className="flex-row p-0">
         <Image
-          source={{ uri: portada || 'https://via.placeholder.com/100x150' }}
+          source={{ uri: portada || "https://via.placeholder.com/100x150" }}
           className="w-[90px] h-[130px]"
           contentFit="cover"
         />
 
         <View className="flex-1 p-3 justify-between">
           <View>
-            <AppText className="text-foreground text-base font-bold leading-tight" numberOfLines={2}>
+            <AppText
+              className="text-foreground text-base font-bold leading-tight"
+              numberOfLines={2}
+            >
               {nombre}
             </AppText>
 
             <View className="flex-row items-center mt-1.5 gap-2">
               <AppText className="text-muted text-sm">
-                Cap. {nrocapvisto}{totalcap ? ` / ${totalcap}` : ''}
+                Cap. {nrocapvisto}
+                {totalcap ? ` / ${totalcap}` : ""}
               </AppText>
               {isCompleted && (
                 <Chip size="sm" variant="secondary" color="success">
@@ -64,9 +68,14 @@ export function AnimeCard({ anime, onCapPlus, onCapMinus }: AnimeCardProps) {
             <>
               <Separator className="my-2" />
               <View className="flex-row flex-wrap gap-1">
-                {daysList.map((d: any) => (
-                  <Chip key={d.dia || String(d)} size="sm" variant="secondary" color="accent">
-                    <Chip.Label>{d.dia || d}</Chip.Label>
+                {daysList.map((d) => (
+                  <Chip
+                    key={d.dia}
+                    size="sm"
+                    variant="secondary"
+                    color="accent"
+                  >
+                    <Chip.Label>{d.dia}</Chip.Label>
                   </Chip>
                 ))}
                 {genresList.slice(0, 3).map((g: string) => (

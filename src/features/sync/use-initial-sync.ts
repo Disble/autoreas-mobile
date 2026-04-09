@@ -1,24 +1,25 @@
-import { eq } from 'drizzle-orm';
-import type { SQLiteDatabase } from 'expo-sqlite';
+import { eq } from "drizzle-orm";
+import type { SQLiteDatabase } from "expo-sqlite";
+import { z } from "zod";
+import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   getBridgeConfigSnapshot,
   withExclusiveWrite,
-} from '../../infrastructure/db/client';
-import { animes } from '../../infrastructure/db/schema';
-import { AnimeSchema } from '../../infrastructure/validation/anime-schema';
-import { z } from 'zod';
+} from "../../infrastructure/db/client";
+import { animes } from "../../infrastructure/db/schema";
+import { AnimeSchema } from "../../infrastructure/validation/anime-schema";
 
 const AnimeListSchema = z.array(AnimeSchema);
 
 export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
-    throw new Error('Bridge config is missing or incomplete');
+    throw new Error("Bridge config is missing or incomplete");
   }
 
   const url = `http://${config.ip}:${config.port}/api/animes`;
   const response = await fetch(url, {
-    method: 'GET',
+    method: "GET",
     headers: {
       Authorization: `Bearer ${config.token}`,
     },
@@ -40,54 +41,7 @@ export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
 
   await withExclusiveWrite(rawDb, async (db) => {
     for (const anime of remoteAnimes) {
-      await db
-        .insert(animes)
-        .values({
-          _id: anime._id,
-          nombre: anime.nombre,
-          estado: anime.estado,
-          nrocapvisto: anime.nrocapvisto,
-          totalcap: anime.totalcap ?? null,
-          activo: anime.activo,
-          primeravez: anime.primeravez,
-          dias: anime.dias ? JSON.stringify(anime.dias) : null,
-          generos: anime.generos ? JSON.stringify(anime.generos) : null,
-          tipo: anime.tipo ?? null,
-          fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-          fechaEstreno: anime.fechaEstreno ?? null,
-          fechaCreacion: anime.fechaCreacion ?? null,
-          fechaEliminacion: anime.fechaEliminacion ?? null,
-          portada: anime.portada ?? null,
-          pagina: anime.pagina ?? null,
-          carpeta: anime.carpeta ?? null,
-          estudios: anime.estudios ?? null,
-          origen: anime.origen ?? null,
-          duracion: anime.duracion ?? null,
-        })
-        .onConflictDoUpdate({
-          target: animes._id,
-          set: {
-            nombre: anime.nombre,
-            estado: anime.estado,
-            nrocapvisto: anime.nrocapvisto,
-            totalcap: anime.totalcap ?? null,
-            activo: anime.activo,
-            primeravez: anime.primeravez,
-            dias: anime.dias ? JSON.stringify(anime.dias) : null,
-            generos: anime.generos ? JSON.stringify(anime.generos) : null,
-            tipo: anime.tipo ?? null,
-            fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-            fechaEstreno: anime.fechaEstreno ?? null,
-            fechaCreacion: anime.fechaCreacion ?? null,
-            fechaEliminacion: anime.fechaEliminacion ?? null,
-            portada: anime.portada ?? null,
-            pagina: anime.pagina ?? null,
-            carpeta: anime.carpeta ?? null,
-            estudios: anime.estudios ?? null,
-            origen: anime.origen ?? null,
-            duracion: anime.duracion ?? null,
-          },
-        });
+      await upsertAnime(db, anime);
     }
   });
 
@@ -96,14 +50,14 @@ export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
 
 export async function fetchAnimeById(
   rawDb: SQLiteDatabase,
-  animeId: string
+  animeId: string,
 ): Promise<z.infer<typeof AnimeSchema> | null> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) return null;
 
   const url = `http://${config.ip}:${config.port}/api/animes/${animeId}`;
   const response = await fetch(url, {
-    method: 'GET',
+    method: "GET",
     headers: {
       Authorization: `Bearer ${config.token}`,
     },
@@ -118,66 +72,19 @@ export async function fetchAnimeById(
 
 export async function upsertAnimeFromBridge(
   rawDb: SQLiteDatabase,
-  animeId: string
+  animeId: string,
 ): Promise<void> {
   const anime = await fetchAnimeById(rawDb, animeId);
   if (!anime) return;
 
   await withExclusiveWrite(rawDb, async (txDb) => {
-    await txDb
-      .insert(animes)
-      .values({
-        _id: anime._id,
-        nombre: anime.nombre,
-        estado: anime.estado,
-        nrocapvisto: anime.nrocapvisto,
-        totalcap: anime.totalcap ?? null,
-        activo: anime.activo,
-        primeravez: anime.primeravez,
-        dias: anime.dias ? JSON.stringify(anime.dias) : null,
-        generos: anime.generos ? JSON.stringify(anime.generos) : null,
-        tipo: anime.tipo ?? null,
-        fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-        fechaEstreno: anime.fechaEstreno ?? null,
-        fechaCreacion: anime.fechaCreacion ?? null,
-        fechaEliminacion: anime.fechaEliminacion ?? null,
-        portada: anime.portada ?? null,
-        pagina: anime.pagina ?? null,
-        carpeta: anime.carpeta ?? null,
-        estudios: anime.estudios ?? null,
-        origen: anime.origen ?? null,
-        duracion: anime.duracion ?? null,
-      })
-      .onConflictDoUpdate({
-        target: animes._id,
-        set: {
-          nombre: anime.nombre,
-          estado: anime.estado,
-          nrocapvisto: anime.nrocapvisto,
-          totalcap: anime.totalcap ?? null,
-          activo: anime.activo,
-          primeravez: anime.primeravez,
-          dias: anime.dias ? JSON.stringify(anime.dias) : null,
-          generos: anime.generos ? JSON.stringify(anime.generos) : null,
-          tipo: anime.tipo ?? null,
-          fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-          fechaEstreno: anime.fechaEstreno ?? null,
-          fechaCreacion: anime.fechaCreacion ?? null,
-          fechaEliminacion: anime.fechaEliminacion ?? null,
-          portada: anime.portada ?? null,
-          pagina: anime.pagina ?? null,
-          carpeta: anime.carpeta ?? null,
-          estudios: anime.estudios ?? null,
-          origen: anime.origen ?? null,
-          duracion: anime.duracion ?? null,
-        },
-      });
+    await upsertAnime(txDb, anime);
   });
 }
 
 export async function deleteAnimeLocally(
   rawDb: SQLiteDatabase,
-  animeId: string
+  animeId: string,
 ): Promise<void> {
   await withExclusiveWrite(rawDb, async (db) => {
     await db.delete(animes).where(eq(animes._id, animeId));
@@ -191,94 +98,53 @@ export async function deleteAnimeLocally(
  */
 export async function incrementalSync(
   rawDb: SQLiteDatabase,
-  sinceMs: number = 0
+  sinceMs: number = 0,
 ): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) return 0;
 
-  const url = `http://${config.ip}:${config.port}/api/animes/changes?since=${sinceMs}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-    },
-  });
+  try {
+    const url = `http://${config.ip}:${config.port}/api/animes/changes?since=${sinceMs}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+      },
+    });
 
-  if (!response.ok) {
-    console.warn(`[IncrementalSync] GET /api/animes/changes failed: ${response.status}`);
+    if (!response.ok) {
+      console.warn(
+        `[IncrementalSync] GET /api/animes/changes failed: ${response.status}`,
+      );
+      return 0;
+    }
+
+    const raw = await response.json();
+
+    // Shape: { changes: AnimeChange[], last_changelog_id: number }
+    const changes: {
+      record_id: string;
+      change_type: "create" | "update" | "delete";
+      snapshot?: z.infer<typeof AnimeSchema>;
+    }[] = raw?.changes ?? [];
+
+    const lastChangelogId: number = raw?.last_changelog_id ?? 0;
+
+    if (changes.length === 0) return lastChangelogId;
+
+    await withExclusiveWrite(rawDb, async (db) => {
+      for (const change of changes) {
+        if (change.change_type === "delete") {
+          await db.delete(animes).where(eq(animes._id, change.record_id));
+        } else if (change.snapshot) {
+          await upsertAnime(db, change.snapshot);
+        }
+      }
+    });
+
+    return lastChangelogId;
+  } catch (err) {
+    console.warn("[IncrementalSync] Network error:", err);
     return 0;
   }
-
-  const raw = await response.json();
-
-  // Shape: { changes: AnimeChange[], last_changelog_id: number }
-  const changes: Array<{
-    record_id: string;
-    change_type: 'create' | 'update' | 'delete';
-    snapshot?: z.infer<typeof AnimeSchema>;
-  }> = raw?.changes ?? [];
-
-  const lastChangelogId: number = raw?.last_changelog_id ?? 0;
-
-  if (changes.length === 0) return lastChangelogId;
-
-  await withExclusiveWrite(rawDb, async (db) => {
-    for (const change of changes) {
-      if (change.change_type === 'delete') {
-        await db.delete(animes).where(eq(animes._id, change.record_id));
-      } else if (change.snapshot) {
-        const anime = change.snapshot;
-        await db
-          .insert(animes)
-          .values({
-            _id: anime._id,
-            nombre: anime.nombre,
-            estado: anime.estado,
-            nrocapvisto: anime.nrocapvisto,
-            totalcap: anime.totalcap ?? null,
-            activo: anime.activo,
-            primeravez: anime.primeravez,
-            dias: anime.dias ? JSON.stringify(anime.dias) : null,
-            generos: anime.generos ? JSON.stringify(anime.generos) : null,
-            tipo: anime.tipo ?? null,
-            fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-            fechaEstreno: anime.fechaEstreno ?? null,
-            fechaCreacion: anime.fechaCreacion ?? null,
-            fechaEliminacion: anime.fechaEliminacion ?? null,
-            portada: anime.portada ?? null,
-            pagina: anime.pagina ?? null,
-            carpeta: anime.carpeta ?? null,
-            estudios: anime.estudios ?? null,
-            origen: anime.origen ?? null,
-            duracion: anime.duracion ?? null,
-          })
-          .onConflictDoUpdate({
-            target: animes._id,
-            set: {
-              nombre: anime.nombre,
-              estado: anime.estado,
-              nrocapvisto: anime.nrocapvisto,
-              totalcap: anime.totalcap ?? null,
-              activo: anime.activo,
-              primeravez: anime.primeravez,
-              dias: anime.dias ? JSON.stringify(anime.dias) : null,
-              generos: anime.generos ? JSON.stringify(anime.generos) : null,
-              tipo: anime.tipo ?? null,
-              fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-              fechaEstreno: anime.fechaEstreno ?? null,
-              fechaCreacion: anime.fechaCreacion ?? null,
-              fechaEliminacion: anime.fechaEliminacion ?? null,
-              portada: anime.portada ?? null,
-              pagina: anime.pagina ?? null,
-              carpeta: anime.carpeta ?? null,
-              estudios: anime.estudios ?? null,
-              origen: anime.origen ?? null,
-              duracion: anime.duracion ?? null,
-            },
-          });
-      }
-    }
-  });
-
-  return lastChangelogId;
 }

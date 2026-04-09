@@ -1,23 +1,23 @@
-import { Stack } from 'expo-router';
-import { useThemeColor } from 'heroui-native';
-import { useCallback } from 'react';
-import { Platform, View } from 'react-native';
-import { AppText } from '../../components/app-text';
-import { ThemeToggle } from '../../components/theme-toggle';
-import { useAppTheme } from '../../contexts/app-theme-context';
+import { Stack } from "expo-router";
+import { useThemeColor } from "heroui-native";
+import { useCallback } from "react";
+import { Platform, View } from "react-native";
+import { AppText } from "../../components/app-text";
+import { ThemeToggle } from "../../components/theme-toggle";
+import { useAppTheme } from "../../contexts/app-theme-context";
+
+const renderTitle = () => (
+  <AppText className="text-foreground font-semibold text-lg">
+    Mis Animes
+  </AppText>
+);
 
 export default function TabsLayout() {
   const { isDark } = useAppTheme();
   const [themeColorForeground, themeColorBackground] = useThemeColor([
-    'foreground',
-    'background',
+    "foreground",
+    "background",
   ]);
-
-  const renderTitle = () => (
-    <AppText className="text-foreground font-semibold text-lg">
-      Mis Animes
-    </AppText>
-  );
 
   const renderThemeToggle = useCallback(() => <ThemeToggle />, []);
 
@@ -25,9 +25,9 @@ export default function TabsLayout() {
     <View className="flex-1 bg-background">
       <Stack
         screenOptions={{
-          headerTitleAlign: 'center',
+          headerTitleAlign: "center",
           headerTransparent: true,
-          headerBlurEffect: isDark ? 'dark' : 'light',
+          headerBlurEffect: isDark ? "dark" : "light",
           headerTintColor: themeColorForeground,
           headerStyle: {
             backgroundColor: Platform.select({
@@ -36,12 +36,12 @@ export default function TabsLayout() {
             }),
           },
           headerTitleStyle: {
-            fontFamily: 'Inter_600SemiBold',
+            fontFamily: "Inter_600SemiBold",
           },
           headerRight: renderThemeToggle,
-          headerBackButtonDisplayMode: 'generic',
+          headerBackButtonDisplayMode: "generic",
           gestureEnabled: true,
-          gestureDirection: 'horizontal',
+          gestureDirection: "horizontal",
           contentStyle: {
             backgroundColor: themeColorBackground,
           },
@@ -56,7 +56,7 @@ export default function TabsLayout() {
         <Stack.Screen
           name="settings"
           options={{
-            headerTitle: 'Configuración',
+            headerTitle: "Configuración",
           }}
         />
       </Stack>

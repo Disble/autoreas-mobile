@@ -1,18 +1,19 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { type SQLiteDatabase } from 'expo-sqlite';
-import { eq } from 'drizzle-orm';
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { eq, inArray } from "drizzle-orm";
+import { type SQLiteDatabase } from "expo-sqlite";
+import { z } from "zod";
+import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   createDrizzleDb,
   getBridgeConfigSnapshot,
   withExclusiveWrite,
-} from '../../infrastructure/db/client';
-import { operationLog, animes } from '../../infrastructure/db/schema';
-import { AnimeSchema } from '../../infrastructure/validation/anime-schema';
-import { z } from 'zod';
+} from "../../infrastructure/db/client";
+import { animes, operationLog } from "../../infrastructure/db/schema";
+import { AnimeSchema } from "../../infrastructure/validation/anime-schema";
 
 const AnimeChangeSchema = z.object({
   record_id: z.string(),
-  change_type: z.enum(['create', 'update', 'delete']),
+  change_type: z.enum(["create", "update", "delete"]),
   changed_fields: z.array(z.string()),
   snapshot: AnimeSchema.optional(),
   timestamp: z.number(),
@@ -29,13 +30,13 @@ export async function syncPendingOperations(rawDb: SQLiteDatabase) {
 
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
-    throw new Error('Bridge config is missing or incomplete');
+    throw new Error("Bridge config is missing or incomplete");
   }
 
   const pendingOps = await db
     .select()
     .from(operationLog)
-    .where(eq(operationLog.status, 'pending'));
+    .where(eq(operationLog.status, "pending"));
 
   const baseUrl = `http://${config.ip}:${config.port}`;
 
@@ -62,9 +63,9 @@ export async function syncPendingOperations(rawDb: SQLiteDatabase) {
   };
 
   const response = await fetch(`${baseUrl}/api/sync/reconcile`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${config.token}`,
     },
     body: JSON.stringify(requestBody),
@@ -87,68 +88,21 @@ export async function syncPendingOperations(rawDb: SQLiteDatabase) {
   // Aplicar bridge_changes en la SQLite local
   await withExclusiveWrite(rawDb, async (writeDb) => {
     for (const change of bridge_changes) {
-      if (change.change_type === 'delete') {
+      if (change.change_type === "delete") {
         await writeDb.delete(animes).where(eq(animes._id, change.record_id));
       } else if (change.snapshot) {
-        const anime = change.snapshot;
-        await writeDb
-          .insert(animes)
-          .values({
-            _id: anime._id,
-            nombre: anime.nombre,
-            estado: anime.estado,
-            nrocapvisto: anime.nrocapvisto,
-            totalcap: anime.totalcap ?? null,
-            activo: anime.activo,
-            primeravez: anime.primeravez,
-            dias: anime.dias ? JSON.stringify(anime.dias) : null,
-            generos: anime.generos ? JSON.stringify(anime.generos) : null,
-            tipo: anime.tipo ?? null,
-            fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-            fechaEstreno: anime.fechaEstreno ?? null,
-            fechaCreacion: anime.fechaCreacion ?? null,
-            fechaEliminacion: anime.fechaEliminacion ?? null,
-            portada: anime.portada ?? null,
-            pagina: anime.pagina ?? null,
-            carpeta: anime.carpeta ?? null,
-            estudios: anime.estudios ?? null,
-            origen: anime.origen ?? null,
-            duracion: anime.duracion ?? null,
-          })
-          .onConflictDoUpdate({
-            target: animes._id,
-            set: {
-              nombre: anime.nombre,
-              estado: anime.estado,
-              nrocapvisto: anime.nrocapvisto,
-              totalcap: anime.totalcap ?? null,
-              activo: anime.activo,
-              primeravez: anime.primeravez,
-              dias: anime.dias ? JSON.stringify(anime.dias) : null,
-              generos: anime.generos ? JSON.stringify(anime.generos) : null,
-              tipo: anime.tipo ?? null,
-              fechaUltCapVisto: anime.fechaUltCapVisto ?? null,
-              fechaEstreno: anime.fechaEstreno ?? null,
-              fechaCreacion: anime.fechaCreacion ?? null,
-              fechaEliminacion: anime.fechaEliminacion ?? null,
-              portada: anime.portada ?? null,
-              pagina: anime.pagina ?? null,
-              carpeta: anime.carpeta ?? null,
-              estudios: anime.estudios ?? null,
-              origen: anime.origen ?? null,
-              duracion: anime.duracion ?? null,
-            },
-          });
+        await upsertAnime(writeDb, change.snapshot);
       }
     }
 
     // Marcar las operaciones pendientes enviadas como synced
-    for (const op of pendingOps) {
+    if (pendingOps.length > 0) {
+      const pendingIds = pendingOps.map((op) => op.id);
       await writeDb
         .update(operationLog)
-        .set({ status: 'synced' })
-        .where(eq(operationLog.id, op.id));
-      syncedCount++;
+        .set({ status: "synced" })
+        .where(inArray(operationLog.id, pendingIds));
+      syncedCount = pendingOps.length;
     }
   });
 
@@ -161,7 +115,7 @@ export function useReconcile() {
   return useMutation({
     mutationFn: (rawDb: SQLiteDatabase) => syncPendingOperations(rawDb),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operationLog'] });
+      queryClient.invalidateQueries({ queryKey: ["operationLog"] });
     },
   });
 }

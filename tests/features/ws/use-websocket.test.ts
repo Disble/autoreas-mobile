@@ -1,11 +1,10 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { AppState } from 'react-native';
 import * as dbClient from '../../../src/infrastructure/db/client';
 import * as initialSync from '../../../src/features/sync/use-initial-sync';
 import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
 // AppState listeners registry — shared between mock and tests
-const appStateListeners: Array<(state: string) => void> = [];
+const appStateListeners: ((state: string) => void)[] = [];
 
 jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),

@@ -1,30 +1,30 @@
-import { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
-import { z } from 'zod';
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
-import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { useEffect, useRef } from "react";
+import { AppState, AppStateStatus } from "react-native";
+import { z } from "zod";
+import { getBridgeConfigSnapshot } from "../../infrastructure/db/client";
+import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
 import {
-  upsertAnimeFromBridge,
   deleteAnimeLocally,
-} from '../sync/use-initial-sync';
+  upsertAnimeFromBridge,
+} from "../sync/use-initial-sync";
 
 const AnimeChangedEventSchema = z.object({
-  type: z.literal('anime_changed'),
+  type: z.literal("anime_changed"),
   anime_id: z.string(),
 });
 
 const AnimeCreatedEventSchema = z.object({
-  type: z.literal('anime_created'),
+  type: z.literal("anime_created"),
   anime_id: z.string(),
 });
 
 const AnimeDeletedEventSchema = z.object({
-  type: z.literal('anime_deleted'),
+  type: z.literal("anime_deleted"),
   anime_id: z.string(),
 });
 
 const SyncRequiredEventSchema = z.object({
-  type: z.literal('sync_required'),
+  type: z.literal("sync_required"),
 });
 
 const WsMessageSchema = z.union([
@@ -44,6 +44,11 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
   const appStateRef = useRef(AppState.currentState);
+  const onSyncRequiredRef = useRef(onSyncRequired);
+
+  useEffect(() => {
+    onSyncRequiredRef.current = onSyncRequired;
+  }, [onSyncRequired]);
 
   useEffect(() => {
     if (!rawDb) {
@@ -58,7 +63,8 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
 
       try {
         const config = await getBridgeConfigSnapshot(rawDb);
-        if (!config?.ip || !config?.port || !config?.token || !isMounted) return;
+        if (!config?.ip || !config?.port || !config?.token || !isMounted)
+          return;
 
         const url = `ws://${config.ip}:${config.port}/ws`;
 
@@ -80,12 +86,12 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
             const data = JSON.parse(e.data);
             const parsed = WsMessageSchema.parse(data);
 
-            if (parsed.type === 'sync_required') {
-              onSyncRequired?.();
+            if (parsed.type === "sync_required") {
+              onSyncRequiredRef.current?.();
               return;
             }
 
-            if (parsed.type === 'anime_deleted') {
+            if (parsed.type === "anime_deleted") {
               await deleteAnimeLocally(rawDb, parsed.anime_id);
               return;
             }
@@ -94,13 +100,13 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
             // Evita aplicar payloads parciales que pueden dejar el registro en estado inconsistente
             await upsertAnimeFromBridge(rawDb, parsed.anime_id);
           } catch (err) {
-            console.error('Error processing WS message', err);
+            console.error("Error processing WS message", err);
           }
         };
 
         ws.onclose = () => {
           wsRef.current = null;
-          if (isMounted && appStateRef.current === 'active') {
+          if (isMounted && appStateRef.current === "active") {
             scheduleReconnect();
           }
         };
@@ -109,8 +115,8 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
           // onerror generally followed by onclose
         };
       } catch (err) {
-        console.error('Error in connect WS:', err);
-        if (isMounted && appStateRef.current === 'active') {
+        console.error("Error in connect WS:", err);
+        if (isMounted && appStateRef.current === "active") {
           scheduleReconnect();
         }
       }
@@ -121,11 +127,14 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
         clearTimeout(reconnectTimeoutRef.current);
       }
 
-      const backoffSecs = Math.min(Math.pow(2, reconnectAttemptRef.current), 30);
+      const backoffSecs = Math.min(
+        Math.pow(2, reconnectAttemptRef.current),
+        30,
+      );
       reconnectAttemptRef.current += 1;
 
       reconnectTimeoutRef.current = setTimeout(() => {
-        if (isMounted && appStateRef.current === 'active') {
+        if (isMounted && appStateRef.current === "active") {
           connect();
         }
       }, backoffSecs * 1000);
@@ -144,18 +153,21 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
 
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       appStateRef.current = nextAppState;
-      if (nextAppState === 'active') {
+      if (nextAppState === "active") {
         reconnectAttemptRef.current = 0;
         connect();
-      } else if (nextAppState === 'background') {
+      } else if (nextAppState === "background") {
         disconnect();
       }
     };
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
 
     // Initial connection
-    if (appStateRef.current === 'active') {
+    if (appStateRef.current === "active") {
       connect();
     }
 
@@ -164,7 +176,7 @@ export function useWebSocket({ onSyncRequired }: UseWebSocketProps = {}) {
       subscription.remove();
       disconnect();
     };
-  }, [onSyncRequired, rawDb]);
+  }, [rawDb]);
 
   return {};
 }

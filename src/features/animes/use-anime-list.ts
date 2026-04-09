@@ -1,25 +1,34 @@
-import { eq, desc, and } from 'drizzle-orm';
-import { useMemo } from 'react';
-import { createDrizzleDb } from '../../infrastructure/db/client';
+import { and, desc, eq } from "drizzle-orm";
+import { useMemo } from "react";
+import { createDrizzleDb } from "../../infrastructure/db/client";
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../infrastructure/db/native-runtime';
-import { animes, type Anime as AnimeRow } from '../../infrastructure/db/schema';
+} from "../../infrastructure/db/native-runtime";
+import { animes, type AnimeRow } from "../../infrastructure/db/schema";
+import type { Anime } from "../../infrastructure/validation/anime-schema";
 
-export type AnimeTab = 'viendo' | 'estrenos' | 'todos';
+export type AnimeTab = "viendo" | "estrenos" | "todos";
 
-export function useAnimeList(tab: AnimeTab = 'viendo') {
+function parseAnimeRow(row: AnimeRow): Anime {
+  return {
+    ...row,
+    dias: row.dias ? JSON.parse(row.dias) : [],
+    generos: row.generos ? JSON.parse(row.generos) : [],
+  };
+}
+
+export function useAnimeList(tab: AnimeTab = "viendo") {
   const rawDb = useOptionalSQLiteContext();
   const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);
 
   const condition = useMemo(() => {
     switch (tab) {
-      case 'viendo':
+      case "viendo":
         return and(eq(animes.activo, 1), eq(animes.estado, 0));
-      case 'estrenos':
+      case "estrenos":
         return and(eq(animes.activo, 1), eq(animes.primeravez, 1));
-      case 'todos':
+      case "todos":
       default:
         return eq(animes.activo, 1);
     }
@@ -39,7 +48,12 @@ export function useAnimeList(tab: AnimeTab = 'viendo') {
 
   const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);
 
+  const parsedData = useMemo(() => {
+    if (!data) return [];
+    return data.map(parseAnimeRow);
+  }, [data]);
+
   return {
-    data: data ?? [],
+    data: parsedData,
   };
 }

@@ -1,15 +1,15 @@
-import React, { createContext, useCallback, useContext, useMemo } from 'react';
-import { Uniwind, useUniwind } from 'uniwind';
+import React, { createContext, useCallback, useContext, useMemo } from "react";
+import { Uniwind, useUniwind } from "uniwind";
 
 type ThemeName =
-  | 'light'
-  | 'dark'
-  | 'lavender-light'
-  | 'lavender-dark'
-  | 'mint-light'
-  | 'mint-dark'
-  | 'sky-light'
-  | 'sky-dark';
+  | "light"
+  | "dark"
+  | "lavender-light"
+  | "lavender-dark"
+  | "mint-light"
+  | "mint-dark"
+  | "sky-light"
+  | "sky-dark";
 
 interface AppThemeContextType {
   currentTheme: string;
@@ -20,8 +20,19 @@ interface AppThemeContextType {
 }
 
 const AppThemeContext = createContext<AppThemeContextType | undefined>(
-  undefined
+  undefined,
 );
+
+const THEME_TOGGLE_MAP: Record<ThemeName, ThemeName> = {
+  light: "dark",
+  dark: "light",
+  "lavender-light": "lavender-dark",
+  "lavender-dark": "lavender-light",
+  "mint-light": "mint-dark",
+  "mint-dark": "mint-light",
+  "sky-light": "sky-dark",
+  "sky-dark": "sky-light",
+};
 
 export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -29,11 +40,11 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   const { theme } = useUniwind();
 
   const isLight = useMemo(() => {
-    return theme === 'light' || theme.endsWith('-light');
+    return theme === "light" || theme.endsWith("-light");
   }, [theme]);
 
   const isDark = useMemo(() => {
-    return theme === 'dark' || theme.endsWith('-dark');
+    return theme === "dark" || theme.endsWith("-dark");
   }, [theme]);
 
   const setTheme = useCallback((newTheme: ThemeName) => {
@@ -41,31 +52,9 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const toggleTheme = useCallback(() => {
-    switch (theme) {
-      case 'light':
-        Uniwind.setTheme('dark');
-        break;
-      case 'dark':
-        Uniwind.setTheme('light');
-        break;
-      case 'lavender-light':
-        Uniwind.setTheme('lavender-dark');
-        break;
-      case 'lavender-dark':
-        Uniwind.setTheme('lavender-light');
-        break;
-      case 'mint-light':
-        Uniwind.setTheme('mint-dark');
-        break;
-      case 'mint-dark':
-        Uniwind.setTheme('mint-light');
-        break;
-      case 'sky-light':
-        Uniwind.setTheme('sky-dark');
-        break;
-      case 'sky-dark':
-        Uniwind.setTheme('sky-light');
-        break;
+    const next = THEME_TOGGLE_MAP[theme as ThemeName];
+    if (next) {
+      Uniwind.setTheme(next);
     }
   }, [theme]);
 
@@ -77,7 +66,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       setTheme,
       toggleTheme,
     }),
-    [theme, isLight, isDark, setTheme, toggleTheme]
+    [theme, isLight, isDark, setTheme, toggleTheme],
   );
 
   return (
@@ -90,7 +79,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 export const useAppTheme = () => {
   const context = useContext(AppThemeContext);
   if (!context) {
-    throw new Error('useAppTheme must be used within AppThemeProvider');
+    throw new Error("useAppTheme must be used within AppThemeProvider");
   }
   return context;
 };
