@@ -40,6 +40,12 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
   return config ?? null;
 }
 
+export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
+  await withExclusiveWrite(rawDb, async (db) => {
+    await db.delete(schema.bridgeConfig);
+  });
+}
+
 export async function withExclusiveWrite<T>(
   rawDb: SQLiteDatabase,
   task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>

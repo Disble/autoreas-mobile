@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { Href } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Surface, Tabs } from 'heroui-native';
+import { Surface, Tabs, useThemeColor } from 'heroui-native';
 import { useCallback, useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { FlatList, Pressable, View } from 'react-native';
 import { AnimeCard } from '../../components/anime/AnimeCard';
 import { AppText } from '../../components/app-text';
 import { useAppTheme } from '../../contexts/app-theme-context';
@@ -52,11 +54,13 @@ function EmptyState({ tab }: { tab: AnimeTab }) {
 }
 
 export default function AnimeListScreen() {
+  const router = useRouter();
   const [tab, setTab] = useState<AnimeTab>('viendo');
   const { data: animes } = useAnimeList(tab);
   const { capPlus, capMinus } = useMutateAnime();
   const { isDark } = useAppTheme();
   const rawDb = useOptionalSQLiteContext();
+  const [themeColorForeground] = useThemeColor(['foreground']);
 
   const handleSyncRequired = useCallback(() => {
     if (!rawDb) return;
@@ -75,6 +79,20 @@ export default function AnimeListScreen() {
 
   return (
     <View className="flex-1 bg-background min-w-[320px]">
+      <Stack.Screen
+        options={{
+          headerLeft: () => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Abrir configuración"
+              onPress={() => router.push('/(tabs)/settings' as Href)}
+              hitSlop={12}
+            >
+              <Ionicons name="settings-outline" size={22} color={themeColorForeground} />
+            </Pressable>
+          ),
+        }}
+      />
       <View className="px-4 pt-4 pb-2">
         <Tabs value={tab} onValueChange={(v) => setTab(v as AnimeTab)}>
           <Tabs.List className="w-full">

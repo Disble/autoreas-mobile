@@ -53,6 +53,12 @@ export default function TabsLayout() {
             headerTitle: renderTitle,
           }}
         />
+        <Stack.Screen
+          name="settings"
+          options={{
+            headerTitle: 'Configuración',
+          }}
+        />
       </Stack>
     </View>
   );
