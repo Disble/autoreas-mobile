@@ -1,7 +1,18 @@
 import { useURL } from 'expo-linking';
 import { Href, useRouter } from 'expo-router';
+import {
+  Alert as HeroAlert,
+  Button,
+  Card,
+  Input,
+  Label,
+  Spinner,
+  TextField,
+  cn,
+} from 'heroui-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, View } from 'react-native';
+import { AppText } from '../../components/app-text';
 import { usePairDevice } from '../../features/setup/use-pair-device';
 
 export default function SetupScreen() {
@@ -17,7 +28,6 @@ export default function SetupScreen() {
     if (url) {
       try {
         const parsedUrl = new URL(url);
-        // The URL from deep link could be something like autoreas://pair?ip=192.168.1.10&...
         if (
           parsedUrl.protocol.replace(':', '') === 'autoreas' &&
           parsedUrl.hostname === 'pair'
@@ -31,7 +41,7 @@ export default function SetupScreen() {
           if (portParam) setPort(portParam);
           if (tokenParam) setToken(tokenParam);
         }
-      } catch (e) {
+      } catch {
         console.warn('Invalid deep link URL:', url);
       }
     }
@@ -59,69 +69,80 @@ export default function SetupScreen() {
   };
 
   return (
-    <View className="flex-1 justify-center bg-black px-6">
-      <View className="mb-8 items-center">
-        <Text className="mb-2 text-3xl font-bold text-white">Autoreas</Text>
-        <Text className="text-center text-gray-400">
+    <View className="flex-1 justify-center bg-background px-6">
+      <View className="mb-10 items-center">
+        <AppText className="mb-2 text-4xl font-bold text-foreground tracking-tight">
+          Autoreas
+        </AppText>
+        <AppText className="text-center text-base text-muted">
           Ingresa los datos de tu Bridge para emparejar el dispositivo.
-        </Text>
+        </AppText>
       </View>
 
-      <View className="gap-y-4 space-y-4">
-        <View>
-          <Text className="mb-1 text-sm font-medium text-gray-300">Dirección IP</Text>
-          <TextInput
-            className="w-full rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-white"
-            placeholder="Ej: 192.168.1.10"
-            placeholderTextColor="#666"
-            value={ip}
-            onChangeText={setIp}
-            keyboardType="decimal-pad"
-            autoCapitalize="none"
-          />
-        </View>
+      <Card className="p-5">
+        <Card.Body className="gap-5">
+          <TextField>
+            <Label>
+              <Label.Text>Dirección IP</Label.Text>
+            </Label>
+            <Input
+              placeholder="Ej: 192.168.1.10"
+              value={ip}
+              onChangeText={setIp}
+              keyboardType="decimal-pad"
+              autoCapitalize="none"
+            />
+          </TextField>
 
-        <View>
-          <Text className="mb-1 text-sm font-medium text-gray-300">Puerto</Text>
-          <TextInput
-            className="w-full rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-white"
-            placeholder="8080"
-            placeholderTextColor="#666"
-            value={port}
-            onChangeText={setPort}
-            keyboardType="number-pad"
-          />
-        </View>
+          <TextField>
+            <Label>
+              <Label.Text>Puerto</Label.Text>
+            </Label>
+            <Input
+              placeholder="8080"
+              value={port}
+              onChangeText={setPort}
+              keyboardType="number-pad"
+            />
+          </TextField>
 
-        <View>
-          <Text className="mb-1 text-sm font-medium text-gray-300">Token de emparejamiento</Text>
-          <TextInput
-            className="w-full rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-white"
-            placeholder="Token mostrado en el Bridge"
-            placeholderTextColor="#666"
-            value={token}
-            onChangeText={setToken}
-            autoCapitalize="none"
-            secureTextEntry
-          />
-        </View>
+          <TextField>
+            <Label>
+              <Label.Text>Token de emparejamiento</Label.Text>
+            </Label>
+            <Input
+              placeholder="Token mostrado en el Bridge"
+              value={token}
+              onChangeText={setToken}
+              autoCapitalize="none"
+              secureTextEntry
+            />
+          </TextField>
 
-        {error ? <Text className="mt-2 text-center text-sm text-red-500">{error}</Text> : null}
+          {error ? (
+            <HeroAlert status="danger">
+              <HeroAlert.Indicator />
+              <HeroAlert.Content>
+                <HeroAlert.Description>{error}</HeroAlert.Description>
+              </HeroAlert.Content>
+            </HeroAlert>
+          ) : null}
 
-        <Pressable
-          onPress={handlePair}
-          disabled={isLoading}
-          className={`mt-6 w-full items-center justify-center rounded-xl py-4 ${
-            isLoading ? 'bg-indigo-900' : 'bg-indigo-600 active:bg-indigo-700'
-          }`}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text className="text-base font-semibold text-white">Emparejar Bridge</Text>
-          )}
-        </Pressable>
-      </View>
+          <Button
+            variant="primary"
+            size="lg"
+            onPress={handlePair}
+            isDisabled={isLoading}
+            className={cn('mt-2 w-full', isLoading && 'opacity-80')}
+          >
+            {isLoading ? (
+              <Spinner className="text-white" />
+            ) : (
+              <Button.Label>Emparejar Bridge</Button.Label>
+            )}
+          </Button>
+        </Card.Body>
+      </Card>
     </View>
   );
 }

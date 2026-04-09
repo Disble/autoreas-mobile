@@ -1,12 +1,35 @@
-import { useState } from 'react';
-import { View, FlatList, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { AppText } from '../../components/app-text';
+import { Tabs } from 'heroui-native';
+import { useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
 import { AnimeCard } from '../../components/anime/AnimeCard';
+import { AppText } from '../../components/app-text';
+import { useAppTheme } from '../../contexts/app-theme-context';
 import { useAnimeList, type AnimeTab } from '../../features/animes/use-anime-list';
 import { useMutateAnime } from '../../features/animes/use-mutate-anime';
-import { useAppTheme } from '../../contexts/app-theme-context';
 import type { Anime } from '../../infrastructure/validation/anime-schema';
+
+const TAB_OPTIONS: { value: AnimeTab; label: string }[] = [
+  { value: 'viendo', label: 'Viendo' },
+  { value: 'estrenos', label: 'Estrenos' },
+  { value: 'todos', label: 'Todos' },
+];
+
+function EmptyState({ tab }: { tab: AnimeTab }) {
+  const messages: Record<AnimeTab, string> = {
+    viendo: 'No tenés animes en progreso.',
+    estrenos: 'No hay estrenos disponibles.',
+    todos: 'No hay animes cargados todavía.',
+  };
+
+  return (
+    <View className="flex-1 items-center justify-center py-20">
+      <Ionicons name="film-outline" size={48} className="text-muted mb-4" />
+      <AppText className="text-muted text-base text-center">{messages[tab]}</AppText>
+    </View>
+  );
+}
 
 export default function AnimeListScreen() {
   const [tab, setTab] = useState<AnimeTab>('viendo');
@@ -24,45 +47,48 @@ export default function AnimeListScreen() {
 
   return (
     <View className="flex-1 bg-background" style={styles.container}>
-      <View className="flex-row items-center justify-around py-4 border-b border-muted/20">
-        <TabButton title="Viendo" active={tab === 'viendo'} onPress={() => setTab('viendo')} />
-        <TabButton title="Estrenos" active={tab === 'estrenos'} onPress={() => setTab('estrenos')} />
-        <TabButton title="Todos" active={tab === 'todos'} onPress={() => setTab('todos')} />
+      <View className="px-4 pt-4 pb-2">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as AnimeTab)}>
+          <Tabs.List className="w-full">
+            <Tabs.Indicator />
+            {TAB_OPTIONS.map((t) => (
+              <Tabs.Trigger key={t.value} value={t.value}>
+                <Tabs.Label>{t.label}</Tabs.Label>
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </Tabs>
       </View>
 
-      <FlatList
-        data={animes}
-        keyExtractor={(item) => item._id}
-        renderItem={({ item }) => {
-          // Parse to Anime type since Drizzle returns string|null for JSON fields
-          const diasArray = item.dias ? JSON.parse(item.dias) : [];
-          const generosArray = item.generos ? JSON.parse(item.generos) : [];
-          const anime: Anime = {
-            ...item,
-            dias: diasArray,
-            generos: generosArray
-          } as Anime;
+      {animes.length === 0 ? (
+        <EmptyState tab={tab} />
+      ) : (
+        <FlatList
+          data={animes}
+          keyExtractor={(item) => item._id}
+          renderItem={({ item }) => {
+            const diasArray = item.dias ? JSON.parse(item.dias) : [];
+            const generosArray = item.generos ? JSON.parse(item.generos) : [];
+            const anime: Anime = {
+              ...item,
+              dias: diasArray,
+              generos: generosArray,
+            } as Anime;
 
-          return <AnimeCard anime={anime} onCapPlus={handleCapPlus} onCapMinus={handleCapMinus} />
-        }}
-        contentContainerStyle={styles.listContent}
-        showsHorizontalScrollIndicator={false}
-      />
+            return (
+              <AnimeCard
+                anime={anime}
+                onCapPlus={handleCapPlus}
+                onCapMinus={handleCapMinus}
+              />
+            );
+          }}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </View>
-  );
-}
-
-function TabButton({ title, active, onPress }: { title: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`px-4 py-2 rounded-full ${active ? 'bg-foreground' : 'bg-transparent'}`}
-    >
-      <AppText className={`${active ? 'text-background font-bold' : 'text-foreground'}`}>
-        {title}
-      </AppText>
-    </Pressable>
   );
 }
 

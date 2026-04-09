@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, View } from 'react-native';
+import { Button, Card } from 'heroui-native';
+import { View } from 'react-native';
 import { AppText } from '../../components/app-text';
 import { ScreenScrollView } from '../../components/screen-scroll-view';
 import { SQLiteUnavailableScreen } from '../../components/sqlite-unavailable-screen';
@@ -26,23 +27,26 @@ export default function HomeScreen() {
   return (
     <ScreenScrollView>
       <View className="flex-1 items-center justify-center py-20">
-        <AppText className="text-foreground text-2xl font-bold">
-          Animes en SQLite: {animeCount}
-        </AppText>
-        <AppText className="text-muted text-base text-center mt-4">
-          Tracer bullet SQLite activo
-        </AppText>
-        <Pressable
-          accessibilityRole="button"
-          className="mt-6 rounded-xl bg-foreground px-5 py-3"
-          onPress={() => {
-            void insertDummyAnime(rawDb);
-          }}
-        >
-          <AppText className="text-background font-semibold">
-            Insert Dummy Anime
-          </AppText>
-        </Pressable>
+        <Card className="w-full p-6 items-center">
+          <Card.Body className="items-center gap-3">
+            <AppText className="text-foreground text-2xl font-bold">
+              Animes en SQLite: {animeCount}
+            </AppText>
+            <AppText className="text-muted text-base text-center">
+              Tracer bullet SQLite activo
+            </AppText>
+            <Button
+              variant="primary"
+              size="lg"
+              className="mt-4"
+              onPress={() => {
+                void insertDummyAnime(rawDb);
+              }}
+            >
+              <Button.Label>Insert Dummy Anime</Button.Label>
+            </Button>
+          </Card.Body>
+        </Card>
       </View>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ScreenScrollView>
