@@ -1,28 +1,28 @@
-import type { Href } from 'expo-router';
-import { useRouter } from 'expo-router';
-import { useThemeColor } from 'heroui-native';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useAppTheme } from '../../../../contexts/app-theme-context';
-import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
-import { ANIME_DAY_FILTER_OPTIONS } from '../../anime.constants';
+import type { Href } from "expo-router";
+import { useRouter } from "expo-router";
+import { useThemeColor } from "heroui-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useAppTheme } from "../../../../contexts/app-theme-context";
+import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
+import { useIncrementalSyncHandler } from "../../../sync/use-incremental-sync-handler";
+import { ANIME_DAY_FILTER_OPTIONS } from "../../anime.constants";
 import {
   getAnimeDayFilterOption,
   getDefaultAnimeDayFilter,
-} from '../../anime.helpers';
-import { useMutateAnime } from '../../use-mutate-anime';
+} from "../../anime.helpers";
+import type { AnimeDayFilter } from "../../anime.types";
+import { useAnimeList } from "../../use-anime-list";
+import { useMutateAnime } from "../../use-mutate-anime";
+import { ANIME_LIST_SCREEN_REFRESH_LABEL } from "./anime-list-screen.constants";
+import {
+  buildContextualHeader,
+  computeFilterCounts,
+} from "./anime-list-screen.helpers";
 import type {
   AnimeListScreenProps,
   AnimeListScreenViewModel,
   AnimeStateSheetRequest,
-} from './anime-list-screen.types';
-import type { AnimeDayFilter } from '../../anime.types';
-import { useAnimeList } from '../../use-anime-list';
-import { useIncrementalSyncHandler } from '../../../sync/use-incremental-sync-handler';
-import { ANIME_LIST_SCREEN_REFRESH_LABEL } from './anime-list-screen.constants';
-import {
-  buildContextualHeader,
-  computeFilterCounts,
-} from './anime-list-screen.helpers';
+} from "./anime-list-screen.types";
 
 export function useAnimeListScreen(
   _props: AnimeListScreenProps,
@@ -32,31 +32,35 @@ export function useAnimeListScreen(
 
   // 2. State
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
-    getDefaultAnimeDayFilter(new Date())
+    getDefaultAnimeDayFilter(new Date()),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<Record<string, boolean>>({});
-  const [stateSheetRequest, setStateSheetRequest] = useState<AnimeStateSheetRequest | null>(null);
+  const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
+    Record<string, boolean>
+  >({});
+  const [stateSheetRequest, setStateSheetRequest] =
+    useState<AnimeStateSheetRequest | null>(null);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const { isDark } = useAppTheme();
-  const [themeColorForeground] = useThemeColor(['foreground']);
+  const [themeColorForeground] = useThemeColor(["foreground"]);
   const { handleSyncRequired } = useIncrementalSyncHandler();
   const { layout: layoutMode } = useResponsiveLayout();
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
-  const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } = useMutateAnime();
+  const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } =
+    useMutateAnime();
 
   // 5. Derived State (useMemo)
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
   const isEmpty = useMemo(() => animes.length === 0, [animes]);
   const selectedFilterOption = useMemo(
     () => getAnimeDayFilterOption(selectedFilter),
-    [selectedFilter]
+    [selectedFilter],
   );
-  const settingsHref = useMemo(() => '/(tabs)/settings' as Href, []);
+  const settingsHref = useMemo(() => "/(tabs)/settings" as Href, []);
   const today = useMemo(() => getDefaultAnimeDayFilter(new Date()), []);
   const filterCounts = useMemo(
     () => computeFilterCounts(allActiveAnimes ?? []),
@@ -78,7 +82,7 @@ export function useAnimeListScreen(
     try {
       await handleSyncRequired();
     } catch (error) {
-      console.warn('[AnimeListScreen] Manual refresh failed:', error);
+      console.warn("[AnimeListScreen] Manual refresh failed:", error);
     } finally {
       setIsRefreshing(false);
     }
@@ -129,9 +133,12 @@ export function useAnimeListScreen(
     [capMinusHalf, runMutation],
   );
 
-  const handleOpenStateSheet = useCallback((animeId: string, currentEstado: number) => {
-    setStateSheetRequest({ animeId, currentEstado });
-  }, []);
+  const handleOpenStateSheet = useCallback(
+    (animeId: string, currentEstado: number) => {
+      setStateSheetRequest({ animeId, currentEstado });
+    },
+    [],
+  );
 
   const handleCloseStateSheet = useCallback(() => {
     setStateSheetRequest(null);
