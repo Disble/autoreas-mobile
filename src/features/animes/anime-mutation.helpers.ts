@@ -1,8 +1,11 @@
-import { createDrizzleDb } from '../../infrastructure/db/client';
-import { animes, type AnimeRow } from '../../infrastructure/db/schema';
+import { createDrizzleDb, withExclusiveWrite } from '../../infrastructure/db/client';
+import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { eq } from 'drizzle-orm';
+import { syncPendingOperations } from '../sync/reconcile.helpers';
+
+export type AnimeMutationPatchBuilder = (anime: Anime, now: number) => AnimeMutationSyncPatch;
 
 export interface AnimeMutationSyncPatch {
   readonly nrocapvisto: number;
@@ -82,6 +85,69 @@ export function buildCapMinusPatch(
 }
 
 /**
+ * Builds the absolute bridge patch for changing only the `estado` (Viendo/Finalizado/etc).
+ * When transitioning to Finalizado and a `totalcap` exists, snaps `nrocapvisto` to the total
+ * so progress and completion stay consistent in a single idempotent payload.
+ */
+export function buildSetEstadoPatch(
+  anime: Anime,
+  estado: number,
+  now: number,
+): AnimeMutationSyncPatch {
+  const shouldSnapToTotal =
+    estado === 1 && anime.totalcap != null && anime.totalcap > 0;
+
+  return {
+    nrocapvisto: shouldSnapToTotal ? (anime.totalcap as number) : anime.nrocapvisto,
+    fechaUltCapVisto: now,
+    estado,
+  };
+}
+
+/**
+ * Builds the absolute bridge patch for incrementing watched chapters by half a unit.
+ * Uses fractional `nrocapvisto` to mirror the legacy desktop "+0.5" gesture and
+ * autofinalizes when the half-step reaches the total.
+ */
+export function buildCapPlusHalfPatch(
+  anime: Anime,
+  now: number,
+): AnimeMutationSyncPatch {
+  const newCap = anime.nrocapvisto + 0.5;
+  const isFinished =
+    anime.totalcap != null && anime.totalcap > 0 && newCap >= anime.totalcap;
+
+  return {
+    nrocapvisto: isFinished ? (anime.totalcap as number) : newCap,
+    fechaUltCapVisto: now,
+    ...(isFinished ? { estado: 1 } : {}),
+  };
+}
+
+/**
+ * Builds the absolute bridge patch for decrementing watched chapters by half a unit.
+ * Mirrors `buildCapMinusPatch` but with a 0.5 step, including the auto-reopen rule when
+ * the anime was previously snapped to Finalizado at totalcap.
+ */
+export function buildCapMinusHalfPatch(
+  anime: Anime,
+  now: number,
+): AnimeMutationSyncPatch {
+  const nextCap = Math.max(0, anime.nrocapvisto - 0.5);
+  const shouldReopenCompletedAnime =
+    anime.estado === 1 &&
+    anime.totalcap != null &&
+    anime.totalcap > 0 &&
+    anime.nrocapvisto === anime.totalcap;
+
+  return {
+    nrocapvisto: nextCap,
+    fechaUltCapVisto: now,
+    ...(shouldReopenCompletedAnime ? { estado: 0 } : {}),
+  };
+}
+
+/**
  * Converts a bridge-facing patch into the SQLite row shape used by the local anime table.
  * The mapping keeps local integer flags aligned with remote boolean semantics.
  */
@@ -106,6 +172,51 @@ export function serializeMutationOperation(
     operation: 'update',
     payload: JSON.stringify(patch),
   };
+}
+
+/**
+ * Runs a patch-based mutation inside an exclusive SQLite transaction and enqueues the sync operation.
+ * Centralizing this orchestration keeps `useMutateAnime` focused on wiring React callbacks to
+ * the builders, and removes duplication between cap+, cap-, and state-change flows.
+ */
+export async function applyAnimeMutationPatch(
+  rawDb: SQLiteDatabase,
+  animeId: string,
+  buildPatch: AnimeMutationPatchBuilder,
+  label: string,
+): Promise<void> {
+  const now = Date.now();
+  let didMutate = false;
+
+  await withExclusiveWrite(rawDb, async (txDb, tx) => {
+    const anime = await fetchParsedAnime(tx, animeId);
+    if (!anime) return;
+
+    const bridgePatch = buildPatch(anime, now);
+    const operation = serializeMutationOperation(bridgePatch);
+
+    await txDb
+      .update(animes)
+      .set(toLocalAnimeUpdate(bridgePatch))
+      .where(eq(animes._id, anime._id));
+
+    await txDb.insert(operationLog).values({
+      animeId: anime._id,
+      operation: operation.operation,
+      payload: operation.payload,
+      status: 'pending',
+      createdAt: now,
+    });
+
+    didMutate = true;
+  });
+
+  if (!didMutate) return;
+
+  // Sincroniza en background — no bloquea la UI
+  void syncPendingOperations(rawDb).catch((err: unknown) => {
+    console.warn(`[${label}] Sync failed:`, err);
+  });
 }
 
 function parseStoredAnimeRow(row: AnimeRow) {

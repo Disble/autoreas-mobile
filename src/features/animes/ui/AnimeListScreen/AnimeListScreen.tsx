@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Button, Select } from 'heroui-native';
-import { FlatList, Pressable, View } from 'react-native';
+import { Button } from 'heroui-native';
+import { FlatList, Pressable, RefreshControl, View } from 'react-native';
+import { AppText } from '../../../../components/app-text';
 import { AnimeEmptyState } from '../AnimeEmptyState';
+import { AnimeFilterRail } from '../AnimeFilterRail';
+import { AnimeStateSheet } from '../AnimeStateSheet';
 import type { AnimeListScreenViewProps } from './anime-list-screen.types';
 import { renderAnimeListItem } from './anime-list-screen.helpers';
 
@@ -11,24 +14,35 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
   const {
     animes,
     filterOptions,
+    filterCounts,
+    contextualHeader,
+    layoutMode,
     isMutatingAnimeById,
     isDark,
     isEmpty,
     isRefreshing,
     refreshAccessibilityLabel,
-    selectedFilterOption,
-    selectListLabel,
-    selectPlaceholder,
+    selectedFilter,
+    stateSheetRequest,
     themeColorForeground,
+    today,
     handleCapMinus,
+    handleCapMinusHalf,
     handleCapPlus,
+    handleCapPlusHalf,
+    handleCloseStateSheet,
     handleOpenSettings,
+    handleOpenStateSheet,
     handleRefresh,
     handleSelectedFilterChange,
+    handleStateSheetSelect,
   } = props;
 
+  const isTabletLandscape = layoutMode === 'tablet-landscape';
+  const numColumns = isTabletLandscape ? 2 : 1;
+
   return (
-    <View className="flex-1 min-w-[320px] bg-background">
+    <View className="bg-background flex-1">
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -45,63 +59,99 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
               />
             </Pressable>
           ),
+          headerRight: () => (
+            <Button
+              accessibilityLabel={refreshAccessibilityLabel}
+              isDisabled={isRefreshing}
+              isIconOnly
+              onPress={() => {
+                void handleRefresh();
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              <Ionicons name="refresh" color={themeColorForeground} size={20} />
+            </Button>
+          ),
         }}
       />
 
-      <View className="flex-row items-center gap-2 px-4 pb-2 pt-20">
-        <View className="flex-1">
-          <Select
-            onValueChange={handleSelectedFilterChange}
-            presentation="bottom-sheet"
-            value={selectedFilterOption}
-          >
-            <Select.Trigger>
-              <Select.Value placeholder={selectPlaceholder} />
-              <Select.TriggerIndicator />
-            </Select.Trigger>
-            <Select.Portal>
-              <Select.Overlay />
-              <Select.Content presentation="bottom-sheet" snapPoints={['50%']}>
-                <Select.ListLabel>{selectListLabel}</Select.ListLabel>
-                {filterOptions.map((filterOption) => (
-                  <Select.Item
-                    key={filterOption.value}
-                    label={filterOption.label}
-                    value={filterOption.value}
-                  />
-                ))}
-              </Select.Content>
-            </Select.Portal>
-          </Select>
-        </View>
+      <View className={isTabletLandscape ? 'flex-1 flex-row pt-16' : 'flex-1 pt-16'}>
+        {isTabletLandscape ? (
+          <View className="border-border/40 w-56 border-r">
+            <AnimeFilterRail
+              options={filterOptions}
+              counts={filterCounts}
+              selected={selectedFilter}
+              today={today}
+              orientation="vertical"
+              onSelect={handleSelectedFilterChange}
+            />
+          </View>
+        ) : (
+          <AnimeFilterRail
+            options={filterOptions}
+            counts={filterCounts}
+            selected={selectedFilter}
+            today={today}
+            orientation="horizontal"
+            onSelect={handleSelectedFilterChange}
+          />
+        )}
 
-        <Button
-          accessibilityLabel={refreshAccessibilityLabel}
-          isDisabled={isRefreshing}
-          isIconOnly
-          onPress={() => {
-            void handleRefresh();
-          }}
-          size="sm"
-          variant="secondary"
-        >
-          <Ionicons name="refresh" size={18} />
-        </Button>
+        <View className="flex-1">
+          <View className="px-4 pb-2 pt-1">
+            <AppText className="text-foreground text-2xl font-bold">
+              {contextualHeader.title}
+            </AppText>
+            <AppText className="text-muted text-sm">
+              {contextualHeader.subtitle}
+            </AppText>
+          </View>
+
+          {isEmpty ? (
+            <AnimeEmptyState filter={selectedFilter} />
+          ) : (
+            <FlatList
+              contentContainerClassName="px-4 pt-2 pb-10"
+              data={animes}
+              key={`anime-list-${numColumns}`}
+              keyExtractor={(item) => item._id}
+              numColumns={numColumns}
+              columnWrapperClassName={numColumns > 1 ? 'gap-3' : undefined}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefreshing}
+                  onRefresh={() => {
+                    void handleRefresh();
+                  }}
+                />
+              }
+              renderItem={({ item }) =>
+                renderAnimeListItem(
+                  item,
+                  isMutatingAnimeById,
+                  handleCapMinus,
+                  handleCapPlus,
+                  handleCapPlusHalf,
+                  handleCapMinusHalf,
+                  handleOpenStateSheet,
+                )
+              }
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
       </View>
 
-      {isEmpty ? (
-        <AnimeEmptyState filter={selectedFilterOption.value} />
-      ) : (
-        <FlatList
-          contentContainerClassName="px-4 pt-2 pb-10"
-          data={animes}
-          keyExtractor={(item) => item._id}
-          renderItem={({ item }) =>
-            renderAnimeListItem(item, isMutatingAnimeById, handleCapMinus, handleCapPlus)
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <AnimeStateSheet
+        visible={stateSheetRequest !== null}
+        currentEstado={stateSheetRequest?.currentEstado ?? 0}
+        onSelect={(estado) => {
+          void handleStateSheetSelect(estado);
+        }}
+        onClose={handleCloseStateSheet}
+      />
 
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </View>

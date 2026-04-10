@@ -1,21 +1,16 @@
-import { eq } from "drizzle-orm";
 import { useCallback } from "react";
-import {
-  withExclusiveWrite,
-} from "../../infrastructure/db/client";
 import {
   getExpoSQLiteUnavailableError,
   useOptionalSQLiteContext,
 } from "../../infrastructure/db/native-runtime";
-import { animes, operationLog } from "../../infrastructure/db/schema";
 import {
+  applyAnimeMutationPatch,
+  buildCapMinusHalfPatch,
   buildCapMinusPatch,
+  buildCapPlusHalfPatch,
   buildCapPlusPatch,
-  fetchParsedAnime,
-  serializeMutationOperation,
-  toLocalAnimeUpdate,
+  buildSetEstadoPatch,
 } from "./anime-mutation.helpers";
-import { syncPendingOperations } from "../sync/reconcile.helpers";
 
 export function useMutateAnime() {
   const rawDb = useOptionalSQLiteContext();
@@ -25,39 +20,7 @@ export function useMutateAnime() {
       if (!rawDb) {
         throw getExpoSQLiteUnavailableError();
       }
-
-      const now = Date.now();
-      let didMutate = false;
-
-      await withExclusiveWrite(rawDb, async (txDb, tx) => {
-        const anime = await fetchParsedAnime(tx, animeId);
-        if (!anime) return;
-
-        const bridgePatch = buildCapPlusPatch(anime, now);
-        const operation = serializeMutationOperation(bridgePatch);
-
-        await txDb
-          .update(animes)
-          .set(toLocalAnimeUpdate(bridgePatch))
-          .where(eq(animes._id, anime._id));
-
-        await txDb.insert(operationLog).values({
-          animeId: anime._id,
-          operation: operation.operation,
-          payload: operation.payload,
-          status: "pending",
-          createdAt: now,
-        });
-
-        didMutate = true;
-      });
-
-      if (!didMutate) return;
-
-      // Sincroniza en background — no bloquea la UI
-      void syncPendingOperations(rawDb).catch((err: unknown) => {
-        console.warn("[capPlus] Sync failed:", err);
-      });
+      await applyAnimeMutationPatch(rawDb, animeId, buildCapPlusPatch, "capPlus");
     },
     [rawDb],
   );
@@ -67,42 +30,45 @@ export function useMutateAnime() {
       if (!rawDb) {
         throw getExpoSQLiteUnavailableError();
       }
-
-      const now = Date.now();
-      let didMutate = false;
-
-      await withExclusiveWrite(rawDb, async (txDb, tx) => {
-        const anime = await fetchParsedAnime(tx, animeId);
-        if (!anime) return;
-
-        const bridgePatch = buildCapMinusPatch(anime, now);
-        const operation = serializeMutationOperation(bridgePatch);
-
-        await txDb
-          .update(animes)
-          .set(toLocalAnimeUpdate(bridgePatch))
-          .where(eq(animes._id, anime._id));
-
-        await txDb.insert(operationLog).values({
-          animeId: anime._id,
-          operation: operation.operation,
-          payload: operation.payload,
-          status: "pending",
-          createdAt: now,
-        });
-
-        didMutate = true;
-      });
-
-      if (!didMutate) return;
-
-      // Sincroniza en background — no bloquea la UI
-      void syncPendingOperations(rawDb).catch((err: unknown) => {
-        console.warn("[capMinus] Sync failed:", err);
-      });
+      await applyAnimeMutationPatch(rawDb, animeId, buildCapMinusPatch, "capMinus");
     },
     [rawDb],
   );
 
-  return { capPlus, capMinus };
+  const capPlusHalf = useCallback(
+    async (animeId: string): Promise<void> => {
+      if (!rawDb) {
+        throw getExpoSQLiteUnavailableError();
+      }
+      await applyAnimeMutationPatch(rawDb, animeId, buildCapPlusHalfPatch, "capPlusHalf");
+    },
+    [rawDb],
+  );
+
+  const capMinusHalf = useCallback(
+    async (animeId: string): Promise<void> => {
+      if (!rawDb) {
+        throw getExpoSQLiteUnavailableError();
+      }
+      await applyAnimeMutationPatch(rawDb, animeId, buildCapMinusHalfPatch, "capMinusHalf");
+    },
+    [rawDb],
+  );
+
+  const setEstado = useCallback(
+    async (animeId: string, estado: number): Promise<void> => {
+      if (!rawDb) {
+        throw getExpoSQLiteUnavailableError();
+      }
+      await applyAnimeMutationPatch(
+        rawDb,
+        animeId,
+        (anime, now) => buildSetEstadoPatch(anime, estado, now),
+        "setEstado",
+      );
+    },
+    [rawDb],
+  );
+
+  return { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado };
 }

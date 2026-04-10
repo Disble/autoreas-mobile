@@ -3,6 +3,8 @@ import {
   canDecrease,
   canIncrease,
   getIsCompleted,
+  getRestantesLabel,
+  getStateChip,
   isAnimeMutationLocked,
 } from "../../../../src/features/animes/ui/AnimeCard/anime-card.helpers";
 
@@ -36,5 +38,47 @@ describe("anime-card helpers", () => {
     expect(isAnimeMutationLocked(1)).toBe(true);
     expect(isAnimeMutationLocked(2)).toBe(true);
     expect(isAnimeMutationLocked(3)).toBe(true);
+  });
+
+  describe("getStateChip", () => {
+    it("maps legacy estado values to chip descriptors", () => {
+      expect(getStateChip(0)).toMatchObject({ label: "Viendo", tone: "accent" });
+      expect(getStateChip(1)).toMatchObject({
+        label: "Finalizado",
+        tone: "success",
+      });
+      expect(getStateChip(3)).toMatchObject({
+        label: "En pausa",
+        tone: "warning",
+      });
+      expect(getStateChip(2)).toMatchObject({
+        label: "No me gustó",
+        tone: "danger",
+      });
+    });
+
+    it("falls back to viewing for unknown estado", () => {
+      expect(getStateChip(99)).toMatchObject({ label: "Viendo" });
+    });
+  });
+
+  describe("getRestantesLabel", () => {
+    it("returns the remaining episodes when totalcap is known", () => {
+      expect(getRestantesLabel(5, 12)).toBe("7 restantes");
+    });
+
+    it("rounds up partial chapter counts so half-caps count as unfinished", () => {
+      expect(getRestantesLabel(5.5, 12)).toBe("7 restantes");
+    });
+
+    it("returns null when totalcap is missing", () => {
+      expect(getRestantesLabel(5, null)).toBeNull();
+      expect(getRestantesLabel(5, undefined)).toBeNull();
+    });
+
+    it("returns null when there are no remaining episodes", () => {
+      expect(getRestantesLabel(12, 12)).toBeNull();
+      expect(getRestantesLabel(13, 12)).toBeNull();
+    });
   });
 });

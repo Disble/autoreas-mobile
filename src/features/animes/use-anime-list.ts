@@ -26,12 +26,18 @@ export function useAnimeList(filter: AnimeDayFilter) {
 
   const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);
 
-  const parsedData = useMemo(() => {
+  const allActiveAnimes = useMemo(() => {
     if (!data) return [];
-    return sortAnimesBySelectedDay(data.map(parseAnimeRow), filter);
-  }, [data, filter]);
+    return data.map(parseAnimeRow);
+  }, [data]);
+
+  const parsedData = useMemo(
+    () => sortAnimesBySelectedDay(allActiveAnimes, filter),
+    [allActiveAnimes, filter],
+  );
 
   return {
     data: parsedData,
+    allActiveAnimes,
   };
 }

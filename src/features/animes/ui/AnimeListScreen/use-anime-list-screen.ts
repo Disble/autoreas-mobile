@@ -3,9 +3,8 @@ import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
 import { useCallback, useMemo, useState } from 'react';
 import { useAppTheme } from '../../../../contexts/app-theme-context';
-import {
-  ANIME_DAY_FILTER_OPTIONS,
-} from '../../anime.constants';
+import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
+import { ANIME_DAY_FILTER_OPTIONS } from '../../anime.constants';
 import {
   getAnimeDayFilterOption,
   getDefaultAnimeDayFilter,
@@ -14,18 +13,17 @@ import { useMutateAnime } from '../../use-mutate-anime';
 import type {
   AnimeListScreenProps,
   AnimeListScreenViewModel,
-  RawAnimeDayFilterOption,
+  AnimeStateSheetRequest,
 } from './anime-list-screen.types';
 import type { AnimeDayFilter } from '../../anime.types';
 import { useAnimeList } from '../../use-anime-list';
 import { useIncrementalSyncHandler } from '../../../sync/use-incremental-sync-handler';
 import { useWebSocket } from '../../../ws/use-websocket';
+import { ANIME_LIST_SCREEN_REFRESH_LABEL } from './anime-list-screen.constants';
 import {
-  ANIME_LIST_SCREEN_REFRESH_LABEL,
-  ANIME_LIST_SCREEN_SELECT_LABEL,
-  ANIME_LIST_SCREEN_SELECT_PLACEHOLDER,
-} from './anime-list-screen.constants';
-import { resolveSelectedAnimeDayFilterOption } from './anime-list-screen.helpers';
+  buildContextualHeader,
+  computeFilterCounts,
+} from './anime-list-screen.helpers';
 
 export function useAnimeListScreen(
   _props: AnimeListScreenProps,
@@ -38,16 +36,18 @@ export function useAnimeListScreen(
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<Record<string, boolean>>({});
+  const [stateSheetRequest, setStateSheetRequest] = useState<AnimeStateSheetRequest | null>(null);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const { isDark } = useAppTheme();
   const [themeColorForeground] = useThemeColor(['foreground']);
   const { handleSyncRequired } = useIncrementalSyncHandler();
+  const { layout: layoutMode } = useResponsiveLayout();
 
   // 4. Queries/Mutations
-  const { data: animes } = useAnimeList(selectedFilter);
-  const { capPlus, capMinus } = useMutateAnime();
+  const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
+  const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } = useMutateAnime();
 
   // 5. Derived State (useMemo)
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
@@ -57,25 +57,20 @@ export function useAnimeListScreen(
     [selectedFilter]
   );
   const settingsHref = useMemo(() => '/(tabs)/settings' as Href, []);
+  const today = useMemo(() => getDefaultAnimeDayFilter(new Date()), []);
+  const filterCounts = useMemo(
+    () => computeFilterCounts(allActiveAnimes ?? []),
+    [allActiveAnimes],
+  );
+  const contextualHeader = useMemo(
+    () => buildContextualHeader(selectedFilter, animes.length, new Date()),
+    [selectedFilter, animes.length],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
-  const handleSelectedFilterChange = useCallback(
-    (
-      value:
-        | RawAnimeDayFilterOption
-        | readonly RawAnimeDayFilterOption[]
-        | undefined
-    ) => {
-      const selectedOption = resolveSelectedAnimeDayFilterOption(value ?? undefined);
-
-      if (!selectedOption) {
-        return;
-      }
-
-      setSelectedFilter(selectedOption.value);
-    },
-    []
-  );
+  const handleSelectedFilterChange = useCallback((filter: AnimeDayFilter) => {
+    setSelectedFilter(filter);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -89,8 +84,8 @@ export function useAnimeListScreen(
     }
   }, [handleSyncRequired]);
 
-  const handleCapPlus = useCallback(
-    async (animeId: string) => {
+  const runMutation = useCallback(
+    async (animeId: string, action: (id: string) => Promise<void>) => {
       if (isMutatingAnimeById[animeId]) {
         return;
       }
@@ -101,7 +96,7 @@ export function useAnimeListScreen(
       }));
 
       try {
-        await capPlus(animeId);
+        await action(animeId);
       } finally {
         setIsMutatingAnimeById((current) => {
           const nextState = { ...current };
@@ -110,31 +105,47 @@ export function useAnimeListScreen(
         });
       }
     },
-    [capPlus, isMutatingAnimeById],
+    [isMutatingAnimeById],
+  );
+
+  const handleCapPlus = useCallback(
+    (animeId: string) => runMutation(animeId, capPlus),
+    [capPlus, runMutation],
   );
 
   const handleCapMinus = useCallback(
-    async (animeId: string) => {
-      if (isMutatingAnimeById[animeId]) {
+    (animeId: string) => runMutation(animeId, capMinus),
+    [capMinus, runMutation],
+  );
+
+  const handleCapPlusHalf = useCallback(
+    (animeId: string) => runMutation(animeId, capPlusHalf),
+    [capPlusHalf, runMutation],
+  );
+
+  const handleCapMinusHalf = useCallback(
+    (animeId: string) => runMutation(animeId, capMinusHalf),
+    [capMinusHalf, runMutation],
+  );
+
+  const handleOpenStateSheet = useCallback((animeId: string, currentEstado: number) => {
+    setStateSheetRequest({ animeId, currentEstado });
+  }, []);
+
+  const handleCloseStateSheet = useCallback(() => {
+    setStateSheetRequest(null);
+  }, []);
+
+  const handleStateSheetSelect = useCallback(
+    async (estado: number) => {
+      const request = stateSheetRequest;
+      if (!request) {
         return;
       }
-
-      setIsMutatingAnimeById((current) => ({
-        ...current,
-        [animeId]: true,
-      }));
-
-      try {
-        await capMinus(animeId);
-      } finally {
-        setIsMutatingAnimeById((current) => {
-          const nextState = { ...current };
-          delete nextState[animeId];
-          return nextState;
-        });
-      }
+      setStateSheetRequest(null);
+      await setEstado(request.animeId, estado);
     },
-    [capMinus, isMutatingAnimeById],
+    [setEstado, stateSheetRequest],
   );
 
   const handleOpenSettings = useCallback(() => {
@@ -147,6 +158,9 @@ export function useAnimeListScreen(
   return {
     animes,
     filterOptions,
+    filterCounts,
+    contextualHeader,
+    layoutMode,
     isMutatingAnimeById,
     isDark,
     isEmpty,
@@ -154,14 +168,19 @@ export function useAnimeListScreen(
     refreshAccessibilityLabel: ANIME_LIST_SCREEN_REFRESH_LABEL,
     selectedFilter,
     selectedFilterOption,
-    selectListLabel: ANIME_LIST_SCREEN_SELECT_LABEL,
-    selectPlaceholder: ANIME_LIST_SCREEN_SELECT_PLACEHOLDER,
     settingsHref,
+    stateSheetRequest,
     themeColorForeground,
+    today,
     handleCapMinus,
+    handleCapMinusHalf,
     handleCapPlus,
+    handleCapPlusHalf,
+    handleCloseStateSheet,
     handleOpenSettings,
+    handleOpenStateSheet,
     handleRefresh,
     handleSelectedFilterChange,
+    handleStateSheetSelect,
   };
 }

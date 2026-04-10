@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import { useAnimeCard } from '../../../src/features/animes/ui/AnimeCard/use-anime-card';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
 
@@ -105,5 +105,114 @@ describe('useAnimeCard', () => {
 
     expect(result.current.disableDecrease).toBe(true);
     expect(result.current.disableIncrease).toBe(true);
+  });
+
+  it('expone el chip de estado desde el helper', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: { ...baseAnime, estado: 3 },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.stateChip).toMatchObject({
+      label: 'En pausa',
+      tone: 'warning',
+    });
+  });
+
+  it('toggleRestantesShown alterna entre contador y restantes', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: baseAnime,
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.restantesShown).toBe(false);
+
+    act(() => {
+      result.current.toggleRestantesShown();
+    });
+    expect(result.current.restantesShown).toBe(true);
+
+    act(() => {
+      result.current.toggleRestantesShown();
+    });
+    expect(result.current.restantesShown).toBe(false);
+  });
+
+  it('expone etiqueta de restantes cuando hay totalcap', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: { ...baseAnime, nrocapvisto: 3, totalcap: 12 },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.restantesLabel).toBe('9 restantes');
+  });
+
+  it('handleStateBadgePress abre el sheet vía onOpenStateSheet', () => {
+    const onOpenStateSheet = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: baseAnime,
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        onOpenStateSheet,
+        isMutating: false,
+      }),
+    );
+
+    act(() => {
+      result.current.handleStateBadgePress();
+    });
+
+    expect(onOpenStateSheet).toHaveBeenCalledWith(baseAnime._id, baseAnime.estado);
+  });
+
+  it('handleCapPlusLongPress invoca onCapPlusHalf', () => {
+    const onCapPlusHalf = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: baseAnime,
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        onCapPlusHalf,
+        isMutating: false,
+      }),
+    );
+
+    act(() => {
+      result.current.handleCapPlusLongPress();
+    });
+
+    expect(onCapPlusHalf).toHaveBeenCalledTimes(1);
+  });
+
+  it('handleCapMinusLongPress invoca onCapMinusHalf', () => {
+    const onCapMinusHalf = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: baseAnime,
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        onCapMinusHalf,
+        isMutating: false,
+      }),
+    );
+
+    act(() => {
+      result.current.handleCapMinusLongPress();
+    });
+
+    expect(onCapMinusHalf).toHaveBeenCalledTimes(1);
   });
 });

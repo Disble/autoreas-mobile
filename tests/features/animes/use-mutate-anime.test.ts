@@ -300,7 +300,114 @@ describe('useMutateAnime', () => {
     expect(mockSync).toHaveBeenCalledWith(rawDb);
   });
 
-  it('reusa client y schema sin imports incorrectos ni migraciones en el hook', () => {
+  it('setEstado escribe el patch de estado y registra operation_log pendiente', async () => {
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.setEstado('anime-1', 3);
+    });
+
+    expect(txMocks.set).toHaveBeenCalledWith({
+      nrocapvisto: 3,
+      fechaUltCapVisto: now,
+      estado: 3,
+    });
+
+    const insertPayload = txMocks.values.mock.calls[0][0];
+    expect(JSON.parse(insertPayload.payload)).toEqual({
+      nrocapvisto: 3,
+      fechaUltCapVisto: now,
+      estado: 3,
+    });
+  });
+
+  it('setEstado snapea nrocapvisto a totalcap cuando se marca finalizado', async () => {
+    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 5, totalcap: 12 });
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.setEstado('anime-1', 1);
+    });
+
+    expect(txMocks.set).toHaveBeenCalledWith({
+      nrocapvisto: 12,
+      fechaUltCapVisto: now,
+      estado: 1,
+    });
+  });
+
+  it('setEstado dispara syncPendingOperations en background', async () => {
+    const { syncPendingOperations: mockSync } = jest.requireMock(
+      '../../../src/features/sync/reconcile.helpers'
+    ) as { syncPendingOperations: jest.Mock };
+    mockSync.mockResolvedValue(1);
+
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.setEstado('anime-1', 2);
+      await Promise.resolve();
+    });
+
+    expect(mockSync).toHaveBeenCalledWith(rawDb);
+  });
+
+  it('capPlusHalf escribe nrocapvisto fraccionario en el patch', async () => {
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlusHalf('anime-1');
+    });
+
+    expect(txMocks.set).toHaveBeenCalledWith({
+      nrocapvisto: 3.5,
+      fechaUltCapVisto: now,
+    });
+  });
+
+  it('capMinusHalf nunca baja nrocapvisto de cero', async () => {
+    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 0 });
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capMinusHalf('anime-1');
+    });
+
+    expect(txMocks.set).toHaveBeenCalledWith({
+      nrocapvisto: 0,
+      fechaUltCapVisto: now,
+    });
+  });
+
+  it('delega toda la lógica de mutación al helper sin tocar client/schema directamente', () => {
     const sourcePath = path.resolve(
       __dirname,
       '../../../src/features/animes/use-mutate-anime.ts'
@@ -308,8 +415,7 @@ describe('useMutateAnime', () => {
     const source = readFileSync(sourcePath, 'utf8');
 
     // Path checks are quote-style agnostic (lefthook may reformat to double quotes)
-    expect(source).toMatch(/from ['"]\.\.\/\.\.\/infrastructure\/db\/client['"]/);
-    expect(source).toMatch(/from ['"]\.\.\/\.\.\/infrastructure\/db\/schema['"]/);
+    expect(source).toMatch(/from ['"]\.\/anime-mutation\.helpers['"]/);
     expect(source).not.toMatch(/from ['"]\.\.\/\.\.\/db\/schema['"]/);
     expect(source).not.toContain('runMigrations');
     expect(source).not.toContain('.transaction(');

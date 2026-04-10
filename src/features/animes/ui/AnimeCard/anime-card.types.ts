@@ -5,4 +5,7 @@ export interface AnimeCardProps {
   readonly isMutating: boolean;
   readonly onCapPlus: () => void;
   readonly onCapMinus: () => void;
+  readonly onCapPlusHalf?: () => void;
+  readonly onCapMinusHalf?: () => void;
+  readonly onOpenStateSheet?: (animeId: string, currentEstado: number) => void;
 }
