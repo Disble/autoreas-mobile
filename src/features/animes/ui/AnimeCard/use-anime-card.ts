@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   calculateProgress,
@@ -12,6 +12,18 @@ import {
 
 export function useAnimeCard(props: AnimeCardProps) {
   // 1. Refs
+  const onCapMinusRef = useRef(props.onCapMinus);
+  const onCapPlusRef = useRef(props.onCapPlus);
+  const onCapMinusHalfRef = useRef(props.onCapMinusHalf);
+  const onCapPlusHalfRef = useRef(props.onCapPlusHalf);
+  const onOpenStateSheetRef = useRef(props.onOpenStateSheet);
+  // Keep refs in sync during render so rapid alternating taps never see a callback from the prior commit.
+  onCapMinusRef.current = props.onCapMinus;
+  onCapPlusRef.current = props.onCapPlus;
+  onCapMinusHalfRef.current = props.onCapMinusHalf;
+  onCapPlusHalfRef.current = props.onCapPlusHalf;
+  onOpenStateSheetRef.current = props.onOpenStateSheet;
+
   // 2. State
   const [restantesShown, setRestantesShown] = useState(false);
 
@@ -62,17 +74,25 @@ export function useAnimeCard(props: AnimeCardProps) {
     setRestantesShown((current) => !current);
   }, []);
 
+  const handleCapMinusPress = useCallback(() => {
+    onCapMinusRef.current();
+  }, []);
+
+  const handleCapPlusPress = useCallback(() => {
+    onCapPlusRef.current();
+  }, []);
+
   const handleStateBadgePress = useCallback(() => {
-    props.onOpenStateSheet?.(props.anime._id, props.anime.estado);
-  }, [props]);
+    onOpenStateSheetRef.current?.(props.anime._id, props.anime.estado);
+  }, [props.anime._id, props.anime.estado]);
 
   const handleCapPlusLongPress = useCallback(() => {
-    props.onCapPlusHalf?.();
-  }, [props]);
+    onCapPlusHalfRef.current?.();
+  }, []);
 
   const handleCapMinusLongPress = useCallback(() => {
-    props.onCapMinusHalf?.();
-  }, [props]);
+    onCapMinusHalfRef.current?.();
+  }, []);
 
   // 7. Effects
 
@@ -88,6 +108,8 @@ export function useAnimeCard(props: AnimeCardProps) {
     daysList,
     genresList,
     toggleRestantesShown,
+    handleCapMinusPress,
+    handleCapPlusPress,
     handleStateBadgePress,
     handleCapPlusLongPress,
     handleCapMinusLongPress,

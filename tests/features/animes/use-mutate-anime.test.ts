@@ -10,6 +10,7 @@ jest.mock('expo-sqlite', () => ({
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),
+  withDeferredWrite: jest.fn(),
   withExclusiveWrite: jest.fn(),
 }));
 
@@ -21,11 +22,15 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
   useSQLiteContext: jest.Mock;
 };
 
-const { createDrizzleDb: mockCreateDrizzleDb, withExclusiveWrite: mockWithExclusiveWrite } =
-  jest.requireMock('../../../src/infrastructure/db/client') as {
-    createDrizzleDb: jest.Mock;
-    withExclusiveWrite: jest.Mock;
-  };
+const {
+  createDrizzleDb: mockCreateDrizzleDb,
+  withDeferredWrite: mockWithDeferredWrite,
+  withExclusiveWrite: mockWithExclusiveWrite,
+} = jest.requireMock('../../../src/infrastructure/db/client') as {
+  createDrizzleDb: jest.Mock;
+  withDeferredWrite: jest.Mock;
+  withExclusiveWrite: jest.Mock;
+};
 
 type MockTxDb = {
   update: jest.Mock;
@@ -35,8 +40,6 @@ type MockTxDb = {
 const now = 1710000000000;
 const rawDb = { name: 'raw-db' };
 
-// Base anime as it comes from SQLite (dias/generos as strings, activo/primeravez as integers)
-// Typed as Record to allow overrides like { totalcap: 12 } without TS narrowing null literals
 const baseAnimeRow: Record<string, unknown> = {
   _id: 'anime-1',
   nombre: 'One Piece',
@@ -60,10 +63,6 @@ const baseAnimeRow: Record<string, unknown> = {
   tipo: null,
 };
 
-/**
- * Builds the Drizzle query-builder mock that returns a single row on `.limit(1)`.
- * Used to simulate the SELECT before mutating.
- */
 function buildSelectMock(row: Record<string, unknown> | null) {
   const limit = jest.fn().mockResolvedValue(row ? [row] : []);
   const where = jest.fn(() => ({ limit }));
@@ -91,6 +90,10 @@ function createTxDbMocks(options?: { insertError?: Error }) {
   };
 }
 
+function mockAnimeDeferredWrite(txDb: MockTxDb) {
+  mockWithDeferredWrite.mockImplementation(async (_db, task) => task(txDb, rawDb));
+}
+
 describe('useMutateAnime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -107,7 +110,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -115,11 +118,10 @@ describe('useMutateAnime', () => {
       await result.current.capPlus('anime-1');
     });
 
-    // Must SELECT current state using the transactional db acquired by withExclusiveWrite
-    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(undefined);
+    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
     expect(selectMock.select).toHaveBeenCalled();
-
-    expect(mockWithExclusiveWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(mockWithDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(mockWithExclusiveWrite).not.toHaveBeenCalled();
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 4,
@@ -150,13 +152,12 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
       await result.current.capPlus('anime-1');
-      // flush microtasks so the fire-and-forget promise settles
       await Promise.resolve();
     });
 
@@ -169,7 +170,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks({ insertError });
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -183,7 +184,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -204,7 +205,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -237,7 +238,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -256,7 +257,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -288,7 +289,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -305,7 +306,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -332,7 +333,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -357,7 +358,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -374,7 +375,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -393,7 +394,7 @@ describe('useMutateAnime', () => {
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockWithExclusiveWrite.mockImplementation(async (_db, task) => task(txMocks.txDb));
+    mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -414,7 +415,6 @@ describe('useMutateAnime', () => {
     );
     const source = readFileSync(sourcePath, 'utf8');
 
-    // Path checks are quote-style agnostic (lefthook may reformat to double quotes)
     expect(source).toMatch(/from ['"]\.\/anime-mutation\.helpers['"]/);
     expect(source).not.toMatch(/from ['"]\.\.\/\.\.\/db\/schema['"]/);
     expect(source).not.toContain('runMigrations');

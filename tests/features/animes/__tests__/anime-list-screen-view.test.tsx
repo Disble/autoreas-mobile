@@ -127,4 +127,17 @@ describe('AnimeListScreenView', () => {
 
     expect(row.props.className).toContain('flex-1');
   });
+
+  it('passes mutation state as extraData so visible rows rerender on button lock changes', () => {
+    const props = buildProps({
+      isMutatingAnimeById: {
+        'anime-1': true,
+      },
+    });
+    const { UNSAFE_getByType } = render(<AnimeListScreenView {...props} />);
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.extraData).toBe(props.isMutatingAnimeById);
+  });
 });

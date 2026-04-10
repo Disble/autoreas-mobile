@@ -9,7 +9,7 @@ import type { AnimeCardProps } from "./anime-card.types";
 import { useAnimeCard } from "./use-anime-card";
 
 export function AnimeCard(props: AnimeCardProps) {
-  const { anime, onCapMinus, onCapPlus } = props;
+  const { anime } = props;
   const {
     progress,
     isCompleted,
@@ -22,6 +22,8 @@ export function AnimeCard(props: AnimeCardProps) {
     daysList,
     genresList,
     toggleRestantesShown,
+    handleCapMinusPress,
+    handleCapPlusPress,
     handleStateBadgePress,
     handleCapPlusLongPress,
     handleCapMinusLongPress,
@@ -137,7 +139,7 @@ export function AnimeCard(props: AnimeCardProps) {
               variant="danger-soft"
               size="lg"
               isIconOnly
-              onPress={onCapMinus}
+              onPress={handleCapMinusPress}
               onLongPress={handleCapMinusLongPress}
               isDisabled={disableDecrease}
             >
@@ -151,7 +153,7 @@ export function AnimeCard(props: AnimeCardProps) {
               variant="secondary"
               size="lg"
               isIconOnly
-              onPress={onCapPlus}
+              onPress={handleCapPlusPress}
               onLongPress={handleCapPlusLongPress}
               isDisabled={disableIncrease}
             >

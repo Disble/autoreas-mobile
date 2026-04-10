@@ -64,14 +64,25 @@ export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   await rawDb.runAsync("DELETE FROM bridge_config");
 }
 
-export async function withExclusiveWrite<T>(
+async function withQueuedWrite<T>(
   rawDb: SQLiteDatabase,
-  task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
+  runWrite: () => Promise<T>,
 ) {
   const queueKey = rawDb as object;
   const previousWrite = writeQueueByDatabase.get(queueKey) ?? Promise.resolve();
 
-  const nextWrite = previousWrite.catch(() => undefined).then(async () => {
+  const nextWrite = previousWrite.catch(() => undefined).then(runWrite);
+
+  writeQueueByDatabase.set(queueKey, nextWrite.catch(() => undefined));
+
+  return nextWrite;
+}
+
+export async function withExclusiveWrite<T>(
+  rawDb: SQLiteDatabase,
+  task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
+) {
+  return withQueuedWrite(rawDb, async () => {
     let result!: T;
 
     await rawDb.withExclusiveTransactionAsync(async (tx) => {
@@ -83,8 +94,24 @@ export async function withExclusiveWrite<T>(
 
     return result;
   });
+}
 
-  writeQueueByDatabase.set(queueKey, nextWrite.catch(() => undefined));
+/**
+ * Queues UI-facing writes on the shared connection while avoiding Expo's exclusive transaction path.
+ * This keeps local `useLiveQuery` consumers responsive after anime mutations without sacrificing
+ * per-database write ordering.
+ */
+export async function withDeferredWrite<T>(
+  rawDb: SQLiteDatabase,
+  task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
+) {
+  return withQueuedWrite(rawDb, async () => {
+    let result!: T;
 
-  return nextWrite;
+    await rawDb.withTransactionAsync(async () => {
+      result = await task(createDrizzleDb(rawDb), rawDb);
+    });
+
+    return result;
+  });
 }

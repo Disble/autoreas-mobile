@@ -1,5 +1,9 @@
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
-import { runMigrations, withExclusiveWrite } from "../../src/infrastructure/db/client";
+import {
+  runMigrations,
+  withDeferredWrite,
+  withExclusiveWrite,
+} from "../../src/infrastructure/db/client";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -154,6 +158,64 @@ describe("db client tracer helpers", () => {
     });
 
     const secondWrite = withExclusiveWrite(rawDb as never, async () => {
+      executionOrder.push("task-2");
+      return "second";
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(executionOrder).toEqual(["start", "task-1"]);
+
+    releaseFirst();
+
+    await expect(firstWrite).resolves.toBe("first");
+    await expect(secondWrite).resolves.toBe("second");
+    expect(executionOrder).toEqual([
+      "start",
+      "task-1",
+      "task-1-done",
+      "end",
+      "start",
+      "task-2",
+      "end",
+    ]);
+  });
+
+  it("devuelve el resultado del callback diferido", async () => {
+    const rawDb = {
+      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
+        await task();
+      }),
+    };
+
+    const result = await withDeferredWrite(rawDb as never, async () => "ok");
+
+    expect(result).toBe("ok");
+    expect(rawDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializa writes diferidos concurrentes sobre la misma db", async () => {
+    const executionOrder: string[] = [];
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const rawDb = {
+      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
+        executionOrder.push("start");
+        await task();
+        executionOrder.push("end");
+      }),
+    };
+
+    const firstWrite = withDeferredWrite(rawDb as never, async () => {
+      executionOrder.push("task-1");
+      await firstDone;
+      executionOrder.push("task-1-done");
+      return "first";
+    });
+
+    const secondWrite = withDeferredWrite(rawDb as never, async () => {
       executionOrder.push("task-2");
       return "second";
     });

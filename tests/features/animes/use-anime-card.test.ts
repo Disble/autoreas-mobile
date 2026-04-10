@@ -1,6 +1,9 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { useAnimeCard } from '../../../src/features/animes/ui/AnimeCard/use-anime-card';
+import type { AnimeCardProps } from '../../../src/features/animes/ui/AnimeCard/anime-card.types';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
+
+type MutableAnimeCardCallbackProps = Pick<AnimeCardProps, 'onCapPlus' | 'onCapMinus'>;
 
 describe('useAnimeCard', () => {
   const baseAnime: Anime = {
@@ -214,5 +217,70 @@ describe('useAnimeCard', () => {
     });
 
     expect(onCapMinusHalf).toHaveBeenCalledTimes(1);
+  });
+
+  it('mantiene handlers de tap alineados con la acción correcta al alternar + y -', () => {
+    const onCapPlus = jest.fn();
+    const onCapMinus = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: baseAnime,
+        onCapMinus,
+        onCapPlus,
+        isMutating: false,
+      }),
+    );
+
+    act(() => {
+      result.current.handleCapPlusPress();
+      result.current.handleCapMinusPress();
+      result.current.handleCapPlusPress();
+    });
+
+    expect(onCapPlus).toHaveBeenCalledTimes(2);
+    expect(onCapMinus).toHaveBeenCalledTimes(1);
+    expect(onCapPlus.mock.invocationCallOrder[0]).toBeLessThan(
+      onCapMinus.mock.invocationCallOrder[0],
+    );
+    expect(onCapMinus.mock.invocationCallOrder[0]).toBeLessThan(
+      onCapPlus.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('usa siempre los callbacks más recientes después de un rerender', () => {
+    const firstOnCapPlus = jest.fn();
+    const firstOnCapMinus = jest.fn();
+    const secondOnCapPlus = jest.fn();
+    const secondOnCapMinus = jest.fn();
+    const { result, rerender } = renderHook(
+      ({ onCapPlus, onCapMinus }: MutableAnimeCardCallbackProps) =>
+        useAnimeCard({
+          anime: baseAnime,
+          onCapMinus,
+          onCapPlus,
+          isMutating: false,
+        }),
+      {
+        initialProps: {
+          onCapPlus: firstOnCapPlus,
+          onCapMinus: firstOnCapMinus,
+        },
+      },
+    );
+
+    rerender({
+      onCapPlus: secondOnCapPlus,
+      onCapMinus: secondOnCapMinus,
+    });
+
+    act(() => {
+      result.current.handleCapPlusPress();
+      result.current.handleCapMinusPress();
+    });
+
+    expect(firstOnCapPlus).not.toHaveBeenCalled();
+    expect(firstOnCapMinus).not.toHaveBeenCalled();
+    expect(secondOnCapPlus).toHaveBeenCalledTimes(1);
+    expect(secondOnCapMinus).toHaveBeenCalledTimes(1);
   });
 });

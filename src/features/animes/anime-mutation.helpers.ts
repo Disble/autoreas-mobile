@@ -1,4 +1,4 @@
-import { createDrizzleDb, withExclusiveWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -175,7 +175,7 @@ export function serializeMutationOperation(
 }
 
 /**
- * Runs a patch-based mutation inside an exclusive SQLite transaction and enqueues the sync operation.
+ * Runs a patch-based mutation inside a queued deferred SQLite transaction and enqueues the sync operation.
  * Centralizing this orchestration keeps `useMutateAnime` focused on wiring React callbacks to
  * the builders, and removes duplication between cap+, cap-, and state-change flows.
  */
@@ -188,7 +188,7 @@ export async function applyAnimeMutationPatch(
   const now = Date.now();
   let didMutate = false;
 
-  await withExclusiveWrite(rawDb, async (txDb, tx) => {
+  await withDeferredWrite(rawDb, async (txDb, tx) => {
     const anime = await fetchParsedAnime(tx, animeId);
     if (!anime) return;
 

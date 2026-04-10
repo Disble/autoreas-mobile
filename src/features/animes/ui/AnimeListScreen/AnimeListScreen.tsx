@@ -129,6 +129,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
             <FlatList
               contentContainerClassName="px-4 pt-2 pb-10"
               data={animes}
+              extraData={isMutatingAnimeById}
               key={`anime-list-${numColumns}`}
               keyExtractor={(item) => item._id}
               numColumns={numColumns}
