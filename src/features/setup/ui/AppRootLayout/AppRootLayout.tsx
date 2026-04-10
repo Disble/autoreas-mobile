@@ -6,6 +6,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SQLiteUnavailableScreen } from '../../../../components/sqlite-unavailable-screen';
 import { AppThemeProvider } from '../../../../contexts/app-theme-context';
+import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate';
 import type { AppRootLayoutProps } from './app-root-layout.types';
 import { useAppRootLayout } from './use-app-root-layout';
 
@@ -17,6 +18,7 @@ export function AppRootLayout(props: AppRootLayoutProps) {
     databaseName,
     fontsLoaded,
     handleDatabaseInit,
+    isBootstrapped,
     sqliteOptions,
   } = useAppRootLayout(props);
 
@@ -50,7 +52,9 @@ export function AppRootLayout(props: AppRootLayoutProps) {
                     },
                   }}
                 >
-                  {bootState.initialized ? <Slot /> : null}
+                  <SyncRuntimeGate isBootstrapped={isBootstrapped}>
+                    {bootState.initialized ? <Slot /> : null}
+                  </SyncRuntimeGate>
                 </HeroUINativeProvider>
               </AppThemeProvider>
             </SQLiteProvider>

@@ -11,6 +11,7 @@ export interface AppRootLayoutViewModel {
   readonly databaseName: string;
   readonly fontsLoaded: boolean;
   readonly handleDatabaseInit: SQLiteProviderProps['onInit'];
+  readonly isBootstrapped: boolean;
   readonly sqliteOptions: {
     readonly enableChangeListener: boolean;
   };

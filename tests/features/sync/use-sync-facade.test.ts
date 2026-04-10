@@ -3,9 +3,8 @@ import * as dbClient from '../../../src/infrastructure/db/client';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
-import * as initialSyncModule from '../../../src/features/sync/use-initial-sync';
+import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
-import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),
@@ -24,12 +23,10 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/use-initial-sync', () => ({
-  initialSync: jest.fn(),
-}));
-
-jest.mock('../../../src/features/ws/use-websocket', () => ({
-  useWebSocket: jest.fn(),
+jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+  recordSyncAttemptFailed: jest.fn(),
+  recordSyncAttemptStarted: jest.fn(),
+  recordSyncAttemptSucceeded: jest.fn(),
 }));
 
 describe('useSyncFacade', () => {
@@ -52,83 +49,68 @@ describe('useSyncFacade', () => {
       limit: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
     });
-    (useWebSocket as jest.Mock).mockImplementation(() => ({}));
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue(3);
-    (initialSyncModule.initialSync as jest.Mock).mockResolvedValue(10);
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockImplementation(
       (_query: unknown, fallbackData: unknown) => ({ data: fallbackData }),
     );
+    (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
+    (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
+    (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('usa reconcile como estrategia de bootstrap cuando ya existe cache local', async () => {
-    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
-      .mockReturnValueOnce({ data: [{ _id: 'anime-1' }] })
-      .mockReturnValueOnce({ data: [{ id: 1 }, { id: 2 }] });
-
+  it('stays passive on mount so root runtime owns bootstrap and websocket wiring', () => {
     renderHook(() => useSyncFacade());
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
-    expect(initialSyncModule.initialSync).not.toHaveBeenCalled();
-  });
-
-  it('usa hidratación inicial como estrategia de bootstrap cuando no hay cache local', async () => {
-    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
-      .mockReturnValueOnce({ data: [] })
-      .mockReturnValueOnce({ data: [] });
-
-    renderHook(() => useSyncFacade());
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(initialSyncModule.initialSync).toHaveBeenCalledWith(rawDb);
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalled();
   });
 
-  it('expone manualSync como fachada simple sobre el subsistema de sync', async () => {
-    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
-      .mockReturnValueOnce({ data: [{ _id: 'anime-1' }] })
-      .mockReturnValueOnce({ data: [{ id: 1 }] });
+  it('exposes pending outbox count and manual sync without auto-starting runtime work', async () => {
+    (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockReturnValueOnce({
+      data: [{ id: 1 }, { id: 2 }],
+    });
+    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue(3);
 
     const { result } = renderHook(() => useSyncFacade());
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    (syncModule.syncPendingOperations as jest.Mock).mockClear();
+    expect(result.current.pendingOpsCount).toBe(2);
 
     await act(async () => {
       await result.current.manualSync();
     });
 
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
     expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
   });
 
-  it('adapta el callback async de sync al contrato void del websocket', async () => {
-    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
-      .mockReturnValueOnce({ data: [{ _id: 'anime-1' }] })
-      .mockReturnValueOnce({ data: [] });
+  it('collapses simultaneous trigger storms into a single in-flight sync request', async () => {
+    let resolveSync: ((value: number) => void) | null = null;
 
-    renderHook(() => useSyncFacade());
+    (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    let firstPromise!: Promise<number>;
+    let secondPromise!: Promise<number>;
 
     await act(async () => {
+      firstPromise = result.current.requestSync('bootstrap');
+      secondPromise = result.current.requestSync('network_regained');
       await Promise.resolve();
     });
 
-    const webSocketProps = (useWebSocket as jest.Mock).mock.calls[0]?.[0];
-    (syncModule.syncPendingOperations as jest.Mock).mockClear();
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
+    expect(firstPromise).toBe(secondPromise);
 
     await act(async () => {
-      webSocketProps.onSyncRequired();
-      await Promise.resolve();
+      resolveSync?.(7);
+      await firstPromise;
     });
 
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
+    await expect(firstPromise).resolves.toBe(7);
+    await expect(secondPromise).resolves.toBe(7);
   });
 });

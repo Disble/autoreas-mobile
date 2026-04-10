@@ -3,11 +3,13 @@ import { Alert as HeroAlert, Button, Card, cn } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
 import { ScreenScrollView } from '../../../../components/screen-scroll-view';
+import { BACKGROUND_SYNC_SECTION_TITLE } from './settings-screen.constants';
 import type { SettingsScreenProps } from './settings-screen.types';
 import { useSettingsScreen } from './use-settings-screen';
 
 export function SettingsScreen(props: SettingsScreenProps) {
   const {
+    backgroundSyncSection,
     config,
     error,
     isConfigured,
@@ -100,6 +102,34 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </Card.Body>
         </Card>
       )}
+
+      <Card variant="secondary">
+        <Card.Header className="gap-1">
+          <Card.Title>{BACKGROUND_SYNC_SECTION_TITLE}</Card.Title>
+          <Card.Description>
+            Snapshot local del runtime para entender si el sync periódico está realmente disponible.
+          </Card.Description>
+        </Card.Header>
+
+        <Card.Body className="gap-4">
+          <HeroAlert status={backgroundSyncSection.statusTone}>
+            <HeroAlert.Indicator />
+            <HeroAlert.Content>
+              <HeroAlert.Title>{backgroundSyncSection.title}</HeroAlert.Title>
+              <HeroAlert.Description>{backgroundSyncSection.description}</HeroAlert.Description>
+            </HeroAlert.Content>
+          </HeroAlert>
+
+          <View className="gap-3">
+            {backgroundSyncSection.rows.map((row) => (
+              <View className="gap-1" key={row.label}>
+                <AppText className="text-xs uppercase tracking-wide text-muted">{row.label}</AppText>
+                <AppText className="text-base text-foreground">{row.value}</AppText>
+              </View>
+            ))}
+          </View>
+        </Card.Body>
+      </Card>
 
       {error ? (
         <HeroAlert status="danger">

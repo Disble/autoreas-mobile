@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import { useBridgeConfig } from '../settings/use-bridge-config';
-import { useWebSocket } from '../ws/use-websocket';
 import {
-  adaptAsyncSyncToVoidHandler,
-  buildLocalAnimePresenceQuery,
   buildPendingOperationsQuery,
-  resolveBootstrapMode,
-  resolveBootstrapStrategy,
   transitionSyncState,
 } from './sync-facade.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import type { SyncState, UseSyncFacadeResult } from './sync-facade.types';
+import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
+import {
+  recordSyncAttemptFailed,
+  recordSyncAttemptStarted,
+  recordSyncAttemptSucceeded,
+} from './sync-runtime-status.helpers';
 
 export function useSyncFacade(): UseSyncFacadeResult {
   // 1. Refs
-  const hasBootstrappedRef = useRef(false);
+  const inFlightSyncRef = useRef<Promise<number> | null>(null);
 
   // 2. State
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' });
@@ -27,22 +28,16 @@ export function useSyncFacade(): UseSyncFacadeResult {
   const { isConfigured } = useBridgeConfig();
 
   // 4. Queries/Mutations
-  const localAnimePresenceQuery = useMemo(
-    () => (rawDb ? buildLocalAnimePresenceQuery(rawDb) : null),
-    [rawDb],
-  );
   const pendingOperationsQuery = useMemo(
     () => (rawDb ? buildPendingOperationsQuery(rawDb) : null),
     [rawDb],
   );
-  const { data: localAnimeRows } = useOptionalLiveQuery(localAnimePresenceQuery, [] as { id: string }[]);
   const { data: pendingOperationRows } = useOptionalLiveQuery(
     pendingOperationsQuery,
     [] as { id: number }[],
   );
 
   // 5. Derived State (`useMemo`)
-  const hasLocalCache = useMemo(() => localAnimeRows.length > 0, [localAnimeRows]);
   const pendingOpsCount = useMemo(() => pendingOperationRows.length, [pendingOperationRows]);
 
   // 6. Callbacks (`useCallback` calling pure helpers)
@@ -55,73 +50,68 @@ export function useSyncFacade(): UseSyncFacadeResult {
     );
   }, []);
 
-  const manualSync = useCallback(async () => {
+  const requestSync = useCallback((source: SyncRuntimeTriggerSource) => {
     if (!rawDb || !isConfigured) {
       setSyncError(null);
       setSyncState((currentState) => transitionSyncState(currentState, { type: 'MARK_OFFLINE' }));
-      return 0;
+      return Promise.resolve(0);
+    }
+
+    if (inFlightSyncRef.current) {
+      return inFlightSyncRef.current;
     }
 
     setSyncError(null);
     setSyncState((currentState) => transitionSyncState(currentState, { type: 'SYNC_STARTED' }));
 
-    try {
-      const syncedCount = await syncPendingOperations(rawDb);
-      const syncedAt = Date.now();
-
-      setLastSyncAt(syncedAt);
-      setSyncState((currentState) =>
-        transitionSyncState(currentState, { type: 'SYNC_SUCCEEDED', syncedAt }),
-      );
-
-      return syncedCount;
-    } catch (error) {
-      handleSyncFailure(error);
-      throw error;
-    }
-  }, [handleSyncFailure, isConfigured, rawDb]);
-
-  const handleWebSocketSyncRequired = useMemo(
-    () => adaptAsyncSyncToVoidHandler(manualSync, handleSyncFailure),
-    [handleSyncFailure, manualSync],
-  );
-
-  // 7. Effects
-  useWebSocket({ onSyncRequired: handleWebSocketSyncRequired });
-
-  useEffect(() => {
-    if (!rawDb || !isConfigured || hasBootstrappedRef.current) {
-      if (!isConfigured) {
-        setSyncError(null);
-        setSyncState((currentState) =>
-          transitionSyncState(currentState, { type: 'MARK_OFFLINE' }),
-        );
-      }
-      return;
-    }
-
-    hasBootstrappedRef.current = true;
-    setSyncError(null);
-    setSyncState((currentState) => transitionSyncState(currentState, { type: 'SYNC_STARTED' }));
-
-    const bootstrapMode = resolveBootstrapMode(hasLocalCache);
-    const bootstrapStrategy = resolveBootstrapStrategy(bootstrapMode);
-
-    void bootstrapStrategy({ rawDb })
-      .then(() => {
+    const attemptedAt = Date.now();
+    const syncPromise = recordSyncAttemptStarted(rawDb, source, attemptedAt)
+      .then(() => syncPendingOperations(rawDb))
+      .then(async (syncedCount) => {
         const syncedAt = Date.now();
+
+        await recordSyncAttemptSucceeded(rawDb, source, syncedAt, syncedCount);
+
         setLastSyncAt(syncedAt);
         setSyncState((currentState) =>
           transitionSyncState(currentState, { type: 'SYNC_SUCCEEDED', syncedAt }),
         );
+
+        return syncedCount;
       })
-      .catch(handleSyncFailure);
-  }, [handleSyncFailure, hasLocalCache, isConfigured, rawDb]);
+      .catch(async (error) => {
+        const message = error instanceof Error ? error.message : 'Sync failed';
+
+        await recordSyncAttemptFailed(rawDb, source, Date.now(), message);
+        handleSyncFailure(error);
+        throw error;
+      })
+      .finally(() => {
+        inFlightSyncRef.current = null;
+      });
+
+    inFlightSyncRef.current = syncPromise;
+
+    return syncPromise;
+  }, [handleSyncFailure, isConfigured, rawDb]);
+
+  const manualSync = useCallback(() => requestSync('manual'), [requestSync]);
+
+  // 7. Effects
+  useEffect(() => {
+    if (rawDb && isConfigured) {
+      return;
+    }
+
+    setSyncError(null);
+    setSyncState((currentState) => transitionSyncState(currentState, { type: 'MARK_OFFLINE' }));
+  }, [isConfigured, rawDb]);
 
   return {
     connectionStatus: syncState.kind,
     lastSyncAt,
     pendingOpsCount,
+    requestSync,
     syncError,
     manualSync,
   };

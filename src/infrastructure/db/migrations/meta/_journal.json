@@ -15,6 +15,13 @@
       "when": 1775692800000,
       "tag": "0001_add_bridge_config_last_changelog_id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775820000000,
+      "tag": "0002_add_sync_runtime_status",
+      "breakpoints": true
     }
   ]
 }

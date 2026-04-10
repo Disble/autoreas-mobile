@@ -6,7 +6,6 @@ import type { Anime } from "../../../../src/infrastructure/validation/anime-sche
 const mockPush = jest.fn();
 const mockHandleSyncRequired = jest.fn();
 const mockUseAnimeList = jest.fn();
-const mockUseWebSocket = jest.fn();
 const mockUseResponsiveLayout = jest.fn();
 const mockCapPlus = jest.fn();
 const mockCapMinus = jest.fn();
@@ -44,10 +43,6 @@ jest.mock("../../../../src/features/sync/use-incremental-sync-handler", () => ({
   useIncrementalSyncHandler: jest.fn(() => ({
     handleSyncRequired: mockHandleSyncRequired,
   })),
-}));
-
-jest.mock("../../../../src/features/ws/use-websocket", () => ({
-  useWebSocket: (...args: unknown[]) => mockUseWebSocket(...args),
 }));
 
 jest.mock("../../../../src/hooks/use-responsive-layout", () => ({

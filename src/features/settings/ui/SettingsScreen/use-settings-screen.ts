@@ -1,9 +1,11 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
+import { useBackgroundSyncStatus } from '../../use-background-sync-status';
 import { useBridgeConfig } from '../../use-bridge-config';
+import { buildBackgroundSyncSection } from './settings-screen.helpers';
 import type {
   SettingsScreenProps,
   SettingsScreenViewModel,
@@ -24,9 +26,14 @@ export function useSettingsScreen(
   ]);
 
   // 4. Queries/Mutations
+  const { snapshot } = useBackgroundSyncStatus();
   const { config, isConfigured, isUnpairing, error, unpair } = useBridgeConfig();
 
   // 5. Derived State (useMemo)
+  const backgroundSyncSection = useMemo(
+    () => buildBackgroundSyncSection({ isConfigured, snapshot }),
+    [isConfigured, snapshot],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleGoToSetup = useCallback(() => {
@@ -61,6 +68,7 @@ export function useSettingsScreen(
   // 7. Effects
 
   return {
+    backgroundSyncSection,
     config,
     error,
     isConfigured,

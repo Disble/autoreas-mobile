@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 
 export interface SyncBootstrapContext {
   readonly rawDb: SQLiteDatabase;
@@ -27,6 +28,7 @@ export interface UseSyncFacadeResult {
   readonly connectionStatus: SyncState['kind'];
   readonly lastSyncAt: number | null;
   readonly pendingOpsCount: number;
+  readonly requestSync: (source: SyncRuntimeTriggerSource) => Promise<number>;
   readonly syncError: string | null;
   readonly manualSync: () => Promise<number>;
 }

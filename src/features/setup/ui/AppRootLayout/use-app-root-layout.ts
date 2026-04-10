@@ -38,6 +38,7 @@ export function useAppRootLayout(
 
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
+  const isBootstrapped = bootState.initialized;
 
   // 6. Callbacks (useCallback calling pure helpers)
   const contentWrapper = useCallback(renderKeyboardAvoidingWrapper, []);
@@ -78,6 +79,7 @@ export function useAppRootLayout(
     databaseName,
     fontsLoaded,
     handleDatabaseInit,
+    isBootstrapped,
     sqliteOptions,
   };
 }

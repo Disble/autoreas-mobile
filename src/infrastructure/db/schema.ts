@@ -1,4 +1,8 @@
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type {
+  SyncRuntimeRegistrationStatus,
+  SyncRuntimeTriggerSource,
+} from '../../features/sync/sync-runtime-status.types';
 
 export const animes = sqliteTable("animes", {
   _id: text("_id").primaryKey(),
@@ -42,9 +46,24 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   lastChangelogId: integer("last_changelog_id").default(0),
 });
 
+export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
+  id: integer('id').primaryKey().default(1),
+  registrationStatus: text('registration_status')
+    .$type<SyncRuntimeRegistrationStatus>()
+    .notNull()
+    .default('unregistered'),
+  lastAttemptAt: integer('last_attempt_at'),
+  lastSuccessAt: integer('last_success_at'),
+  lastFailureMessage: text('last_failure_message'),
+  lastTriggerSource: text('last_trigger_source').$type<SyncRuntimeTriggerSource>(),
+  lastSyncedCount: integer('last_synced_count').notNull().default(0),
+});
+
 export type AnimeRow = typeof animes.$inferSelect;
 export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
 export type BridgeConfig = typeof bridgeConfig.$inferSelect;
 export type NewBridgeConfig = typeof bridgeConfig.$inferInsert;
+export type SyncRuntimeStatusRow = typeof syncRuntimeStatus.$inferSelect;
+export type NewSyncRuntimeStatusRow = typeof syncRuntimeStatus.$inferInsert;

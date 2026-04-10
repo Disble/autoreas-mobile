@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
 import SettingsScreen from '../../../src/app/(tabs)/settings';
+import { useBackgroundSyncStatus } from '../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../src/features/settings/use-bridge-config';
 
 jest.mock('expo-router', () => ({
@@ -10,6 +11,10 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../../src/features/settings/use-bridge-config', () => ({
   useBridgeConfig: jest.fn(),
+}));
+
+jest.mock('../../../src/features/settings/use-background-sync-status', () => ({
+  useBackgroundSyncStatus: jest.fn(),
 }));
 
 jest.mock('@react-navigation/elements', () => ({
@@ -47,6 +52,16 @@ describe('SettingsScreen', () => {
       error: null,
       unpair: mockUnpair,
     });
+
+    (useBackgroundSyncStatus as jest.Mock).mockReturnValue({
+      snapshot: {
+        registrationStatus: 'registered',
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775811900000,
+        lastFailureMessage: 'Bridge timeout after 10s',
+        lastTriggerSource: 'background_task',
+      },
+    });
   });
 
   afterEach(() => {
@@ -61,6 +76,15 @@ describe('SettingsScreen', () => {
     expect(screen.getByText('bridge-abc')).toBeTruthy();
   });
 
+  it('R1b: muestra el estado observable del background sync y el último error conocido', () => {
+    render(<SettingsScreen />);
+
+    expect(screen.getByText('Estado de sync en segundo plano')).toBeTruthy();
+    expect(screen.getByText('Último sync con error')).toBeTruthy();
+    expect(screen.getByText('Bridge timeout after 10s')).toBeTruthy();
+    expect(screen.getByText('Task en segundo plano')).toBeTruthy();
+  });
+
   it('R2: muestra mensaje Sin bridge configurado cuando isConfigured=false', () => {
     (useBridgeConfig as jest.Mock).mockReturnValue({
       config: null,
@@ -73,6 +97,7 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText('Sin bridge configurado')).toBeTruthy();
+    expect(screen.getByText('No disponible sin bridge emparejado')).toBeTruthy();
     expect(screen.getByLabelText('Ir al setup')).toBeTruthy();
   });
 

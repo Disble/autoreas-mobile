@@ -35,11 +35,14 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
       entries: [
         { idx: 0, tag: "0000_moaning_maximus" },
         { idx: 1, tag: "0001_add_bridge_config_last_changelog_id" },
+        { idx: 2, tag: "0002_add_sync_runtime_status" },
       ],
     },
     migrations: {
       m0000: "CREATE TABLE `bridge_config` (`id` integer PRIMARY KEY DEFAULT 1 NOT NULL);",
       m0001: "ALTER TABLE `bridge_config` ADD COLUMN `last_changelog_id` integer DEFAULT 0;",
+      m0002:
+        "CREATE TABLE `sync_runtime_status` (`id` integer PRIMARY KEY DEFAULT 1 NOT NULL, `registration_status` text DEFAULT 'unregistered' NOT NULL, `last_attempt_at` integer, `last_success_at` integer, `last_failure_message` text, `last_trigger_source` text);",
     },
   },
 }));
@@ -64,10 +67,12 @@ describe("db client tracer helpers", () => {
         journal: expect.objectContaining({
           entries: expect.arrayContaining([
             expect.objectContaining({ tag: "0001_add_bridge_config_last_changelog_id" }),
+            expect.objectContaining({ tag: "0002_add_sync_runtime_status" }),
           ]),
         }),
         migrations: expect.objectContaining({
           m0001: expect.stringContaining('ALTER TABLE `bridge_config` ADD COLUMN `last_changelog_id` integer DEFAULT 0;'),
+          m0002: expect.stringContaining('CREATE TABLE `sync_runtime_status`'),
         }),
       })
     );

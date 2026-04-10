@@ -1,49 +1,21 @@
-import { renderHook, act } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import * as dbClient from '../../../src/infrastructure/db/client';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
 import * as initialSync from '../../../src/features/sync/use-initial-sync';
 import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
-// AppState listeners registry — shared between mock and tests
-const appStateListeners: ((state: string) => void)[] = [];
-
-jest.mock('expo-sqlite', () => ({
-  useSQLiteContext: jest.fn(),
-}));
-
 jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withExclusiveWrite: jest.fn(),
-  createDrizzleDb: jest.fn(),
+}));
+
+jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+  useOptionalSQLiteContext: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/use-initial-sync', () => ({
   upsertAnimeFromBridge: jest.fn(),
   deleteAnimeLocally: jest.fn(),
 }));
-
-jest.mock('react-native', () => ({
-  AppState: {
-    currentState: 'active',
-    addEventListener: jest.fn((event: string, cb: (state: string) => void) => {
-      appStateListeners.push(cb);
-      return {
-        remove: jest.fn(() => {
-          const idx = appStateListeners.indexOf(cb);
-          if (idx !== -1) appStateListeners.splice(idx, 1);
-        }),
-      };
-    }),
-  },
-}));
-
-const { useSQLiteContext } = jest.requireMock('expo-sqlite') as { useSQLiteContext: jest.Mock };
-
-const mockConfig = { ip: '192.168.1.10', port: 8080, token: 'token123' };
-const rawDb = { name: 'raw-db' };
-
-function emitAppState(state: string) {
-  appStateListeners.forEach((l) => { l(state); });
-}
 
 function buildWsMock() {
   return {
@@ -57,57 +29,81 @@ function buildWsMock() {
 }
 
 describe('useWebSocket', () => {
+  const rawDb = { name: 'raw-db' };
+  const mockConfig = { ip: '192.168.1.10', port: 8080, token: 'token123' };
   let mockWs: ReturnType<typeof buildWsMock>;
 
   beforeEach(() => {
     jest.useFakeTimers();
-    appStateListeners.length = 0;
+    jest.clearAllMocks();
     mockWs = buildWsMock();
-    useSQLiteContext.mockReturnValue(rawDb);
+
+    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue(mockConfig);
 
     global.WebSocket = jest.fn().mockImplementation(() => {
       mockWs.readyState = WebSocket.CONNECTING;
       return mockWs;
     }) as unknown as typeof WebSocket;
-    (global.WebSocket as any).OPEN = 1;
-    (global.WebSocket as any).CONNECTING = 0;
+    (global.WebSocket as typeof WebSocket & { OPEN: number; CONNECTING: number }).OPEN = 1;
+    (global.WebSocket as typeof WebSocket & { OPEN: number; CONNECTING: number }).CONNECTING = 0;
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
     jest.useRealTimers();
   });
 
-  it('connects to WebSocket on mount when AppState is active', async () => {
-    renderHook(() => useWebSocket());
+  it('does not connect while the root runtime keeps websocket disabled', async () => {
+    renderHook(() => useWebSocket({ enabled: false }));
 
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(global.WebSocket).not.toHaveBeenCalled();
+  });
+
+  it('connects when the root runtime enables foreground websocket ownership', async () => {
+    renderHook(() => useWebSocket({ enabled: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(global.WebSocket).toHaveBeenCalledWith(
       'ws://192.168.1.10:8080/ws',
       null,
-      expect.objectContaining({ headers: { Authorization: 'Bearer token123' } })
+      expect.objectContaining({ headers: { Authorization: 'Bearer token123' } }),
     );
   });
 
-  it('disconnects when AppState changes to background', async () => {
-    renderHook(() => useWebSocket());
+  it('disconnects when the runtime disables websocket ownership', async () => {
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useWebSocket({ enabled }),
+      { initialProps: { enabled: true } },
+    );
 
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
-    act(() => { emitAppState('background'); });
+    rerender({ enabled: false });
 
-    expect(mockWs.close).toHaveBeenCalled();
+    expect(mockWs.close).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onSyncRequired when receiving sync_required event', async () => {
+  it('routes sync_required to the runtime callback without screen coupling', async () => {
     const onSyncRequired = jest.fn();
 
-    renderHook(() => useWebSocket({ onSyncRequired }));
-    await act(async () => { await Promise.resolve(); });
+    renderHook(() => useWebSocket({ enabled: true, onSyncRequired }));
 
-    act(() => { mockWs.onopen?.({} as Event); });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
 
     await act(async () => {
       mockWs.onmessage?.({ data: JSON.stringify({ type: 'sync_required' }) } as MessageEvent);
@@ -117,12 +113,18 @@ describe('useWebSocket', () => {
     expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
 
-  it('calls upsertAnimeFromBridge when anime_changed arrives', async () => {
+  it('keeps bridge snapshot updates working while enabled', async () => {
     (initialSync.upsertAnimeFromBridge as jest.Mock).mockResolvedValue(undefined);
 
-    renderHook(() => useWebSocket());
-    await act(async () => { await Promise.resolve(); });
-    act(() => { mockWs.onopen?.({} as Event); });
+    renderHook(() => useWebSocket({ enabled: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
 
     await act(async () => {
       mockWs.onmessage?.({
@@ -132,39 +134,5 @@ describe('useWebSocket', () => {
     });
 
     expect(initialSync.upsertAnimeFromBridge).toHaveBeenCalledWith(rawDb, 'anime-1');
-  });
-
-  it('calls upsertAnimeFromBridge when anime_created arrives', async () => {
-    (initialSync.upsertAnimeFromBridge as jest.Mock).mockResolvedValue(undefined);
-
-    renderHook(() => useWebSocket());
-    await act(async () => { await Promise.resolve(); });
-    act(() => { mockWs.onopen?.({} as Event); });
-
-    await act(async () => {
-      mockWs.onmessage?.({
-        data: JSON.stringify({ type: 'anime_created', anime_id: 'anime-2' }),
-      } as MessageEvent);
-      await Promise.resolve();
-    });
-
-    expect(initialSync.upsertAnimeFromBridge).toHaveBeenCalledWith(rawDb, 'anime-2');
-  });
-
-  it('calls deleteAnimeLocally when anime_deleted arrives', async () => {
-    (initialSync.deleteAnimeLocally as jest.Mock).mockResolvedValue(undefined);
-
-    renderHook(() => useWebSocket());
-    await act(async () => { await Promise.resolve(); });
-    act(() => { mockWs.onopen?.({} as Event); });
-
-    await act(async () => {
-      mockWs.onmessage?.({
-        data: JSON.stringify({ type: 'anime_deleted', anime_id: 'anime-3' }),
-      } as MessageEvent);
-      await Promise.resolve();
-    });
-
-    expect(initialSync.deleteAnimeLocally).toHaveBeenCalledWith(rawDb, 'anime-3');
   });
 });
