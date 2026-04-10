@@ -1,14 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { Button } from 'heroui-native';
-import { FlatList, Pressable, RefreshControl, View } from 'react-native';
-import { AppText } from '../../../../components/app-text';
-import { AnimeEmptyState } from '../AnimeEmptyState';
-import { AnimeFilterRail } from '../AnimeFilterRail';
-import { AnimeStateSheet } from '../AnimeStateSheet';
-import type { AnimeListScreenViewProps } from './anime-list-screen.types';
-import { renderAnimeListItem } from './anime-list-screen.helpers';
+import { Ionicons } from "@expo/vector-icons";
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { Button } from "heroui-native";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { AppText } from "../../../../components/app-text";
+import { AnimeCard } from "../AnimeCard";
+import { AnimeEmptyState } from "../AnimeEmptyState";
+import { AnimeFilterRail } from "../AnimeFilterRail";
+import { AnimeStateSheet } from "../AnimeStateSheet";
+import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
+import { useAnimeListItemRenderer } from "./use-anime-list-item-renderer";
 
 export function AnimeListScreenView(props: AnimeListScreenViewProps) {
   const {
@@ -38,8 +39,16 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     handleStateSheetSelect,
   } = props;
 
-  const isTabletLandscape = layoutMode === 'tablet-landscape';
+  const isTabletLandscape = layoutMode === "tablet-landscape";
   const numColumns = isTabletLandscape ? 2 : 1;
+  const { getAnimeCardProps } = useAnimeListItemRenderer(
+    isMutatingAnimeById,
+    handleCapMinus,
+    handleCapPlus,
+    handleCapPlusHalf,
+    handleCapMinusHalf,
+    handleOpenStateSheet,
+  );
 
   return (
     <View className="bg-background flex-1">
@@ -76,7 +85,9 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         }}
       />
 
-      <View className={isTabletLandscape ? 'flex-1 flex-row pt-16' : 'flex-1 pt-16'}>
+      <View
+        className={isTabletLandscape ? "flex-1 flex-row pt-16" : "flex-1 pt-16"}
+      >
         {isTabletLandscape ? (
           <View className="border-border/40 w-56 border-r">
             <AnimeFilterRail
@@ -118,7 +129,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
               key={`anime-list-${numColumns}`}
               keyExtractor={(item) => item._id}
               numColumns={numColumns}
-              columnWrapperClassName={numColumns > 1 ? 'gap-3' : undefined}
+              columnWrapperClassName={numColumns > 1 ? "gap-3" : undefined}
               refreshControl={
                 <RefreshControl
                   refreshing={isRefreshing}
@@ -127,17 +138,9 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
                   }}
                 />
               }
-              renderItem={({ item }) =>
-                renderAnimeListItem(
-                  item,
-                  isMutatingAnimeById,
-                  handleCapMinus,
-                  handleCapPlus,
-                  handleCapPlusHalf,
-                  handleCapMinusHalf,
-                  handleOpenStateSheet,
-                )
-              }
+              renderItem={({ item }) => (
+                <AnimeCard {...getAnimeCardProps(item)} />
+              )}
               showsVerticalScrollIndicator={false}
             />
           )}
@@ -153,7 +156,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         onClose={handleCloseStateSheet}
       />
 
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <StatusBar style={isDark ? "light" : "dark"} />
     </View>
   );
 }

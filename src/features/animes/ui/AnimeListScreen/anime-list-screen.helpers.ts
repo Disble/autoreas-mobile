@@ -1,17 +1,14 @@
-import { createElement } from 'react';
-import type { Anime } from '../../../../infrastructure/validation/anime-schema';
+import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
   ANIME_DAY_FILTER_OPTIONS,
   WEEKDAY_INDEX_TO_FILTER,
-} from '../../anime.constants';
-import { matchesAnimeDayFilter } from '../../anime.helpers';
-import type { AnimeDayFilter } from '../../anime.types';
-import { AnimeCard } from '../AnimeCard';
+} from "../../anime.constants";
+import { matchesAnimeDayFilter } from "../../anime.helpers";
+import type { AnimeDayFilter } from "../../anime.types";
 import type {
   AnimeListScreenContextualHeader,
   AnimeListScreenFilterCounts,
-  AnimeListScreenViewProps,
-} from './anime-list-screen.types';
+} from "./anime-list-screen.types";
 
 /**
  * Counts how many active animes belong to each day filter based on their `dias` tags.
@@ -38,9 +35,9 @@ export function computeFilterCounts(
 }
 
 const PSEUDO_DAY_TITLE: Readonly<Record<string, string>> = {
-  'Ver hoy': 'Para ver hoy',
-  'Sin ver': 'Sin ver',
-  Visto: 'Vistos',
+  "Ver hoy": "Para ver hoy",
+  "Sin ver": "Sin ver",
+  Visto: "Vistos",
 };
 
 /**
@@ -58,9 +55,9 @@ export function buildContextualHeader(
 
   let subtitle: string;
   if (count === 0) {
-    subtitle = 'Sin animes para este filtro';
+    subtitle = "Sin animes para este filtro";
   } else if (count === 1) {
-    subtitle = '1 anime para ver';
+    subtitle = "1 anime para ver";
   } else {
     subtitle = `${count} animes para ver`;
   }
@@ -70,38 +67,4 @@ export function buildContextualHeader(
     subtitle,
     isToday,
   };
-}
-
-/**
- * Renders a single anime row using the screen view-model callbacks.
- * Keeping this renderer outside the `.tsx` file satisfies the strict colocation rule without duplicating card wiring.
- */
-export function renderAnimeListItem(
-  item: AnimeListScreenViewProps['animes'][number],
-  isMutatingAnimeById: AnimeListScreenViewProps['isMutatingAnimeById'],
-  handleCapMinus: AnimeListScreenViewProps['handleCapMinus'],
-  handleCapPlus: AnimeListScreenViewProps['handleCapPlus'],
-  handleCapPlusHalf: AnimeListScreenViewProps['handleCapPlusHalf'],
-  handleCapMinusHalf: AnimeListScreenViewProps['handleCapMinusHalf'],
-  handleOpenStateSheet: AnimeListScreenViewProps['handleOpenStateSheet'],
-) {
-  return createElement(AnimeCard, {
-    anime: item,
-    isMutating: !!isMutatingAnimeById[item._id],
-    onCapMinus: () => {
-      void handleCapMinus(item._id);
-    },
-    onCapPlus: () => {
-      void handleCapPlus(item._id);
-    },
-    onCapMinusHalf: () => {
-      void handleCapMinusHalf(item._id);
-    },
-    onCapPlusHalf: () => {
-      void handleCapPlusHalf(item._id);
-    },
-    onOpenStateSheet: (animeId, currentEstado) => {
-      handleOpenStateSheet(animeId, currentEstado);
-    },
-  });
 }
