@@ -3,7 +3,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Button, Select } from 'heroui-native';
 import { FlatList, Pressable, View } from 'react-native';
-import { AnimeCard } from '../AnimeCard';
 import { AnimeEmptyState } from '../AnimeEmptyState';
 import type { AnimeListScreenViewProps } from './anime-list-screen.types';
 import { renderAnimeListItem } from './anime-list-screen.helpers';
@@ -49,7 +48,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         }}
       />
 
-      <View className="flex-row items-center gap-2 px-4 pb-2 pt-4">
+      <View className="flex-row items-center gap-2 px-4 pb-2 pt-20">
         <View className="flex-1">
           <Select
             onValueChange={handleSelectedFilterChange}
