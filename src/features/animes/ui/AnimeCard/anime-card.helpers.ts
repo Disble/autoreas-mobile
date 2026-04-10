@@ -15,6 +15,14 @@ export const getIsCompleted = (progress: number | null) => {
 };
 
 /**
+ * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
+ * This prevents the UI from offering Cap+ or Cap- actions that contradict the persisted business status.
+ */
+export const isAnimeMutationLocked = (estado: number) => {
+  return estado === 1;
+};
+
+/**
  * Checks whether the watched episode count can be decremented without going below zero.
  * This protects the minus action from producing impossible negative progress.
  */

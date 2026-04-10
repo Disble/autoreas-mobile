@@ -3,6 +3,7 @@ import {
   canDecrease,
   canIncrease,
   getIsCompleted,
+  isAnimeMutationLocked,
 } from "../../../../src/features/animes/ui/AnimeCard/anime-card.helpers";
 
 describe("anime-card helpers", () => {
@@ -24,5 +25,11 @@ describe("anime-card helpers", () => {
     expect(canIncrease(5, 5)).toBe(false);
     expect(canIncrease(4, 5)).toBe(true);
     expect(canIncrease(20, null)).toBe(true);
+  });
+
+  it("locks mutations when the anime is already finalizado", () => {
+    expect(isAnimeMutationLocked(1)).toBe(true);
+    expect(isAnimeMutationLocked(0)).toBe(false);
+    expect(isAnimeMutationLocked(2)).toBe(false);
   });
 });

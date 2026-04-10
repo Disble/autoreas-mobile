@@ -53,4 +53,23 @@ describe('useAnimeCard', () => {
     expect(result.current.disableDecrease).toBe(false);
     expect(result.current.disableIncrease).toBe(false);
   });
+
+  it('bloquea ambos botones cuando el anime está finalizado', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: {
+          ...baseAnime,
+          estado: 1,
+          nrocapvisto: 12,
+          totalcap: 12,
+        },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.disableDecrease).toBe(true);
+    expect(result.current.disableIncrease).toBe(true);
+  });
 });

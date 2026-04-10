@@ -5,6 +5,7 @@ import {
   canDecrease,
   canIncrease,
   getIsCompleted,
+  isAnimeMutationLocked,
 } from './anime-card.helpers';
 
 export function useAnimeCard(props: AnimeCardProps) {
@@ -21,14 +22,22 @@ export function useAnimeCard(props: AnimeCardProps) {
 
   const isCompleted = useMemo(() => getIsCompleted(progress), [progress]);
 
+  const isMutationLocked = useMemo(
+    () => isAnimeMutationLocked(props.anime.estado),
+    [props.anime.estado]
+  );
+
   const disableDecrease = useMemo(
-    () => props.isMutating || !canDecrease(props.anime.nrocapvisto),
-    [props.anime.nrocapvisto, props.isMutating]
+    () => props.isMutating || isMutationLocked || !canDecrease(props.anime.nrocapvisto),
+    [props.anime.nrocapvisto, props.isMutating, isMutationLocked]
   );
 
   const disableIncrease = useMemo(
-    () => props.isMutating || !canIncrease(props.anime.nrocapvisto, props.anime.totalcap),
-    [props.anime.nrocapvisto, props.anime.totalcap, props.isMutating]
+    () =>
+      props.isMutating ||
+      isMutationLocked ||
+      !canIncrease(props.anime.nrocapvisto, props.anime.totalcap),
+    [props.anime.nrocapvisto, props.anime.totalcap, props.isMutating, isMutationLocked]
   );
 
   const daysList = props.anime.dias || [];
