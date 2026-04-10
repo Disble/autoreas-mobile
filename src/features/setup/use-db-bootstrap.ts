@@ -6,7 +6,6 @@ import {
   runMigrations,
 } from "../../infrastructure/db/client";
 import { getSQLiteProvider } from "../../infrastructure/db/native-runtime";
-import { initialSync } from "../sync/use-initial-sync";
 import type { BootState, UseDbBootstrapResult } from "./db-bootstrap.types";
 
 export function useDbBootstrap(): UseDbBootstrapResult {
@@ -36,14 +35,6 @@ export function useDbBootstrap(): UseDbBootstrapResult {
     await runMigrations(rawDb);
 
     const bridgeConfig = await getBridgeConfigSnapshot(rawDb);
-
-    if (bridgeConfig?.deviceId) {
-      try {
-        await initialSync(rawDb);
-      } catch (error) {
-        console.warn("[Boot] Initial sync failed:", error);
-      }
-    }
 
     setBootState({
       initialized: true,

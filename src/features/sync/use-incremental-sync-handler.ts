@@ -1,7 +1,6 @@
 import { useCallback } from "react";
-import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
-import { incrementalSync } from "./use-initial-sync";
 import type { UseIncrementalSyncHandlerResult } from "./incremental-sync-handler.types";
+import { useSyncFacade } from './use-sync-facade';
 
 export function useIncrementalSyncHandler(): UseIncrementalSyncHandlerResult {
   // 1. Refs
@@ -9,7 +8,7 @@ export function useIncrementalSyncHandler(): UseIncrementalSyncHandlerResult {
   // 2. State
 
   // 3. Context/3rd Party Hooks
-  const rawDb = useOptionalSQLiteContext();
+  const { manualSync } = useSyncFacade();
 
   // 4. Queries/Mutations
 
@@ -17,12 +16,8 @@ export function useIncrementalSyncHandler(): UseIncrementalSyncHandlerResult {
 
   // 6. Callbacks (`useCallback` calling pure helpers)
   const handleSyncRequired = useCallback(async () => {
-    if (!rawDb) {
-      return;
-    }
-
-    await incrementalSync(rawDb, 0);
-  }, [rawDb]);
+    await manualSync();
+  }, [manualSync]);
 
   // 7. Effects
 

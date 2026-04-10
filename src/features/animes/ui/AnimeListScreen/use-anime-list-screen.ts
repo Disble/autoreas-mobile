@@ -18,7 +18,6 @@ import type {
 import type { AnimeDayFilter } from '../../anime.types';
 import { useAnimeList } from '../../use-anime-list';
 import { useIncrementalSyncHandler } from '../../../sync/use-incremental-sync-handler';
-import { useWebSocket } from '../../../ws/use-websocket';
 import { ANIME_LIST_SCREEN_REFRESH_LABEL } from './anime-list-screen.constants';
 import {
   buildContextualHeader,
@@ -153,7 +152,6 @@ export function useAnimeListScreen(
   }, [router, settingsHref]);
 
   // 7. Effects
-  useWebSocket({ onSyncRequired: handleSyncRequired });
 
   return {
     animes,

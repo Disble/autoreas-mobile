@@ -1,7 +1,6 @@
 import { act, renderHook } from "@testing-library/react-native";
 import * as dbClient from "../../../../src/infrastructure/db/client";
 import * as nativeRuntime from "../../../../src/infrastructure/db/native-runtime";
-import * as syncModule from "../../../../src/features/sync/use-initial-sync";
 import { useDbBootstrap } from "../../../../src/features/setup/use-db-bootstrap";
 
 jest.mock("../../../../src/infrastructure/db/client", () => ({
@@ -12,10 +11,6 @@ jest.mock("../../../../src/infrastructure/db/client", () => ({
 
 jest.mock("../../../../src/infrastructure/db/native-runtime", () => ({
   getSQLiteProvider: jest.fn(),
-}));
-
-jest.mock("../../../../src/features/sync/use-initial-sync", () => ({
-  initialSync: jest.fn(),
 }));
 
 describe("useDbBootstrap", () => {
@@ -29,7 +24,6 @@ describe("useDbBootstrap", () => {
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue("SQLiteProvider");
     (dbClient.runMigrations as jest.Mock).mockResolvedValue(undefined);
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue(null);
-    (syncModule.initialSync as jest.Mock).mockResolvedValue(0);
   });
 
   it("returns provider metadata for the root layout", () => {
@@ -55,7 +49,6 @@ describe("useDbBootstrap", () => {
     expect(rawDb.execAsync).toHaveBeenCalledWith("PRAGMA journal_mode = WAL;");
     expect(dbClient.runMigrations).toHaveBeenCalledWith(rawDb);
     expect(dbClient.getBridgeConfigSnapshot).toHaveBeenCalledWith(rawDb);
-    expect(syncModule.initialSync).toHaveBeenCalledWith(rawDb);
     expect(result.current.bootState).toEqual({
       initialized: true,
       target: "/(tabs)",
@@ -69,7 +62,6 @@ describe("useDbBootstrap", () => {
       await result.current.handleDatabaseInit(rawDb as never);
     });
 
-    expect(syncModule.initialSync).not.toHaveBeenCalled();
     expect(result.current.bootState).toEqual({
       initialized: true,
       target: "/setup",

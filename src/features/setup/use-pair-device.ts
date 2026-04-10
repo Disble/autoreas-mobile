@@ -5,6 +5,7 @@ import {
   useOptionalSQLiteContext,
 } from '../../infrastructure/db/native-runtime';
 import { bridgeConfig } from '../../infrastructure/db/schema';
+import { initialSync } from '../sync/use-initial-sync';
 import type { PairParams, PairResponse } from './pair-device.types';
 
 export function usePairDevice() {
@@ -56,6 +57,8 @@ export function usePairDevice() {
             deviceName: data.device_name || 'AutoreasMobile',
           });
         });
+
+        await initialSync(rawDb);
 
         return { success: true, data };
       } catch (err: unknown) {

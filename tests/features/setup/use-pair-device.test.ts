@@ -1,15 +1,20 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { useSQLiteContext } from 'expo-sqlite';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
+import * as syncModule from '../../../src/features/sync/use-initial-sync';
 import { usePairDevice } from '../../../src/features/setup/use-pair-device';
 import { withExclusiveWrite } from '../../../src/infrastructure/db/client';
 
-// Mocks MUST be hoisted, NO dynamic imports
-jest.mock('expo-sqlite', () => ({
-  useSQLiteContext: jest.fn(),
-}));
-
 jest.mock('../../../src/infrastructure/db/client', () => ({
   withExclusiveWrite: jest.fn(),
+}));
+
+jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+  useOptionalSQLiteContext: jest.fn(),
+  getExpoSQLiteUnavailableError: jest.fn(() => new Error('sqlite unavailable')),
+}));
+
+jest.mock('../../../src/features/sync/use-initial-sync', () => ({
+  initialSync: jest.fn(),
 }));
 
 describe('usePairDevice', () => {
@@ -19,7 +24,8 @@ describe('usePairDevice', () => {
     jest.clearAllMocks();
     mockFetch = jest.fn();
     global.fetch = mockFetch;
-    (useSQLiteContext as jest.Mock).mockReturnValue({});
+    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue({});
+    (syncModule.initialSync as jest.Mock).mockResolvedValue(42);
   });
 
   afterEach(() => {
@@ -68,6 +74,7 @@ describe('usePairDevice', () => {
     });
 
     expect(withExclusiveWrite).toHaveBeenCalledTimes(1);
+    expect(syncModule.initialSync).toHaveBeenCalledTimes(1);
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -91,6 +98,7 @@ describe('usePairDevice', () => {
     });
 
     expect(withExclusiveWrite).not.toHaveBeenCalled();
+    expect(syncModule.initialSync).not.toHaveBeenCalled();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBe('Failed to pair: 400');
   });
@@ -116,5 +124,6 @@ describe('usePairDevice', () => {
     });
 
     expect(withExclusiveWrite).not.toHaveBeenCalled();
+    expect(syncModule.initialSync).not.toHaveBeenCalled();
   });
 });
