@@ -17,25 +17,22 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
         contentContainerClassName="flex-row items-center gap-2 px-4 py-2"
       >
         {items.map((item) => (
-          <Pressable
+          <Chip
             key={item.value}
             accessibilityRole="button"
             accessibilityState={{ selected: item.isSelected }}
             accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ""}`}
             onPress={() => handleSelect(item.value)}
             hitSlop={8}
+            size="md"
+            variant={item.isSelected ? "primary" : "tertiary"}
+            color={item.isToday ? "accent" : "default"}
           >
-            <Chip
-              size="md"
-              variant={item.isSelected ? "primary" : "tertiary"}
-              color={item.isToday ? "accent" : "default"}
-            >
-              <Chip.Label>
-                {item.label}
-                {item.count > 0 ? `  ·  ${item.count}` : ""}
-              </Chip.Label>
-            </Chip>
-          </Pressable>
+            <Chip.Label>
+              {item.label}
+              {item.count > 0 ? `  ·  ${item.count}` : ""}
+            </Chip.Label>
+          </Chip>
         ))}
       </ScrollView>
     );
