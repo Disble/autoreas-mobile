@@ -1,37 +1,38 @@
-import React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-import { Chip, cn } from 'heroui-native';
-import { AppText } from '../../../../components/app-text';
-import type { AnimeFilterRailProps } from './anime-filter-rail.types';
-import { useAnimeFilterRail } from './use-anime-filter-rail';
+import { Chip, cn } from "heroui-native";
+import React from "react";
+import { Pressable, ScrollView, View } from "react-native";
+import { AppText } from "../../../../components/app-text";
+import type { AnimeFilterRailProps } from "./anime-filter-rail.types";
+import { useAnimeFilterRail } from "./use-anime-filter-rail";
 
 export function AnimeFilterRail(props: AnimeFilterRailProps) {
   const { items, orientation, handleSelect } = useAnimeFilterRail(props);
 
-  if (orientation === 'horizontal') {
+  if (orientation === "horizontal") {
     return (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName="flex-row gap-2 px-4 py-2"
+        className="flex-none w-full"
+        contentContainerClassName="flex-row items-center gap-2 px-4 py-2"
       >
         {items.map((item) => (
           <Pressable
             key={item.value}
             accessibilityRole="button"
             accessibilityState={{ selected: item.isSelected }}
-            accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ''}`}
+            accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ""}`}
             onPress={() => handleSelect(item.value)}
             hitSlop={8}
           >
             <Chip
               size="md"
-              variant={item.isSelected ? 'primary' : 'tertiary'}
-              color={item.isToday ? 'accent' : 'default'}
+              variant={item.isSelected ? "primary" : "tertiary"}
+              color={item.isToday ? "accent" : "default"}
             >
               <Chip.Label>
                 {item.label}
-                {item.count > 0 ? `  ·  ${item.count}` : ''}
+                {item.count > 0 ? `  ·  ${item.count}` : ""}
               </Chip.Label>
             </Chip>
           </Pressable>
@@ -50,19 +51,21 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
           key={item.value}
           accessibilityRole="button"
           accessibilityState={{ selected: item.isSelected }}
-          accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ''}`}
+          accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ""}`}
           onPress={() => handleSelect(item.value)}
           hitSlop={8}
           className={cn(
-            'flex-row items-center justify-between rounded-xl px-4 py-3',
-            item.isSelected ? 'bg-accent/15' : 'bg-surface-secondary',
+            "flex-row items-center justify-between rounded-xl px-4 py-3",
+            item.isSelected ? "bg-accent/15" : "bg-surface-secondary",
           )}
         >
           <View className="flex-row items-center gap-2">
             <AppText
               className={cn(
-                'text-base',
-                item.isSelected ? 'text-accent font-semibold' : 'text-foreground',
+                "text-base",
+                item.isSelected
+                  ? "text-accent font-semibold"
+                  : "text-foreground",
               )}
             >
               {item.label}
