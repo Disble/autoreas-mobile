@@ -1,7 +1,7 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAppTheme } from '../../../../contexts/app-theme-context';
 import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
 import { ANIME_DAY_FILTER_OPTIONS } from '../../anime.constants';
@@ -28,6 +28,7 @@ export function useAnimeListScreen(
   _props: AnimeListScreenProps,
 ): AnimeListScreenViewModel {
   // 1. Refs
+  const mutatingAnimeByIdRef = useRef<Record<string, boolean>>({});
 
   // 2. State
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
@@ -85,26 +86,27 @@ export function useAnimeListScreen(
 
   const runMutation = useCallback(
     async (animeId: string, action: (id: string) => Promise<void>) => {
-      if (isMutatingAnimeById[animeId]) {
+      if (mutatingAnimeByIdRef.current[animeId]) {
         return;
       }
 
-      setIsMutatingAnimeById((current) => ({
-        ...current,
+      const nextMutatingState = {
+        ...mutatingAnimeByIdRef.current,
         [animeId]: true,
-      }));
+      };
+      mutatingAnimeByIdRef.current = nextMutatingState;
+      setIsMutatingAnimeById(nextMutatingState);
 
       try {
         await action(animeId);
       } finally {
-        setIsMutatingAnimeById((current) => {
-          const nextState = { ...current };
-          delete nextState[animeId];
-          return nextState;
-        });
+        const nextMutatingState = { ...mutatingAnimeByIdRef.current };
+        delete nextMutatingState[animeId];
+        mutatingAnimeByIdRef.current = nextMutatingState;
+        setIsMutatingAnimeById(nextMutatingState);
       }
     },
-    [isMutatingAnimeById],
+    [],
   );
 
   const handleCapPlus = useCallback(

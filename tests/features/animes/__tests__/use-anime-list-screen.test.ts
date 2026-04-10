@@ -274,6 +274,47 @@ describe('useAnimeListScreen', () => {
     expect(mockCapPlusHalf).toHaveBeenCalledWith('thu-1');
   });
 
+  it('ignora taps repetidos mientras la primera mutación sigue en vuelo', async () => {
+    let resolveCapPlus: (() => void) | null = null;
+    mockCapPlus.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCapPlus = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    let firstCall: Promise<void>;
+    await act(async () => {
+      firstCall = result.current.handleCapPlus('thu-1');
+      void result.current.handleCapPlus('thu-1');
+    });
+
+    expect(mockCapPlus).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCapPlus?.();
+      await firstCall;
+    });
+  });
+
+  it('permite un nuevo tap cuando la mutación anterior ya terminó', async () => {
+    mockCapPlus.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus('thu-1');
+    });
+
+    await act(async () => {
+      await result.current.handleCapPlus('thu-1');
+    });
+
+    expect(mockCapPlus).toHaveBeenCalledTimes(2);
+  });
+
   it('handleCapMinusHalf delega al mutate con el id del anime', async () => {
     mockCapMinusHalf.mockResolvedValueOnce(undefined);
 
