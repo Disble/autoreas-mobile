@@ -8,6 +8,7 @@ import { AnimeCard } from "../AnimeCard";
 import { AnimeEmptyState } from "../AnimeEmptyState";
 import { AnimeFilterRail } from "../AnimeFilterRail";
 import { AnimeStateSheet } from "../AnimeStateSheet";
+import { ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS } from "./anime-list-screen.constants";
 import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
 import { useAnimeListItemRenderer } from "./use-anime-list-item-renderer";
 
@@ -40,7 +41,9 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
   } = props;
 
   const isTabletLandscape = layoutMode === "tablet-landscape";
-  const numColumns = isTabletLandscape ? 2 : 1;
+  const numColumns = isTabletLandscape
+    ? ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS
+    : 1;
   const { getAnimeCardProps } = useAnimeListItemRenderer(
     isMutatingAnimeById,
     handleCapMinus,
@@ -139,7 +142,9 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
                 />
               }
               renderItem={({ item }) => (
-                <AnimeCard {...getAnimeCardProps(item)} />
+                <View className={numColumns > 1 ? "flex-1" : undefined}>
+                  <AnimeCard {...getAnimeCardProps(item)} />
+                </View>
               )}
               showsVerticalScrollIndicator={false}
             />

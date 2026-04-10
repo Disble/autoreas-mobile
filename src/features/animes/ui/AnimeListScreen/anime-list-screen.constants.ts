@@ -1,1 +1,2 @@
 export const ANIME_LIST_SCREEN_REFRESH_LABEL = 'Refrescar Mis Animes';
+export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS = 3;
