@@ -19,7 +19,7 @@ export const getIsCompleted = (progress: number | null) => {
  * This prevents the UI from offering Cap+ or Cap- actions that contradict the persisted business status.
  */
 export const isAnimeMutationLocked = (estado: number) => {
-  return estado === 1;
+  return estado !== 0;
 };
 
 /**

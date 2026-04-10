@@ -72,4 +72,38 @@ describe('useAnimeCard', () => {
     expect(result.current.disableDecrease).toBe(true);
     expect(result.current.disableIncrease).toBe(true);
   });
+
+  it('bloquea ambos botones cuando el anime está en pausa', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: {
+          ...baseAnime,
+          estado: 3,
+        },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.disableDecrease).toBe(true);
+    expect(result.current.disableIncrease).toBe(true);
+  });
+
+  it('bloquea ambos botones cuando el anime está en no me gustó', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: {
+          ...baseAnime,
+          estado: 2,
+        },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.disableDecrease).toBe(true);
+    expect(result.current.disableIncrease).toBe(true);
+  });
 });

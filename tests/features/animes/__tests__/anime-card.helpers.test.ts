@@ -27,9 +27,14 @@ describe("anime-card helpers", () => {
     expect(canIncrease(20, null)).toBe(true);
   });
 
-  it("locks mutations when the anime is already finalizado", () => {
+  it("keeps viewing state unlocked and finalizado locked", () => {
     expect(isAnimeMutationLocked(1)).toBe(true);
     expect(isAnimeMutationLocked(0)).toBe(false);
-    expect(isAnimeMutationLocked(2)).toBe(false);
+  });
+
+  it("locks mutations for every non-viewing legacy state", () => {
+    expect(isAnimeMutationLocked(1)).toBe(true);
+    expect(isAnimeMutationLocked(2)).toBe(true);
+    expect(isAnimeMutationLocked(3)).toBe(true);
   });
 });
