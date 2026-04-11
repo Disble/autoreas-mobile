@@ -1,10 +1,13 @@
-import type { AnimeRow } from '../../infrastructure/db/schema';
-import type { Anime, AnimeDay } from '../../infrastructure/validation/anime-schema';
+import type { AnimeRow } from "../../infrastructure/db/schema";
+import type {
+  Anime,
+  AnimeDay,
+} from "../../infrastructure/validation/anime-schema";
 import {
   ANIME_DAY_FILTER_OPTIONS,
   WEEKDAY_INDEX_TO_FILTER,
-} from './anime.constants';
-import type { AnimeDayFilter, AnimeDayFilterOption } from './anime.types';
+} from "./anime.constants";
+import type { AnimeDayFilter, AnimeDayFilterOption } from "./anime.types";
 
 function parseJsonArray<T>(value: string | null): T[] {
   if (!value) {
@@ -18,7 +21,10 @@ function parseJsonArray<T>(value: string | null): T[] {
   }
 }
 
-function getAnimeDayMatch(anime: Anime, filter: AnimeDayFilter): AnimeDay | null {
+function getAnimeDayMatch(
+  anime: Anime,
+  filter: AnimeDayFilter,
+): AnimeDay | null {
   return anime.dias.find((day) => day.dia === filter) ?? null;
 }
 
@@ -48,7 +54,7 @@ export function getDefaultAnimeDayFilter(now: Date): AnimeDayFilter {
  */
 export function getAnimeOrderForFilter(
   anime: Anime,
-  filter: AnimeDayFilter
+  filter: AnimeDayFilter,
 ): number | null {
   return getAnimeDayMatch(anime, filter)?.orden ?? null;
 }
@@ -57,7 +63,10 @@ export function getAnimeOrderForFilter(
  * Checks whether an anime belongs to the active day or pseudo-day filter.
  * This centralizes inclusion rules so hooks and tests share the same filtering semantics.
  */
-export function matchesAnimeDayFilter(anime: Anime, filter: AnimeDayFilter): boolean {
+export function matchesAnimeDayFilter(
+  anime: Anime,
+  filter: AnimeDayFilter,
+): boolean {
   return getAnimeDayMatch(anime, filter) !== null;
 }
 
@@ -67,24 +76,26 @@ export function matchesAnimeDayFilter(anime: Anime, filter: AnimeDayFilter): boo
  */
 export function sortAnimesBySelectedDay(
   animes: readonly Anime[],
-  filter: AnimeDayFilter
+  filter: AnimeDayFilter,
 ): Anime[] {
   return animes
     .filter((anime) => matchesAnimeDayFilter(anime, filter))
     .sort((left, right) => {
-      const leftOrder = getAnimeOrderForFilter(left, filter) ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = getAnimeOrderForFilter(right, filter) ?? Number.MAX_SAFE_INTEGER;
+      const leftOrder =
+        getAnimeOrderForFilter(left, filter) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder =
+        getAnimeOrderForFilter(right, filter) ?? Number.MAX_SAFE_INTEGER;
 
       if (leftOrder !== rightOrder) {
         return leftOrder - rightOrder;
       }
 
-      const nameComparison = left.nombre.localeCompare(right.nombre, 'es');
+      const nameComparison = left.nombre.localeCompare(right.nombre, "es");
       if (nameComparison !== 0) {
         return nameComparison;
       }
 
-      return left._id.localeCompare(right._id, 'es');
+      return left._id.localeCompare(right._id, "es");
     });
 }
 
@@ -92,9 +103,7 @@ export function sortAnimesBySelectedDay(
  * Resolves the matching select option for a given filter value.
  * This keeps HeroUI Select wiring consistent between the controlled value and available options.
  */
-export function getAnimeDayFilterOption(
-  filter: AnimeDayFilter
-): AnimeDayFilterOption {
+export function getAnimeDayFilterOption(filter: AnimeDayFilter): AnimeDayFilterOption {
   return (
     ANIME_DAY_FILTER_OPTIONS.find((option) => option.value === filter) ?? {
       value: filter,

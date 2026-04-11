@@ -103,7 +103,7 @@ const allActiveAnimes: Anime[] = [
     { dia: "Jueves", orden: 0 },
   ]),
   buildAnime("b", "Anime B", [{ dia: "Jueves", orden: 1 }]),
-  buildAnime("c", "Anime C", [{ dia: "Visto", orden: 0 }]),
+  buildAnime("c", "Anime C", [{ dia: "Visto", orden: 0 }], { estado: 1 }),
 ];
 
 describe("useAnimeListScreen", () => {
@@ -187,8 +187,8 @@ describe("useAnimeListScreen", () => {
   it("expone los filter counts calculados a partir de todos los animes activos", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
-    expect(result.current.filterCounts.Lunes).toBe(1);
-    expect(result.current.filterCounts.Jueves).toBe(2);
+    expect(result.current.filterCounts.Lunes).toBe(0);
+    expect(result.current.filterCounts.Jueves).toBe(0);
     expect(result.current.filterCounts.Visto).toBe(1);
   });
 

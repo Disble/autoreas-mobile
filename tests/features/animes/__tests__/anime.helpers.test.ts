@@ -1,15 +1,15 @@
-import type { Anime } from '../../../../src/infrastructure/validation/anime-schema';
 import {
   getAnimeOrderForFilter,
   getDefaultAnimeDayFilter,
   matchesAnimeDayFilter,
   sortAnimesBySelectedDay,
-} from '../../../../src/features/animes/anime.helpers';
+} from "../../../../src/features/animes/anime.helpers";
+import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
 
 function buildAnime(overrides: Partial<Anime> = {}): Anime {
   return {
-    _id: 'anime-1',
-    nombre: 'Anime',
+    _id: "anime-1",
+    nombre: "Anime",
     estado: 0,
     nrocapvisto: 0,
     totalcap: null,
@@ -32,54 +32,67 @@ function buildAnime(overrides: Partial<Anime> = {}): Anime {
   };
 }
 
-describe('anime.helpers', () => {
-  it('resuelve el filtro inicial con el día actual', () => {
-    const result = getDefaultAnimeDayFilter(new Date('2026-04-09T10:00:00.000Z'));
+describe("anime.helpers", () => {
+  it("resuelve el filtro inicial con el día actual", () => {
+    const result = getDefaultAnimeDayFilter(
+      new Date("2026-04-09T10:00:00.000Z"),
+    );
 
-    expect(result).toBe('Jueves');
+    expect(result).toBe("Jueves");
   });
 
-  it('detecta matches y devuelve el orden del filtro seleccionado', () => {
+  it("detecta matches y devuelve el orden del filtro seleccionado", () => {
     const anime = buildAnime({
       dias: [
-        { dia: 'Jueves', orden: 3 },
-        { dia: 'Ver hoy', orden: 1 },
+        { dia: "Jueves", orden: 3 },
+        { dia: "Ver hoy", orden: 1 },
       ],
     });
 
-    expect(matchesAnimeDayFilter(anime, 'Jueves')).toBe(true);
-    expect(matchesAnimeDayFilter(anime, 'Viernes')).toBe(false);
-    expect(getAnimeOrderForFilter(anime, 'Jueves')).toBe(3);
-    expect(getAnimeOrderForFilter(anime, 'Visto')).toBeNull();
+    expect(matchesAnimeDayFilter(anime, "Jueves")).toBe(true);
+    expect(matchesAnimeDayFilter(anime, "Viernes")).toBe(false);
+    expect(getAnimeOrderForFilter(anime, "Jueves")).toBe(3);
+    expect(getAnimeOrderForFilter(anime, "Visto")).toBeNull();
   });
 
-  it('ordena por orden ascendente y excluye animes sin mapping del filtro activo', () => {
+  it("ordena por orden ascendente y excluye animes sin mapping del filtro activo", () => {
     const sorted = sortAnimesBySelectedDay(
       [
         buildAnime({
-          _id: 'anime-z',
-          nombre: 'Zeta',
-          dias: [{ dia: 'Jueves', orden: 2 }],
+          _id: "anime-z",
+          nombre: "Zeta",
+          dias: [{ dia: "Jueves", orden: 2 }],
         }),
         buildAnime({
-          _id: 'anime-b',
-          nombre: 'Bleach',
-          dias: [{ dia: 'Jueves', orden: 1 }],
+          _id: "anime-b",
+          nombre: "Bleach",
+          dias: [{ dia: "Jueves", orden: 1 }],
         }),
         buildAnime({
-          _id: 'anime-a',
-          nombre: 'Attack on Titan',
-          dias: [{ dia: 'Jueves', orden: 1 }],
+          _id: "anime-a",
+          nombre: "Attack on Titan",
+          dias: [{ dia: "Jueves", orden: 1 }],
         }),
         buildAnime({
-          _id: 'anime-out',
-          nombre: 'Outside',
-          dias: [{ dia: 'Viernes', orden: 1 }],
+          _id: "anime-out",
+          nombre: "Outside",
+          dias: [{ dia: "Viernes", orden: 1 }],
+        }),
+        buildAnime({
+          _id: "anime-completed",
+          nombre: "Completed",
+          estado: 1,
+          dias: [{ dia: "Jueves", orden: 0 }],
         }),
       ],
-      'Jueves'
+      "Jueves",
     );
 
-    expect(sorted.map((anime) => anime._id)).toEqual(['anime-a', 'anime-b', 'anime-z']);
+    expect(sorted.map((anime) => anime._id)).toEqual([
+      "anime-completed",
+      "anime-a",
+      "anime-b",
+      "anime-z",
+    ]);
   });
 });

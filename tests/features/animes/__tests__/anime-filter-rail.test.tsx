@@ -5,7 +5,6 @@ import { AnimeFilterRail } from "../../../../src/features/animes/ui/AnimeFilterR
 import type { AnimeFilterRailProps } from "../../../../src/features/animes/ui/AnimeFilterRail/anime-filter-rail.types";
 
 jest.mock("heroui-native", () => {
-  const React = require("react");
   const { Text, Pressable } = require("react-native");
 
   function Chip({
@@ -16,12 +15,12 @@ jest.mock("heroui-native", () => {
     accessibilityState,
     hitSlop,
   }: {
-    children?: React.ReactNode;
-    onPress?: () => void;
-    accessibilityLabel?: string;
-    accessibilityRole?: string;
-    accessibilityState?: object;
-    hitSlop?: number;
+    readonly children?: React.ReactNode;
+    readonly onPress?: () => void;
+    readonly accessibilityLabel?: string;
+    readonly accessibilityRole?: string;
+    readonly accessibilityState?: object;
+    readonly hitSlop?: number;
   }) {
     return (
       <Pressable
@@ -40,7 +39,7 @@ jest.mock("heroui-native", () => {
   Chip.Label = function ChipLabel({
     children,
   }: {
-    children?: React.ReactNode;
+    readonly children?: React.ReactNode;
   }) {
     return <Text>{children}</Text>;
   };
@@ -85,7 +84,10 @@ describe("AnimeFilterRail", () => {
         btn.props.accessibilityLabel?.startsWith("Viernes"),
       );
       expect(viernesBtn).toBeDefined();
-      fireEvent.press(viernesBtn!);
+      if (!viernesBtn) {
+        throw new Error("Viernes button not found");
+      }
+      fireEvent.press(viernesBtn);
       expect(onSelect).toHaveBeenCalledWith("Viernes");
     });
 
@@ -99,7 +101,10 @@ describe("AnimeFilterRail", () => {
       const juevesBtn = getAllByRole("button").find((btn) =>
         btn.props.accessibilityLabel?.startsWith("Jueves"),
       );
-      fireEvent.press(juevesBtn!);
+      if (!juevesBtn) {
+        throw new Error("Jueves button not found");
+      }
+      fireEvent.press(juevesBtn);
       // onSelect is still called — the hook/parent decides whether to no-op
       expect(onSelect).toHaveBeenCalledWith("Jueves");
     });
@@ -116,6 +121,14 @@ describe("AnimeFilterRail", () => {
   });
 
   describe("vertical orientation", () => {
+    it("renders the pseudo-day section label as Estrenos", () => {
+      const { getByText } = render(
+        <AnimeFilterRail {...buildProps({ orientation: "vertical" })} />,
+      );
+
+      expect(getByText("Estrenos")).toBeTruthy();
+    });
+
     it("calls onSelect when a row is pressed", () => {
       const onSelect = jest.fn();
       const { getAllByRole } = render(
@@ -127,7 +140,10 @@ describe("AnimeFilterRail", () => {
         btn.props.accessibilityLabel?.startsWith("Viernes"),
       );
       expect(viernesBtn).toBeDefined();
-      fireEvent.press(viernesBtn!);
+      if (!viernesBtn) {
+        throw new Error("Viernes button not found");
+      }
+      fireEvent.press(viernesBtn);
       expect(onSelect).toHaveBeenCalledWith("Viernes");
     });
   });

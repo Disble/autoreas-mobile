@@ -1,13 +1,13 @@
-import { eq } from 'drizzle-orm';
-import { useMemo } from 'react';
-import { createDrizzleDb } from '../../infrastructure/db/client';
+import { eq } from "drizzle-orm";
+import { useMemo } from "react";
+import { createDrizzleDb } from "../../infrastructure/db/client";
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../infrastructure/db/native-runtime';
-import { animes, type AnimeRow } from '../../infrastructure/db/schema';
-import { parseAnimeRow, sortAnimesBySelectedDay } from './anime.helpers';
-import type { AnimeDayFilter } from './anime.types';
+} from "../../infrastructure/db/native-runtime";
+import { animes, type AnimeRow } from "../../infrastructure/db/schema";
+import { parseAnimeRow, sortAnimesBySelectedDay } from "./anime.helpers";
+import type { AnimeDayFilter } from "./anime.types";
 
 export function useAnimeList(filter: AnimeDayFilter) {
   const rawDb = useOptionalSQLiteContext();
@@ -18,10 +18,7 @@ export function useAnimeList(filter: AnimeDayFilter) {
       return null;
     }
 
-    return db
-      .select()
-      .from(animes)
-      .where(eq(animes.activo, 1));
+    return db.select().from(animes).where(eq(animes.activo, 1));
   }, [db]);
 
   const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);

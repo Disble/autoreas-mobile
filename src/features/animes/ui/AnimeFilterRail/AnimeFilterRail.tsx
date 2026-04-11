@@ -52,11 +52,7 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
       contentContainerClassName="gap-1 px-3 pb-6 pt-3"
     >
       {items.map((item) => (
-        <VerticalRailRow
-          key={item.value}
-          item={item}
-          onSelect={handleSelect}
-        />
+        <VerticalRailRow key={item.value} item={item} onSelect={handleSelect} />
       ))}
     </ScrollView>
   );
@@ -74,7 +70,7 @@ export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
       {showSection && (
         <View className="mb-1 mt-4 px-1">
           <AppText className="text-muted/70 text-[11px] font-semibold uppercase tracking-wider">
-            Filtros
+            Estrenos
           </AppText>
         </View>
       )}
@@ -102,9 +98,7 @@ export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
           <AppText
             className={cn(
               "flex-1 text-base",
-              item.isSelected
-                ? "text-accent font-semibold"
-                : "text-foreground",
+              item.isSelected ? "text-accent font-semibold" : "text-foreground",
             )}
             numberOfLines={1}
           >

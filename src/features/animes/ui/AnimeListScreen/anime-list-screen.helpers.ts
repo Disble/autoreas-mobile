@@ -1,5 +1,5 @@
-import { createElement } from "react";
 import type { ReactElement } from "react";
+import { createElement } from "react";
 import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
   ANIME_DAY_FILTER_OPTIONS,
@@ -30,6 +30,10 @@ export function computeFilterCounts(
   }
 
   for (const anime of animes) {
+    if (anime.estado === 0) {
+      continue;
+    }
+
     for (const option of ANIME_DAY_FILTER_OPTIONS) {
       if (matchesAnimeDayFilter(anime, option.value)) {
         counts[option.value] += 1;
