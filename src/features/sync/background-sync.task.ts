@@ -9,11 +9,9 @@ import { runBackgroundSyncCycle } from './background-sync.helpers';
 try {
   TaskManager.defineTask(BACKGROUND_SYNC_TASK_NAME, async () => {
     try {
-      const result = await runBackgroundSyncCycle();
+      await runBackgroundSyncCycle();
 
-      return result.kind === 'failed'
-        ? BackgroundTask.BackgroundTaskResult.Failed
-        : BackgroundTask.BackgroundTaskResult.Success;
+      return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       return BackgroundTask.BackgroundTaskResult.Failed;
     }

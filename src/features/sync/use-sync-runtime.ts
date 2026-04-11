@@ -72,9 +72,16 @@ export function useSyncRuntime(
   );
 
   // 6. Callbacks (`useCallback` calling pure helpers)
+  const requestAutomaticSync = useCallback(
+    (source: 'bootstrap' | 'app_active' | 'network_regained' | 'ws_sync_required') => {
+      void requestSync(source).catch(() => undefined);
+    },
+    [requestSync],
+  );
+
   const handleWebSocketSyncRequired = useCallback(() => {
-    void requestSync('ws_sync_required');
-  }, [requestSync]);
+    requestAutomaticSync('ws_sync_required');
+  }, [requestAutomaticSync]);
 
   // 7. Effects
   useWebSocket({
@@ -137,8 +144,8 @@ export function useSyncRuntime(
     }
 
     hasBootstrappedRef.current = true;
-    void requestSync('bootstrap');
-  }, [isRuntimeEnabled, requestSync]);
+    requestAutomaticSync('bootstrap');
+  }, [isRuntimeEnabled, requestAutomaticSync]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -148,21 +155,21 @@ export function useSyncRuntime(
       setCurrentAppState(nextAppState);
 
       if (previousAppState !== 'active' && nextAppState === 'active' && isRuntimeEnabled) {
-        void requestSync('app_active');
+        requestAutomaticSync('app_active');
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isRuntimeEnabled, requestSync]);
+  }, [isRuntimeEnabled, requestAutomaticSync]);
 
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
       const isConnected = state.isConnected === true;
 
       if (lastConnectivityRef.current === false && isConnected && isRuntimeEnabled) {
-        void requestSync('network_regained');
+        requestAutomaticSync('network_regained');
       }
 
       lastConnectivityRef.current = isConnected;
@@ -171,7 +178,7 @@ export function useSyncRuntime(
     return () => {
       subscription.remove();
     };
-  }, [isRuntimeEnabled, requestSync]);
+  }, [isRuntimeEnabled, requestAutomaticSync]);
 
   return {
     currentAppState,

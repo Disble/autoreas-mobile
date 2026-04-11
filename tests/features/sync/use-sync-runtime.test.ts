@@ -260,6 +260,34 @@ describe('useSyncRuntime', () => {
     expect(mockRequestSync).toHaveBeenCalledWith('ws_sync_required');
   });
 
+  it('swallows handled auto-sync failures so Expo does not surface unhandled promise rejections', async () => {
+    mockRequestSync.mockRejectedValue(new Error('Network request failed'));
+
+    renderHook(() => useSyncRuntime({ isBootstrapped: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const webSocketArgs = (useWebSocket as jest.Mock).mock.calls.at(-1)?.[0];
+
+    await act(async () => {
+      emitAppState('background');
+      emitAppState('active');
+      emitNetworkState(false);
+      emitNetworkState(true);
+      webSocketArgs.onSyncRequired();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockRequestSync).toHaveBeenCalledWith('bootstrap');
+    expect(mockRequestSync).toHaveBeenCalledWith('app_active');
+    expect(mockRequestSync).toHaveBeenCalledWith('network_regained');
+    expect(mockRequestSync).toHaveBeenCalledWith('ws_sync_required');
+  });
+
   it('persists foreground execution status when the facade reports android foreground mode', async () => {
     mockGetStatus.mockResolvedValueOnce({
       registrationStatus: 'registered',
