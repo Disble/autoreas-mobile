@@ -11,16 +11,12 @@ import { useAnimeCard } from "./use-anime-card";
 export function AnimeCard(props: AnimeCardProps) {
   const { anime } = props;
   const {
-    progress,
-    isCompleted,
     isMutationLocked,
     disableDecrease,
     disableIncrease,
     stateChip,
     restantesShown,
     restantesLabel,
-    dayChipList,
-    genresList,
     toggleRestantesShown,
     handleCapMinusPress,
     handleCapPlusPress,
@@ -29,162 +25,116 @@ export function AnimeCard(props: AnimeCardProps) {
     handleCapMinusLongPress,
   } = useAnimeCard(props);
 
-  const hasKnownTotal = anime.totalcap != null && anime.totalcap > 0;
-  let progressLabel = `Cap. ${anime.nrocapvisto} · en emisión`;
-
-  if (restantesShown && restantesLabel) {
-    progressLabel = restantesLabel;
-  } else if (hasKnownTotal) {
-    progressLabel = `Cap. ${anime.nrocapvisto} / ${anime.totalcap}`;
-  }
-
-  const showProgressBar = progress !== null && !isCompleted;
-  const showUnknownTotalPlaceholder = progress === null && hasKnownTotal === false;
+  const chaptersLabel =
+    anime.nrocapvisto === 1
+      ? "1 capítulo"
+      : `${anime.nrocapvisto} capítulos`;
+  const defaultMeta = `${chaptersLabel} · ${stateChip.label}`;
+  const metaLabel =
+    restantesShown && restantesLabel ? restantesLabel : defaultMeta;
 
   return (
-    <Card className="mb-4">
+    <Card className="mb-3">
       <Card.Body className="flex-row p-0">
         <Image
           source={{
             uri: anime.portada || "https://via.placeholder.com/100x150",
           }}
-          className="h-35 w-24 rounded-l-xl"
+          className="h-24 w-16 rounded-l-xl"
           contentFit="cover"
         />
 
-        <View className="flex-1 justify-between p-4">
-          <View>
-            <View className="flex-row items-start justify-between gap-3">
-              <AppText
-                className="text-foreground flex-1 text-base font-bold leading-tight"
-                numberOfLines={2}
-              >
-                {anime.nombre}
-              </AppText>
-              {stateChip.isDefault ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Cambiar estado del anime"
-                  onPress={handleStateBadgePress}
-                  hitSlop={10}
-                  className="h-7 w-7 items-center justify-center rounded-full"
-                >
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={18}
-                    color="#9ca3af"
-                  />
-                </Pressable>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Cambiar estado: ${stateChip.label}`}
-                  onPress={handleStateBadgePress}
-                  hitSlop={8}
-                >
-                  <Chip
-                    size="sm"
-                    variant="secondary"
-                    color={CHIP_TONE_COLOR_MAP[stateChip.tone]}
-                  >
-                    <Chip.Label>{stateChip.label}</Chip.Label>
-                  </Chip>
-                </Pressable>
-              )}
-            </View>
-
+        <View className="flex-1 flex-row items-start gap-2 p-3">
+          <View className="flex-1">
+            <AppText
+              className="text-foreground text-sm font-semibold leading-tight"
+              numberOfLines={2}
+            >
+              {anime.nombre}
+            </AppText>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Alternar episodios restantes"
               onPress={toggleRestantesShown}
               hitSlop={8}
-              className="mt-2 self-start"
+              className="mt-1 self-start"
             >
-              <AppText className="text-muted text-[13px]">{progressLabel}</AppText>
+              <AppText className="text-muted text-xs">{metaLabel}</AppText>
             </Pressable>
-
-            {showProgressBar ? (
-              <View className="mt-2.5">
-                <View className="bg-surface-tertiary/60 h-1 overflow-hidden rounded-full">
-                  <View
-                    className="bg-accent h-full rounded-full"
-                    style={{ width: `${Math.min(progress, 100)}%` }}
-                  />
-                </View>
-              </View>
-            ) : null}
-
-            {showUnknownTotalPlaceholder ? (
-              <View className="mt-2.5">
-                <View className="bg-surface-tertiary/30 h-1 overflow-hidden rounded-full" />
-              </View>
-            ) : null}
           </View>
 
-          {(genresList.length > 0 || dayChipList.length > 0) && (
-            <View className="mt-3 flex-row flex-wrap items-center gap-1.5">
-              {dayChipList.map((d) => (
-                <View
-                  key={`day-${d.key}`}
-                  className="bg-accent/15 h-6 w-6 items-center justify-center rounded-md"
-                >
-                  <AppText className="text-accent text-[11px] font-bold">
-                    {d.label}
-                  </AppText>
-                </View>
-              ))}
-              {genresList.slice(0, 2).map((g: string) => (
-                <Chip key={g} size="sm" variant="tertiary">
-                  <Chip.Label>{g}</Chip.Label>
-                </Chip>
-              ))}
-              {genresList.length > 2 && (
-                <AppText className="text-muted/80 text-[11px]">
-                  +{genresList.length - 2}
-                </AppText>
-              )}
-            </View>
+          {stateChip.isDefault ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cambiar estado del anime"
+              onPress={handleStateBadgePress}
+              hitSlop={10}
+              className="h-7 w-7 items-center justify-center rounded-full"
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={18}
+                color="#9ca3af"
+              />
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Cambiar estado: ${stateChip.label}`}
+              onPress={handleStateBadgePress}
+              hitSlop={8}
+            >
+              <Chip
+                size="sm"
+                variant="secondary"
+                color={CHIP_TONE_COLOR_MAP[stateChip.tone]}
+              >
+                <Chip.Label>{stateChip.label}</Chip.Label>
+              </Chip>
+            </Pressable>
           )}
         </View>
       </Card.Body>
 
-      <View className="flex-row items-center justify-end gap-3 px-4 pb-3 pt-1">
+      <View className="flex-row items-center justify-end gap-2 px-3 pb-3 pt-1">
         {isMutationLocked ? (
           <Button
             accessibilityLabel="Reanudar anime"
             variant="secondary"
-            size="lg"
+            size="sm"
             onPress={handleStateBadgePress}
           >
-            <Ionicons name="play" size={18} />
+            <Ionicons name="play" size={14} />
             <Button.Label>Reanudar</Button.Label>
           </Button>
         ) : (
           <>
             <Button
               accessibilityLabel="Decrease chapter"
-              variant="danger-soft"
-              size="lg"
+              variant="danger"
+              size="md"
               isIconOnly
               onPress={handleCapMinusPress}
               onLongPress={handleCapMinusLongPress}
               isDisabled={disableDecrease}
+              className={disableDecrease ? "opacity-40" : undefined}
             >
-              <Ionicons name="remove" size={22} />
+              <Ionicons name="remove" size={18} color="#ffffff" />
             </Button>
-            <AppText className="text-foreground min-w-13 text-center text-lg font-semibold tabular-nums">
+            <AppText className="text-foreground min-w-9 text-center text-base font-semibold tabular-nums">
               {anime.nrocapvisto}
             </AppText>
             <Button
               accessibilityLabel="Increase chapter"
-              variant="secondary"
-              size="lg"
+              variant="primary"
+              size="md"
               isIconOnly
               onPress={handleCapPlusPress}
               onLongPress={handleCapPlusLongPress}
               isDisabled={disableIncrease}
+              className={disableIncrease ? "opacity-40" : undefined}
             >
-              <Ionicons name="add" size={22} />
+              <Ionicons name="add" size={18} color="#ffffff" />
             </Button>
           </>
         )}

@@ -1,11 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AnimeCardProps } from './anime-card.types';
 import {
-  calculateProgress,
   canDecrease,
   canIncrease,
-  getDayChipLabel,
-  getIsCompleted,
   getRestantesLabel,
   getStateChip,
   isAnimeMutationLocked,
@@ -32,13 +29,6 @@ export function useAnimeCard(props: AnimeCardProps) {
   // 4. Mutations/Queries
 
   // 5. Derived state
-  const progress = useMemo(
-    () => calculateProgress(props.anime.nrocapvisto, props.anime.totalcap),
-    [props.anime.nrocapvisto, props.anime.totalcap]
-  );
-
-  const isCompleted = useMemo(() => getIsCompleted(progress), [progress]);
-
   const isMutationLocked = useMemo(
     () => isAnimeMutationLocked(props.anime.estado),
     [props.anime.estado]
@@ -66,21 +56,6 @@ export function useAnimeCard(props: AnimeCardProps) {
     () => getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap),
     [props.anime.nrocapvisto, props.anime.totalcap]
   );
-
-  const daysList = props.anime.dias || [];
-  const genresList = props.anime.generos || [];
-
-  const dayChipList = useMemo(() => {
-    return daysList
-      .map((d) => {
-        const label = getDayChipLabel(d.dia);
-        if (label === null) {
-          return null;
-        }
-        return { key: d.dia, label };
-      })
-      .filter((entry): entry is { key: string; label: string } => entry !== null);
-  }, [daysList]);
 
   // 6. Callbacks
   const toggleRestantesShown = useCallback(() => {
@@ -110,17 +85,12 @@ export function useAnimeCard(props: AnimeCardProps) {
   // 7. Effects
 
   return {
-    progress,
-    isCompleted,
     isMutationLocked,
     disableDecrease,
     disableIncrease,
     stateChip,
     restantesShown,
     restantesLabel,
-    daysList,
-    dayChipList,
-    genresList,
     toggleRestantesShown,
     handleCapMinusPress,
     handleCapPlusPress,
