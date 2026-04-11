@@ -1,9 +1,13 @@
 import type { Anime } from '../../../../src/infrastructure/validation/anime-schema';
 import {
+  buildHeaderLeftRenderer,
+  buildHeaderRightRenderer,
   buildContextualHeader,
   computeFilterCounts,
   formatTodayLabel,
 } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.helpers';
+import { AnimeListScreenHeaderLeft } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderLeft';
+import { AnimeListScreenHeaderRight } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderRight';
 
 function buildAnime(
   id: string,
@@ -158,6 +162,44 @@ describe('anime-list-screen helpers', () => {
 
     it('uses two-digit day numbers without leading zero', () => {
       expect(formatTodayLabel(new Date('2026-01-03T10:00:00.000Z'))).toBe('Sáb 3 ene');
+    });
+  });
+
+  describe('header renderers', () => {
+    it('buildHeaderLeftRenderer returns a renderer for the settings header action', () => {
+      const handleOpenSettings = jest.fn();
+      const renderer = buildHeaderLeftRenderer({
+        handleOpenSettings,
+        themeColorForeground: '#fff',
+      });
+
+      const element = renderer();
+
+      expect(element.type).toBe(AnimeListScreenHeaderLeft);
+      expect(element.props).toMatchObject({
+        handleOpenSettings,
+        themeColorForeground: '#fff',
+      });
+    });
+
+    it('buildHeaderRightRenderer returns a renderer for the refresh header action', () => {
+      const handleRefresh = jest.fn().mockResolvedValue(undefined);
+      const renderer = buildHeaderRightRenderer({
+        refreshAccessibilityLabel: 'Actualizar lista',
+        isRefreshing: true,
+        themeColorForeground: '#000',
+        handleRefresh,
+      });
+
+      const element = renderer();
+
+      expect(element.type).toBe(AnimeListScreenHeaderRight);
+      expect(element.props).toMatchObject({
+        refreshAccessibilityLabel: 'Actualizar lista',
+        isRefreshing: true,
+        themeColorForeground: '#000',
+        handleRefresh,
+      });
     });
   });
 });

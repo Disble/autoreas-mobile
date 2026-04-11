@@ -6,9 +6,11 @@ import { AnimeCard } from "../AnimeCard";
 import { AnimeEmptyState } from "../AnimeEmptyState";
 import { AnimeFilterRail } from "../AnimeFilterRail";
 import { AnimeStateSheet } from "../AnimeStateSheet";
-import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
-import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import { ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS } from "./anime-list-screen.constants";
+import {
+  buildHeaderLeftRenderer,
+  buildHeaderRightRenderer,
+} from "./anime-list-screen.helpers";
 import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
 import { useAnimeListItemRenderer } from "./use-anime-list-item-renderer";
 
@@ -52,26 +54,24 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     handleCapMinusHalf,
     handleOpenStateSheet,
   );
+  const headerLeft = buildHeaderLeftRenderer({
+    handleOpenSettings,
+    themeColorForeground,
+  });
+  const headerRight = buildHeaderRightRenderer({
+    refreshAccessibilityLabel,
+    isRefreshing,
+    themeColorForeground,
+    handleRefresh,
+  });
 
   return (
     <View className="bg-background flex-1">
       <Stack.Screen
         options={{
           headerTitle: contextualHeader.title,
-          headerLeft: () => (
-            <AnimeListScreenHeaderLeft
-              handleOpenSettings={handleOpenSettings}
-              themeColorForeground={themeColorForeground}
-            />
-          ),
-          headerRight: () => (
-            <AnimeListScreenHeaderRight
-              refreshAccessibilityLabel={refreshAccessibilityLabel}
-              isRefreshing={isRefreshing}
-              themeColorForeground={themeColorForeground}
-              handleRefresh={handleRefresh}
-            />
-          ),
+          headerLeft,
+          headerRight,
         }}
       />
 

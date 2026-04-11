@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import type { ReactElement } from "react";
 import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
   ANIME_DAY_FILTER_OPTIONS,
@@ -5,9 +7,13 @@ import {
 } from "../../anime.constants";
 import { matchesAnimeDayFilter } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
+import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
+import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import type {
   AnimeListScreenContextualHeader,
   AnimeListScreenFilterCounts,
+  AnimeListScreenHeaderLeftProps,
+  AnimeListScreenHeaderRightProps,
 } from "./anime-list-screen.types";
 
 /**
@@ -125,5 +131,29 @@ export function buildContextualHeader(
     title,
     subtitle,
     isToday,
+  };
+}
+
+/**
+ * Builds the stable Stack header-left renderer outside the screen component.
+ * This avoids redefining JSX-producing functions on every AnimeListScreen render.
+ */
+export function buildHeaderLeftRenderer(
+  props: AnimeListScreenHeaderLeftProps,
+): () => ReactElement {
+  return function renderHeaderLeft() {
+    return createElement(AnimeListScreenHeaderLeft, props);
+  };
+}
+
+/**
+ * Builds the stable Stack header-right renderer outside the screen component.
+ * Keeping the renderer factory in helpers satisfies Sonar without moving UI logic back into the screen.
+ */
+export function buildHeaderRightRenderer(
+  props: AnimeListScreenHeaderRightProps,
+): () => ReactElement {
+  return function renderHeaderRight() {
+    return createElement(AnimeListScreenHeaderRight, props);
   };
 }
