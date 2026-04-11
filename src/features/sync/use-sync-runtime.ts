@@ -107,6 +107,10 @@ export function useSyncRuntime(
       return;
     }
 
+    if (syncExecutionFacade.hasCurrentStrategy()) {
+      return;
+    }
+
     void syncExecutionFacade
       .registerPreferredStrategy()
       .then(async () => syncExecutionFacade.getStatus())

@@ -6,6 +6,7 @@ export interface CreateSyncExecutionFacadeParams {
 
 export interface SyncExecutionFacade {
   readonly registerPreferredStrategy: () => Promise<void>;
+  readonly hasCurrentStrategy: () => boolean;
   readonly unregisterCurrentStrategy: () => Promise<void>;
   readonly getStatus: () => ReturnType<SyncExecutionStrategy['getStatus']>;
 }

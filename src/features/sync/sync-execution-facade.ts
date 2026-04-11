@@ -24,6 +24,10 @@ export function createSyncExecutionFacade(
 
   return {
     async registerPreferredStrategy() {
+      if (currentStrategy) {
+        return;
+      }
+
       for (const strategy of params.strategies) {
         await strategy.register();
         const status = await strategy.getStatus();
@@ -37,12 +41,17 @@ export function createSyncExecutionFacade(
       currentStrategy = params.strategies.at(-1) ?? null;
     },
 
+    hasCurrentStrategy() {
+      return currentStrategy !== null;
+    },
+
     async unregisterCurrentStrategy() {
       if (!currentStrategy) {
         return;
       }
 
       await currentStrategy.unregister();
+      currentStrategy = null;
     },
 
     async getStatus() {

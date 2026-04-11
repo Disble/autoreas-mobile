@@ -112,10 +112,28 @@ describe("db client tracer helpers", () => {
 
   it("no altera bridge_config cuando last_changelog_id ya existe", async () => {
     const rawDb = {
-      getAllAsync: jest.fn().mockResolvedValue([
-        { name: "id" },
-        { name: "last_changelog_id" },
-      ]),
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === "PRAGMA table_info(bridge_config)") {
+          return [{ name: "id" }, { name: "last_changelog_id" }];
+        }
+
+        if (query === "PRAGMA table_info(sync_runtime_status)") {
+          return [
+            { name: "id" },
+            { name: "registration_status" },
+            { name: "execution_mode" },
+            { name: "is_foreground_service_running" },
+            { name: "can_show_persistent_notification" },
+            { name: "last_attempt_at" },
+            { name: "last_success_at" },
+            { name: "last_failure_message" },
+            { name: "last_trigger_source" },
+            { name: "last_synced_count" },
+          ];
+        }
+
+        return [];
+      }),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -124,6 +142,46 @@ describe("db client tracer helpers", () => {
     expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+    );
+  });
+
+  it("repara sync_runtime_status legacy agregando columnas del execution mode", async () => {
+    const rawDb = {
+      getAllAsync: jest
+        .fn()
+        .mockImplementation(async (query: string) => {
+          if (query === "PRAGMA table_info(bridge_config)") {
+            return [{ name: "id" }, { name: "last_changelog_id" }];
+          }
+
+          if (query === "PRAGMA table_info(sync_runtime_status)") {
+            return [
+              { name: "id" },
+              { name: "registration_status" },
+              { name: "last_attempt_at" },
+              { name: "last_success_at" },
+              { name: "last_failure_message" },
+              { name: "last_trigger_source" },
+              { name: "last_synced_count" },
+            ];
+          }
+
+          return [];
+        }),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(rawDb.getAllAsync).toHaveBeenCalledWith("PRAGMA table_info(sync_runtime_status)");
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      "ALTER TABLE sync_runtime_status ADD COLUMN execution_mode TEXT DEFAULT 'best_effort_background_task' NOT NULL"
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      "ALTER TABLE sync_runtime_status ADD COLUMN is_foreground_service_running INTEGER DEFAULT 0 NOT NULL"
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      "ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL"
     );
   });
 

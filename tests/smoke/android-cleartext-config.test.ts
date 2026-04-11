@@ -1,6 +1,9 @@
 const appConfig = jest.requireActual('../../app.json') as {
   expo: {
-    plugins: (string | [string, { android?: { usesCleartextTraffic?: boolean } }])[];
+    plugins: (
+      | string
+      | [string, { android?: { usesCleartextTraffic?: boolean; compileSdkVersion?: number; targetSdkVersion?: number } }]
+    )[];
   };
 };
 
@@ -9,7 +12,10 @@ describe('android cleartext bootstrap config', () => {
     const buildPropertiesEntry = appConfig.expo.plugins.find(
       (
         plugin
-      ): plugin is [string, { android?: { usesCleartextTraffic?: boolean } }] =>
+      ): plugin is [
+        string,
+        { android?: { usesCleartextTraffic?: boolean; compileSdkVersion?: number; targetSdkVersion?: number } },
+      ] =>
         Array.isArray(plugin) && plugin[0] === 'expo-build-properties'
     );
 
@@ -17,6 +23,8 @@ describe('android cleartext bootstrap config', () => {
       'expo-build-properties',
       {
         android: {
+          compileSdkVersion: 36,
+          targetSdkVersion: 35,
           usesCleartextTraffic: true,
         },
       },

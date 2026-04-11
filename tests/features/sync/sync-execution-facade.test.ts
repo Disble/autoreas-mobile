@@ -27,7 +27,11 @@ describe('sync-execution-facade', () => {
       strategies: [foreground, bestEffort],
     });
 
+    expect(facade.hasCurrentStrategy()).toBe(false);
+
     await facade.registerPreferredStrategy();
+
+    expect(facade.hasCurrentStrategy()).toBe(true);
 
     await expect(facade.getStatus()).resolves.toEqual({
       registrationStatus: 'registered',
@@ -54,5 +58,18 @@ describe('sync-execution-facade', () => {
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
     });
+  });
+
+  it('does not re-register when a current strategy already exists', async () => {
+    const foreground = createStrategy('android_foreground_service', 'registered');
+
+    const facade = createSyncExecutionFacade({
+      strategies: [foreground],
+    });
+
+    await facade.registerPreferredStrategy();
+    await facade.registerPreferredStrategy();
+
+    expect(foreground.register).toHaveBeenCalledTimes(1);
   });
 });

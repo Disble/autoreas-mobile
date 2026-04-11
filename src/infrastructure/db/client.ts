@@ -38,11 +38,35 @@ async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   );
 }
 
+async function ensureSyncRuntimeStatusExecutionColumns(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(sync_runtime_status)');
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('execution_mode')) {
+    await rawDb.runAsync(
+      "ALTER TABLE sync_runtime_status ADD COLUMN execution_mode TEXT DEFAULT 'best_effort_background_task' NOT NULL"
+    );
+  }
+
+  if (!columnNames.has('is_foreground_service_running')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN is_foreground_service_running INTEGER DEFAULT 0 NOT NULL'
+    );
+  }
+
+  if (!columnNames.has('can_show_persistent_notification')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL'
+    );
+  }
+}
+
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
   await ensureBridgeConfigLastChangelogId(rawDb);
+  await ensureSyncRuntimeStatusExecutionColumns(rawDb);
   return db;
 }
 

@@ -90,6 +90,7 @@ function emitNetworkState(isConnected: boolean | null | undefined) {
 describe('useSyncRuntime', () => {
   const mockRequestSync = jest.fn();
   const mockRegisterPreferredStrategy = jest.fn();
+  const mockHasCurrentStrategy = jest.fn();
   const mockUnregisterCurrentStrategy = jest.fn();
   const mockGetStatus = jest.fn();
 
@@ -120,6 +121,7 @@ describe('useSyncRuntime', () => {
     (backgroundSyncTaskModule.isBackgroundSyncTaskRegistered as jest.Mock).mockResolvedValue(true);
     (backgroundSyncTaskModule.unregisterBackgroundSyncTask as jest.Mock).mockResolvedValue(undefined);
     mockRegisterPreferredStrategy.mockResolvedValue(undefined);
+    mockHasCurrentStrategy.mockReturnValue(false);
     mockUnregisterCurrentStrategy.mockResolvedValue(undefined);
     mockGetStatus.mockResolvedValue({
       registrationStatus: 'registered',
@@ -129,6 +131,7 @@ describe('useSyncRuntime', () => {
     });
     (syncExecutionFacadeModule.createSyncExecutionFacade as jest.Mock).mockReturnValue({
       registerPreferredStrategy: mockRegisterPreferredStrategy,
+      hasCurrentStrategy: mockHasCurrentStrategy,
       unregisterCurrentStrategy: mockUnregisterCurrentStrategy,
       getStatus: mockGetStatus,
     });
@@ -280,5 +283,17 @@ describe('useSyncRuntime', () => {
         canShowPersistentNotification: true,
       },
     );
+  });
+
+  it('does not re-register execution strategies when one is already active', async () => {
+    mockHasCurrentStrategy.mockReturnValue(true);
+
+    renderHook(() => useSyncRuntime({ isBootstrapped: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockRegisterPreferredStrategy).not.toHaveBeenCalled();
   });
 });

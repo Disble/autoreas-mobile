@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { createDrizzleDb, withExclusiveWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
 import { syncRuntimeStatus } from '../../infrastructure/db/schema';
 import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
@@ -121,7 +121,7 @@ async function persistSyncRuntimeStatusPatch(
     lastSyncedCount: patch.lastSyncedCount ?? current.lastSyncedCount,
   };
 
-  await withExclusiveWrite(rawDb, async (db) => {
+  await withDeferredWrite(rawDb, async (db) => {
     await db
       .insert(syncRuntimeStatus)
       .values({

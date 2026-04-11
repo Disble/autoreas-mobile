@@ -1,24 +1,15 @@
 import * as dbClient from '../../../src/infrastructure/db/client';
-import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import {
   runBackgroundSyncCycle,
 } from '../../../src/features/sync/background-sync.helpers';
-import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
+import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
-  getBridgeConfigSnapshot: jest.fn(),
   openAppDatabaseSync: jest.fn(),
-  runMigrations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
-  syncPendingOperations: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
-  recordSyncAttemptFailed: jest.fn(),
-  recordSyncAttemptStarted: jest.fn(),
-  recordSyncAttemptSucceeded: jest.fn(),
+jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
+  runHeadlessSyncCycle: jest.fn(),
 }));
 
 describe('background sync helpers', () => {
@@ -28,80 +19,43 @@ describe('background sync helpers', () => {
     jest.clearAllMocks();
 
     (dbClient.openAppDatabaseSync as jest.Mock).mockReturnValue(rawDb);
-    (dbClient.runMigrations as jest.Mock).mockResolvedValue(undefined);
-    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
-      id: 1,
-      ip: '192.168.1.9',
-      port: 3000,
-      token: 'secret',
-      deviceId: 'device-1',
-      deviceName: 'Bridge Casa',
-      lastChangelogId: 0,
+    (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
+      kind: 'success',
+      syncedCount: 3,
     });
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue(3);
-    (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
-    (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
-    (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('persiste attempt+success cuando reconcile headless termina bien', async () => {
+  it('delegates the background task cycle to the shared headless sync helper', async () => {
     const result = await runBackgroundSyncCycle();
 
     expect(result).toEqual({ kind: 'success', syncedCount: 3 });
-    expect(dbClient.runMigrations).toHaveBeenCalledWith(rawDb);
-    expect(dbClient.getBridgeConfigSnapshot).toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordSyncAttemptStarted).toHaveBeenCalledWith(
+    expect(headlessSyncCycleModule.runHeadlessSyncCycle).toHaveBeenCalledWith({
       rawDb,
-      'background_task',
-      expect.any(Number),
-    );
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalledWith(
-      rawDb,
-      'background_task',
-      expect.any(Number),
-      3,
-    );
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+      triggerSource: 'background_task',
+    });
   });
 
-  it('retorna no-op sin pairing válido y no finge éxito', async () => {
-    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
-      id: 1,
-      ip: '192.168.1.9',
-      port: 3000,
-      token: 'secret',
-      deviceId: null,
-      deviceName: 'Bridge Casa',
-      lastChangelogId: 0,
+  it('returns the delegated no-op result unchanged', async () => {
+    (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
+      kind: 'no_op',
+      syncedCount: 0,
     });
 
-    const result = await runBackgroundSyncCycle();
-
-    expect(result).toEqual({ kind: 'no_op', syncedCount: 0 });
-    expect(syncModule.syncPendingOperations).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptStarted).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({
+      kind: 'no_op',
+      syncedCount: 0,
+    });
   });
 
-  it('persiste failure observable cuando reconcile headless falla', async () => {
-    (syncModule.syncPendingOperations as jest.Mock).mockRejectedValue(new Error('Network Error'));
+  it('returns the delegated failure result unchanged', async () => {
+    (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
+      kind: 'failed',
+      syncedCount: 0,
+    });
 
-    const result = await runBackgroundSyncCycle();
-
-    expect(result).toEqual({ kind: 'failed', syncedCount: 0 });
-    expect(runtimeStatusModule.recordSyncAttemptStarted).toHaveBeenCalledWith(
-      rawDb,
-      'background_task',
-      expect.any(Number),
-    );
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'background_task',
-      expect.any(Number),
-      'Network Error',
-    );
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({
+      kind: 'failed',
+      syncedCount: 0,
+    });
   });
 });

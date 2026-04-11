@@ -3,7 +3,7 @@
     "name": "Autoreas Mobile",
     "slug": "autoreas-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "autoreas-mobile",
     "userInterfaceStyle": "automatic",
@@ -25,6 +25,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/withAndroidForegroundSync",
       "expo-router",
       [
         "expo-splash-screen",
@@ -46,6 +47,8 @@
         "expo-build-properties",
         {
           "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 35,
             "usesCleartextTraffic": true
           }
         }

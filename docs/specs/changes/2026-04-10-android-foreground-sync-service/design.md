@@ -27,15 +27,22 @@ Fallback:
 
 Native execution sketch:
 - `createNotifeeForegroundServiceAdapter(deps)` adapta la API nativa de Notifee
+- `createForegroundSyncRunner(deps)` mantiene el loop/intervalo del trabajo continuo y su cancelación explícita
+- `runHeadlessSyncCycle(deps)` centraliza el reconcile headless y la persistencia observable para `background_task` y `foreground_service`
 - `createAndroidForegroundServiceStrategy(deps)` decide registro/start/stop/status del modo continuo
 - `createSyncExecutionFacade(deps)` expone la interfaz estable consumida por el runtime de sync
 - Loop/control logic reusa el runtime actual y persiste snapshot SQLite
 
 Estado actual de implementación:
 - `createNotifeeForegroundServiceAdapter()` ya quedó implementado como adapter funcional sobre Notifee.
+- `createForegroundSyncRunner()` ahora gobierna un loop explícito con ejecución inmediata, intervalo fijo y stop idempotente.
+- `runHeadlessSyncCycle()` ahora evita duplicar lógica entre `expo-background-task` y el foreground service Android, preservando un `triggerSource` honesto (`background_task` vs `foreground_service`).
 - `createSyncExecutionFacade()` ya selecciona estrategia preferida y fallback funcional.
 - El runtime root-level ya persiste `executionMode`, `isForegroundServiceRunning` y `canShowPersistentNotification` en `sync_runtime_status`.
 - Settings ya puede reflejar modo best-effort vs foreground service desde el snapshot persistido.
+- `withAndroidForegroundSync` ya declara `app.notifee.core.ForegroundService` como `dataSync` y agrega permisos Android relevantes vía config plugin local.
+- La build Android necesita `compileSdkVersion` 36 porque las dependencias transitivas nuevas (`androidx.browser:browser:1.9.0`, `androidx.core:core-ktx:1.17.0`) ya no compilan contra 35.
+- Las instalaciones existentes pueden requerir un path defensivo de reparación de columnas para `sync_runtime_status` si la tabla fue creada antes de la migración `0003` o si la app intenta tocar el snapshot antes de que el journal quede consistente en el dispositivo.
 
 ## File Changes
 
@@ -78,6 +85,10 @@ export interface SyncExecutionStrategy {
 ## Migration / Rollout
 
 Requiere salir de Expo Go y usar development build/prebuild. La recomendación es mantener el proyecto en Expo con config plugins, no saltar a bare salvo que Notifee/plugin quede corto.
+
+Importante: los cambios de `foregroundServiceType` y permisos NO impactan un binario ya compilado. Después de cambiar `app.json`/config plugin hay que regenerar el nativo (`prebuild`/new dev build) para que el manifest real deje de crashear por mismatch.
+
+Importante 2: después de integrar Notifee y sus dependencias transitivas, el Android build debe recompilar con `compileSdkVersion` 36 o mayor. Si el entorno sigue usando 35, Gradle falla en `:app:checkDebugAarMetadata` antes de llegar al runtime.
 
 Rollout sugerido:
 - Paso 1: validar la integración en Android dev build.

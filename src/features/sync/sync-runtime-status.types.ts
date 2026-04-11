@@ -8,6 +8,7 @@ export type SyncRuntimeTriggerSource =
   | 'app_active'
   | 'network_regained'
   | 'ws_sync_required'
+  | 'foreground_service'
   | 'background_task';
 
 export interface SyncRuntimeStatusSnapshot {

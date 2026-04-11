@@ -152,6 +152,8 @@ jest.mock('@notifee/react-native', () => {
     default: {
       createChannel: jest.fn(async () => 'autoreas-sync-foreground'),
       displayNotification: jest.fn(async () => undefined),
+      onBackgroundEvent: jest.fn(() => jest.fn()),
+      registerForegroundService: jest.fn(),
       requestPermission: jest.fn(async () => ({ authorizationStatus: AuthorizationStatus.AUTHORIZED })),
       stopForegroundService: jest.fn(async () => undefined),
     },

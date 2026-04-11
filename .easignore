@@ -1,0 +1,11 @@
+.expo/
+.jest/
+coverage/
+.vscode/
+.claude/
+.atl/
+.agents/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
