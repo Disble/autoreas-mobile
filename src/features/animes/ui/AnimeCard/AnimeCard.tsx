@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Button, Card, Chip, Separator } from "heroui-native";
+import { Button, Card, Chip } from "heroui-native";
 import React from "react";
 import { Pressable, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
@@ -19,7 +19,7 @@ export function AnimeCard(props: AnimeCardProps) {
     stateChip,
     restantesShown,
     restantesLabel,
-    daysList,
+    dayChipList,
     genresList,
     toggleRestantesShown,
     handleCapMinusPress,
@@ -29,40 +29,58 @@ export function AnimeCard(props: AnimeCardProps) {
     handleCapMinusLongPress,
   } = useAnimeCard(props);
 
+  const hasKnownTotal = anime.totalcap != null && anime.totalcap > 0;
+
   return (
-    <Card className="mb-3">
+    <Card className="mb-4">
       <Card.Body className="flex-row p-0">
         <Image
           source={{
             uri: anime.portada || "https://via.placeholder.com/100x150",
           }}
-          className="h-[130px] w-[90px]"
+          className="h-[140px] w-[96px] rounded-l-xl"
           contentFit="cover"
         />
 
-        <View className="flex-1 justify-between p-3">
+        <View className="flex-1 justify-between p-4">
           <View>
-            <View className="flex-row items-start justify-between gap-2">
+            <View className="flex-row items-start justify-between gap-3">
               <AppText
                 className="text-foreground flex-1 text-base font-bold leading-tight"
                 numberOfLines={2}
               >
                 {anime.nombre}
               </AppText>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Cambiar estado: ${stateChip.label}`}
-                onPress={handleStateBadgePress}
-                hitSlop={8}
-              >
-                <Chip
-                  size="sm"
-                  variant="secondary"
-                  color={CHIP_TONE_COLOR_MAP[stateChip.tone]}
+              {stateChip.isDefault ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Cambiar estado del anime"
+                  onPress={handleStateBadgePress}
+                  hitSlop={10}
+                  className="h-7 w-7 items-center justify-center rounded-full"
                 >
-                  <Chip.Label>{stateChip.label}</Chip.Label>
-                </Chip>
-              </Pressable>
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={18}
+                    color="#9ca3af"
+                  />
+                </Pressable>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cambiar estado: ${stateChip.label}`}
+                  onPress={handleStateBadgePress}
+                  hitSlop={8}
+                >
+                  <Chip
+                    size="sm"
+                    variant="secondary"
+                    color={CHIP_TONE_COLOR_MAP[stateChip.tone]}
+                  >
+                    <Chip.Label>{stateChip.label}</Chip.Label>
+                  </Chip>
+                </Pressable>
+              )}
             </View>
 
             <Pressable
@@ -70,58 +88,61 @@ export function AnimeCard(props: AnimeCardProps) {
               accessibilityLabel="Alternar episodios restantes"
               onPress={toggleRestantesShown}
               hitSlop={8}
-              className="mt-1.5 self-start"
+              className="mt-2 self-start"
             >
-              <AppText className="text-muted text-sm">
+              <AppText className="text-muted text-[13px]">
                 {restantesShown && restantesLabel
                   ? restantesLabel
-                  : `Cap. ${anime.nrocapvisto}${anime.totalcap ? ` / ${anime.totalcap}` : ""}`}
+                  : hasKnownTotal
+                    ? `Cap. ${anime.nrocapvisto} / ${anime.totalcap}`
+                    : `Cap. ${anime.nrocapvisto} · en emisión`}
               </AppText>
             </Pressable>
 
-            {progress !== null && !isCompleted && (
-              <View className="mt-2">
-                <View className="bg-surface-tertiary h-1.5 overflow-hidden rounded-full">
+            {progress !== null && !isCompleted ? (
+              <View className="mt-2.5">
+                <View className="bg-surface-tertiary/60 h-1 overflow-hidden rounded-full">
                   <View
                     className="bg-accent h-full rounded-full"
                     style={{ width: `${Math.min(progress, 100)}%` }}
                   />
                 </View>
               </View>
-            )}
+            ) : !hasKnownTotal ? (
+              <View className="mt-2.5">
+                <View className="bg-surface-tertiary/30 h-1 overflow-hidden rounded-full" />
+              </View>
+            ) : null}
           </View>
 
-          {(genresList.length > 0 || daysList.length > 0) && (
-            <>
-              <Separator className="my-2" />
-              <View className="flex-row flex-wrap gap-1">
-                {daysList.map((d) => (
-                  <Chip
-                    key={d.dia}
-                    size="sm"
-                    variant="secondary"
-                    color="accent"
-                  >
-                    <Chip.Label>{d.dia}</Chip.Label>
-                  </Chip>
-                ))}
-                {genresList.slice(0, 3).map((g: string) => (
-                  <Chip key={g} size="sm" variant="tertiary">
-                    <Chip.Label>{g}</Chip.Label>
-                  </Chip>
-                ))}
-                {genresList.length > 3 && (
-                  <Chip size="sm" variant="tertiary">
-                    <Chip.Label>+{genresList.length - 3}</Chip.Label>
-                  </Chip>
-                )}
-              </View>
-            </>
+          {(genresList.length > 0 || dayChipList.length > 0) && (
+            <View className="mt-3 flex-row flex-wrap items-center gap-1.5">
+              {dayChipList.map((d) => (
+                <View
+                  key={`day-${d.key}`}
+                  className="bg-accent/15 h-6 w-6 items-center justify-center rounded-md"
+                >
+                  <AppText className="text-accent text-[11px] font-bold">
+                    {d.label}
+                  </AppText>
+                </View>
+              ))}
+              {genresList.slice(0, 2).map((g: string) => (
+                <Chip key={g} size="sm" variant="tertiary">
+                  <Chip.Label>{g}</Chip.Label>
+                </Chip>
+              ))}
+              {genresList.length > 2 && (
+                <AppText className="text-muted/80 text-[11px]">
+                  +{genresList.length - 2}
+                </AppText>
+              )}
+            </View>
           )}
         </View>
       </Card.Body>
 
-      <View className="flex-row items-center justify-end gap-3 px-3 pb-3">
+      <View className="flex-row items-center justify-end gap-3 px-4 pb-3 pt-1">
         {isMutationLocked ? (
           <Button
             accessibilityLabel="Reanudar anime"
@@ -145,7 +166,7 @@ export function AnimeCard(props: AnimeCardProps) {
             >
               <Ionicons name="remove" size={22} />
             </Button>
-            <AppText className="text-foreground min-w-[32px] text-center text-base font-semibold">
+            <AppText className="text-foreground min-w-[52px] text-center text-lg font-semibold tabular-nums">
               {anime.nrocapvisto}
             </AppText>
             <Button

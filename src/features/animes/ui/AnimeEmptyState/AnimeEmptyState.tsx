@@ -1,27 +1,25 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Surface } from 'heroui-native';
+import { useThemeColor } from 'heroui-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../../../../components/app-text';
 import type { AnimeEmptyStateViewProps } from './anime-empty-state.types';
 
 export function AnimeEmptyStateView(props: AnimeEmptyStateViewProps) {
   const { icon, message, hint } = props;
+  const [accentColor] = useThemeColor(['accent']);
 
   return (
-    <View className="flex-1 items-center justify-center px-6 py-20">
-      <Surface
-        variant="secondary"
-        className="w-full items-center rounded-2xl px-8 py-10"
-      >
-        <Ionicons name={icon as any} size={56} color="#9ca3af" />
-        <AppText className="text-foreground mt-4 text-center text-lg font-semibold">
-          {message}
-        </AppText>
-        <AppText className="text-muted mt-2 text-center text-sm">
-          {hint}
-        </AppText>
-      </Surface>
+    <View className="mx-auto w-full max-w-md flex-1 items-center justify-center px-6 pb-10 pt-4">
+      <View className="bg-accent/10 mb-5 h-16 w-16 items-center justify-center rounded-2xl">
+        <Ionicons name={icon as any} size={32} color={accentColor} />
+      </View>
+      <AppText className="text-foreground text-center text-base font-semibold">
+        {message}
+      </AppText>
+      <AppText className="text-muted mt-1.5 text-center text-[13px] leading-snug">
+        {hint}
+      </AppText>
     </View>
   );
 }

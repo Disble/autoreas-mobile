@@ -35,7 +35,7 @@ export function AnimeTabsLayout(props: AnimeTabsLayoutProps) {
           headerTransparent: true,
         }}
       >
-        <Stack.Screen name="index" options={{ headerTitle: 'Mis Animes' }} />
+        <Stack.Screen name="index" />
         <Stack.Screen
           name="settings"
           options={{ headerTitle: 'Configuración' }}

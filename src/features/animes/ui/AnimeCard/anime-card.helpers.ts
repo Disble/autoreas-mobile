@@ -43,6 +43,7 @@ export type AnimeStateChipTone = 'accent' | 'success' | 'warning' | 'danger';
 export interface AnimeStateChipDescriptor {
   readonly label: string;
   readonly tone: AnimeStateChipTone;
+  readonly isDefault: boolean;
 }
 
 export const CHIP_TONE_COLOR_MAP: Readonly<Record<AnimeStateChipTone, 'accent' | 'success' | 'warning' | 'danger'>> = {
@@ -53,18 +54,37 @@ export const CHIP_TONE_COLOR_MAP: Readonly<Record<AnimeStateChipTone, 'accent' |
 };
 
 const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescriptor>> = {
-  0: { label: 'Viendo', tone: 'accent' },
-  1: { label: 'Finalizado', tone: 'success' },
-  2: { label: 'No me gustó', tone: 'danger' },
-  3: { label: 'En pausa', tone: 'warning' },
+  0: { label: 'Viendo', tone: 'accent', isDefault: true },
+  1: { label: 'Finalizado', tone: 'success', isDefault: false },
+  2: { label: 'No me gustó', tone: 'danger', isDefault: false },
+  3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
 
 /**
  * Maps the legacy `estado` integer into the chip descriptor shown at the card header.
  * Unknown values fall back to "Viendo" so corrupt rows never break the UI.
+ * The `isDefault` flag lets the card render Viendo implicitly (no chip noise on the happy path).
  */
 export function getStateChip(estado: number): AnimeStateChipDescriptor {
   return STATE_CHIP_BY_ESTADO[estado] ?? STATE_CHIP_BY_ESTADO[0];
+}
+
+const WEEKDAY_SHORT_CODE: Readonly<Record<string, string>> = {
+  Lunes: 'L',
+  Martes: 'M',
+  Miércoles: 'X',
+  Jueves: 'J',
+  Viernes: 'V',
+  Sábado: 'S',
+  Domingo: 'D',
+};
+
+/**
+ * Maps a weekday to the single-letter chip label used across the legacy desktop app.
+ * Pseudo-days (Sin ver / Ver hoy / Visto) return null so the card can skip non-schedule rows.
+ */
+export function getDayChipLabel(dia: string): string | null {
+  return WEEKDAY_SHORT_CODE[dia] ?? null;
 }
 
 /**

@@ -57,6 +57,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     <View className="bg-background flex-1">
       <Stack.Screen
         options={{
+          headerTitle: contextualHeader.title,
           headerLeft: () => (
             <Pressable
               accessibilityLabel="Abrir configuración"
@@ -92,7 +93,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         className={isTabletLandscape ? "flex-1 flex-row pt-16" : "flex-1 pt-16"}
       >
         {isTabletLandscape ? (
-          <View className="border-border/40 w-56 border-r">
+          <View className="bg-surface-secondary/40 border-border/40 w-60 border-r">
             <AnimeFilterRail
               options={filterOptions}
               counts={filterCounts}
@@ -114,26 +115,28 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         )}
 
         <View className="flex-1">
-          <View className="px-4 pb-2 pt-1">
-            <AppText className="text-foreground text-2xl font-bold">
-              {contextualHeader.title}
-            </AppText>
-            <AppText className="text-muted text-sm">
-              {contextualHeader.subtitle}
-            </AppText>
+          <View className="mx-auto w-full max-w-5xl px-5 pb-3 pt-2">
+            <View className="flex-row items-center gap-2">
+              {contextualHeader.isToday && (
+                <View className="bg-accent h-2 w-2 rounded-full" />
+              )}
+              <AppText className="text-muted text-sm">
+                {contextualHeader.subtitle}
+              </AppText>
+            </View>
           </View>
 
           {isEmpty ? (
             <AnimeEmptyState filter={selectedFilter} />
           ) : (
             <FlatList
-              contentContainerClassName="px-4 pt-2 pb-10"
+              contentContainerClassName="mx-auto w-full max-w-5xl px-5 pb-12"
               data={animes}
               extraData={isMutatingAnimeById}
               key={`anime-list-${numColumns}`}
               keyExtractor={(item) => item._id}
               numColumns={numColumns}
-              columnWrapperClassName={numColumns > 1 ? "gap-3" : undefined}
+              columnWrapperClassName={numColumns > 1 ? "gap-4" : undefined}
               refreshControl={
                 <RefreshControl
                   refreshing={isRefreshing}

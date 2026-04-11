@@ -57,4 +57,55 @@ describe('buildAnimeFilterRailItems', () => {
       ANIME_DAY_FILTER_OPTIONS.map((option) => option.value),
     );
   });
+
+  it('flags weekdays vs pseudo-days so the rail can render a section break', () => {
+    const items = buildAnimeFilterRailItems({
+      options: ANIME_DAY_FILTER_OPTIONS,
+      counts: {},
+      today: 'Lunes',
+      selected: 'Lunes',
+    });
+
+    const lunes = items.find((item) => item.value === 'Lunes');
+    const sinVer = items.find((item) => item.value === 'Sin ver');
+    const verHoy = items.find((item) => item.value === 'Ver hoy');
+    const visto = items.find((item) => item.value === 'Visto');
+
+    expect(lunes?.isPseudoDay).toBe(false);
+    expect(sinVer?.isPseudoDay).toBe(true);
+    expect(verHoy?.isPseudoDay).toBe(true);
+    expect(visto?.isPseudoDay).toBe(true);
+  });
+
+  it('marks the first pseudo-day item so the view can insert a single divider', () => {
+    const items = buildAnimeFilterRailItems({
+      options: ANIME_DAY_FILTER_OPTIONS,
+      counts: {},
+      today: 'Lunes',
+      selected: 'Lunes',
+    });
+
+    const pseudoDayItems = items.filter((item) => item.isPseudoDay);
+    const firstPseudoDay = pseudoDayItems[0];
+    const otherPseudoDays = pseudoDayItems.slice(1);
+
+    expect(firstPseudoDay?.isFirstPseudoDay).toBe(true);
+    otherPseudoDays.forEach((item) => {
+      expect(item.isFirstPseudoDay).toBe(false);
+    });
+  });
+
+  it('never marks weekdays as first pseudo-day', () => {
+    const items = buildAnimeFilterRailItems({
+      options: ANIME_DAY_FILTER_OPTIONS,
+      counts: {},
+      today: 'Lunes',
+      selected: 'Lunes',
+    });
+
+    const weekdayItems = items.filter((item) => !item.isPseudoDay);
+    weekdayItems.forEach((item) => {
+      expect(item.isFirstPseudoDay).toBe(false);
+    });
+  });
 });

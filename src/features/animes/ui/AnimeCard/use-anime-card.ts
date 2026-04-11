@@ -4,6 +4,7 @@ import {
   calculateProgress,
   canDecrease,
   canIncrease,
+  getDayChipLabel,
   getIsCompleted,
   getRestantesLabel,
   getStateChip,
@@ -69,6 +70,18 @@ export function useAnimeCard(props: AnimeCardProps) {
   const daysList = props.anime.dias || [];
   const genresList = props.anime.generos || [];
 
+  const dayChipList = useMemo(() => {
+    return daysList
+      .map((d) => {
+        const label = getDayChipLabel(d.dia);
+        if (label === null) {
+          return null;
+        }
+        return { key: d.dia, label };
+      })
+      .filter((entry): entry is { key: string; label: string } => entry !== null);
+  }, [daysList]);
+
   // 6. Callbacks
   const toggleRestantesShown = useCallback(() => {
     setRestantesShown((current) => !current);
@@ -106,6 +119,7 @@ export function useAnimeCard(props: AnimeCardProps) {
     restantesShown,
     restantesLabel,
     daysList,
+    dayChipList,
     genresList,
     toggleRestantesShown,
     handleCapMinusPress,

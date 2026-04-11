@@ -123,7 +123,31 @@ describe('useAnimeCard', () => {
     expect(result.current.stateChip).toMatchObject({
       label: 'En pausa',
       tone: 'warning',
+      isDefault: false,
     });
+  });
+
+  it('expone dayChipList con códigos cortos, ignorando pseudo-días', () => {
+    const { result } = renderHook(() =>
+      useAnimeCard({
+        anime: {
+          ...baseAnime,
+          dias: [
+            { dia: 'Lunes', orden: 0 },
+            { dia: 'Miércoles', orden: 1 },
+            { dia: 'Visto', orden: 2 },
+          ],
+        },
+        onCapMinus: jest.fn(),
+        onCapPlus: jest.fn(),
+        isMutating: false,
+      }),
+    );
+
+    expect(result.current.dayChipList).toEqual([
+      { key: 'Lunes', label: 'L' },
+      { key: 'Miércoles', label: 'X' },
+    ]);
   });
 
   it('toggleRestantesShown alterna entre contador y restantes', () => {

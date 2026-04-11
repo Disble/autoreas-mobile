@@ -40,6 +40,65 @@ const PSEUDO_DAY_TITLE: Readonly<Record<string, string>> = {
   Visto: "Vistos",
 };
 
+const SHORT_WEEKDAY_BY_INDEX: readonly string[] = [
+  "Dom",
+  "Lun",
+  "Mar",
+  "Mié",
+  "Jue",
+  "Vie",
+  "Sáb",
+];
+
+const SHORT_MONTH_BY_INDEX: readonly string[] = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+];
+
+/**
+ * Formats the given date as a compact Spanish label like "Jue 9 abr".
+ * Purpose-built for the contextual header badge: short, scannable, locale-safe without Intl.
+ */
+export function formatTodayLabel(date: Date): string {
+  const weekday = SHORT_WEEKDAY_BY_INDEX[date.getDay()];
+  const day = date.getDate();
+  const month = SHORT_MONTH_BY_INDEX[date.getMonth()];
+  return `${weekday} ${day} ${month}`;
+}
+
+function buildCountSubtitle(count: number): string {
+  if (count === 1) {
+    return "1 anime para ver";
+  }
+  return `${count} animes para ver`;
+}
+
+function buildEmptySubtitle(filter: AnimeDayFilter, isToday: boolean): string {
+  if (filter === "Ver hoy") {
+    return "Al día. Nada pendiente para hoy.";
+  }
+  if (filter === "Sin ver") {
+    return "Todo empezado. Bien ahí.";
+  }
+  if (filter === "Visto") {
+    return "Todavía no archivaste ningún anime.";
+  }
+  if (isToday) {
+    return "Al día. Nada pendiente para hoy.";
+  }
+  return `Sin pendientes para ${filter}`;
+}
+
 /**
  * Builds the contextual header shown above the anime list based on the active filter and count.
  * Centralizing title/subtitle copy here keeps the view dumb and makes empty/singular/plural states testable.
@@ -50,16 +109,16 @@ export function buildContextualHeader(
   now: Date,
 ): AnimeListScreenContextualHeader {
   const todayWeekday = WEEKDAY_INDEX_TO_FILTER[now.getDay()];
-  const isToday = filter === todayWeekday;
+  const isToday = filter === todayWeekday || filter === "Ver hoy";
   const title = PSEUDO_DAY_TITLE[filter] ?? filter;
 
   let subtitle: string;
   if (count === 0) {
-    subtitle = "Sin animes para este filtro";
-  } else if (count === 1) {
-    subtitle = "1 anime para ver";
+    subtitle = buildEmptySubtitle(filter, isToday);
+  } else if (isToday) {
+    subtitle = `${buildCountSubtitle(count).replace(" para ver", "")} · ${formatTodayLabel(now)}`;
   } else {
-    subtitle = `${count} animes para ver`;
+    subtitle = buildCountSubtitle(count);
   }
 
   return {

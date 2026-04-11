@@ -8,6 +8,8 @@ export interface AnimeFilterRailItem {
   readonly count: number;
   readonly isToday: boolean;
   readonly isSelected: boolean;
+  readonly isPseudoDay: boolean;
+  readonly isFirstPseudoDay: boolean;
 }
 
 export interface AnimeFilterRailProps {
@@ -24,4 +26,9 @@ export interface BuildAnimeFilterRailItemsInput {
   readonly counts: Readonly<Record<string, number>>;
   readonly selected: AnimeDayFilter;
   readonly today: AnimeDayFilter;
+}
+
+export interface VerticalRailRowProps {
+  readonly item: AnimeFilterRailItem;
+  readonly onSelect: (value: AnimeFilterRailItem['value']) => void;
 }

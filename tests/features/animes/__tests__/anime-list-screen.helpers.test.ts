@@ -2,6 +2,7 @@ import type { Anime } from '../../../../src/infrastructure/validation/anime-sche
 import {
   buildContextualHeader,
   computeFilterCounts,
+  formatTodayLabel,
 } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.helpers';
 
 function buildAnime(
@@ -65,9 +66,10 @@ describe('anime-list-screen helpers', () => {
 
   describe('buildContextualHeader', () => {
     it('returns a weekday-specific title for a weekday filter', () => {
-      const header = buildContextualHeader('Jueves', 3, new Date('2026-04-09T10:00:00.000Z'));
+      // Use a Monday to verify the title with a filter that is NOT today.
+      const header = buildContextualHeader('Lunes', 3, new Date('2026-04-09T10:00:00.000Z'));
 
-      expect(header.title).toBe('Jueves');
+      expect(header.title).toBe('Lunes');
       expect(header.subtitle).toBe('3 animes para ver');
     });
 
@@ -77,35 +79,85 @@ describe('anime-list-screen helpers', () => {
       expect(header.isToday).toBe(true);
     });
 
-    it('uses singular copy when there is exactly one anime', () => {
+    it('uses singular copy when there is exactly one anime on a non-today filter', () => {
       const header = buildContextualHeader('Viernes', 1, new Date('2026-04-09T10:00:00.000Z'));
 
       expect(header.subtitle).toBe('1 anime para ver');
     });
 
-    it('uses empty-state copy when there are zero animes', () => {
+    it('uses a specific empty-state subtitle when a non-today weekday has zero animes', () => {
+      // 2026-04-09 is a Thursday. Saturday is not today, so the copy should name the weekday.
       const header = buildContextualHeader('Sábado', 0, new Date('2026-04-09T10:00:00.000Z'));
 
-      expect(header.subtitle).toBe('Sin animes para este filtro');
+      expect(header.subtitle).toBe('Sin pendientes para Sábado');
+    });
+
+    it('celebrates zero animes when the weekday is today', () => {
+      // 2026-04-09 is a Thursday → Jueves is today, count=0 should feel like a win.
+      const header = buildContextualHeader('Jueves', 0, new Date('2026-04-09T10:00:00.000Z'));
+
+      expect(header.subtitle).toBe('Al día. Nada pendiente para hoy.');
+    });
+
+    it('appends the formatted current date to the subtitle when the weekday filter matches today', () => {
+      // 2026-04-09 is Thursday, April 9.
+      const header = buildContextualHeader('Jueves', 3, new Date('2026-04-09T10:00:00.000Z'));
+
+      expect(header.subtitle).toBe('3 animes · Jue 9 abr');
+      expect(header.isToday).toBe(true);
     });
 
     it('uses pseudo-day copy for Ver hoy', () => {
       const header = buildContextualHeader('Ver hoy', 2, new Date('2026-04-09T10:00:00.000Z'));
 
       expect(header.title).toBe('Para ver hoy');
-      expect(header.subtitle).toBe('2 animes para ver');
+      expect(header.subtitle).toBe('2 animes · Jue 9 abr');
+    });
+
+    it('celebrates zero animes for Ver hoy', () => {
+      const header = buildContextualHeader('Ver hoy', 0, new Date('2026-04-09T10:00:00.000Z'));
+
+      expect(header.subtitle).toBe('Al día. Nada pendiente para hoy.');
     });
 
     it('uses pseudo-day copy for Visto', () => {
       const header = buildContextualHeader('Visto', 5, new Date('2026-04-09T10:00:00.000Z'));
 
       expect(header.title).toBe('Vistos');
+      expect(header.subtitle).toBe('5 animes para ver');
+    });
+
+    it('uses a purposeful empty-state subtitle for Visto', () => {
+      const header = buildContextualHeader('Visto', 0, new Date('2026-04-09T10:00:00.000Z'));
+
+      expect(header.subtitle).toBe('Todavía no archivaste ningún anime.');
     });
 
     it('uses pseudo-day copy for Sin ver', () => {
       const header = buildContextualHeader('Sin ver', 4, new Date('2026-04-09T10:00:00.000Z'));
 
       expect(header.title).toBe('Sin ver');
+      expect(header.subtitle).toBe('4 animes para ver');
+    });
+
+    it('uses a purposeful empty-state subtitle for Sin ver', () => {
+      const header = buildContextualHeader('Sin ver', 0, new Date('2026-04-09T10:00:00.000Z'));
+
+      expect(header.subtitle).toBe('Todo empezado. Bien ahí.');
+    });
+  });
+
+  describe('formatTodayLabel', () => {
+    it('formats a weekday with short Spanish names', () => {
+      expect(formatTodayLabel(new Date('2026-04-09T10:00:00.000Z'))).toBe('Jue 9 abr');
+    });
+
+    it('handles Sunday as the first weekday index', () => {
+      expect(formatTodayLabel(new Date('2026-04-12T10:00:00.000Z'))).toBe('Dom 12 abr');
+    });
+
+    it('uses two-digit day numbers without leading zero', () => {
+      expect(formatTodayLabel(new Date('2026-01-03T10:00:00.000Z'))).toBe('Sáb 3 ene');
     });
   });
 });
