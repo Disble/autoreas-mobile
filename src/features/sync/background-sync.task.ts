@@ -1,10 +1,10 @@
-import * as BackgroundTask from 'expo-background-task';
-import * as TaskManager from 'expo-task-manager';
+import * as BackgroundTask from "expo-background-task";
+import * as TaskManager from "expo-task-manager";
 import {
   BACKGROUND_SYNC_TASK_NAME,
   BACKGROUND_SYNC_TASK_OPTIONS,
-} from './background-sync.constants';
-import { runBackgroundSyncCycle } from './background-sync.helpers';
+} from "./background-sync.constants";
+import { runBackgroundSyncCycle } from "./background-sync.helpers";
 
 try {
   TaskManager.defineTask(BACKGROUND_SYNC_TASK_NAME, async () => {
@@ -21,7 +21,9 @@ try {
 }
 
 export async function registerBackgroundSyncTask() {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK_NAME);
+  const isRegistered = await TaskManager.isTaskRegisteredAsync(
+    BACKGROUND_SYNC_TASK_NAME,
+  );
 
   if (!isRegistered) {
     await BackgroundTask.registerTaskAsync(
@@ -32,7 +34,9 @@ export async function registerBackgroundSyncTask() {
 }
 
 export async function unregisterBackgroundSyncTask() {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK_NAME);
+  const isRegistered = await TaskManager.isTaskRegisteredAsync(
+    BACKGROUND_SYNC_TASK_NAME,
+  );
 
   if (isRegistered) {
     await BackgroundTask.unregisterTaskAsync(BACKGROUND_SYNC_TASK_NAME);

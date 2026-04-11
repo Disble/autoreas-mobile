@@ -1,20 +1,23 @@
-import * as Network from 'expo-network';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
-import { createNotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter';
-import { useBridgeConfig } from '../settings/use-bridge-config';
-import { useWebSocket } from '../ws/use-websocket';
+import * as Network from "expo-network";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { createNotifeeForegroundServiceAdapter } from "./notifee-foreground-service-adapter";
+import { useBridgeConfig } from "../settings/use-bridge-config";
+import { useWebSocket } from "../ws/use-websocket";
 import {
   isBackgroundSyncTaskRegistered,
   registerBackgroundSyncTask,
   unregisterBackgroundSyncTask,
-} from './background-sync.task';
-import { createSyncExecutionFacade } from './sync-execution-facade';
-import { buildSyncExecutionStatusPatch } from './sync-execution-strategy.helpers';
-import { updateSyncRuntimeStatusSnapshot } from './sync-runtime-status.helpers';
-import { useSyncFacade } from './use-sync-facade';
-import type { UseSyncRuntimeProps, UseSyncRuntimeResult } from './sync-runtime.types';
-import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+} from "./background-sync.task";
+import { createSyncExecutionFacade } from "./sync-execution-facade";
+import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
+import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
+import { useSyncFacade } from "./use-sync-facade";
+import type {
+  UseSyncRuntimeProps,
+  UseSyncRuntimeResult,
+} from "./sync-runtime.types";
+import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
 
 export function useSyncRuntime(
   props: UseSyncRuntimeProps,
@@ -26,9 +29,9 @@ export function useSyncRuntime(
 
   // 2. State
   const [currentAppState, setCurrentAppState] = useState(AppState.currentState);
-  const [executionMode, setExecutionMode] = useState<'best_effort_background_task' | 'android_foreground_service'>(
-    'best_effort_background_task',
-  );
+  const [executionMode, setExecutionMode] = useState<
+    "best_effort_background_task" | "android_foreground_service"
+  >("best_effort_background_task");
 
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -43,7 +46,7 @@ export function useSyncRuntime(
     [isConfigured, props.isBootstrapped],
   );
   const isWebSocketEnabled = useMemo(
-    () => isRuntimeEnabled && currentAppState === 'active',
+    () => isRuntimeEnabled && currentAppState === "active",
     [currentAppState, isRuntimeEnabled],
   );
   const syncExecutionFacade = useMemo(
@@ -52,15 +55,17 @@ export function useSyncRuntime(
         strategies: [
           createNotifeeForegroundServiceAdapter(),
           {
-            mode: 'best_effort_background_task',
+            mode: "best_effort_background_task",
             register: registerBackgroundSyncTask,
             unregister: unregisterBackgroundSyncTask,
             getStatus: async () => {
               const isRegistered = await isBackgroundSyncTaskRegistered();
 
               return {
-                registrationStatus: isRegistered ? 'registered' : 'unregistered',
-                executionMode: 'best_effort_background_task' as const,
+                registrationStatus: isRegistered
+                  ? "registered"
+                  : "unregistered",
+                executionMode: "best_effort_background_task" as const,
                 isForegroundServiceRunning: false,
                 canShowPersistentNotification: false,
               };
@@ -73,14 +78,20 @@ export function useSyncRuntime(
 
   // 6. Callbacks (`useCallback` calling pure helpers)
   const requestAutomaticSync = useCallback(
-    (source: 'bootstrap' | 'app_active' | 'network_regained' | 'ws_sync_required') => {
+    (
+      source:
+        | "bootstrap"
+        | "app_active"
+        | "network_regained"
+        | "ws_sync_required",
+    ) => {
       void requestSync(source).catch(() => undefined);
     },
     [requestSync],
   );
 
   const handleWebSocketSyncRequired = useCallback(() => {
-    requestAutomaticSync('ws_sync_required');
+    requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
   // 7. Effects
@@ -108,7 +119,10 @@ export function useSyncRuntime(
         .then((status) => {
           setExecutionMode(status.executionMode);
 
-          return updateSyncRuntimeStatusSnapshot(rawDb, buildSyncExecutionStatusPatch(status));
+          return updateSyncRuntimeStatusSnapshot(
+            rawDb,
+            buildSyncExecutionStatusPatch(status),
+          );
         })
         .catch(() => undefined);
       return;
@@ -124,11 +138,14 @@ export function useSyncRuntime(
       .then((status) => {
         setExecutionMode(status.executionMode);
 
-        return updateSyncRuntimeStatusSnapshot(rawDb, buildSyncExecutionStatusPatch(status));
+        return updateSyncRuntimeStatusSnapshot(
+          rawDb,
+          buildSyncExecutionStatusPatch(status),
+        );
       })
       .catch(() =>
         updateSyncRuntimeStatusSnapshot(rawDb, {
-          registrationStatus: 'unsupported',
+          registrationStatus: "unsupported",
         }).catch(() => undefined),
       );
   }, [isRuntimeEnabled, props.isBootstrapped, rawDb, syncExecutionFacade]);
@@ -144,18 +161,22 @@ export function useSyncRuntime(
     }
 
     hasBootstrappedRef.current = true;
-    requestAutomaticSync('bootstrap');
+    requestAutomaticSync("bootstrap");
   }, [isRuntimeEnabled, requestAutomaticSync]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
       const previousAppState = currentAppStateRef.current;
 
       currentAppStateRef.current = nextAppState;
       setCurrentAppState(nextAppState);
 
-      if (previousAppState !== 'active' && nextAppState === 'active' && isRuntimeEnabled) {
-        requestAutomaticSync('app_active');
+      if (
+        previousAppState !== "active" &&
+        nextAppState === "active" &&
+        isRuntimeEnabled
+      ) {
+        requestAutomaticSync("app_active");
       }
     });
 
@@ -168,8 +189,12 @@ export function useSyncRuntime(
     const subscription = Network.addNetworkStateListener((state) => {
       const isConnected = state.isConnected === true;
 
-      if (lastConnectivityRef.current === false && isConnected && isRuntimeEnabled) {
-        requestAutomaticSync('network_regained');
+      if (
+        lastConnectivityRef.current === false &&
+        isConnected &&
+        isRuntimeEnabled
+      ) {
+        requestAutomaticSync("network_regained");
       }
 
       lastConnectivityRef.current = isConnected;

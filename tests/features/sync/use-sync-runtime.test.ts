@@ -1,77 +1,81 @@
-import { act, renderHook } from '@testing-library/react-native';
-import { AppState } from 'react-native';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
-import * as backgroundSyncTaskModule from '../../../src/features/sync/background-sync.task';
-import * as bridgeConfigModule from '../../../src/features/settings/use-bridge-config';
-import * as syncExecutionFacadeModule from '../../../src/features/sync/sync-execution-facade';
-import * as syncFacadeModule from '../../../src/features/sync/use-sync-facade';
-import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
-import { useSyncRuntime } from '../../../src/features/sync/use-sync-runtime';
-import { useWebSocket } from '../../../src/features/ws/use-websocket';
+import { act, renderHook } from "@testing-library/react-native";
+import { AppState } from "react-native";
+import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime";
+import * as backgroundSyncTaskModule from "../../../src/features/sync/background-sync.task";
+import * as bridgeConfigModule from "../../../src/features/settings/use-bridge-config";
+import * as syncExecutionFacadeModule from "../../../src/features/sync/sync-execution-facade";
+import * as syncFacadeModule from "../../../src/features/sync/use-sync-facade";
+import * as runtimeStatusModule from "../../../src/features/sync/sync-runtime-status.helpers";
+import { useSyncRuntime } from "../../../src/features/sync/use-sync-runtime";
+import { useWebSocket } from "../../../src/features/ws/use-websocket";
 
-const appStateListeners: Array<(status: string) => void> = [];
-const networkListeners: Array<(state: { isConnected?: boolean | null }) => void> = [];
+const appStateListeners: ((status: string) => void)[] = [];
+const networkListeners: ((state: { isConnected?: boolean | null }) => void)[] = [];
 
-jest.mock('react-native', () => ({
+jest.mock("react-native", () => ({
   AppState: {
-    currentState: 'active',
-    addEventListener: jest.fn((_: string, listener: (status: string) => void) => {
-      appStateListeners.push(listener);
+    currentState: "active",
+    addEventListener: jest.fn(
+      (_: string, listener: (status: string) => void) => {
+        appStateListeners.push(listener);
 
-      return {
-        remove: jest.fn(() => {
-          const index = appStateListeners.indexOf(listener);
-          if (index >= 0) {
-            appStateListeners.splice(index, 1);
-          }
-        }),
-      };
-    }),
+        return {
+          remove: jest.fn(() => {
+            const index = appStateListeners.indexOf(listener);
+            if (index >= 0) {
+              appStateListeners.splice(index, 1);
+            }
+          }),
+        };
+      },
+    ),
   },
 }));
 
-jest.mock('expo-network', () => ({
-  addNetworkStateListener: jest.fn((listener: (state: { isConnected?: boolean | null }) => void) => {
-    networkListeners.push(listener);
+jest.mock("expo-network", () => ({
+  addNetworkStateListener: jest.fn(
+    (listener: (state: { isConnected?: boolean | null }) => void) => {
+      networkListeners.push(listener);
 
-    return {
-      remove: jest.fn(() => {
-        const index = networkListeners.indexOf(listener);
-        if (index >= 0) {
-          networkListeners.splice(index, 1);
-        }
-      }),
-    };
-  }),
+      return {
+        remove: jest.fn(() => {
+          const index = networkListeners.indexOf(listener);
+          if (index >= 0) {
+            networkListeners.splice(index, 1);
+          }
+        }),
+      };
+    },
+  ),
 }));
 
-jest.mock('../../../src/features/settings/use-bridge-config', () => ({
+jest.mock("../../../src/features/settings/use-bridge-config", () => ({
   useBridgeConfig: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/use-sync-facade', () => ({
+jest.mock("../../../src/features/sync/use-sync-facade", () => ({
   useSyncFacade: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/background-sync.task', () => ({
+jest.mock("../../../src/features/sync/background-sync.task", () => ({
   isBackgroundSyncTaskRegistered: jest.fn(),
   registerBackgroundSyncTask: jest.fn(),
   unregisterBackgroundSyncTask: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/sync-execution-facade', () => ({
+jest.mock("../../../src/features/sync/sync-execution-facade", () => ({
   createSyncExecutionFacade: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock("../../../src/infrastructure/db/native-runtime", () => ({
   useOptionalSQLiteContext: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+jest.mock("../../../src/features/sync/sync-runtime-status.helpers", () => ({
   updateSyncRuntimeStatusSnapshot: jest.fn(),
 }));
 
-jest.mock('../../../src/features/ws/use-websocket', () => ({
+jest.mock("../../../src/features/ws/use-websocket", () => ({
   useWebSocket: jest.fn(),
 }));
 
@@ -87,7 +91,7 @@ function emitNetworkState(isConnected: boolean | null | undefined) {
   });
 }
 
-describe('useSyncRuntime', () => {
+describe("useSyncRuntime", () => {
   const mockRequestSync = jest.fn();
   const mockRegisterPreferredStrategy = jest.fn();
   const mockHasCurrentStrategy = jest.fn();
@@ -98,11 +102,13 @@ describe('useSyncRuntime', () => {
     jest.clearAllMocks();
     appStateListeners.length = 0;
     networkListeners.length = 0;
-    AppState.currentState = 'active';
-    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue({ id: 'raw-db' });
+    AppState.currentState = "active";
+    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue({
+      id: "raw-db",
+    });
 
     (bridgeConfigModule.useBridgeConfig as jest.Mock).mockReturnValue({
-      config: { deviceId: 'device-1' },
+      config: { deviceId: "device-1" },
       isConfigured: true,
       isUnpairing: false,
       error: null,
@@ -110,36 +116,46 @@ describe('useSyncRuntime', () => {
     });
     mockRequestSync.mockResolvedValue(1);
     (syncFacadeModule.useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'idle',
+      connectionStatus: "idle",
       lastSyncAt: null,
       manualSync: jest.fn(),
       pendingOpsCount: 0,
       requestSync: mockRequestSync,
       syncError: null,
     });
-    (backgroundSyncTaskModule.registerBackgroundSyncTask as jest.Mock).mockResolvedValue(undefined);
-    (backgroundSyncTaskModule.isBackgroundSyncTaskRegistered as jest.Mock).mockResolvedValue(true);
-    (backgroundSyncTaskModule.unregisterBackgroundSyncTask as jest.Mock).mockResolvedValue(undefined);
+    (
+      backgroundSyncTaskModule.registerBackgroundSyncTask as jest.Mock
+    ).mockResolvedValue(undefined);
+    (
+      backgroundSyncTaskModule.isBackgroundSyncTaskRegistered as jest.Mock
+    ).mockResolvedValue(true);
+    (
+      backgroundSyncTaskModule.unregisterBackgroundSyncTask as jest.Mock
+    ).mockResolvedValue(undefined);
     mockRegisterPreferredStrategy.mockResolvedValue(undefined);
     mockHasCurrentStrategy.mockReturnValue(false);
     mockUnregisterCurrentStrategy.mockResolvedValue(undefined);
     mockGetStatus.mockResolvedValue({
-      registrationStatus: 'registered',
-      executionMode: 'best_effort_background_task',
+      registrationStatus: "registered",
+      executionMode: "best_effort_background_task",
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
     });
-    (syncExecutionFacadeModule.createSyncExecutionFacade as jest.Mock).mockReturnValue({
+    (
+      syncExecutionFacadeModule.createSyncExecutionFacade as jest.Mock
+    ).mockReturnValue({
       registerPreferredStrategy: mockRegisterPreferredStrategy,
       hasCurrentStrategy: mockHasCurrentStrategy,
       unregisterCurrentStrategy: mockUnregisterCurrentStrategy,
       getStatus: mockGetStatus,
     });
-    (runtimeStatusModule.updateSyncRuntimeStatusSnapshot as jest.Mock).mockResolvedValue(undefined);
+    (
+      runtimeStatusModule.updateSyncRuntimeStatusSnapshot as jest.Mock
+    ).mockResolvedValue(undefined);
     (useWebSocket as jest.Mock).mockImplementation(() => ({}));
   });
 
-  it('boots the paired runtime from root, registers background sync, and owns websocket wiring', async () => {
+  it("boots the paired runtime from root, registers background sync, and owns websocket wiring", async () => {
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
     await act(async () => {
@@ -147,16 +163,18 @@ describe('useSyncRuntime', () => {
     });
 
     expect(mockRegisterPreferredStrategy).toHaveBeenCalledTimes(1);
-    expect(runtimeStatusModule.updateSyncRuntimeStatusSnapshot).toHaveBeenCalledWith(
-      { id: 'raw-db' },
+    expect(
+      runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
+    ).toHaveBeenCalledWith(
+      { id: "raw-db" },
       {
-        registrationStatus: 'registered',
-        executionMode: 'best_effort_background_task',
+        registrationStatus: "registered",
+        executionMode: "best_effort_background_task",
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
       },
     );
-    expect(mockRequestSync).toHaveBeenCalledWith('bootstrap');
+    expect(mockRequestSync).toHaveBeenCalledWith("bootstrap");
     expect(useWebSocket).toHaveBeenCalledWith(
       expect.objectContaining({
         enabled: true,
@@ -165,7 +183,7 @@ describe('useSyncRuntime', () => {
     );
   });
 
-  it('stays idle and unregisters background sync when no pairing exists', async () => {
+  it("stays idle and unregisters background sync when no pairing exists", async () => {
     (bridgeConfigModule.useBridgeConfig as jest.Mock).mockReturnValue({
       config: null,
       isConfigured: false,
@@ -174,8 +192,8 @@ describe('useSyncRuntime', () => {
       unpair: jest.fn(),
     });
     mockGetStatus.mockResolvedValueOnce({
-      registrationStatus: 'unregistered',
-      executionMode: 'best_effort_background_task',
+      registrationStatus: "unregistered",
+      executionMode: "best_effort_background_task",
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
     });
@@ -187,24 +205,28 @@ describe('useSyncRuntime', () => {
     });
 
     expect(mockUnregisterCurrentStrategy).toHaveBeenCalledTimes(1);
-    expect(runtimeStatusModule.updateSyncRuntimeStatusSnapshot).toHaveBeenCalledWith(
-      { id: 'raw-db' },
+    expect(
+      runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
+    ).toHaveBeenCalledWith(
+      { id: "raw-db" },
       {
-        registrationStatus: 'unregistered',
-        executionMode: 'best_effort_background_task',
+        registrationStatus: "unregistered",
+        executionMode: "best_effort_background_task",
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
       },
     );
-    expect(backgroundSyncTaskModule.registerBackgroundSyncTask).not.toHaveBeenCalled();
+    expect(
+      backgroundSyncTaskModule.registerBackgroundSyncTask,
+    ).not.toHaveBeenCalled();
     expect(mockRequestSync).not.toHaveBeenCalled();
     expect(useWebSocket).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: false }),
     );
   });
 
-  it('triggers reconcile when the app returns to the foreground', async () => {
-    AppState.currentState = 'background';
+  it("triggers reconcile when the app returns to the foreground", async () => {
+    AppState.currentState = "background";
 
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
@@ -215,14 +237,14 @@ describe('useSyncRuntime', () => {
     mockRequestSync.mockClear();
 
     await act(async () => {
-      emitAppState('active');
+      emitAppState("active");
       await Promise.resolve();
     });
 
-    expect(mockRequestSync).toHaveBeenCalledWith('app_active');
+    expect(mockRequestSync).toHaveBeenCalledWith("app_active");
   });
 
-  it('triggers reconcile only when connectivity is regained', async () => {
+  it("triggers reconcile only when connectivity is regained", async () => {
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
     await act(async () => {
@@ -239,10 +261,10 @@ describe('useSyncRuntime', () => {
     });
 
     expect(mockRequestSync).toHaveBeenCalledTimes(1);
-    expect(mockRequestSync).toHaveBeenCalledWith('network_regained');
+    expect(mockRequestSync).toHaveBeenCalledWith("network_regained");
   });
 
-  it('routes websocket sync_required messages through the root runtime', async () => {
+  it("routes websocket sync_required messages through the root runtime", async () => {
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
     await act(async () => {
@@ -257,11 +279,11 @@ describe('useSyncRuntime', () => {
       await Promise.resolve();
     });
 
-    expect(mockRequestSync).toHaveBeenCalledWith('ws_sync_required');
+    expect(mockRequestSync).toHaveBeenCalledWith("ws_sync_required");
   });
 
-  it('swallows handled auto-sync failures so Expo does not surface unhandled promise rejections', async () => {
-    mockRequestSync.mockRejectedValue(new Error('Network request failed'));
+  it("swallows handled auto-sync failures so Expo does not surface unhandled promise rejections", async () => {
+    mockRequestSync.mockRejectedValue(new Error("Network request failed"));
 
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
@@ -273,8 +295,8 @@ describe('useSyncRuntime', () => {
     const webSocketArgs = (useWebSocket as jest.Mock).mock.calls.at(-1)?.[0];
 
     await act(async () => {
-      emitAppState('background');
-      emitAppState('active');
+      emitAppState("background");
+      emitAppState("active");
       emitNetworkState(false);
       emitNetworkState(true);
       webSocketArgs.onSyncRequired();
@@ -282,16 +304,16 @@ describe('useSyncRuntime', () => {
       await Promise.resolve();
     });
 
-    expect(mockRequestSync).toHaveBeenCalledWith('bootstrap');
-    expect(mockRequestSync).toHaveBeenCalledWith('app_active');
-    expect(mockRequestSync).toHaveBeenCalledWith('network_regained');
-    expect(mockRequestSync).toHaveBeenCalledWith('ws_sync_required');
+    expect(mockRequestSync).toHaveBeenCalledWith("bootstrap");
+    expect(mockRequestSync).toHaveBeenCalledWith("app_active");
+    expect(mockRequestSync).toHaveBeenCalledWith("network_regained");
+    expect(mockRequestSync).toHaveBeenCalledWith("ws_sync_required");
   });
 
-  it('persists foreground execution status when the facade reports android foreground mode', async () => {
+  it("persists foreground execution status when the facade reports android foreground mode", async () => {
     mockGetStatus.mockResolvedValueOnce({
-      registrationStatus: 'registered',
-      executionMode: 'android_foreground_service',
+      registrationStatus: "registered",
+      executionMode: "android_foreground_service",
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
     });
@@ -302,18 +324,20 @@ describe('useSyncRuntime', () => {
       await Promise.resolve();
     });
 
-    expect(runtimeStatusModule.updateSyncRuntimeStatusSnapshot).toHaveBeenCalledWith(
-      { id: 'raw-db' },
+    expect(
+      runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
+    ).toHaveBeenCalledWith(
+      { id: "raw-db" },
       {
-        registrationStatus: 'registered',
-        executionMode: 'android_foreground_service',
+        registrationStatus: "registered",
+        executionMode: "android_foreground_service",
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
       },
     );
   });
 
-  it('does not re-register execution strategies when one is already active', async () => {
+  it("does not re-register execution strategies when one is already active", async () => {
     mockHasCurrentStrategy.mockReturnValue(true);
 
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
