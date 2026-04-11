@@ -54,7 +54,7 @@ describe("useAnimeListItemRenderer", () => {
     expect(cardProps.isMutating).toBe(true);
   });
 
-  it("wires AnimeCard actions to callbacks with the item id", async () => {
+  it("wires AnimeCard actions to callbacks with the item id", () => {
     const item = buildAnime("anime-2", { estado: 2 });
     const handleCapMinus = jest.fn().mockResolvedValue(undefined);
     const handleCapPlus = jest.fn().mockResolvedValue(undefined);
@@ -75,11 +75,11 @@ describe("useAnimeListItemRenderer", () => {
 
     const cardProps = result.current.getAnimeCardProps(item);
 
-    await act(async () => {
-      await cardProps.onCapMinus();
-      await cardProps.onCapPlus();
-      await cardProps.onCapMinusHalf?.();
-      await cardProps.onCapPlusHalf?.();
+    act(() => {
+      cardProps.onCapMinus();
+      cardProps.onCapPlus();
+      cardProps.onCapMinusHalf?.();
+      cardProps.onCapPlusHalf?.();
     });
 
     cardProps.onOpenStateSheet?.("anime-2", 2);
