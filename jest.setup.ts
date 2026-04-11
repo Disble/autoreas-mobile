@@ -138,6 +138,28 @@ jest.mock('uniwind', () => {
   };
 });
 
+jest.mock('@notifee/react-native', () => {
+  const AndroidForegroundServiceType = {
+    FOREGROUND_SERVICE_TYPE_DATA_SYNC: 1,
+  };
+  const AuthorizationStatus = {
+    DENIED: 0,
+    AUTHORIZED: 1,
+  };
+
+  return {
+    __esModule: true,
+    default: {
+      createChannel: jest.fn(async () => 'autoreas-sync-foreground'),
+      displayNotification: jest.fn(async () => undefined),
+      requestPermission: jest.fn(async () => ({ authorizationStatus: AuthorizationStatus.AUTHORIZED })),
+      stopForegroundService: jest.fn(async () => undefined),
+    },
+    AndroidForegroundServiceType,
+    AuthorizationStatus,
+  };
+});
+
 jest.mock('react-native-worklets', () => {
   const identity = <T,>(value: T) => value;
   const runInline = <TArgs extends unknown[], TResult>(

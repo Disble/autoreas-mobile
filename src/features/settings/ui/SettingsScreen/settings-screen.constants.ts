@@ -2,6 +2,7 @@ import type {
   SyncRuntimeRegistrationStatus,
   SyncRuntimeTriggerSource,
 } from '../../../sync/sync-runtime-status.types';
+import type { SyncExecutionMode } from '../../../sync/sync-execution-mode.types';
 import type { LayoutMode } from '../../../../hooks/use-responsive-layout';
 import type { MetricTileTone } from './settings-screen.types';
 
@@ -26,6 +27,11 @@ export const BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS: Record<
   network_regained: 'Reconexión de red',
   ws_sync_required: 'WebSocket pidió sync',
   background_task: 'Task en segundo plano',
+};
+
+export const BACKGROUND_SYNC_EXECUTION_MODE_LABELS: Record<SyncExecutionMode, string> = {
+  best_effort_background_task: 'Task best-effort',
+  android_foreground_service: 'Servicio foreground Android',
 };
 
 export const METRIC_TILE_TONE_BG_CLASS: Record<MetricTileTone, string> = {

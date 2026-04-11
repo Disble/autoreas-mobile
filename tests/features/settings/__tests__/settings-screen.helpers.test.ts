@@ -13,6 +13,9 @@ describe('settings-screen.helpers', () => {
       isConfigured: true,
       snapshot: {
         registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
         lastAttemptAt: 1775812200000,
         lastSuccessAt: 1775811900000,
         lastFailureMessage: 'Bridge timeout after 10s',
@@ -32,6 +35,10 @@ describe('settings-screen.helpers', () => {
       value: 'Registrado',
       tone: 'success',
       iconName: 'shield-checkmark-outline',
+    });
+    expect(tileMap.executionMode).toMatchObject({
+      label: 'Modo',
+      value: 'Task best-effort',
     });
     expect(tileMap.lastAttempt).toMatchObject({
       label: 'Último intento',
@@ -57,6 +64,10 @@ describe('settings-screen.helpers', () => {
       tone: 'default',
       iconName: 'sync-outline',
     });
+    expect(tileMap.foregroundService).toMatchObject({
+      label: 'Servicio persistente',
+      value: 'Inactivo',
+    });
     expect(tileMap.lastFailure).toMatchObject({
       label: 'Último fallo',
       value: 'Bridge timeout after 10s',
@@ -71,6 +82,9 @@ describe('settings-screen.helpers', () => {
       isConfigured: true,
       snapshot: {
         registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
         lastAttemptAt: 1775812200000,
         lastSuccessAt: 1775811900000,
         lastFailureMessage: null,
@@ -82,13 +96,44 @@ describe('settings-screen.helpers', () => {
     expect(section.statusTone).toBe('success');
     expect(section.title).toBe('Sync en segundo plano operativo');
     expect(section.tiles.find((tile) => tile.id === 'lastFailure')).toBeUndefined();
-    expect(section.tiles.map((tile) => tile.id)).toEqual([
-      'registration',
-      'lastAttempt',
-      'lastSuccess',
-      'lastTrigger',
-      'syncedCount',
-    ]);
+    expect(section.tiles.map((tile) => tile.id)).toEqual(
+      expect.arrayContaining([
+        'executionMode',
+        'registration',
+        'lastAttempt',
+        'lastSuccess',
+        'lastTrigger',
+        'syncedCount',
+        'foregroundService',
+        'notificationPermission',
+      ]),
+    );
+  });
+
+  it('builds a foreground-service oriented section for Android continuous sync mode', () => {
+    const section = buildBackgroundSyncSection({
+      isConfigured: true,
+      snapshot: {
+        registrationStatus: 'registered',
+        executionMode: 'android_foreground_service',
+        isForegroundServiceRunning: true,
+        canShowPersistentNotification: true,
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775811900000,
+        lastFailureMessage: null,
+        lastTriggerSource: 'background_task',
+        lastSyncedCount: 8,
+      },
+    });
+
+    expect(section.title).toBe('Sync continuo operativo');
+    expect(section.description).toContain('servicio foreground');
+
+    const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
+
+    expect(tileMap.executionMode.value).toBe('Servicio foreground Android');
+    expect(tileMap.foregroundService.value).toBe('Activo');
+    expect(tileMap.notificationPermission.value).toBe('Permitida');
   });
 
   it('emits only a single "not available" tile when the bridge is not paired', () => {
@@ -96,6 +141,9 @@ describe('settings-screen.helpers', () => {
       isConfigured: false,
       snapshot: {
         registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
         lastAttemptAt: 1775812200000,
         lastSuccessAt: 1775812200000,
         lastFailureMessage: null,
@@ -124,6 +172,9 @@ describe('settings-screen.helpers', () => {
       isConfigured: true,
       snapshot: {
         registrationStatus: 'unsupported',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
         lastAttemptAt: null,
         lastSuccessAt: null,
         lastFailureMessage: null,

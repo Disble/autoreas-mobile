@@ -44,6 +44,9 @@ export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
 
     return {
       registrationStatus: latestSnapshot.registrationStatus,
+      executionMode: latestSnapshot.executionMode,
+      isForegroundServiceRunning: latestSnapshot.isForegroundServiceRunning,
+      canShowPersistentNotification: latestSnapshot.canShowPersistentNotification,
       lastAttemptAt: latestSnapshot.lastAttemptAt,
       lastSuccessAt: latestSnapshot.lastSuccessAt,
       lastFailureMessage: latestSnapshot.lastFailureMessage,

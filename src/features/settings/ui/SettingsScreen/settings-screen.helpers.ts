@@ -1,4 +1,5 @@
 import {
+  BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
   BACKGROUND_SYNC_REGISTRATION_LABELS,
   BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
 } from './settings-screen.constants';
@@ -93,6 +94,16 @@ export function buildBackgroundSyncSection({
 
   const tiles: MetricTile[] = [
     {
+      id: 'executionMode',
+      label: 'Modo',
+      value: BACKGROUND_SYNC_EXECUTION_MODE_LABELS[snapshot.executionMode],
+      tone: snapshot.executionMode === 'android_foreground_service' ? 'accent' : 'default',
+      iconName:
+        snapshot.executionMode === 'android_foreground_service'
+          ? 'notifications-outline'
+          : 'timer-outline',
+    },
+    {
       id: 'registration',
       label: 'Registro',
       value: BACKGROUND_SYNC_REGISTRATION_LABELS[snapshot.registrationStatus],
@@ -139,6 +150,22 @@ export function buildBackgroundSyncSection({
     iconName: 'sync-outline',
   });
 
+  tiles.push({
+    id: 'foregroundService',
+    label: 'Servicio persistente',
+    value: snapshot.isForegroundServiceRunning ? 'Activo' : 'Inactivo',
+    tone: snapshot.isForegroundServiceRunning ? 'success' : 'warning',
+    iconName: snapshot.isForegroundServiceRunning ? 'radio-outline' : 'pause-circle-outline',
+  });
+
+  tiles.push({
+    id: 'notificationPermission',
+    label: 'Notif. persistente',
+    value: snapshot.canShowPersistentNotification ? 'Permitida' : 'No disponible',
+    tone: snapshot.canShowPersistentNotification ? 'success' : 'warning',
+    iconName: snapshot.canShowPersistentNotification ? 'notifications-outline' : 'notifications-off-outline',
+  });
+
   if (snapshot.lastFailureMessage) {
     tiles.push({
       id: 'lastFailure',
@@ -161,9 +188,14 @@ export function buildBackgroundSyncSection({
 
   if (snapshot.registrationStatus === 'registered' && snapshot.lastSuccessAt !== null) {
     return {
-      title: 'Sync en segundo plano operativo',
+      title:
+        snapshot.executionMode === 'android_foreground_service'
+          ? 'Sync continuo operativo'
+          : 'Sync en segundo plano operativo',
       description:
-        'El task periódico figura registrado y el snapshot local ya tiene al menos un ciclo exitoso.',
+        snapshot.executionMode === 'android_foreground_service'
+          ? 'La app expone un servicio foreground con notificación persistente para sostener el sync continuo en Android.'
+          : 'El task periódico figura registrado y el snapshot local ya tiene al menos un ciclo exitoso.',
       status: 'Registrado',
       statusTone: 'success',
       tiles,
@@ -172,9 +204,14 @@ export function buildBackgroundSyncSection({
 
   if (snapshot.registrationStatus === 'registered') {
     return {
-      title: 'Sync en segundo plano pendiente',
+      title:
+        snapshot.executionMode === 'android_foreground_service'
+          ? 'Sync continuo pendiente'
+          : 'Sync en segundo plano pendiente',
       description:
-        'El task está registrado, pero todavía no hay un ciclo exitoso observado en este dispositivo.',
+        snapshot.executionMode === 'android_foreground_service'
+          ? 'El modo foreground está preparado, pero todavía no hay un ciclo exitoso observado con el servicio persistente.'
+          : 'El task está registrado, pero todavía no hay un ciclo exitoso observado en este dispositivo.',
       status: 'Registrado',
       statusTone: 'accent',
       tiles,
@@ -184,7 +221,9 @@ export function buildBackgroundSyncSection({
   return {
     title: 'Sync en segundo plano no registrado',
     description:
-      'La app está emparejada, pero todavía no observa un registro activo del task periódico.',
+      snapshot.executionMode === 'android_foreground_service'
+        ? 'La app está emparejada, pero el servicio foreground todavía no quedó activo en este dispositivo.'
+        : 'La app está emparejada, pero todavía no observa un registro activo del task periódico.',
     status: 'No registrado',
     statusTone: 'warning',
     tiles,

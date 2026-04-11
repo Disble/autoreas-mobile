@@ -89,6 +89,9 @@ export async function getSyncRuntimeStatusSnapshot(
 
   return {
     registrationStatus: row.registrationStatus,
+    executionMode: row.executionMode,
+    isForegroundServiceRunning: row.isForegroundServiceRunning,
+    canShowPersistentNotification: row.canShowPersistentNotification,
     lastAttemptAt: row.lastAttemptAt ?? null,
     lastSuccessAt: row.lastSuccessAt ?? null,
     lastFailureMessage: row.lastFailureMessage ?? null,
@@ -104,6 +107,11 @@ async function persistSyncRuntimeStatusPatch(
   const current = await getSyncRuntimeStatusSnapshot(rawDb);
   const next: SyncRuntimeStatusSnapshot = {
     registrationStatus: patch.registrationStatus ?? current.registrationStatus,
+    executionMode: patch.executionMode ?? current.executionMode,
+    isForegroundServiceRunning:
+      patch.isForegroundServiceRunning ?? current.isForegroundServiceRunning,
+    canShowPersistentNotification:
+      patch.canShowPersistentNotification ?? current.canShowPersistentNotification,
     lastAttemptAt: patch.lastAttemptAt === undefined ? current.lastAttemptAt : patch.lastAttemptAt,
     lastSuccessAt: patch.lastSuccessAt === undefined ? current.lastSuccessAt : patch.lastSuccessAt,
     lastFailureMessage:
@@ -119,6 +127,9 @@ async function persistSyncRuntimeStatusPatch(
       .values({
         id: SYNC_RUNTIME_STATUS_SINGLETON_ID,
         registrationStatus: next.registrationStatus,
+        executionMode: next.executionMode,
+        isForegroundServiceRunning: next.isForegroundServiceRunning,
+        canShowPersistentNotification: next.canShowPersistentNotification,
         lastAttemptAt: next.lastAttemptAt,
         lastSuccessAt: next.lastSuccessAt,
         lastFailureMessage: next.lastFailureMessage,
@@ -129,6 +140,9 @@ async function persistSyncRuntimeStatusPatch(
         target: syncRuntimeStatus.id,
         set: {
           registrationStatus: next.registrationStatus,
+          executionMode: next.executionMode,
+          isForegroundServiceRunning: next.isForegroundServiceRunning,
+          canShowPersistentNotification: next.canShowPersistentNotification,
           lastAttemptAt: next.lastAttemptAt,
           lastSuccessAt: next.lastSuccessAt,
           lastFailureMessage: next.lastFailureMessage,

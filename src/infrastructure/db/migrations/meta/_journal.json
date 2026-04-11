@@ -22,6 +22,13 @@
       "when": 1775820000000,
       "tag": "0002_add_sync_runtime_status",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775910000000,
+      "tag": "0003_add_sync_execution_mode",
+      "breakpoints": true
     }
   ]
 }

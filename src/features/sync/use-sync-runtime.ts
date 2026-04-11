@@ -1,6 +1,7 @@
 import * as Network from 'expo-network';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { createNotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter';
 import { useBridgeConfig } from '../settings/use-bridge-config';
 import { useWebSocket } from '../ws/use-websocket';
 import {
@@ -8,6 +9,8 @@ import {
   registerBackgroundSyncTask,
   unregisterBackgroundSyncTask,
 } from './background-sync.task';
+import { createSyncExecutionFacade } from './sync-execution-facade';
+import { buildSyncExecutionStatusPatch } from './sync-execution-strategy.helpers';
 import { updateSyncRuntimeStatusSnapshot } from './sync-runtime-status.helpers';
 import { useSyncFacade } from './use-sync-facade';
 import type { UseSyncRuntimeProps, UseSyncRuntimeResult } from './sync-runtime.types';
@@ -23,6 +26,9 @@ export function useSyncRuntime(
 
   // 2. State
   const [currentAppState, setCurrentAppState] = useState(AppState.currentState);
+  const [executionMode, setExecutionMode] = useState<'best_effort_background_task' | 'android_foreground_service'>(
+    'best_effort_background_task',
+  );
 
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -39,6 +45,30 @@ export function useSyncRuntime(
   const isWebSocketEnabled = useMemo(
     () => isRuntimeEnabled && currentAppState === 'active',
     [currentAppState, isRuntimeEnabled],
+  );
+  const syncExecutionFacade = useMemo(
+    () =>
+      createSyncExecutionFacade({
+        strategies: [
+          createNotifeeForegroundServiceAdapter(),
+          {
+            mode: 'best_effort_background_task',
+            register: registerBackgroundSyncTask,
+            unregister: unregisterBackgroundSyncTask,
+            getStatus: async () => {
+              const isRegistered = await isBackgroundSyncTaskRegistered();
+
+              return {
+                registrationStatus: isRegistered ? 'registered' : 'unregistered',
+                executionMode: 'best_effort_background_task' as const,
+                isForegroundServiceRunning: false,
+                canShowPersistentNotification: false,
+              };
+            },
+          },
+        ],
+      }),
+    [],
   );
 
   // 6. Callbacks (`useCallback` calling pure helpers)
@@ -63,29 +93,34 @@ export function useSyncRuntime(
 
     if (!isRuntimeEnabled) {
       hasBootstrappedRef.current = false;
-      void unregisterBackgroundSyncTask()
-        .then(() =>
-          updateSyncRuntimeStatusSnapshot(rawDb, {
-            registrationStatus: 'unregistered',
-          }),
-        )
+      void Promise.all([
+        unregisterBackgroundSyncTask(),
+        syncExecutionFacade.unregisterCurrentStrategy(),
+      ])
+        .then(async () => syncExecutionFacade.getStatus())
+        .then((status) => {
+          setExecutionMode(status.executionMode);
+
+          return updateSyncRuntimeStatusSnapshot(rawDb, buildSyncExecutionStatusPatch(status));
+        })
         .catch(() => undefined);
       return;
     }
 
-    void registerBackgroundSyncTask()
-      .then(() => isBackgroundSyncTaskRegistered())
-      .then((isRegistered) =>
-        updateSyncRuntimeStatusSnapshot(rawDb, {
-          registrationStatus: isRegistered ? 'registered' : 'unregistered',
-        }),
-      )
+    void syncExecutionFacade
+      .registerPreferredStrategy()
+      .then(async () => syncExecutionFacade.getStatus())
+      .then((status) => {
+        setExecutionMode(status.executionMode);
+
+        return updateSyncRuntimeStatusSnapshot(rawDb, buildSyncExecutionStatusPatch(status));
+      })
       .catch(() =>
         updateSyncRuntimeStatusSnapshot(rawDb, {
           registrationStatus: 'unsupported',
         }).catch(() => undefined),
       );
-  }, [isRuntimeEnabled, props.isBootstrapped, rawDb]);
+  }, [isRuntimeEnabled, props.isBootstrapped, rawDb, syncExecutionFacade]);
 
   useEffect(() => {
     if (!isRuntimeEnabled) {
@@ -136,6 +171,7 @@ export function useSyncRuntime(
 
   return {
     currentAppState,
+    executionMode,
     isRuntimeEnabled,
     isWebSocketEnabled,
   };

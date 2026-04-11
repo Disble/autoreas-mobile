@@ -52,6 +52,9 @@ describe('useSettingsScreen', () => {
     (useBackgroundSyncStatus as jest.Mock).mockReturnValue({
       snapshot: {
         registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
         lastAttemptAt: 1775812200000,
         lastSuccessAt: 1775811900000,
         lastFailureMessage: 'Bridge timeout after 10s',

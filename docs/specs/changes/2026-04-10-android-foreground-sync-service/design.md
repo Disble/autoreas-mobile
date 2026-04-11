@@ -4,6 +4,8 @@
 
 Agregar un segundo modo de ejecución para Android: foreground service con notificación persistente. El reconciler y snapshot SQLite NO cambian; cambia sólo la garantía operacional y el runtime nativo que mantiene el proceso elegible fuera del lifecycle normal.
 
+Los patrones se implementarán en estilo funcional, sin clases: contratos por tipos, estrategias como módulos/funciones, adapters de infraestructura como funciones puras + closures, y una facade funcional para el runtime de aplicación.
+
 La notificación persistente se considera un tradeoff aceptable y normal para este modo, similar a herramientas de sincronización continua. El costo principal no es visual sino de integración nativa, permisos/manifest y lifecycle management.
 
 ## Architecture Decisions
@@ -14,6 +16,7 @@ La notificación persistente se considera un tradeoff aceptable y normal para es
 | Librería nativa | `react-native-background-actions` vs `@notifee/react-native` | `@notifee/react-native` | Tiene soporte fuerte para foreground service + notificación persistente, mejor story con Expo prebuild/dev build y menos riesgo de hacks auxiliares |
 | Soporte de plataforma | Android+iOS vs Android-only | Android-only | iOS no tiene equivalente UX/directo para este caso |
 | Reconciler | Nuevo algoritmo vs reusar actual | Reusar `syncPendingOperations()` | Menor riesgo y misma semántica de datos |
+| Estilo de patrones | Clases OOP vs diseño funcional | Diseño funcional | El proyecto prefiere contratos por tipos, módulos y closures en lugar de clases |
 
 ## Data Flow
 
@@ -23,15 +26,25 @@ Fallback:
 - Si foreground service no está disponible, mantener `expo-background-task` best-effort.
 
 Native execution sketch:
-- `notifee.registerForegroundService(...)`
-- `notifee.displayNotification({ android: { asForegroundService: true, foregroundServiceTypes: ['dataSync'] } })`
+- `createNotifeeForegroundServiceAdapter(deps)` adapta la API nativa de Notifee
+- `createAndroidForegroundServiceStrategy(deps)` decide registro/start/stop/status del modo continuo
+- `createSyncExecutionFacade(deps)` expone la interfaz estable consumida por el runtime de sync
 - Loop/control logic reusa el runtime actual y persiste snapshot SQLite
+
+Estado actual de implementación:
+- `createNotifeeForegroundServiceAdapter()` ya quedó implementado como adapter funcional sobre Notifee.
+- `createSyncExecutionFacade()` ya selecciona estrategia preferida y fallback funcional.
+- El runtime root-level ya persiste `executionMode`, `isForegroundServiceRunning` y `canShowPersistentNotification` en `sync_runtime_status`.
+- Settings ya puede reflejar modo best-effort vs foreground service desde el snapshot persistido.
 
 ## File Changes
 
 | File | Action | Description |
 |------|--------|-------------|
 | `src/features/sync/android-foreground-sync.*` | Create | Runtime específico de foreground service |
+| `src/features/sync/sync-execution-strategy.*` | Create | Contrato funcional para estrategias de ejecución |
+| `src/features/sync/notifee-foreground-service-adapter.*` | Create | Adapter funcional de infraestructura para Notifee |
+| `src/features/sync/sync-execution-facade.*` | Create | Facade funcional para seleccionar/fallback de estrategia |
 | `src/features/settings/*` | Modify | Toggle/mode visibility and stronger guarantee copy |
 | `android/app/src/main/AndroidManifest.xml` | Modify | Service + permissions |
 | `app.json` / plugins | Modify | Prebuild/native integration con Notifee |
@@ -41,6 +54,17 @@ Native execution sketch:
 
 ```ts
 export type SyncExecutionMode = 'best_effort_background_task' | 'android_foreground_service';
+
+export interface SyncExecutionStrategy {
+  readonly mode: SyncExecutionMode;
+  readonly register: () => Promise<void>;
+  readonly unregister: () => Promise<void>;
+  readonly getStatus: () => Promise<{
+    readonly registrationStatus: 'registered' | 'unregistered' | 'unsupported';
+    readonly isForegroundServiceRunning: boolean;
+    readonly canShowPersistentNotification: boolean;
+  }>;
+}
 ```
 
 ## Testing Strategy

@@ -38,6 +38,9 @@ describe('useBackgroundSyncStatus', () => {
 
     expect(result.current.snapshot).toEqual({
       registrationStatus: 'unregistered',
+      executionMode: 'best_effort_background_task',
+      isForegroundServiceRunning: false,
+      canShowPersistentNotification: false,
       lastAttemptAt: null,
       lastSuccessAt: null,
       lastFailureMessage: null,
@@ -52,6 +55,9 @@ describe('useBackgroundSyncStatus', () => {
         {
           id: 1,
           registrationStatus: 'registered',
+          executionMode: 'best_effort_background_task',
+          isForegroundServiceRunning: false,
+          canShowPersistentNotification: false,
           lastAttemptAt: 1710000000000,
           lastSuccessAt: 1710000005000,
           lastFailureMessage: null,
@@ -65,6 +71,9 @@ describe('useBackgroundSyncStatus', () => {
 
     expect(result.current.snapshot).toEqual({
       registrationStatus: 'registered',
+      executionMode: 'best_effort_background_task',
+      isForegroundServiceRunning: false,
+      canShowPersistentNotification: false,
       lastAttemptAt: 1710000000000,
       lastSuccessAt: 1710000005000,
       lastFailureMessage: null,
@@ -79,6 +88,9 @@ describe('useBackgroundSyncStatus', () => {
         {
           id: 1,
           registrationStatus: 'registered',
+          executionMode: 'best_effort_background_task',
+          isForegroundServiceRunning: false,
+          canShowPersistentNotification: false,
           lastAttemptAt: 1710000000000,
           lastSuccessAt: null,
           lastFailureMessage: 'Network Error',
@@ -92,6 +104,9 @@ describe('useBackgroundSyncStatus', () => {
 
     expect(result.current.snapshot).toEqual({
       registrationStatus: 'registered',
+      executionMode: 'best_effort_background_task',
+      isForegroundServiceRunning: false,
+      canShowPersistentNotification: false,
       lastAttemptAt: 1710000000000,
       lastSuccessAt: null,
       lastFailureMessage: 'Network Error',

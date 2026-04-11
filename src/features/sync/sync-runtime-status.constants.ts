@@ -4,6 +4,9 @@ export const SYNC_RUNTIME_STATUS_SINGLETON_ID = 1;
 
 export const DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
   registrationStatus: 'unregistered',
+  executionMode: 'best_effort_background_task',
+  isForegroundServiceRunning: false,
+  canShowPersistentNotification: false,
   lastAttemptAt: null,
   lastSuccessAt: null,
   lastFailureMessage: null,
@@ -13,6 +16,9 @@ export const DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
 
 export const UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
   registrationStatus: 'unsupported',
+  executionMode: 'best_effort_background_task',
+  isForegroundServiceRunning: false,
+  canShowPersistentNotification: false,
   lastAttemptAt: null,
   lastSuccessAt: null,
   lastFailureMessage: null,

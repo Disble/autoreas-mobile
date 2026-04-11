@@ -9,6 +9,9 @@ describe('sync runtime status helpers', () => {
   it('createEmptySyncRuntimeStatusSnapshot retorna el snapshot neutral esperado', () => {
     expect(createEmptySyncRuntimeStatusSnapshot()).toEqual({
       registrationStatus: 'unregistered',
+      executionMode: 'best_effort_background_task',
+      isForegroundServiceRunning: false,
+      canShowPersistentNotification: false,
       lastAttemptAt: null,
       lastSuccessAt: null,
       lastFailureMessage: null,

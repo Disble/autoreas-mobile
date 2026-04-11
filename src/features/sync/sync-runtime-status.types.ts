@@ -1,3 +1,5 @@
+import type { SyncExecutionMode } from './sync-execution-mode.types';
+
 export type SyncRuntimeRegistrationStatus = 'registered' | 'unregistered' | 'unsupported';
 
 export type SyncRuntimeTriggerSource =
@@ -10,6 +12,9 @@ export type SyncRuntimeTriggerSource =
 
 export interface SyncRuntimeStatusSnapshot {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
+  readonly executionMode: SyncExecutionMode;
+  readonly isForegroundServiceRunning: boolean;
+  readonly canShowPersistentNotification: boolean;
   readonly lastAttemptAt: number | null;
   readonly lastSuccessAt: number | null;
   readonly lastFailureMessage: string | null;
@@ -19,6 +24,9 @@ export interface SyncRuntimeStatusSnapshot {
 
 export interface SyncRuntimeStatusPatch {
   readonly registrationStatus?: SyncRuntimeRegistrationStatus;
+  readonly executionMode?: SyncExecutionMode;
+  readonly isForegroundServiceRunning?: boolean;
+  readonly canShowPersistentNotification?: boolean;
   readonly lastAttemptAt?: number | null;
   readonly lastSuccessAt?: number | null;
   readonly lastFailureMessage?: string | null;

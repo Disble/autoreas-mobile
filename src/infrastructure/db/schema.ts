@@ -3,6 +3,7 @@ import type {
   SyncRuntimeRegistrationStatus,
   SyncRuntimeTriggerSource,
 } from '../../features/sync/sync-runtime-status.types';
+import type { SyncExecutionMode } from '../../features/sync/sync-execution-mode.types';
 
 export const animes = sqliteTable("animes", {
   _id: text("_id").primaryKey(),
@@ -52,6 +53,16 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
     .$type<SyncRuntimeRegistrationStatus>()
     .notNull()
     .default('unregistered'),
+  executionMode: text('execution_mode')
+    .$type<SyncExecutionMode>()
+    .notNull()
+    .default('best_effort_background_task'),
+  isForegroundServiceRunning: integer('is_foreground_service_running', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  canShowPersistentNotification: integer('can_show_persistent_notification', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   lastAttemptAt: integer('last_attempt_at'),
   lastSuccessAt: integer('last_success_at'),
   lastFailureMessage: text('last_failure_message'),
