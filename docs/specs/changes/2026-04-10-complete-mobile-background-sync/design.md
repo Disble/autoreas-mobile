@@ -30,7 +30,16 @@ Foreground rule:
 
 Background rule:
 - Task periódico es best-effort; no reemplaza triggers de foreground.
-- Si el usuario mata explícitamente la app, dependemos del comportamiento permitido por el OS/Expo.
+- Si el usuario mata explícitamente la app, el sync deja de estar garantizado; Android puede variar por fabricante, pero producto debe asumir que ya no hay continuidad confiable hasta el próximo launch.
+
+## Known Limitation
+
+El runtime actual NO es un foreground service. Usa `expo-background-task`/WorkManager, así que:
+- no muestra notificación persistente,
+- no pide permisos runtime especiales para background sync,
+- y NO garantiza continuidad después de un kill manual de la app por parte del usuario.
+
+Esa limitación debe reflejarse tanto en documentación como en expectativas de producto.
 
 ## File Changes
 

@@ -37,6 +37,8 @@ The system MUST attempt reconcile automatically when sync availability improves.
 
 The system MUST register a periodic background task for paired devices and execute reconcile headlessly using persisted SQLite state.
 
+The system MUST treat this mechanism as best-effort OS scheduling and MUST NOT claim guaranteed synchronization after the user explicitly kills the app process.
+
 #### Scenario: Background task with valid pairing
 - GIVEN the device is paired and the OS runs the background task
 - WHEN the task opens the local database
@@ -54,6 +56,12 @@ The system MUST register a periodic background task for paired devices and execu
 - WHEN the background task runs
 - THEN pending rows MUST remain retryable (`pending` or existing failure policy)
 - AND the task MUST report failure/no-data without corrupting the outbox
+
+#### Scenario: User explicitly terminates the app
+- GIVEN the device is paired and background sync was previously registered
+- WHEN the user explicitly kills or swipes away the app process
+- THEN the system MUST treat periodic sync as no longer guaranteed by the OS
+- AND the product surface MUST NOT promise continued synchronization until the app is launched again
 
 ### Requirement: Background sync status visibility
 

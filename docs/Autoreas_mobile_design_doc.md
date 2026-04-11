@@ -27,6 +27,8 @@ El caso de uso concreto es: el usuario ve anime en la tablet en **split-screen**
 - Funcionar correctamente en split-screen (~360-400dp de ancho) con controles táctiles cómodos para una mano.
 - Sincronización invisible: silencio en éxito, alerta en fallo o conflicto.
 
+> Limitación operativa actual: el background sync implementado con Expo Background Task es **best-effort**. Si el usuario mata explícitamente la app, la sincronización deja de estar garantizada hasta el próximo launch. Para garantía fuerte tras cierre manual se necesitaría un enfoque distinto (por ejemplo, foreground service Android con notificación persistente).
+
 ### No-objetivos
 
 - **No es un reemplazo de Autoreas Desktop.** No implementa funciones de gestión: agregar, editar metadata, eliminar animes, estadísticas, gráficos, gestión de pendientes, ni respaldos.
