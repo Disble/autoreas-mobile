@@ -152,13 +152,30 @@ export function buildCapMinusHalfPatch(
  * The mapping keeps local integer flags aligned with remote boolean semantics.
  */
 export function toLocalAnimeUpdate(patch: AnimeMutationSyncPatch) {
-  return {
+  const localUpdate: {
+    nrocapvisto: number;
+    fechaUltCapVisto: number;
+    estado?: number;
+    fechaEstreno?: number;
+    primeravez?: 0 | 1;
+  } = {
     nrocapvisto: patch.nrocapvisto,
     fechaUltCapVisto: patch.fechaUltCapVisto,
-    ...(patch.estado !== undefined ? { estado: patch.estado } : {}),
-    ...(patch.fechaEstreno !== undefined ? { fechaEstreno: patch.fechaEstreno } : {}),
-    ...(patch.primeravez !== undefined ? { primeravez: patch.primeravez ? 1 : 0 } : {}),
   };
+
+  if (patch.estado !== undefined) {
+    localUpdate.estado = patch.estado;
+  }
+
+  if (patch.fechaEstreno !== undefined) {
+    localUpdate.fechaEstreno = patch.fechaEstreno;
+  }
+
+  if (patch.primeravez !== undefined) {
+    localUpdate.primeravez = patch.primeravez ? 1 : 0;
+  }
+
+  return localUpdate;
 }
 
 /**

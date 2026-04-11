@@ -30,6 +30,16 @@ export function AnimeCard(props: AnimeCardProps) {
   } = useAnimeCard(props);
 
   const hasKnownTotal = anime.totalcap != null && anime.totalcap > 0;
+  let progressLabel = `Cap. ${anime.nrocapvisto} · en emisión`;
+
+  if (restantesShown && restantesLabel) {
+    progressLabel = restantesLabel;
+  } else if (hasKnownTotal) {
+    progressLabel = `Cap. ${anime.nrocapvisto} / ${anime.totalcap}`;
+  }
+
+  const showProgressBar = progress !== null && !isCompleted;
+  const showUnknownTotalPlaceholder = progress === null && hasKnownTotal === false;
 
   return (
     <Card className="mb-4">
@@ -38,7 +48,7 @@ export function AnimeCard(props: AnimeCardProps) {
           source={{
             uri: anime.portada || "https://via.placeholder.com/100x150",
           }}
-          className="h-[140px] w-[96px] rounded-l-xl"
+          className="h-35 w-24 rounded-l-xl"
           contentFit="cover"
         />
 
@@ -90,16 +100,10 @@ export function AnimeCard(props: AnimeCardProps) {
               hitSlop={8}
               className="mt-2 self-start"
             >
-              <AppText className="text-muted text-[13px]">
-                {restantesShown && restantesLabel
-                  ? restantesLabel
-                  : hasKnownTotal
-                    ? `Cap. ${anime.nrocapvisto} / ${anime.totalcap}`
-                    : `Cap. ${anime.nrocapvisto} · en emisión`}
-              </AppText>
+              <AppText className="text-muted text-[13px]">{progressLabel}</AppText>
             </Pressable>
 
-            {progress !== null && !isCompleted ? (
+            {showProgressBar ? (
               <View className="mt-2.5">
                 <View className="bg-surface-tertiary/60 h-1 overflow-hidden rounded-full">
                   <View
@@ -108,7 +112,9 @@ export function AnimeCard(props: AnimeCardProps) {
                   />
                 </View>
               </View>
-            ) : !hasKnownTotal ? (
+            ) : null}
+
+            {showUnknownTotalPlaceholder ? (
               <View className="mt-2.5">
                 <View className="bg-surface-tertiary/30 h-1 overflow-hidden rounded-full" />
               </View>
@@ -166,7 +172,7 @@ export function AnimeCard(props: AnimeCardProps) {
             >
               <Ionicons name="remove" size={22} />
             </Button>
-            <AppText className="text-foreground min-w-[52px] text-center text-lg font-semibold tabular-nums">
+            <AppText className="text-foreground min-w-13 text-center text-lg font-semibold tabular-nums">
               {anime.nrocapvisto}
             </AppText>
             <Button

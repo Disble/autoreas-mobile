@@ -5,6 +5,7 @@ import {
   buildCapPlusPatch,
   buildSetEstadoPatch,
   serializeMutationOperation,
+  toLocalAnimeUpdate,
 } from '../../../src/features/animes/anime-mutation.helpers';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
 
@@ -222,6 +223,22 @@ describe('anime mutation helpers', () => {
         nrocapvisto: 4,
         fechaUltCapVisto: now,
       }),
+    });
+  });
+
+  it('toLocalAnimeUpdate incluye sólo campos opcionales presentes y normaliza primeravez', () => {
+    expect(
+      toLocalAnimeUpdate({
+        nrocapvisto: 4,
+        fechaUltCapVisto: now,
+        fechaEstreno: now,
+        primeravez: false,
+      }),
+    ).toEqual({
+      nrocapvisto: 4,
+      fechaUltCapVisto: now,
+      fechaEstreno: now,
+      primeravez: 0,
     });
   });
 });

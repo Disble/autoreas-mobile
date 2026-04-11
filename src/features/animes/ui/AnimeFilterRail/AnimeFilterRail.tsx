@@ -3,7 +3,6 @@ import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import type {
-  AnimeFilterRailItem,
   AnimeFilterRailProps,
   VerticalRailRowProps,
 } from "./anime-filter-rail.types";
@@ -20,24 +19,29 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
         className="flex-none w-full"
         contentContainerClassName="flex-row items-center gap-2 px-4 py-2"
       >
-        {items.map((item) => (
-          <Chip
-            key={item.value}
-            accessibilityRole="button"
-            accessibilityState={{ selected: item.isSelected }}
-            accessibilityLabel={`${item.label}${item.count > 0 ? `, ${item.count}` : ""}`}
-            onPress={() => handleSelect(item.value)}
-            hitSlop={8}
-            size="md"
-            variant={item.isSelected ? "primary" : "tertiary"}
-            color={item.isToday ? "accent" : "default"}
-          >
-            <Chip.Label>
-              {item.label}
-              {item.count > 0 ? `  ·  ${item.count}` : ""}
-            </Chip.Label>
-          </Chip>
-        ))}
+        {items.map((item) => {
+          const accessibilityLabel =
+            item.count > 0 ? `${item.label}, ${item.count}` : item.label;
+
+          return (
+            <Chip
+              key={item.value}
+              accessibilityRole="button"
+              accessibilityState={{ selected: item.isSelected }}
+              accessibilityLabel={accessibilityLabel}
+              onPress={() => handleSelect(item.value)}
+              hitSlop={8}
+              size="md"
+              variant={item.isSelected ? "primary" : "tertiary"}
+              color={item.isToday ? "accent" : "default"}
+            >
+              <Chip.Label>
+                {item.label}
+                {item.count > 0 ? `  ·  ${item.count}` : ""}
+              </Chip.Label>
+            </Chip>
+          );
+        })}
       </ScrollView>
     );
   }
@@ -61,6 +65,9 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
 export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
   const showSection = item.isFirstPseudoDay;
   const hasBacklog = item.count > 0;
+  const accessibilityLabel = hasBacklog
+    ? `${item.label}, ${item.count}`
+    : item.label;
 
   return (
     <>
@@ -74,7 +81,7 @@ export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ selected: item.isSelected }}
-        accessibilityLabel={`${item.label}${hasBacklog ? `, ${item.count}` : ""}`}
+        accessibilityLabel={accessibilityLabel}
         onPress={() => onSelect(item.value)}
         hitSlop={8}
         className={cn(
@@ -106,7 +113,7 @@ export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
           {hasBacklog ? (
             <View
               className={cn(
-                "min-w-[22px] items-center rounded-full px-1.5 py-0.5",
+                "min-w-5.5 items-center rounded-full px-1.5 py-0.5",
                 item.isSelected ? "bg-accent/20" : "bg-surface-tertiary",
               )}
             >

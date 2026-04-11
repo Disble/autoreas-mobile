@@ -1,13 +1,13 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Button } from "heroui-native";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { FlatList, RefreshControl, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import { AnimeCard } from "../AnimeCard";
 import { AnimeEmptyState } from "../AnimeEmptyState";
 import { AnimeFilterRail } from "../AnimeFilterRail";
 import { AnimeStateSheet } from "../AnimeStateSheet";
+import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
+import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import { ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS } from "./anime-list-screen.constants";
 import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
 import { useAnimeListItemRenderer } from "./use-anime-list-item-renderer";
@@ -59,32 +59,18 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
         options={{
           headerTitle: contextualHeader.title,
           headerLeft: () => (
-            <Pressable
-              accessibilityLabel="Abrir configuración"
-              accessibilityRole="button"
-              hitSlop={12}
-              onPress={handleOpenSettings}
-            >
-              <Ionicons
-                color={themeColorForeground}
-                name="settings-outline"
-                size={22}
-              />
-            </Pressable>
+            <AnimeListScreenHeaderLeft
+              handleOpenSettings={handleOpenSettings}
+              themeColorForeground={themeColorForeground}
+            />
           ),
           headerRight: () => (
-            <Button
-              accessibilityLabel={refreshAccessibilityLabel}
-              isDisabled={isRefreshing}
-              isIconOnly
-              onPress={() => {
-                void handleRefresh();
-              }}
-              size="sm"
-              variant="ghost"
-            >
-              <Ionicons name="refresh" color={themeColorForeground} size={20} />
-            </Button>
+            <AnimeListScreenHeaderRight
+              refreshAccessibilityLabel={refreshAccessibilityLabel}
+              isRefreshing={isRefreshing}
+              themeColorForeground={themeColorForeground}
+              handleRefresh={handleRefresh}
+            />
           ),
         }}
       />

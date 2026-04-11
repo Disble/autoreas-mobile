@@ -18,6 +18,18 @@ export interface AnimeStateSheetRequest {
   readonly currentEstado: number;
 }
 
+export interface AnimeListScreenHeaderLeftProps {
+  readonly handleOpenSettings: () => void;
+  readonly themeColorForeground: string;
+}
+
+export interface AnimeListScreenHeaderRightProps {
+  readonly refreshAccessibilityLabel: string;
+  readonly isRefreshing: boolean;
+  readonly themeColorForeground: string;
+  readonly handleRefresh: () => Promise<void>;
+}
+
 export interface AnimeListScreenViewProps {
   readonly animes: Anime[];
   readonly filterOptions: readonly AnimeDayFilterOption[];
