@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
 import { useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
+import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
 import { useBackgroundSyncStatus } from '../../use-background-sync-status';
 import { useBridgeConfig } from '../../use-bridge-config';
 import { buildBackgroundSyncSection } from './settings-screen.helpers';
@@ -20,10 +21,20 @@ export function useSettingsScreen(
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
-  const [themeColorForeground, themeColorMuted] = useThemeColor([
+  const [
+    themeColorForeground,
+    themeColorMuted,
+    themeColorSuccess,
+    themeColorWarning,
+    themeColorDanger,
+  ] = useThemeColor([
     'foreground',
     'muted',
+    'success',
+    'warning',
+    'danger',
   ]);
+  const { layout: layoutMode } = useResponsiveLayout();
 
   // 4. Queries/Mutations
   const { snapshot } = useBackgroundSyncStatus();
@@ -73,8 +84,12 @@ export function useSettingsScreen(
     error,
     isConfigured,
     isUnpairing,
+    layoutMode,
     themeColorForeground,
     themeColorMuted,
+    themeColorSuccess,
+    themeColorWarning,
+    themeColorDanger,
     handleGoToSetup,
     handleRePair,
   };

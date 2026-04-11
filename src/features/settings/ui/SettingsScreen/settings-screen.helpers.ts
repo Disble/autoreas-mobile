@@ -3,10 +3,14 @@ import {
   BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
 } from './settings-screen.constants';
 import type {
-  BackgroundSyncRow,
   BackgroundSyncSection,
   BuildBackgroundSyncSectionInput,
+  MetricTile,
+  MetricTileIconName,
+  MetricTileTone,
+  ResolvedToneColors,
 } from './settings-screen.types';
+import type { SyncRuntimeRegistrationStatus } from '../../../sync/sync-runtime-status.types';
 
 /**
  * Formats runtime timestamps into a stable, readable UTC label for the Settings surface.
@@ -26,6 +30,19 @@ export function formatBackgroundSyncTimestamp(timestamp: number | null) {
   ).padStart(2, '0')} UTC`;
 }
 
+function resolveRegistrationTile(
+  status: SyncRuntimeRegistrationStatus,
+): { readonly tone: MetricTileTone; readonly iconName: MetricTileIconName } {
+  switch (status) {
+    case 'registered':
+      return { tone: 'success', iconName: 'shield-checkmark-outline' };
+    case 'unsupported':
+      return { tone: 'warning', iconName: 'shield-outline' };
+    default:
+      return { tone: 'warning', iconName: 'shield-half-outline' };
+  }
+}
+
 /**
  * Maps the persisted runtime snapshot into presentation copy for Settings.
  * This keeps status wording centralized so the TSX stays a pure render function.
@@ -41,10 +58,13 @@ export function buildBackgroundSyncSection({
         'Emparejá un bridge para habilitar el runtime de sync y exponer estado real en segundo plano.',
       status: 'Sin bridge emparejado',
       statusTone: 'warning',
-      rows: [
+      tiles: [
         {
+          id: 'registration',
           label: 'Registro',
           value: 'No disponible sin bridge emparejado',
+          tone: 'warning',
+          iconName: 'link-outline',
         },
       ],
     };
@@ -57,58 +77,85 @@ export function buildBackgroundSyncSection({
         'Este binario no expone SQLite/Background Task, así que la app no puede registrar el sync periódico.',
       status: 'No soportado',
       statusTone: 'warning',
-      rows: [{ label: 'Registro', value: 'No soportado' }],
+      tiles: [
+        {
+          id: 'registration',
+          label: 'Registro',
+          value: 'No soportado',
+          tone: 'warning',
+          iconName: 'shield-outline',
+        },
+      ],
     };
   }
 
-  const rows: BackgroundSyncRow[] = [
+  const registrationShape = resolveRegistrationTile(snapshot.registrationStatus);
+
+  const tiles: MetricTile[] = [
     {
+      id: 'registration',
       label: 'Registro',
       value: BACKGROUND_SYNC_REGISTRATION_LABELS[snapshot.registrationStatus],
+      tone: registrationShape.tone,
+      iconName: registrationShape.iconName,
     },
   ];
 
   if (snapshot.lastAttemptAt !== null) {
-    rows.push({
+    tiles.push({
+      id: 'lastAttempt',
       label: 'Último intento',
       value: formatBackgroundSyncTimestamp(snapshot.lastAttemptAt),
+      tone: 'default',
+      iconName: 'time-outline',
     });
   }
 
   if (snapshot.lastSuccessAt !== null) {
-    rows.push({
+    tiles.push({
+      id: 'lastSuccess',
       label: 'Último éxito',
       value: formatBackgroundSyncTimestamp(snapshot.lastSuccessAt),
-    });
-  }
-
-  if (snapshot.lastFailureMessage) {
-    rows.push({
-      label: 'Último fallo',
-      value: snapshot.lastFailureMessage,
+      tone: 'success',
+      iconName: 'checkmark-done-outline',
     });
   }
 
   if (snapshot.lastTriggerSource) {
-    rows.push({
+    tiles.push({
+      id: 'lastTrigger',
       label: 'Último origen',
       value: BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS[snapshot.lastTriggerSource],
+      tone: 'accent',
+      iconName: 'flash-outline',
     });
   }
 
-  rows.push({
-    label: 'Últimas operaciones confirmadas',
+  tiles.push({
+    id: 'syncedCount',
+    label: 'Ops. confirmadas',
     value: String(snapshot.lastSyncedCount),
+    tone: 'default',
+    iconName: 'sync-outline',
   });
 
   if (snapshot.lastFailureMessage) {
+    tiles.push({
+      id: 'lastFailure',
+      label: 'Último fallo',
+      value: snapshot.lastFailureMessage,
+      tone: 'danger',
+      iconName: 'alert-circle-outline',
+      span: 'full',
+    });
+
     return {
       title: 'Último sync con error',
       description:
         'La app guarda el último fallo conocido para que puedas entender el estado sin abrir logs ni debugger.',
       status: BACKGROUND_SYNC_REGISTRATION_LABELS[snapshot.registrationStatus],
       statusTone: 'danger',
-      rows,
+      tiles,
     };
   }
 
@@ -119,7 +166,7 @@ export function buildBackgroundSyncSection({
         'El task periódico figura registrado y el snapshot local ya tiene al menos un ciclo exitoso.',
       status: 'Registrado',
       statusTone: 'success',
-      rows,
+      tiles,
     };
   }
 
@@ -130,7 +177,7 @@ export function buildBackgroundSyncSection({
         'El task está registrado, pero todavía no hay un ciclo exitoso observado en este dispositivo.',
       status: 'Registrado',
       statusTone: 'accent',
-      rows,
+      tiles,
     };
   }
 
@@ -140,6 +187,64 @@ export function buildBackgroundSyncSection({
       'La app está emparejada, pero todavía no observa un registro activo del task periódico.',
     status: 'No registrado',
     statusTone: 'warning',
-    rows,
+    tiles,
   };
+}
+
+/**
+ * Splits metric tiles into rows of the requested column count, promoting any
+ * tile marked as `span: 'full'` to its own row so the grid stays balanced.
+ */
+export function chunkTiles(
+  tiles: readonly MetricTile[],
+  columns: number,
+): MetricTile[][] {
+  const rows: MetricTile[][] = [];
+  let current: MetricTile[] = [];
+
+  for (const tile of tiles) {
+    if (tile.span === 'full') {
+      if (current.length > 0) {
+        rows.push(current);
+        current = [];
+      }
+      rows.push([tile]);
+      continue;
+    }
+
+    current.push(tile);
+
+    if (current.length === columns) {
+      rows.push(current);
+      current = [];
+    }
+  }
+
+  if (current.length > 0) {
+    rows.push(current);
+  }
+
+  return rows;
+}
+
+/**
+ * Resolves the icon color for a metric tile tone so the grid renders with the
+ * same semantic palette used elsewhere in the Settings surface.
+ */
+export function resolveToneIconColor(
+  tone: MetricTileTone,
+  colors: ResolvedToneColors,
+): string {
+  switch (tone) {
+    case 'success':
+      return colors.success;
+    case 'warning':
+      return colors.warning;
+    case 'danger':
+      return colors.danger;
+    case 'accent':
+      return colors.foreground;
+    default:
+      return colors.muted;
+  }
 }

@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
+import { useResponsiveLayout } from '../../../../src/hooks/use-responsive-layout';
 import { useBackgroundSyncStatus } from '../../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../../src/features/settings/use-bridge-config';
 import { useSettingsScreen } from '../../../../src/features/settings/ui/SettingsScreen/use-settings-screen';
@@ -10,7 +11,7 @@ jest.mock('expo-router', () => ({
 }));
 
 jest.mock('heroui-native', () => ({
-  useThemeColor: jest.fn(() => ['#111111', '#777777']),
+  useThemeColor: jest.fn(() => ['#111111', '#777777', '#22c55e', '#f97316', '#ef4444']),
 }));
 
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({
@@ -19,6 +20,10 @@ jest.mock('../../../../src/features/settings/use-bridge-config', () => ({
 
 jest.mock('../../../../src/features/settings/use-background-sync-status', () => ({
   useBackgroundSyncStatus: jest.fn(),
+}));
+
+jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
+  useResponsiveLayout: jest.fn(),
 }));
 
 describe('useSettingsScreen', () => {
@@ -51,7 +56,12 @@ describe('useSettingsScreen', () => {
         lastSuccessAt: 1775811900000,
         lastFailureMessage: 'Bridge timeout after 10s',
         lastTriggerSource: 'background_task',
+        lastSyncedCount: 4,
       },
+    });
+    (useResponsiveLayout as jest.Mock).mockReturnValue({
+      layout: 'phone',
+      isCompact: true,
     });
   });
 
@@ -63,12 +73,20 @@ describe('useSettingsScreen', () => {
     const { result } = renderHook(() => useSettingsScreen({}));
 
     expect(result.current.backgroundSyncSection.title).toBe('Último sync con error');
-    expect(result.current.backgroundSyncSection.rows).toEqual(
-      expect.arrayContaining([
-        { label: 'Registro', value: 'Registrado' },
-        { label: 'Último fallo', value: 'Bridge timeout after 10s' },
-      ]),
+    expect(result.current.backgroundSyncSection.tiles.map((tile) => tile.id)).toEqual(
+      expect.arrayContaining(['registration', 'lastFailure']),
     );
+  });
+
+  it('exposes the responsive layout mode to the view', () => {
+    (useResponsiveLayout as jest.Mock).mockReturnValue({
+      layout: 'tablet-landscape',
+      isCompact: false,
+    });
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.layoutMode).toBe('tablet-landscape');
   });
 
   it('navigates to setup from the CTA when there is no bridge configured', () => {
