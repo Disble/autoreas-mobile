@@ -101,7 +101,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByLabelText('Ir al setup')).toBeTruthy();
   });
 
-  it('R3: presionar Re-emparejar muestra Alert, confirmar llama unpair + navega a /setup', async () => {
+  it('R3: presionar Re-emparejar muestra Alert, confirmar llama unpair + navega a /setup en modo repair', async () => {
     mockUnpair.mockResolvedValueOnce({ success: true });
 
     render(<SettingsScreen />);
@@ -122,7 +122,7 @@ describe('SettingsScreen', () => {
     });
 
     expect(mockUnpair).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith('/setup');
+    expect(mockReplace).toHaveBeenCalledWith('/setup?repair=1');
   });
 
   it('R5: cancelar el Alert no llama unpair ni navega', () => {

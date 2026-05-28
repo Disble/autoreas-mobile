@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useURL } from 'expo-linking';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from 'heroui-native';
 import { SetupScreen } from '../../../src/features/setup/ui/SetupScreen';
 import { usePairDevice } from '../../../src/features/setup/use-pair-device';
 
 jest.mock('expo-router', () => ({
+  useLocalSearchParams: jest.fn(),
   useRouter: jest.fn(),
 }));
 
@@ -59,6 +60,7 @@ describe('SetupScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useURL as jest.Mock).mockReturnValue(null);
+    (useLocalSearchParams as jest.Mock).mockReturnValue({});
     (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
     (usePairDevice as jest.Mock).mockReturnValue({
       pair: mockPair,
@@ -109,6 +111,23 @@ describe('SetupScreen', () => {
     expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('linktoken');
   });
 
+  it('ignores the stale launch deep link when setup is opened from re-pair', async () => {
+    (useURL as jest.Mock).mockReturnValue(
+      'autoreas-mobile://pair?v=1&ip=192.168.1.50&port=3000&token=linktoken',
+    );
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ repair: '1' });
+
+    render(<SetupScreen />);
+
+    await waitFor(() => {
+      expect(mockPair).not.toHaveBeenCalled();
+    });
+
+    expect(screen.getByPlaceholderText('Ej: 192.168.1.10').props.value).toBe('');
+    expect(screen.getByPlaceholderText('8080').props.value).toBe('8080');
+    expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('');
+  });
+
   it('rejects invalid QR or deep-link payloads without calling pairing', async () => {
     (useURL as jest.Mock).mockReturnValue('autoreas://pair?ip=192.168.1.50&port=3000&token=linktoken');
 
@@ -148,7 +167,10 @@ describe('SetupScreen', () => {
   });
 
   it('preserves scanned values for manual correction when pairing fails after QR autofill', async () => {
-    mockPair.mockResolvedValueOnce({ success: false, error: 'Initial sync failed' });
+    const diagnosticMessage =
+      'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Volvé a generar el token e intentá de nuevo.';
+
+    mockPair.mockResolvedValueOnce({ success: false, error: diagnosticMessage });
 
     render(<SetupScreen />);
 
@@ -162,6 +184,12 @@ describe('SetupScreen', () => {
     expect(screen.getByPlaceholderText('8080').props.value).toBe('8080');
     expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('abc');
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockToastShow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'danger',
+        description: diagnosticMessage,
+      }),
+    );
 
     const ipInput = screen.getByPlaceholderText('Ej: 192.168.1.10');
     fireEvent.changeText(ipInput, '192.168.1.99');

@@ -99,19 +99,22 @@ describe('usePairDevice', () => {
 
     expect(pairResult).toEqual({
       success: false,
-      error: 'Failed to pair: 400',
+      error: 'No pudimos emparejar el dispositivo. Revisá la IP, el puerto y el token del Bridge.',
     });
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
     expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
     expect(result.current.isLoading).toBe(false);
-    expect(result.current.error).toBe('Failed to pair: 400');
+    expect(result.current.error).toBe(
+      'No pudimos emparejar el dispositivo. Revisá la IP, el puerto y el token del Bridge.',
+    );
   });
 
-  it('should return error if device_id or auth_token is missing', async () => {
+  it('should expose a friendly retry message when auth_token is missing', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
+        device_id: 'dev-123',
         device_name: 'Missing fields',
       }),
     });
@@ -125,7 +128,7 @@ describe('usePairDevice', () => {
 
     expect(pairResult).toEqual({
       success: false,
-      error: 'Invalid response from bridge',
+      error: 'El Bridge respondió con datos incompletos. Volvé a generar el token e intentá de nuevo.',
     });
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
@@ -161,7 +164,42 @@ describe('usePairDevice', () => {
 
     expect(pairResult).toEqual({
       success: false,
-      error: 'GET /api/animes failed: 500',
+      error: 'Se completó el emparejamiento, pero falló la sincronización inicial. Intentá nuevamente en unos segundos.',
+    });
+    expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
+  });
+
+  it('shows token guidance when initial sync fails with 401 after pair success', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        device_id: 'dev-123',
+        device_name: 'My Bridge',
+        auth_token: 'auth-secret',
+      }),
+    });
+    (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockRejectedValueOnce(
+      new Error('GET /api/animes failed: 401'),
+    );
+
+    const { result } = renderHook(() => usePairDevice());
+
+    let pairResult:
+      | { success: boolean; data?: unknown; error?: string }
+      | undefined = undefined;
+
+    await act(async () => {
+      pairResult = await result.current.pair({
+        ip: '192.168.1.10',
+        port: '8080',
+        token: 'pairing123',
+      });
+    });
+
+    expect(pairResult).toEqual({
+      success: false,
+      error:
+        'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Volvé a generar el token e intentá de nuevo.',
     });
     expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
   });

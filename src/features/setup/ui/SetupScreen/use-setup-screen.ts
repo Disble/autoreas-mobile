@@ -1,6 +1,6 @@
 import { useURL } from 'expo-linking';
 import type { Href } from 'expo-router';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from 'heroui-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePairDevice } from '../../use-pair-device';
@@ -22,6 +22,7 @@ import type {
 
 export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
   // 1. Refs
+  const initialDeepLinkUrlRef = useRef<string | null>(null);
   const lastHandledDeepLinkUrlRef = useRef<string | null>(null);
 
   // 2. State
@@ -33,6 +34,7 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const { toast } = useToast();
+  const localSearchParams = useLocalSearchParams<{ readonly repair?: string | string[] }>();
   const url = useURL();
 
   // 4. Queries/Mutations
@@ -43,6 +45,15 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
     () => ({ ip, port, token }),
     [ip, port, token],
   );
+  const isRepairNavigation = useMemo(() => {
+    const repairParam = localSearchParams.repair;
+
+    if (Array.isArray(repairParam)) {
+      return repairParam.includes('1');
+    }
+
+    return repairParam === '1';
+  }, [localSearchParams.repair]);
 
   // 6. Callbacks (useCallback calling pure helpers)
   const submitPairing = useCallback(
@@ -144,13 +155,22 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
 
   // 7. Effects
   useEffect(() => {
+    if (initialDeepLinkUrlRef.current === null && url) {
+      initialDeepLinkUrlRef.current = url;
+    }
+
     if (!url || url === lastHandledDeepLinkUrlRef.current) {
+      return;
+    }
+
+    if (isRepairNavigation && url === initialDeepLinkUrlRef.current) {
+      lastHandledDeepLinkUrlRef.current = url;
       return;
     }
 
     lastHandledDeepLinkUrlRef.current = url;
     void handleIncomingPairingValue(url, 'deep-link');
-  }, [handleIncomingPairingValue, url]);
+  }, [handleIncomingPairingValue, isRepairNavigation, url]);
 
   return {
     error,

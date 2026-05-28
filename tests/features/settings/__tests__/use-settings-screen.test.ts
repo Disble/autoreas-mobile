@@ -111,7 +111,7 @@ describe('useSettingsScreen', () => {
     expect(result.current.backgroundSyncSection.status).toBe('Sin bridge emparejado');
   });
 
-  it('confirms unpairing and redirects to setup after success', async () => {
+  it('confirms unpairing and redirects to setup in repair mode after success', async () => {
     unpair.mockResolvedValueOnce({ success: true });
 
     const { result } = renderHook(() => useSettingsScreen({}));
@@ -127,6 +127,6 @@ describe('useSettingsScreen', () => {
     });
 
     expect(unpair).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith('/setup');
+    expect(replace).toHaveBeenCalledWith('/setup?repair=1');
   });
 });

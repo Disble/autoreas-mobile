@@ -7,6 +7,12 @@ import {
   fetchInitialSyncSnapshot,
   persistPairedBridgeConfiguration,
 } from '../sync/initial-sync.helpers';
+import {
+  buildInitialSyncFailureMessage,
+  buildPairRequestFailureMessage,
+  buildPairResponseValidationFailureMessage,
+  getMissingPairResponseFields,
+} from './pair-device.helpers';
 import type { PairDeviceResult, PairParams, PairResponse } from './pair-device.types';
 
 export function usePairDevice() {
@@ -37,13 +43,22 @@ export function usePairDevice() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to pair: ${response.status}`);
+          throw new Error(
+            buildPairRequestFailureMessage({
+              status: response.status,
+            }),
+          );
         }
 
         const data = (await response.json()) as PairResponse;
+        const missingFields = getMissingPairResponseFields(data);
 
-        if (!data.device_id || !data.auth_token) {
-          throw new Error('Invalid response from bridge');
+        if (missingFields.length > 0) {
+          throw new Error(
+            buildPairResponseValidationFailureMessage({
+              missingFields,
+            }),
+          );
         }
 
         const stagedBridgeConfig = {
@@ -54,7 +69,19 @@ export function usePairDevice() {
           deviceName: data.device_name || 'AutoreasMobile',
         };
 
-        const remoteAnimes = await fetchInitialSyncSnapshot(stagedBridgeConfig);
+        let remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>;
+
+        try {
+          remoteAnimes = await fetchInitialSyncSnapshot(stagedBridgeConfig);
+        } catch (err: unknown) {
+          const cause = err instanceof Error ? err.message : 'Unknown error occurred';
+
+          throw new Error(
+            buildInitialSyncFailureMessage({
+              cause,
+            }),
+          );
+        }
 
         await persistPairedBridgeConfiguration(rawDb, stagedBridgeConfig, remoteAnimes);
 

@@ -68,7 +68,7 @@ export function useSettingsScreen(
             const result = await unpair();
 
             if (result.success) {
-              router.replace('/setup' as Href);
+              router.replace('/setup?repair=1' as Href);
             }
           },
         },
