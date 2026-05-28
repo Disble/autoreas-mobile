@@ -8,9 +8,12 @@ import {
 import { animes, bridgeConfig } from "../../infrastructure/db/schema";
 import { AnimeSchema, type Anime } from "../../infrastructure/validation/anime-schema";
 import {
-  AnimeListSchema,
   IncrementalChangesResponseSchema,
 } from "./initial-sync.schema";
+import {
+  fetchInitialSyncSnapshot,
+  persistInitialSyncSnapshot,
+} from './initial-sync.helpers';
 import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
@@ -22,35 +25,13 @@ export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
     throw new Error("Bridge config is missing or incomplete");
   }
 
-  const url = `http://${config.ip}:${config.port}/api/animes`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-    },
+  const remoteAnimes = await fetchInitialSyncSnapshot({
+    ip: config.ip,
+    port: config.port,
+    token: config.token,
   });
 
-  if (!response.ok) {
-    throw new Error(`GET /api/animes failed: ${response.status}`);
-  }
-
-  const raw = await response.json();
-  const parsed = AnimeListSchema.safeParse(raw);
-
-  if (!parsed.success) {
-    throw new Error(`Invalid anime list from bridge: ${parsed.error.message}`);
-  }
-
-  const remoteAnimes = parsed.data;
-  if (remoteAnimes.length === 0) return 0;
-
-  await withExclusiveWrite(rawDb, async (db) => {
-    for (const anime of remoteAnimes) {
-      await upsertAnime(db, anime);
-    }
-  });
-
-  return remoteAnimes.length;
+  return persistInitialSyncSnapshot(rawDb, remoteAnimes);
 }
 
 export async function fetchAnimeById(

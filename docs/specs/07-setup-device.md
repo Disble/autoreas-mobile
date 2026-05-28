@@ -24,11 +24,16 @@ Si guardamos la IP y Token en `SecureStore`, la lectura es asíncrona y la UI de
    - Ejecuta un `POST http://IP:PUERTO/api/devices/pair`.
    - **Requisito Crítico (Red y Firewall):** El request debe tener un **Timeout Estricto de 3 a 5 segundos** (Axios timeout). 
    - **Manejo de Errores:** Si falla (Network Error o Timeout), la UI DEBE mostrar un toast explicando: "Verifica que el PC esté prendido, en la misma red WiFi, y que el firewall de Windows no esté bloqueando el puerto X".
-4. Si devuelve `200 OK`, el cliente guarda el Token en `SecureStore`, la IP en SQLite/Zustand, y hace `router.replace('/(tabs)')`.
+4. Si devuelve `200 OK`, el cliente primero debe validar que puede hacer el initial sync (`GET /api/animes`) y recién entonces persistir de forma atómica `bridge_config` + snapshot local antes de `router.replace('/(tabs)')`.
 
 ## 4. Deep Linking y Fallback Seguro
 
-Para evitar escribir la IP y Token a mano (tedioso en celulares), la app admitirá Deep Links a través de `expo-linking`:
-- Formato: `autoreas://pair?ip=192.168.0.100&port=8080&token=ABC123XYZ`
-- La app interceptará esta URI en `_layout.tsx` o `setup.tsx` y auto-rellenará el formulario, disparando automáticamente el request de pairing al Bridge.
+Para evitar escribir la IP y Token a mano (tedioso en celulares), la app admitirá Deep Links y QR canónicos a través de `expo-linking` + `expo-camera`:
+- Formato: `autoreas-mobile://pair?v=1&ip=192.168.0.100&port=8080&token=ABC123XYZ`
+- La app interceptará esta URI en `setup` y auto-rellenará el formulario, disparando automáticamente el mismo pipeline de pairing usado por el ingreso manual.
+- El escáner QR debe convivir con el formulario manual; si la cámara falla o se deniega el permiso, el fallback manual sigue visible y editable.
 - **Fallback:** Si el request disparado por el Deep Link falla (ej. el PC cerró el puerto o la IP cambió), el usuario NO DEBE quedar atrapado. El formulario debe quedar visible, con los datos auto-rellenados y permitiendo su edición manual para reintentar.
+
+## 5. Dependencia nativa
+
+- `expo-camera` requiere rebuild del dev client / binario nativo para que el plugin y el barcode scanner queden activos en runtime.

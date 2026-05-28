@@ -330,7 +330,7 @@ sequenceDiagram
 
     alt QR scan
         UI->>UI: Escanea QR
-        UI->>APP: Decodifica autoreas://pair?ip=X&port=Y&token=Z
+        UI->>APP: Decodifica autoreas-mobile://pair?v=1&ip=X&port=Y&token=Z
     else Manual
         UI->>APP: Usuario ingresa IP + puerto + token
     end
@@ -339,10 +339,9 @@ sequenceDiagram
     B->>B: Valida token
     alt Token válido
         B->>APP: 200 OK {device_id}
-        APP->>APP: Guarda en bridge_config
         APP->>B: GET /api/animes
         B->>APP: {animes completos}
-        APP->>APP: Pobla SQLite local
+        APP->>APP: Persiste bridge_config + snapshot en una sola write exclusiva
         APP->>UI: Navega a lista principal
     else Token inválido
         B->>APP: 401 Unauthorized
@@ -353,8 +352,10 @@ sequenceDiagram
 **Formato del QR (generado por el Bridge):**
 
 ```
-autoreas://pair?ip=192.168.1.5&port=8080&token=abc123def456
+autoreas-mobile://pair?v=1&ip=192.168.1.5&port=8080&token=abc123def456
 ```
+
+> Nota: el scanner QR usa `expo-camera`, así que cualquier verificación manual requiere rebuild del dev client para incorporar el plugin nativo.
 
 #### 4.4.3 Pantalla de settings (`settings.tsx`)
 

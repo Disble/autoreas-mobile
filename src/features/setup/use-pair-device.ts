@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
-import { withExclusiveWrite } from '../../infrastructure/db/client';
 import {
   getExpoSQLiteUnavailableError,
   useOptionalSQLiteContext,
 } from '../../infrastructure/db/native-runtime';
-import { bridgeConfig } from '../../infrastructure/db/schema';
-import { initialSync } from '../sync/use-initial-sync';
-import type { PairParams, PairResponse } from './pair-device.types';
+import {
+  fetchInitialSyncSnapshot,
+  persistPairedBridgeConfiguration,
+} from '../sync/initial-sync.helpers';
+import type { PairDeviceResult, PairParams, PairResponse } from './pair-device.types';
 
 export function usePairDevice() {
   const rawDb = useOptionalSQLiteContext();
@@ -14,7 +15,7 @@ export function usePairDevice() {
   const [error, setError] = useState<string | null>(null);
 
   const pair = useCallback(
-    async ({ ip, port, token }: PairParams) => {
+    async ({ ip, port, token }: PairParams): Promise<PairDeviceResult> => {
       setIsLoading(true);
       setError(null);
 
@@ -45,20 +46,17 @@ export function usePairDevice() {
           throw new Error('Invalid response from bridge');
         }
 
-        await withExclusiveWrite(rawDb, async (db) => {
-          // Limpiar configs viejas si hubiese (asumimos solo 1 active device)
-          await db.delete(bridgeConfig);
-          // Insertar la nueva configuración
-          await db.insert(bridgeConfig).values({
-            ip,
-            port: Number(port),
-            token: data.auth_token, // Se almacena el auth_token, no el pairing_token
-            deviceId: data.device_id,
-            deviceName: data.device_name || 'AutoreasMobile',
-          });
-        });
+        const stagedBridgeConfig = {
+          ip,
+          port: Number(port),
+          token: data.auth_token,
+          deviceId: data.device_id,
+          deviceName: data.device_name || 'AutoreasMobile',
+        };
 
-        await initialSync(rawDb);
+        const remoteAnimes = await fetchInitialSyncSnapshot(stagedBridgeConfig);
+
+        await persistPairedBridgeConfiguration(rawDb, stagedBridgeConfig, remoteAnimes);
 
         return { success: true, data };
       } catch (err: unknown) {

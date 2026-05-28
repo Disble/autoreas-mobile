@@ -13,6 +13,29 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
+jest.mock('expo-camera', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const RN = require('react-native');
+
+  const useCameraPermissions = jest.fn(() => [
+    {
+      granted: true,
+      canAskAgain: true,
+    },
+    jest.fn(async () => ({ granted: true, canAskAgain: true })),
+  ]);
+
+  const CameraView = ({ children, testID, ...props }: any) =>
+    React.createElement(RN.View, { testID: testID ?? 'setup-qr-camera', ...props }, children);
+
+  return {
+    CameraView,
+    useCameraPermissions,
+  };
+});
+
 jest.mock('heroui-native', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');

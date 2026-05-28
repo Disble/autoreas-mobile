@@ -33,6 +33,7 @@
     "expo-background-task": "^55.0.15",
     "expo-blur": "~55.0.8",
     "expo-build-properties": "~55.0.11",
+    "expo-camera": "~55.0.19",
     "expo-constants": "~55.0.7",
     "expo-dev-client": "~55.0.22",
     "expo-font": "~55.0.4",

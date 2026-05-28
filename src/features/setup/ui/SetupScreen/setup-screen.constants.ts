@@ -1,1 +1,12 @@
-export const SetupScreenDefaultLabel = 'SetupScreen';
+export const SETUP_DEEP_LINK_SCHEME = 'autoreas-mobile';
+export const SETUP_DEEP_LINK_HOST = 'pair';
+export const SETUP_DEEP_LINK_SUPPORTED_VERSION = '1';
+export const SETUP_SCREEN_DEFAULT_PORT = '8080';
+export const SETUP_QR_SCAN_BUTTON_LABEL = 'Escanear QR del Bridge';
+export const SETUP_PAIR_BUTTON_LABEL = 'Emparejar Bridge';
+export const SETUP_INVALID_PAYLOAD_LABEL = 'QR o deep link inválido';
+export const SETUP_INVALID_PAYLOAD_DESCRIPTION =
+  'Usá un código autoreas-mobile://pair?v=1 con ip, port y token.';
+export const SETUP_DEEP_LINK_DETECTED_LABEL = 'Deep link detectado';
+export const SETUP_QR_DETECTED_LABEL = 'QR detectado';
+export const SETUP_AUTOFILL_DESCRIPTION = 'Campos completados automáticamente.';

@@ -43,7 +43,7 @@ La única dependencia dura del proyecto. El objetivo es probar que React Native 
 
 - **Tracer 3.1 (Formulario de IP Manual):** Input simple para guardar IP y Token en la tabla `bridge_config` sincrónicamente (no usar SecureStore por asincronía de boot).
 - **Tracer 3.2 (AppLifecycle y Resurrección):** Usar `AppState` de React Native. **Riesgo Crítico Mitigado:** Cuando la app pasa a background, Android mata el WebSocket. Al volver a `active`, el sistema *debe* forzar un `POST /api/sync/reconcile` y re-abrir el WS obligatoriamente.
-- **Tracer 3.3 (Deep Linking QR):** Configurar `expo-linking` para capturar `autoreas://pair?ip=...` desde la cámara nativa del teléfono y pre-popular el Tracer 3.1.
+- **Tracer 3.3 (Deep Linking QR):** Configurar `expo-linking` + `expo-camera` para capturar `autoreas-mobile://pair?v=1&ip=...` desde el QR del Bridge y pre-popular/autosubmit el Tracer 3.1 sin perder el fallback manual.
 
 ---
 

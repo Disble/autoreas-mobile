@@ -1,31 +1,29 @@
 import { renderHook, act } from '@testing-library/react-native';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
-import * as syncModule from '../../../src/features/sync/use-initial-sync';
+import * as initialSyncHelpers from '../../../src/features/sync/initial-sync.helpers';
 import { usePairDevice } from '../../../src/features/setup/use-pair-device';
-import { withExclusiveWrite } from '../../../src/infrastructure/db/client';
-
-jest.mock('../../../src/infrastructure/db/client', () => ({
-  withExclusiveWrite: jest.fn(),
-}));
 
 jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
   useOptionalSQLiteContext: jest.fn(),
   getExpoSQLiteUnavailableError: jest.fn(() => new Error('sqlite unavailable')),
 }));
 
-jest.mock('../../../src/features/sync/use-initial-sync', () => ({
-  initialSync: jest.fn(),
+jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
+  fetchInitialSyncSnapshot: jest.fn(),
+  persistPairedBridgeConfiguration: jest.fn(),
 }));
 
 describe('usePairDevice', () => {
+  const rawDb = { name: 'raw-db' };
   let mockFetch: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockFetch = jest.fn();
     global.fetch = mockFetch;
-    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue({});
-    (syncModule.initialSync as jest.Mock).mockResolvedValue(42);
+    (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
+    (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockResolvedValue([]);
+    (initialSyncHelpers.persistPairedBridgeConfiguration as jest.Mock).mockResolvedValue(0);
   });
 
   afterEach(() => {
@@ -40,15 +38,6 @@ describe('usePairDevice', () => {
         device_name: 'My Bridge',
         auth_token: 'auth-secret',
       }),
-    });
-
-    (withExclusiveWrite as jest.Mock).mockImplementation(async (db, cb) => {
-      const mockTxDb = {
-        delete: jest.fn().mockReturnThis(),
-        insert: jest.fn().mockReturnThis(),
-        values: jest.fn().mockResolvedValue(true),
-      };
-      await cb(mockTxDb);
     });
 
     const { result } = renderHook(() => usePairDevice());
@@ -73,8 +62,24 @@ describe('usePairDevice', () => {
       body: JSON.stringify({ pairing_token: 'pairing123', device_name: 'AutoreasMobile' }),
     });
 
-    expect(withExclusiveWrite).toHaveBeenCalledTimes(1);
-    expect(syncModule.initialSync).toHaveBeenCalledTimes(1);
+    expect(initialSyncHelpers.fetchInitialSyncSnapshot).toHaveBeenCalledWith({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'auth-secret',
+      deviceId: 'dev-123',
+      deviceName: 'My Bridge',
+    });
+    expect(initialSyncHelpers.persistPairedBridgeConfiguration).toHaveBeenCalledWith(
+      rawDb,
+      {
+        ip: '192.168.1.10',
+        port: 8080,
+        token: 'auth-secret',
+        deviceId: 'dev-123',
+        deviceName: 'My Bridge',
+      },
+      [],
+    );
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -97,8 +102,8 @@ describe('usePairDevice', () => {
       error: 'Failed to pair: 400',
     });
 
-    expect(withExclusiveWrite).not.toHaveBeenCalled();
-    expect(syncModule.initialSync).not.toHaveBeenCalled();
+    expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
+    expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBe('Failed to pair: 400');
   });
@@ -123,7 +128,41 @@ describe('usePairDevice', () => {
       error: 'Invalid response from bridge',
     });
 
-    expect(withExclusiveWrite).not.toHaveBeenCalled();
-    expect(syncModule.initialSync).not.toHaveBeenCalled();
+    expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
+    expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
+  });
+
+  it('does not persist partial bridge config when initial sync fails after pair success', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        device_id: 'dev-123',
+        device_name: 'My Bridge',
+        auth_token: 'auth-secret',
+      }),
+    });
+    (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockRejectedValueOnce(
+      new Error('GET /api/animes failed: 500'),
+    );
+
+    const { result } = renderHook(() => usePairDevice());
+
+    let pairResult:
+      | { success: boolean; data?: unknown; error?: string }
+      | undefined = undefined;
+
+    await act(async () => {
+      pairResult = await result.current.pair({
+        ip: '192.168.1.10',
+        port: '8080',
+        token: 'pairing123',
+      });
+    });
+
+    expect(pairResult).toEqual({
+      success: false,
+      error: 'GET /api/animes failed: 500',
+    });
+    expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
   });
 });

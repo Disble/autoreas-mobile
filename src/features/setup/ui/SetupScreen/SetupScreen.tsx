@@ -13,6 +13,11 @@ import {
 } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
+import { SetupQrScanner } from '../SetupQrScanner/SetupQrScanner';
+import {
+  SETUP_PAIR_BUTTON_LABEL,
+  SETUP_QR_SCAN_BUTTON_LABEL,
+} from './setup-screen.constants';
 import type { SetupScreenProps } from './setup-screen.types';
 import { useSetupScreen } from './use-setup-screen';
 
@@ -21,12 +26,16 @@ export function SetupScreen(props: SetupScreenProps) {
     error,
     ip,
     isLoading,
+    isScannerVisible,
     port,
     token,
     setIp,
     setPort,
     setToken,
+    handleCloseScanner,
     handlePair,
+    handleQrScan,
+    handleToggleScanner,
   } = useSetupScreen(props);
 
   return (
@@ -94,6 +103,20 @@ export function SetupScreen(props: SetupScreenProps) {
 
           <Separator className="my-1" />
 
+          <Button onPress={handleToggleScanner} size="lg" variant="secondary">
+            <Ionicons color="#6366f1" name="qr-code-outline" size={18} />
+            <Button.Label>
+              {isScannerVisible ? 'Ocultar escáner' : SETUP_QR_SCAN_BUTTON_LABEL}
+            </Button.Label>
+          </Button>
+
+          <SetupQrScanner
+            isBusy={isLoading}
+            isOpen={isScannerVisible}
+            onClose={handleCloseScanner}
+            onScan={handleQrScan}
+          />
+
           <Button
             className={cn('w-full', isLoading && 'opacity-80')}
             isDisabled={isLoading}
@@ -104,14 +127,14 @@ export function SetupScreen(props: SetupScreenProps) {
             {isLoading ? (
               <Spinner className="text-white" />
             ) : (
-              <Button.Label>Emparejar Bridge</Button.Label>
+              <Button.Label>{SETUP_PAIR_BUTTON_LABEL}</Button.Label>
             )}
           </Button>
         </Card.Body>
       </Card>
 
       <AppText className="mt-6 text-center text-xs text-muted">
-        También podés usar el deep link autoreas://pair desde el Bridge.
+        También podés usar el deep link autoreas-mobile://pair?v=1 desde el Bridge.
       </AppText>
     </View>
   );

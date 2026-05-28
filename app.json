@@ -41,6 +41,14 @@
       ],
       "expo-font",
       "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Autoreas Mobile necesita acceso a la cámara para escanear el QR del Bridge.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
       "expo-web-browser",
       "expo-sqlite",
       [
