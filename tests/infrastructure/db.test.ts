@@ -1,9 +1,11 @@
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import {
+  clearBridgeConfig,
   runMigrations,
   withDeferredWrite,
   withExclusiveWrite,
 } from "../../src/infrastructure/db/client";
+import { bridgeConfig } from "../../src/infrastructure/db/schema";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -11,12 +13,20 @@ jest.mock("drizzle-orm", () => ({
 
 jest.mock("drizzle-orm/expo-sqlite", () => ({
   drizzle: jest.fn(
-    (client: { __state?: { animes: Record<string, unknown>[] } }) => ({
+    (client: {
+      __state?: {
+        animes: Record<string, unknown>[];
+        deletes?: unknown[];
+      };
+    }) => ({
       insert: () => ({
         values: async (value: Record<string, unknown>) => {
           client.__state?.animes.push(value);
         },
       }),
+      delete: async (table: unknown) => {
+        client.__state?.deletes?.push(table);
+      },
       select: () => ({
         from: () => client.__state?.animes ?? [],
       }),
@@ -259,6 +269,25 @@ describe("db client tracer helpers", () => {
 
     expect(result).toBe("ok");
     expect(rawDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("clearBridgeConfig usa el write diferido y borra bridge_config sin runAsync directo", async () => {
+    const rawDb = {
+      __state: {
+        animes: [] as Record<string, unknown>[],
+        deletes: [] as unknown[],
+      },
+      runAsync: jest.fn(),
+      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
+        await task();
+      }),
+    };
+
+    await clearBridgeConfig(rawDb as never);
+
+    expect(rawDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.__state.deletes).toEqual([bridgeConfig]);
+    expect(rawDb.runAsync).not.toHaveBeenCalled();
   });
 
   it("serializa writes diferidos concurrentes sobre la misma db", async () => {
