@@ -1,6 +1,6 @@
 # Autoreas Mobile
 
-Aplicación mobile de Autoreas construida con Expo Router, React Native, Expo SQLite, Drizzle ORM, React Query y HeroUI Native.
+Autoreas mobile app built with Expo Router, React Native, Expo SQLite, Drizzle ORM, React Query, and HeroUI Native.
 
 ## Stack
 
@@ -11,63 +11,63 @@ Aplicación mobile de Autoreas construida con Expo Router, React Native, Expo SQ
 - Drizzle ORM
 - React Query
 - Jest + Testing Library
-- Bun como package manager principal
+- Bun as the primary package manager
 
-## Requisitos
+## Requirements
 
 - Bun
 - Node.js
-- EAS CLI (`npm i -g eas-cli` o `bunx eas --version`)
-- Android Studio si vas a correr Android local
-- Cuenta de Expo iniciada (`eas login`) para builds remotos
+- EAS CLI (`npm i -g eas-cli` or `bunx eas --version`)
+- Android Studio if you plan to run Android locally
+- Logged-in Expo account (`eas login`) for remote builds
 
-## Importante: SQLite y Android
+## Important: SQLite and Android
 
-Este proyecto usa `expo-sqlite` nativo.
+This project uses native `expo-sqlite`.
 
-Eso significa que **no alcanza con Expo Go puro** para probar todo el flujo real de la app. Si corrés un binario que no incluye `expo-sqlite`, vas a ver el fallback de SQLite no disponible o errores como `Cannot find native module 'ExpoSQLite'`.
+That means **plain Expo Go is not enough** to test the full real app flow. If you run a binary that does not include `expo-sqlite`, you will see the SQLite unavailable fallback or errors such as `Cannot find native module 'ExpoSQLite'`.
 
-Para desarrollo Android real usá un **development build** o un binario generado con EAS.
+For real Android development, use a **development build** or a binary generated with EAS.
 
-## Instalación
+## Installation
 
 ```bash
 bun install
 ```
 
-## Comandos de desarrollo
+## Development commands
 
-### Levantar Metro
+### Start Metro
 
 ```bash
 bun run start
 ```
 
-Equivalente:
+Equivalent:
 
 ```bash
 bunx expo start -c
 ```
 
-### Abrir Android desde Metro
+### Open Android from Metro
 
 ```bash
 bun run android
 ```
 
-### Abrir iOS desde Metro
+### Open iOS from Metro
 
 ```bash
 bun run ios
 ```
 
-### Abrir Web
+### Open Web
 
 ```bash
 bun run web
 ```
 
-## Calidad y verificación
+## Quality and verification
 
 ### Lint
 
@@ -81,7 +81,7 @@ bun run lint
 bun run typecheck
 ```
 
-Equivalente:
+Equivalent:
 
 ```bash
 bunx tsc --noEmit
@@ -93,7 +93,7 @@ bunx tsc --noEmit
 bun run test
 ```
 
-### Tests en watch
+### Watch tests
 
 ```bash
 bun run test:watch
@@ -105,109 +105,136 @@ bun run test:watch
 bun run test:coverage
 ```
 
-### Verificar flujo de pre-commit fallido
+### Verify failed pre-commit path
 
 ```bash
 bun run verify:precommit-fail-path
 ```
 
-## Hooks de Git
+## Git hooks
 
-Instalar hooks locales:
+Install local hooks:
 
 ```bash
 bun run prepare
 ```
 
-## Base de datos y Drizzle
+## Database and Drizzle
 
-La configuración de Drizzle está en `drizzle.config.ts` y las migraciones salen a `src/infrastructure/db/migrations`.
+Drizzle configuration lives in `drizzle.config.ts`, and migrations are generated into `src/infrastructure/db/migrations`.
 
-### Generar migraciones
+### Generate migrations
 
 ```bash
 bunx drizzle-kit generate
 ```
 
-### Alternativa explícita con config
+### Explicit alternative with config
 
 ```bash
 bunx drizzle-kit generate --config=drizzle.config.ts
 ```
 
-Nota:
+Note:
 
-Las migraciones se aplican en runtime desde `src/app/_layout.tsx` usando `SQLiteProvider` y `runMigrations()`.
+Migrations are applied at runtime from `src/app/_layout.tsx` using `SQLiteProvider` and `runMigrations()`.
 
-## Android local con binario nativo
+## Local Android with a native binary
 
-Si querés probar SQLite real, cleartext HTTP local y wiring nativo, necesitás un build nativo.
+If you want to test real SQLite, local cleartext HTTP, and native wiring, you need a native build.
 
-### Opción 1: development build remoto con EAS
+### Option 1: remote development build with EAS
 
 ```bash
 eas build --platform android --profile development
 ```
 
-Ese es el comando que necesitábamos documentar para este repo.
+This is the command we needed documented for this repo.
 
-### Opción 2: preview build remoto
+### Option 2: local preview build with Docker
+
+If you want to generate the APK locally on Windows using Docker Desktop, this repo already includes the required setup in `Dockerfile.eas` and `docker-compose.eas.yml`.
+
+Minimum requirements:
+
+- Docker Desktop with the WSL2 backend enabled
+- `EXPO_TOKEN` loaded in `.env.local`
+
+Command:
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build
+```
+
+Alternative profiles:
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build development
+docker compose -f docker-compose.eas.yml run --rm eas-build production
+```
+
+Output:
+
+- the APK is written to the project root as `build-*.apk`
+- those local artifacts are ignored by Git
+
+### Option 3: remote preview build
 
 ```bash
 eas build --platform android --profile preview
 ```
 
-### Opción 3: production build remoto
+### Option 4: remote production build
 
 ```bash
 eas build --platform android --profile production
 ```
 
-## Instalar y abrir development build
+## Install and open a development build
 
-Después de generar el build Android development, instalá el APK/AAB resultante en el dispositivo o emulador y luego levantá Metro:
+After generating the Android development build, install the resulting APK/AAB on the device or emulator and then start Metro:
 
 ```bash
 bun run start
 ```
 
-Si el development client ya está instalado, podés abrirlo contra el bundler local.
+If the development client is already installed, you can open it against the local bundler.
 
 ## Submit / deploy
 
-### Enviar build de producción con EAS Submit
+### Send a production build with EAS Submit
 
 ```bash
 eas submit --platform android --profile production
 ```
 
-Nota:
+Note:
 
-`eas.json` ya tiene definida la sección `submit.production`.
+`eas.json` already defines the `submit.production` section.
 
-## Comandos útiles de Expo / EAS
+## Useful Expo / EAS commands
 
-### Verificar config pública resuelta
+### Verify resolved public config
 
 ```bash
 npx expo config --type public
 ```
 
-### Revisar dependencias y salud del proyecto
+### Check dependencies and project health
 
 ```bash
 npx expo-doctor
 ```
 
-### Revisar upgrades recomendados por Expo
+### Check Expo-recommended upgrades
 
 ```bash
 npx expo install --check
 ```
 
-## Flujo sugerido de desarrollo
+## Suggested development flow
 
-### Trabajo diario sin build nativo nuevo
+### Daily work without a new native build
 
 ```bash
 bun install
@@ -216,13 +243,13 @@ bun run test
 bun run typecheck
 ```
 
-### Cuando cambian plugins nativos o SQLite
+### When native plugins or SQLite change
 
 ```bash
 eas build --platform android --profile development
 ```
 
-### Antes de cerrar una tarea
+### Before closing a task
 
 ```bash
 bun run lint
@@ -234,86 +261,86 @@ bun run typecheck
 
 ### Error: `Cannot find native module 'ExpoSQLite'`
 
-Causa:
+Cause:
 
-Estás corriendo la app en un binario que no incluye `expo-sqlite` nativo.
+You are running the app in a binary that does not include native `expo-sqlite`.
 
-Pasa típicamente cuando:
+This typically happens when:
 
-- usás Expo Go para un flujo que requiere SQLite nativo
-- instalaste un dev client viejo
-- agregaste o cambiaste plugins nativos y no regeneraste el build
+- you use Expo Go for a flow that requires native SQLite
+- you installed an old development client
+- you added or changed native plugins and did not regenerate the build
 
-Solución:
+Solution:
 
 ```bash
 eas build --platform android --profile development
 ```
 
-Después instalá ese build nuevo en el dispositivo o emulador y levantá Metro:
+Then install the new build on the device or emulator and start Metro:
 
 ```bash
 bun run start
 ```
 
-### Error de red contra IP local en Android
+### Network error against a local IP on Android
 
-Síntoma:
+Symptoms:
 
-- pairing falla contra `http://192.168.x.x:puerto`
-- sync falla aunque el bridge esté levantado
+- pairing fails against `http://192.168.x.x:port`
+- sync fails even though the bridge is running
 
-Causa posible:
+Possible cause:
 
-Android bloquea tráfico HTTP cleartext si el binario no fue generado con la config nativa correcta.
+Android blocks cleartext HTTP traffic if the binary was not generated with the correct native configuration.
 
-En este repo, eso ya está declarado en `app.json` mediante `expo-build-properties` con `usesCleartextTraffic: true`, pero necesitás recompilar el binario para que aplique.
+In this repo, that is already declared in `app.json` through `expo-build-properties` with `usesCleartextTraffic: true`, but you still need to rebuild the binary for it to apply.
 
-Solución:
-
-```bash
-eas build --platform android --profile development
-```
-
-### Reinstalar dev client correctamente
-
-Cuando cambies plugins nativos, SQLite, permisos o config Android, hacé este flujo:
+Solution:
 
 ```bash
 eas build --platform android --profile development
 ```
 
-Luego:
+### Reinstall the development client correctly
 
-1. Desinstalá la versión anterior de la app o dev client si sigue usando binarios viejos.
-2. Instalá el nuevo APK/AAB generado por EAS.
-3. Levantá Metro con `bun run start`.
-4. Abrí la app instalada y conectala al bundler local.
+When you change native plugins, SQLite, permissions, or Android configuration, use this flow:
 
-### Warnings de Expo Router sobre `missing default export`
+```bash
+eas build --platform android --profile development
+```
 
-Si ves warnings como estos:
+Then:
+
+1. Uninstall the previous app or development client if it is still using old binaries.
+2. Install the new APK/AAB generated by EAS.
+3. Start Metro with `bun run start`.
+4. Open the installed app and connect it to the local bundler.
+
+### Expo Router warnings about `missing default export`
+
+If you see warnings like these:
 
 ```text
 Route "./(home)/index.tsx" is missing the required default export
 Route "./(tabs)/index.tsx" is missing the required default export
 ```
 
-No asumas que el export está mal.
+Do not assume the export is wrong.
 
-En este proyecto, ese warning puede ser secundario a un crash durante la evaluación del módulo, especialmente si también aparece un error de `ExpoSQLite`. Primero resolvé el problema nativo.
+In this project, that warning can be secondary to a crash during module evaluation, especially if an `ExpoSQLite` error also appears. Fix the native issue first.
 
 ## Release checklist
 
 ### Preview Android
 
-1. Instalar dependencias:
+1. Install dependencies:
 
 ```bash
 bun install
 ```
 
-2. Verificar calidad:
+2. Verify quality:
 
 ```bash
 bun run lint
@@ -321,29 +348,29 @@ bun run test
 bun run typecheck
 ```
 
-3. Generar build preview:
+3. Generate the preview build:
 
 ```bash
 eas build --platform android --profile preview
 ```
 
-4. Instalar el build en dispositivo y validar:
+4. Install the build on a device and validate:
 
-- arranque de app
+- app startup
 - setup / pairing
-- acceso SQLite
-- sync contra bridge local
-- navegación principal
+- SQLite access
+- sync against the local bridge
+- main navigation
 
 ### Production Android
 
-1. Instalar dependencias:
+1. Install dependencies:
 
 ```bash
 bun install
 ```
 
-2. Verificar calidad:
+2. Verify quality:
 
 ```bash
 bun run lint
@@ -351,34 +378,34 @@ bun run test
 bun run typecheck
 ```
 
-3. Generar build production:
+3. Generate the production build:
 
 ```bash
 eas build --platform android --profile production
 ```
 
-4. Enviar a distribución:
+4. Submit for distribution:
 
 ```bash
 eas submit --platform android --profile production
 ```
 
-### Checklist mínima antes de cualquier build
+### Minimum checklist before any build
 
-- confirmar que el cambio no requiere regenerar secretos o credenciales fuera del repo
-- confirmar que el bridge local sigue respondiendo si tocaste pairing o sync
-- si cambiaste SQLite, plugins Expo o permisos Android, usar build nuevo; no reutilizar un dev client viejo
+- confirm the change does not require regenerating secrets or credentials outside the repo
+- confirm the local bridge is still responding if you touched pairing or sync
+- if you changed SQLite, Expo plugins, or Android permissions, use a new build; do not reuse an old development client
 
-## Estructura relevante
+## Relevant structure
 
-- `src/app/` — rutas Expo Router
-- `src/infrastructure/db/` — cliente SQLite, schema y migraciones Drizzle
-- `src/features/` — hooks y lógica de negocio
-- `tests/` — smoke, unit e integration-style tests
-- `docs/specs/` — specs funcionales del proyecto
+- `src/app/` — Expo Router routes
+- `src/infrastructure/db/` — SQLite client, schema, and Drizzle migrations
+- `src/features/` — hooks and business logic
+- `tests/` — smoke, unit, and integration-style tests
+- `docs/specs/` — project functional specs
 
-## Referencias del proyecto
+## Project references
 
-- `app.json` — configuración Expo y plugins nativos
-- `eas.json` — perfiles de build y submit
-- `drizzle.config.ts` — configuración Drizzle Kit
+- `app.json` — Expo configuration and native plugins
+- `eas.json` — build and submit profiles
+- `drizzle.config.ts` — Drizzle Kit configuration

@@ -1,0 +1,14 @@
+# EAS Local Build Image
+# Based on the official React Native Android image which has:
+#   Java, Android SDK, NDK, CMake, Gradle all pre-installed
+FROM reactnativecommunity/react-native-android:latest
+
+# Update CA certificates — the base image ships with outdated certs that cause
+# TLS handshake failures against Maven Central and other HTTPS hosts in Docker Desktop Windows
+RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates && update-ca-certificates
+
+# Install EAS CLI and Bun globally (cached in image layer).
+# EAS auto-selects Bun when bun.lock is present in the project.
+RUN npm install -g eas-cli@latest bun
+
+WORKDIR /app

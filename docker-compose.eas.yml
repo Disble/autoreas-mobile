@@ -1,0 +1,65 @@
+services:
+  eas-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.eas
+
+    # Use host network — container shares Windows/WSL2 network stack directly.
+    # This fixes all DNS issues without any extra config or IP pinning.
+    network_mode: host
+
+    volumes:
+      # Mount project into container
+      - .:/app
+
+      # Isolate node_modules inside container (Linux binaries, not Windows)
+      # This volume persists — npm install is fast on subsequent runs
+      - node_modules:/app/node_modules
+
+      # Cache Gradle downloads and build outputs (~1-2GB, only downloaded once)
+      - gradle_cache:/root/.gradle
+
+      # Cache Android SDK extras (avoids re-downloading NDK components)
+      - android_cache:/root/.android
+
+      # Cache npm global packages
+      - npm_cache:/root/.npm
+
+    # Fix Java/Gradle DNS on Docker Desktop Windows:
+    # Java tries IPv6 first by default — IPv6 is broken in Docker Desktop on Windows.
+    # This forces Java to use IPv4, fixing all Gradle/SDK download DNS failures.
+    environment:
+      - _JAVA_OPTIONS=-Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2,TLSv1.3 -Djdk.tls.client.protocols=TLSv1.2,TLSv1.3
+
+    # Load all env vars from .env.local (Supabase keys, Firebase paths, EXPO_TOKEN, etc.)
+    env_file:
+      - .env.local
+
+    # Default profile is "preview" — override by passing arg:
+    #   docker compose ... run --rm eas-build production
+    entrypoint: >
+      bash -c "
+        echo '--- Installing dependencies ---' &&
+        npm install &&
+        echo '--- Starting EAS local build ---' &&
+        for attempt in 1 2 3; do
+          eas build --local --platform android --profile $${1:-preview} --non-interactive && break
+          echo \"--- Attempt $$attempt failed, retrying in 5s... ---\" &&
+          sleep 5
+        done &&
+        echo '--- Build complete. APK is in your project folder. ---'
+      "
+    command: preview
+
+volumes:
+  # node_modules: auto-named per project (e.g. nwt-servicehub_node_modules)
+  # Docker Compose prefixes with folder name automatically — no conflicts across projects
+  node_modules:
+
+  # gradle/android/npm caches are shared across all projects (saves re-downloading)
+  gradle_cache:
+    name: eas_gradle_cache
+  android_cache:
+    name: eas_android_cache
+  npm_cache:
+    name: eas_npm_cache

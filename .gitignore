@@ -43,3 +43,11 @@ yarn-error.*
 app-example-src
 resources/autoreas-data/*.dat
 deprecated/
+
+# Docker
+.dockerignore
+
+# Local EAS Android build artifacts
+build-*.apk
+build-*.aab
+build-*/
