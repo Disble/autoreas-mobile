@@ -284,6 +284,50 @@ describe('syncPendingOperations', () => {
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
   });
 
+  it('advances lastChangelogId from the response cursor, not from bridge change timestamps', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+      lastChangelogId: 5,
+    });
+
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'accepted',
+        applied_operations: [
+          {
+            anime_id: 'anime1',
+            operation: 'update',
+            applied: true,
+          },
+        ],
+        bridge_changes: [
+          {
+            record_id: 'anime1',
+            change_type: 'update',
+            changed_fields: ['nrocapvisto'],
+            timestamp: 1710000001000,
+          },
+        ],
+        conflicts: [],
+        last_changelog_id: 10,
+      }),
+    });
+
+    await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
+
+    const lastChangelogIdUpdate = mockUpdateSet.mock.calls.find(
+      (call) => typeof call[0] === 'object' && 'lastChangelogId' in call[0],
+    );
+
+    expect(lastChangelogIdUpdate?.[0]).toEqual({ lastChangelogId: 10 });
+  });
+
   it('does not mark synced when applied_operations rejects the operation even if bridge_changes exist', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',

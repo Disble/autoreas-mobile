@@ -264,9 +264,7 @@ async function performSyncPendingOperations(
       bridge_changes,
       last_changelog_id: responseLastChangelogId,
     } = parsed.data;
-    const nextLastChangelogId = bridge_changes.reduce((max, change) => {
-      return Math.max(max, change.timestamp);
-    }, responseLastChangelogId ?? lastChangelogId);
+    const nextLastChangelogId = responseLastChangelogId ?? lastChangelogId;
     const confirmedIds = getConfirmedOperationIds(
       pendingOps,
       applied_operations,

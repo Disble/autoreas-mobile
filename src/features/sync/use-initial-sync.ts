@@ -5,19 +5,12 @@ import {
   getBridgeConfigSnapshot,
   withExclusiveWrite,
 } from "../../infrastructure/db/client";
-import { animes, bridgeConfig } from "../../infrastructure/db/schema";
+import { animes } from "../../infrastructure/db/schema";
 import { AnimeSchema, type Anime } from "../../infrastructure/validation/anime-schema";
-import {
-  IncrementalChangesResponseSchema,
-} from "./initial-sync.schema";
 import {
   fetchInitialSyncSnapshot,
   persistInitialSyncSnapshot,
 } from './initial-sync.helpers';
-import {
-  getLastChangelogId,
-  shouldPersistLastChangelogId,
-} from "./last-changelog.helpers";
 
 export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
@@ -77,67 +70,4 @@ export async function deleteAnimeLocally(
   });
 }
 
-/**
- * Sync incremental: trae solo los cambios del bridge desde un timestamp dado.
- * Se usa al reconectar el WS (evento sync_required) para no re-descargar todo.
- * Retorna el last_changelog_id recibido para persistirlo si se desea.
- */
-export async function incrementalSync(
-  rawDb: SQLiteDatabase,
-  sinceMs?: number,
-): Promise<number> {
-  const config = await getBridgeConfigSnapshot(rawDb);
-  if (!config?.ip || !config?.port || !config?.token) return 0;
 
-  const lastChangelogId = getLastChangelogId(config);
-  const since = sinceMs ?? lastChangelogId;
-
-  try {
-    const url = `http://${config.ip}:${config.port}/api/animes/changes?since=${since}`;
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(
-        `[IncrementalSync] GET /api/animes/changes failed: ${response.status}`,
-      );
-      return 0;
-    }
-
-    const raw = await response.json();
-    const parsed = IncrementalChangesResponseSchema.safeParse(raw);
-
-    if (!parsed.success) {
-      console.warn('[IncrementalSync] Invalid changes payload:', parsed.error.message);
-      return 0;
-    }
-
-    const { changes, last_changelog_id: lastChangelogId } = parsed.data;
-
-    await withExclusiveWrite(rawDb, async (db) => {
-      for (const change of changes) {
-        if (change.change_type === "delete") {
-          await db.delete(animes).where(eq(animes._id, change.record_id));
-        } else if (change.snapshot) {
-          await upsertAnime(db, change.snapshot);
-        }
-      }
-
-      if (shouldPersistLastChangelogId(getLastChangelogId(config), lastChangelogId)) {
-        await db
-          .update(bridgeConfig)
-          .set({ lastChangelogId })
-          .where(eq(bridgeConfig.id, config.id));
-      }
-    });
-
-    return lastChangelogId;
-  } catch (err) {
-    console.warn("[IncrementalSync] Network error:", err);
-    return 0;
-  }
-}
