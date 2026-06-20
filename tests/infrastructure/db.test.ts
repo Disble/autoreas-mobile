@@ -58,6 +58,7 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
         { idx: 3, tag: "0003_add_sync_execution_mode" },
         { idx: 4, tag: "0004_add_foreground_sync_diagnostics" },
         { idx: 5, tag: "0005_add_operation_log_retention_support" },
+        { idx: 6, tag: "0006_sanitize_bridge_config_changelog_cursor" },
       ],
     },
     migrations: {
@@ -71,6 +72,8 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
         "ALTER TABLE `sync_runtime_status` ADD COLUMN `foreground_service_callback_started_at` integer;",
       m0005:
         "ALTER TABLE `sync_runtime_status` ADD COLUMN `is_cycle_active` integer DEFAULT false NOT NULL;",
+      m0006:
+        "UPDATE `bridge_config` SET `last_changelog_id` = 0 WHERE `last_changelog_id` > 1000000000000 OR `last_changelog_id` < 0;",
     },
   },
 }));
@@ -130,6 +133,7 @@ describe("db client tracer helpers", () => {
             expect.objectContaining({ tag: "0003_add_sync_execution_mode" }),
             expect.objectContaining({ tag: "0004_add_foreground_sync_diagnostics" }),
             expect.objectContaining({ tag: "0005_add_operation_log_retention_support" }),
+            expect.objectContaining({ tag: "0006_sanitize_bridge_config_changelog_cursor" }),
           ]),
         }),
         migrations: expect.objectContaining({
@@ -138,6 +142,7 @@ describe("db client tracer helpers", () => {
           m0003: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `execution_mode`'),
           m0004: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `foreground_service_callback_started_at`'),
           m0005: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `is_cycle_active`'),
+          m0006: expect.stringContaining('UPDATE `bridge_config` SET `last_changelog_id` = 0'),
         }),
       })
     );
@@ -303,6 +308,26 @@ describe("db client tracer helpers", () => {
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
+    );
+  });
+
+  it("la migración 0006 sanea cursores de changelog corrompidos con timestamps", async () => {
+    const rawDb = {
+      runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+    };
+
+    await rawDb.runAsync(
+      "UPDATE `bridge_config` SET `last_changelog_id` = 0 WHERE `last_changelog_id` > 1000000000000 OR `last_changelog_id` < 0;"
+    );
+
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE `bridge_config` SET `last_changelog_id` = 0")
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("`last_changelog_id` > 1000000000000")
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("`last_changelog_id` < 0")
     );
   });
 

@@ -7,6 +7,7 @@ import m0002 from './0002_add_sync_runtime_status.sql';
 import m0003 from './0003_add_sync_execution_mode.sql';
 import m0004 from './0004_add_foreground_sync_diagnostics.sql';
 import m0005 from './0005_add_operation_log_retention_support.sql';
+import m0006 from './0006_sanitize_bridge_config_changelog_cursor.sql';
 
 export default {
   journal,
@@ -17,5 +18,6 @@ export default {
     m0003,
     m0004,
     m0005,
+    m0006,
   },
 };

@@ -43,6 +43,13 @@
       "when": 1781926798120,
       "tag": "0005_add_operation_log_retention_support",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789876543210,
+      "tag": "0006_sanitize_bridge_config_changelog_cursor",
+      "breakpoints": true
     }
   ]
 }
