@@ -1,11 +1,14 @@
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
+import { drizzle } from "drizzle-orm/expo-sqlite";
 import {
   clearBridgeConfig,
+  openAppDatabaseSync,
   runMigrations,
   withDeferredWrite,
   withExclusiveWrite,
 } from "../../src/infrastructure/db/client";
 import { bridgeConfig } from "../../src/infrastructure/db/schema";
+import * as nativeRuntime from "../../src/infrastructure/db/native-runtime";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -38,6 +41,12 @@ jest.mock("drizzle-orm/expo-sqlite/migrator", () => ({
   migrate: jest.fn(),
 }));
 
+jest.mock("../../src/infrastructure/db/native-runtime", () => ({
+  getDrizzleFactory: jest.fn(),
+  getDrizzleMigrator: jest.fn(),
+  getOpenDatabaseSync: jest.fn(),
+}));
+
 jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
   __esModule: true,
   default: {
@@ -47,6 +56,8 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
         { idx: 1, tag: "0001_add_bridge_config_last_changelog_id" },
         { idx: 2, tag: "0002_add_sync_runtime_status" },
         { idx: 3, tag: "0003_add_sync_execution_mode" },
+        { idx: 4, tag: "0004_add_foreground_sync_diagnostics" },
+        { idx: 5, tag: "0005_add_operation_log_retention_support" },
       ],
     },
     migrations: {
@@ -56,6 +67,10 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
         "CREATE TABLE `sync_runtime_status` (`id` integer PRIMARY KEY DEFAULT 1 NOT NULL, `registration_status` text DEFAULT 'unregistered' NOT NULL, `last_attempt_at` integer, `last_success_at` integer, `last_failure_message` text, `last_trigger_source` text);",
       m0003:
         "ALTER TABLE `sync_runtime_status` ADD COLUMN `execution_mode` text DEFAULT 'best_effort_background_task' NOT NULL;",
+      m0004:
+        "ALTER TABLE `sync_runtime_status` ADD COLUMN `foreground_service_callback_started_at` integer;",
+      m0005:
+        "ALTER TABLE `sync_runtime_status` ADD COLUMN `is_cycle_active` integer DEFAULT false NOT NULL;",
     },
   },
 }));
@@ -63,6 +78,37 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
 describe("db client tracer helpers", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(jest.fn());
+    (nativeRuntime.getDrizzleMigrator as jest.Mock).mockReturnValue(migrate);
+    (nativeRuntime.getDrizzleFactory as jest.Mock).mockReturnValue(drizzle);
+  });
+
+  it("openAppDatabaseSync mantiene el comportamiento por defecto para UI", () => {
+    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db" });
+    (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(openDatabaseSync);
+
+    const rawDb = openAppDatabaseSync();
+
+    expect(rawDb).toEqual({ id: "raw-db" });
+    expect(openDatabaseSync).toHaveBeenCalledWith("autoreas.db", {
+      enableChangeListener: true,
+      useNewConnection: false,
+    });
+  });
+
+  it("openAppDatabaseSync acepta overrides opcionales para runtimes dedicados", () => {
+    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db" });
+    (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(openDatabaseSync);
+
+    openAppDatabaseSync({
+      enableChangeListener: false,
+      useNewConnection: true,
+    });
+
+    expect(openDatabaseSync).toHaveBeenCalledWith("autoreas.db", {
+      enableChangeListener: false,
+      useNewConnection: true,
+    });
   });
 
   it("runMigrations ejecuta el journal completo incluyendo la migración formal nueva", async () => {
@@ -82,12 +128,16 @@ describe("db client tracer helpers", () => {
             expect.objectContaining({ tag: "0001_add_bridge_config_last_changelog_id" }),
             expect.objectContaining({ tag: "0002_add_sync_runtime_status" }),
             expect.objectContaining({ tag: "0003_add_sync_execution_mode" }),
+            expect.objectContaining({ tag: "0004_add_foreground_sync_diagnostics" }),
+            expect.objectContaining({ tag: "0005_add_operation_log_retention_support" }),
           ]),
         }),
         migrations: expect.objectContaining({
           m0001: expect.stringContaining('ALTER TABLE `bridge_config` ADD COLUMN `last_changelog_id` integer DEFAULT 0;'),
           m0002: expect.stringContaining('CREATE TABLE `sync_runtime_status`'),
           m0003: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `execution_mode`'),
+          m0004: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `foreground_service_callback_started_at`'),
+          m0005: expect.stringContaining('ALTER TABLE `sync_runtime_status` ADD COLUMN `is_cycle_active`'),
         }),
       })
     );
@@ -110,12 +160,10 @@ describe("db client tracer helpers", () => {
 
     expect(migrate).toHaveBeenCalledTimes(1);
     expect(rawDb.getAllAsync).toHaveBeenCalledWith("PRAGMA table_info(bridge_config)");
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      1,
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE bridge_config ADD COLUMN last_changelog_id INTEGER DEFAULT 0"
     );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      2,
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
     );
   });
@@ -139,6 +187,12 @@ describe("db client tracer helpers", () => {
             { name: "last_failure_message" },
             { name: "last_trigger_source" },
             { name: "last_synced_count" },
+            { name: "foreground_service_callback_started_at" },
+            { name: "last_no_op_reason" },
+            { name: "last_pending_operations_count_at_start" },
+            { name: "is_cycle_active" },
+            { name: "last_backlog_read_count" },
+            { name: "last_pruned_operations_count" },
           ];
         }
 
@@ -149,9 +203,12 @@ describe("db client tracer helpers", () => {
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(2);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
     );
   });
 
@@ -192,6 +249,60 @@ describe("db client tracer helpers", () => {
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL"
+    );
+  });
+
+  it("repara sync_runtime_status legacy agregando columnas de diagnostics y retention", async () => {
+    const rawDb = {
+      getAllAsync: jest
+        .fn()
+        .mockImplementation(async (query: string) => {
+          if (query === "PRAGMA table_info(bridge_config)") {
+            return [{ name: "id" }, { name: "last_changelog_id" }];
+          }
+
+          if (query === "PRAGMA table_info(sync_runtime_status)") {
+            return [
+              { name: "id" },
+              { name: "registration_status" },
+              { name: "execution_mode" },
+              { name: "is_foreground_service_running" },
+              { name: "can_show_persistent_notification" },
+              { name: "last_attempt_at" },
+              { name: "last_success_at" },
+              { name: "last_failure_message" },
+              { name: "last_trigger_source" },
+              { name: "last_synced_count" },
+            ];
+          }
+
+          return [];
+        }),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN foreground_service_callback_started_at INTEGER'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_no_op_reason TEXT'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_operations_count_at_start INTEGER'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN is_cycle_active INTEGER DEFAULT 0 NOT NULL'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_backlog_read_count INTEGER DEFAULT 0 NOT NULL'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
     );
   });
 

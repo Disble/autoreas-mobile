@@ -12,6 +12,9 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --runInBand --coverage",
+    "verify:architecture-boundary": "bun run lint && bun run typecheck",
+    "validate": "bun run lint && bun run typecheck && bun run test",
+    "doctor:react": "bunx react-doctor@0.5.1 . --verbose -y",
     "prepare": "lefthook install",
     "generate:feature": "node ./scripts/generate-feature.js",
     "verify:precommit-fail-path": "node ./scripts/verify-precommit-fail-path.mjs"

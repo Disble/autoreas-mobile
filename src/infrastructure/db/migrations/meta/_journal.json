@@ -29,6 +29,20 @@
       "when": 1775910000000,
       "tag": "0003_add_sync_execution_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775996400000,
+      "tag": "0004_add_foreground_sync_diagnostics",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781926798120,
+      "tag": "0005_add_operation_log_retention_support",
+      "breakpoints": true
     }
   ]
 }

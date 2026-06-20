@@ -26,6 +26,7 @@ function loadExpoSQLiteModule() {
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Runtime lazy loading preserves graceful fallback when expo-sqlite is unavailable in the current binary.
     expoSQLiteModuleCache = require('expo-sqlite') as ExpoSQLiteModule;
   } catch (error) {
     if (!shouldTreatAsUnavailable(error)) {
@@ -44,6 +45,7 @@ function loadDrizzleExpoSQLiteModule() {
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Runtime lazy loading preserves graceful fallback when drizzle Expo SQLite bindings are unavailable.
     drizzleExpoSQLiteModuleCache = require('drizzle-orm/expo-sqlite') as DrizzleExpoSQLiteModule;
   } catch (error) {
     if (!shouldTreatAsUnavailable(error)) {
@@ -62,6 +64,7 @@ function loadDrizzleMigratorModule() {
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Runtime lazy loading preserves graceful fallback when the migrator binding is unavailable.
     drizzleMigratorModuleCache = require('drizzle-orm/expo-sqlite/migrator') as DrizzleMigratorModule;
   } catch (error) {
     if (!shouldTreatAsUnavailable(error)) {

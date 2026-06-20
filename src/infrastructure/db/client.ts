@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import type { SQLiteDatabase } from "expo-sqlite";
+import type { SQLiteDatabase, SQLiteOpenOptions } from "expo-sqlite";
 import migrations from "./migrations/migrations";
 import {
   getDrizzleFactory,
@@ -13,9 +13,25 @@ const writeQueueByDatabase = new WeakMap<object, Promise<unknown>>();
 
 export type AppDatabase = ReturnType<typeof createDrizzleDb>;
 
-export function openAppDatabaseSync() {
+/**
+ * Defines the supported SQLite open overrides for callers that need explicit connection ownership.
+ */
+export interface OpenAppDatabaseSyncParams {
+  readonly enableChangeListener?: SQLiteOpenOptions['enableChangeListener'];
+  readonly useNewConnection?: SQLiteOpenOptions['useNewConnection'];
+}
+
+export function openAppDatabaseSync(options: OpenAppDatabaseSyncParams = {}) {
   const openDatabaseSync = getOpenDatabaseSync();
-  return openDatabaseSync(DATABASE_NAME, { enableChangeListener: true });
+  const {
+    enableChangeListener = true,
+    useNewConnection = false,
+  } = options;
+
+  return openDatabaseSync(DATABASE_NAME, {
+    enableChangeListener,
+    useNewConnection,
+  });
 }
 
 export function createDrizzleDb(rawDb: SQLiteDatabase) {
@@ -59,14 +75,59 @@ async function ensureSyncRuntimeStatusExecutionColumns(rawDb: SQLiteDatabase) {
       'ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL'
     );
   }
+
+  if (!columnNames.has('foreground_service_callback_started_at')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN foreground_service_callback_started_at INTEGER'
+    );
+  }
+
+  if (!columnNames.has('last_no_op_reason')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_no_op_reason TEXT'
+    );
+  }
+
+  if (!columnNames.has('last_pending_operations_count_at_start')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_operations_count_at_start INTEGER'
+    );
+  }
+
+  if (!columnNames.has('is_cycle_active')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN is_cycle_active INTEGER DEFAULT 0 NOT NULL'
+    );
+  }
+
+  if (!columnNames.has('last_backlog_read_count')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_backlog_read_count INTEGER DEFAULT 0 NOT NULL'
+    );
+  }
+
+  if (!columnNames.has('last_pruned_operations_count')) {
+    await rawDb.runAsync(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL'
+    );
+  }
+}
+
+async function ensureOperationLogRetentionIndex(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(
+    'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
+  );
 }
 
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
-  await ensureBridgeConfigLastChangelogId(rawDb);
-  await ensureSyncRuntimeStatusExecutionColumns(rawDb);
+  await Promise.all([
+    ensureBridgeConfigLastChangelogId(rawDb),
+    ensureSyncRuntimeStatusExecutionColumns(rawDb),
+    ensureOperationLogRetentionIndex(rawDb),
+  ]);
   return db;
 }
 
