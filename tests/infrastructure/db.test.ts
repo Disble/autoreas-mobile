@@ -169,7 +169,7 @@ describe("db client tracer helpers", () => {
       "ALTER TABLE bridge_config ADD COLUMN last_changelog_id INTEGER DEFAULT 0"
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );
   });
 
@@ -210,7 +210,7 @@ describe("db client tracer helpers", () => {
 
     expect(rawDb.runAsync).toHaveBeenCalledTimes(2);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+      "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'

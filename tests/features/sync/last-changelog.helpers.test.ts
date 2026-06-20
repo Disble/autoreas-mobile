@@ -20,6 +20,12 @@ describe('last changelog helpers', () => {
     expect(getLastChangelogId({ lastChangelogId: 'last_changelog_id' as never })).toBe(0);
   });
 
+  it('getLastChangelogId sanea cursores corrompidos como timestamps a 0', () => {
+    expect(getLastChangelogId({ lastChangelogId: 1_710_000_001_000 })).toBe(0);
+    expect(getLastChangelogId({ lastChangelogId: 1_000_000_000_001 })).toBe(0);
+    expect(getLastChangelogId({ lastChangelogId: 1_000_000_000_000 })).toBe(1_000_000_000_000);
+  });
+
   it('shouldPersistLastChangelogId solo persiste avances reales', () => {
     expect(shouldPersistLastChangelogId(0, 0)).toBe(false);
     expect(shouldPersistLastChangelogId(5, 4)).toBe(false);

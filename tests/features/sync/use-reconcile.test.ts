@@ -232,6 +232,35 @@ describe('syncPendingOperations', () => {
     );
   });
 
+  it('sanitizes a corrupted timestamp cursor before serializing the request body', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      id: 1,
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'token123',
+      deviceId: 'device-abc',
+      lastChangelogId: 1_710_000_001_000,
+    });
+
+    rawDb.getAllAsync.mockResolvedValue([
+      buildPendingOp({ createdAt: 1710000000000 }),
+    ]);
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
+    });
+
+    await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://192.168.1.10:8080/api/sync/reconcile',
+      expect.objectContaining({
+        body: expect.stringContaining('"last_changelog_id":0'),
+      }),
+    );
+  });
+
   it('marks rows as synced when applied_operations confirms them', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',

@@ -50,7 +50,7 @@ async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   }
 
   await rawDb.runAsync(
-    "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0"
+    "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
   );
 }
 
