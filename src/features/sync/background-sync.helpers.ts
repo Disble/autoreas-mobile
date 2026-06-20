@@ -1,17 +1,20 @@
-import {
-  openAppDatabaseSync,
-} from '../../infrastructure/db/client';
+import { createSyncSQLiteRuntime } from './sqlite-sync-runtime.helpers';
 import { runHeadlessSyncCycle } from './headless-sync-cycle.helpers';
 
 /**
- * Runs one headless-safe background sync cycle using the shared reconcile pipeline.
- * The cycle updates the observable runtime snapshot so Settings can explain task health.
+ * Runs one headless-safe background sync cycle using a dedicated SQLite runtime.
+ * The runtime is opened for the cycle and closed in a finally block so the shared UI connection
+ * does not accumulate native pressure during repeated background work.
  */
 export async function runBackgroundSyncCycle() {
-  const rawDb = openAppDatabaseSync();
+  const runtime = createSyncSQLiteRuntime({ owner: 'headless_cycle' });
 
-  return runHeadlessSyncCycle({
-    rawDb,
-    triggerSource: 'background_task',
-  });
+  try {
+    return await runHeadlessSyncCycle({
+      runtime,
+      triggerSource: 'background_task',
+    });
+  } finally {
+    await runtime.close();
+  }
 }

@@ -21,6 +21,9 @@ describe('settings-screen.helpers', () => {
         lastFailureMessage: 'Bridge timeout after 10s',
         lastTriggerSource: 'background_task',
         lastSyncedCount: 4,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
     });
 
@@ -90,6 +93,9 @@ describe('settings-screen.helpers', () => {
         lastFailureMessage: null,
         lastTriggerSource: 'app_active',
         lastSyncedCount: 12,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
     });
 
@@ -123,6 +129,9 @@ describe('settings-screen.helpers', () => {
         lastFailureMessage: null,
         lastTriggerSource: 'background_task',
         lastSyncedCount: 8,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
     });
 
@@ -149,6 +158,9 @@ describe('settings-screen.helpers', () => {
         lastFailureMessage: null,
         lastTriggerSource: 'manual',
         lastSyncedCount: 0,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
     });
 
@@ -180,6 +192,9 @@ describe('settings-screen.helpers', () => {
         lastFailureMessage: null,
         lastTriggerSource: null,
         lastSyncedCount: 0,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
     });
 

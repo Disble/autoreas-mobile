@@ -15,7 +15,11 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
 }));
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
-  syncPendingOperations: jest.fn().mockResolvedValue(0),
+  syncPendingOperations: jest.fn().mockResolvedValue({
+    syncedCount: 0,
+    backlogReadCount: 0,
+    hasMorePending: false,
+  }),
 }));
 
 const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite') as {

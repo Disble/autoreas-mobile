@@ -3,12 +3,13 @@ import notifee, {
   AuthorizationStatus,
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
-import { openAppDatabaseSync } from '../../infrastructure/db/client';
 import { runHeadlessSyncCycle } from './headless-sync-cycle.helpers';
 import { NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID } from './notifee-foreground-service-adapter.constants';
 import { createForegroundSyncRunner } from './foreground-sync-runner.helpers';
+import { createSyncSQLiteRuntime } from './sqlite-sync-runtime.helpers';
 import type { NotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter.types';
 import type { SyncExecutionStatus } from './sync-execution-strategy.types';
+import type { SyncSQLiteRuntime } from './sqlite-sync-runtime.types';
 
 const FOREGROUND_SYNC_INTERVAL_MS = 15_000;
 
@@ -29,15 +30,31 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
   let canShowPersistentNotification = false;
   let isForegroundServiceRunning = false;
   let hasRegisteredBackgroundEvents = false;
+  let serviceRuntime: SyncSQLiteRuntime | null = null;
+
+  async function closeServiceRuntime() {
+    if (serviceRuntime) {
+      await serviceRuntime.close();
+      serviceRuntime = null;
+    }
+  }
+
   const foregroundSyncRunner = createForegroundSyncRunner({
     intervalMs: FOREGROUND_SYNC_INTERVAL_MS,
     runCycle: async () => {
-      const rawDb = openAppDatabaseSync();
+      if (!serviceRuntime) {
+        serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
+      }
 
-      await runHeadlessSyncCycle({
-        rawDb,
-        triggerSource: 'foreground_service',
-      });
+      try {
+        await runHeadlessSyncCycle({
+          runtime: serviceRuntime,
+          triggerSource: 'foreground_service',
+        });
+      } catch (error) {
+        await closeServiceRuntime();
+        throw error;
+      }
     },
   });
 
@@ -69,6 +86,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
             await foregroundSyncRunner.stop();
             await notifee.stopForegroundService();
             isForegroundServiceRunning = false;
+            await closeServiceRuntime();
           }
         });
         hasRegisteredBackgroundEvents = true;
@@ -116,6 +134,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
       await foregroundSyncRunner.stop();
       await notifee.stopForegroundService();
       isForegroundServiceRunning = false;
+      await closeServiceRuntime();
     },
 
     async getStatus() {

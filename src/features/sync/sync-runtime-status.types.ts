@@ -21,6 +21,9 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastFailureMessage: string | null;
   readonly lastTriggerSource: SyncRuntimeTriggerSource | null;
   readonly lastSyncedCount: number;
+  readonly isCycleActive: boolean;
+  readonly lastBacklogReadCount: number;
+  readonly lastPrunedOperationsCount: number;
 }
 
 export interface SyncRuntimeStatusPatch {
@@ -33,4 +36,7 @@ export interface SyncRuntimeStatusPatch {
   readonly lastFailureMessage?: string | null;
   readonly lastTriggerSource?: SyncRuntimeTriggerSource | null;
   readonly lastSyncedCount?: number;
+  readonly isCycleActive?: boolean;
+  readonly lastBacklogReadCount?: number;
+  readonly lastPrunedOperationsCount?: number;
 }

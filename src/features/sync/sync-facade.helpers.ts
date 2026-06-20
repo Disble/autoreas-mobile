@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client';
 import { animes, operationLog } from '../../infrastructure/db/schema';
 import { syncPendingOperations } from './reconcile.helpers';
+import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { initialSync } from './use-initial-sync';
 import type {
   SyncBootstrapMode,
@@ -44,7 +45,9 @@ export async function runHydrationBootstrapStrategy({
 export async function runReconcileBootstrapStrategy({
   rawDb,
 }: Parameters<SyncBootstrapStrategy>[0]): Promise<number> {
-  return syncPendingOperations(rawDb);
+  const result = await syncPendingOperations(rawDb);
+
+  return result.syncedCount;
 }
 
 /**
@@ -95,5 +98,6 @@ export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizz
   return createDrizzleDb(rawDb)
     .select({ id: operationLog.id })
     .from(operationLog)
-    .where(eq(operationLog.status, 'pending'));
+    .where(eq(operationLog.status, 'pending'))
+    .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
 }

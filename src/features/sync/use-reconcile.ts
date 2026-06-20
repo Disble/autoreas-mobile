@@ -6,7 +6,11 @@ export function useReconcile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (rawDb: SQLiteDatabase) => syncPendingOperations(rawDb),
+    mutationFn: async (rawDb: SQLiteDatabase) => {
+      const result = await syncPendingOperations(rawDb);
+
+      return result.syncedCount;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["operationLog"] });
     },

@@ -12,6 +12,9 @@ export const DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
   lastFailureMessage: null,
   lastTriggerSource: null,
   lastSyncedCount: 0,
+  isCycleActive: false,
+  lastBacklogReadCount: 0,
+  lastPrunedOperationsCount: 0,
 };
 
 export const UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
@@ -24,4 +27,7 @@ export const UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot
   lastFailureMessage: null,
   lastTriggerSource: null,
   lastSyncedCount: 0,
+  isCycleActive: false,
+  lastBacklogReadCount: 0,
+  lastPrunedOperationsCount: 0,
 };

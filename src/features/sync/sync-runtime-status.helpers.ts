@@ -70,6 +70,36 @@ export function buildSyncAttemptFailedPatch(
 }
 
 /**
+ * Builds the snapshot patch that marks a sync cycle as active or inactive.
+ * This lets Settings distinguish an idle runtime from one that is mid-cycle.
+ */
+export function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch {
+  return {
+    isCycleActive: isActive,
+  };
+}
+
+/**
+ * Builds the snapshot patch for the latest bounded backlog read size.
+ * Bounded reads keep this metric honest without materializing the whole queue.
+ */
+export function buildBacklogReadCountPatch(count: number): SyncRuntimeStatusPatch {
+  return {
+    lastBacklogReadCount: count,
+  };
+}
+
+/**
+ * Builds the snapshot patch for the latest operation-log prune result.
+ * This exposes how much terminal history was reclaimed by TTL or max-count rules.
+ */
+export function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch {
+  return {
+    lastPrunedOperationsCount: count,
+  };
+}
+
+/**
  * Reads the persisted singleton runtime snapshot from SQLite.
  * When no row exists yet, the neutral snapshot is returned instead.
  */
@@ -97,6 +127,9 @@ export async function getSyncRuntimeStatusSnapshot(
     lastFailureMessage: row.lastFailureMessage ?? null,
     lastTriggerSource: row.lastTriggerSource ?? null,
     lastSyncedCount: row.lastSyncedCount ?? 0,
+    isCycleActive: row.isCycleActive ?? false,
+    lastBacklogReadCount: row.lastBacklogReadCount ?? 0,
+    lastPrunedOperationsCount: row.lastPrunedOperationsCount ?? 0,
   };
 }
 
@@ -119,6 +152,10 @@ async function persistSyncRuntimeStatusPatch(
     lastTriggerSource:
       patch.lastTriggerSource === undefined ? current.lastTriggerSource : patch.lastTriggerSource,
     lastSyncedCount: patch.lastSyncedCount ?? current.lastSyncedCount,
+    isCycleActive: patch.isCycleActive ?? current.isCycleActive,
+    lastBacklogReadCount: patch.lastBacklogReadCount ?? current.lastBacklogReadCount,
+    lastPrunedOperationsCount:
+      patch.lastPrunedOperationsCount ?? current.lastPrunedOperationsCount,
   };
 
   await withDeferredWrite(rawDb, async (db) => {
@@ -135,6 +172,9 @@ async function persistSyncRuntimeStatusPatch(
         lastFailureMessage: next.lastFailureMessage,
         lastTriggerSource: next.lastTriggerSource,
         lastSyncedCount: next.lastSyncedCount,
+        isCycleActive: next.isCycleActive,
+        lastBacklogReadCount: next.lastBacklogReadCount,
+        lastPrunedOperationsCount: next.lastPrunedOperationsCount,
       })
       .onConflictDoUpdate({
         target: syncRuntimeStatus.id,
@@ -148,6 +188,9 @@ async function persistSyncRuntimeStatusPatch(
           lastFailureMessage: next.lastFailureMessage,
           lastTriggerSource: next.lastTriggerSource,
           lastSyncedCount: next.lastSyncedCount,
+          isCycleActive: next.isCycleActive,
+          lastBacklogReadCount: next.lastBacklogReadCount,
+          lastPrunedOperationsCount: next.lastPrunedOperationsCount,
         },
       });
   });
@@ -209,4 +252,28 @@ export async function recordSyncAttemptFailed(
     rawDb,
     buildSyncAttemptFailedPatch(triggerSource, attemptedAt, message),
   );
+}
+
+/**
+ * Persists whether a sync cycle is currently active.
+ * Headless cycles toggle this around reconcile and pruning so the UI reflects live work.
+ */
+export async function recordCycleActive(rawDb: SQLiteDatabase, isActive: boolean) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildCycleActivePatch(isActive));
+}
+
+/**
+ * Persists the size of the latest bounded backlog read.
+ * This metric is updated before reconcile runs so it matches the actual batch size.
+ */
+export async function recordBacklogReadCount(rawDb: SQLiteDatabase, count: number) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildBacklogReadCountPatch(count));
+}
+
+/**
+ * Persists the number of terminal operation-log rows pruned in the latest cycle.
+ * This lets Settings show how much history was reclaimed by retention rules.
+ */
+export async function recordPrunedOperationsCount(rawDb: SQLiteDatabase, count: number) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildPrunedOperationsCountPatch(count));
 }

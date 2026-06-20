@@ -89,6 +89,9 @@ export function createSyncSQLiteRuntime(
 
   return {
     owner: params.owner,
+    get rawDb() {
+      return rawDb;
+    },
     isOpen() {
       return rawDb !== null;
     },

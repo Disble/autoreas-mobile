@@ -41,11 +41,14 @@ describe('useBackgroundSyncStatus', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isCycleActive: false,
       lastAttemptAt: null,
       lastSuccessAt: null,
       lastFailureMessage: null,
       lastTriggerSource: null,
       lastSyncedCount: 0,
+      lastBacklogReadCount: 0,
+      lastPrunedOperationsCount: 0,
     });
   });
 
@@ -58,11 +61,14 @@ describe('useBackgroundSyncStatus', () => {
           executionMode: 'best_effort_background_task',
           isForegroundServiceRunning: false,
           canShowPersistentNotification: false,
+          isCycleActive: false,
           lastAttemptAt: 1710000000000,
           lastSuccessAt: 1710000005000,
           lastFailureMessage: null,
           lastTriggerSource: 'background_task',
           lastSyncedCount: 4,
+          lastBacklogReadCount: 0,
+          lastPrunedOperationsCount: 0,
         },
       ],
     });
@@ -74,11 +80,14 @@ describe('useBackgroundSyncStatus', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isCycleActive: false,
       lastAttemptAt: 1710000000000,
       lastSuccessAt: 1710000005000,
       lastFailureMessage: null,
       lastTriggerSource: 'background_task',
       lastSyncedCount: 4,
+      lastBacklogReadCount: 0,
+      lastPrunedOperationsCount: 0,
     });
   });
 
@@ -91,11 +100,14 @@ describe('useBackgroundSyncStatus', () => {
           executionMode: 'best_effort_background_task',
           isForegroundServiceRunning: false,
           canShowPersistentNotification: false,
+          isCycleActive: false,
           lastAttemptAt: 1710000000000,
           lastSuccessAt: null,
           lastFailureMessage: 'Network Error',
           lastTriggerSource: 'background_task',
           lastSyncedCount: 0,
+          lastBacklogReadCount: 0,
+          lastPrunedOperationsCount: 0,
         },
       ],
     });
@@ -107,11 +119,14 @@ describe('useBackgroundSyncStatus', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isCycleActive: false,
       lastAttemptAt: 1710000000000,
       lastSuccessAt: null,
       lastFailureMessage: 'Network Error',
       lastTriggerSource: 'background_task',
       lastSyncedCount: 0,
+      lastBacklogReadCount: 0,
+      lastPrunedOperationsCount: 0,
     });
   });
 });

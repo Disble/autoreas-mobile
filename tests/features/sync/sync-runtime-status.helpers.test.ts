@@ -12,11 +12,14 @@ describe('sync runtime status helpers', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isCycleActive: false,
       lastAttemptAt: null,
       lastSuccessAt: null,
       lastFailureMessage: null,
       lastTriggerSource: null,
       lastSyncedCount: 0,
+      lastBacklogReadCount: 0,
+      lastPrunedOperationsCount: 0,
     });
   });
 

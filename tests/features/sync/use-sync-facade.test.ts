@@ -67,7 +67,11 @@ describe('useSyncFacade', () => {
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockReturnValueOnce({
       data: [{ id: 1 }, { id: 2 }],
     });
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue(3);
+    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue({
+      syncedCount: 3,
+      backlogReadCount: 3,
+      hasMorePending: false,
+    });
 
     const { result } = renderHook(() => useSyncFacade());
 
@@ -82,11 +86,12 @@ describe('useSyncFacade', () => {
   });
 
   it('collapses simultaneous trigger storms into a single in-flight sync request', async () => {
-    let resolveSync: ((value: number) => void) | null = null;
+    type SyncResult = { syncedCount: number; backlogReadCount: number; hasMorePending: boolean };
+    let resolveSync: ((value: SyncResult) => void) | null = null;
 
     (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
       () =>
-        new Promise<number>((resolve) => {
+        new Promise<SyncResult>((resolve) => {
           resolveSync = resolve;
         }),
     );
@@ -106,7 +111,7 @@ describe('useSyncFacade', () => {
     expect(firstPromise).toBe(secondPromise);
 
     await act(async () => {
-      resolveSync?.(7);
+      resolveSync?.({ syncedCount: 7, backlogReadCount: 7, hasMorePending: false });
       await firstPromise;
     });
 

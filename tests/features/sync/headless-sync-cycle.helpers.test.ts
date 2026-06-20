@@ -1,10 +1,12 @@
-import * as dbClient from '../../../src/infrastructure/db/client';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import * as dbClient from '../../../src/infrastructure/db/client';
+import * as retentionModule from '../../../src/features/sync/operation-log-retention.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import {
   runHeadlessSyncCycle,
 } from '../../../src/features/sync/headless-sync-cycle.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
+import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
@@ -16,7 +18,14 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
+jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
+  pruneOperationLog: jest.fn(),
+}));
+
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+  recordBacklogReadCount: jest.fn(),
+  recordCycleActive: jest.fn(),
+  recordPrunedOperationsCount: jest.fn(),
   recordSyncAttemptFailed: jest.fn(),
   recordSyncAttemptStarted: jest.fn(),
   recordSyncAttemptSucceeded: jest.fn(),
@@ -24,6 +33,17 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
 
 describe('headless-sync-cycle helpers', () => {
   const rawDb = { id: 'raw-db' } as unknown as SQLiteDatabase;
+
+  function buildRuntime(): SyncSQLiteRuntime {
+    return {
+      owner: 'headless_cycle',
+      rawDb,
+      isOpen: () => true,
+      open: jest.fn().mockResolvedValue(rawDb),
+      withDatabase: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SyncSQLiteRuntime;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -38,33 +58,51 @@ describe('headless-sync-cycle helpers', () => {
       deviceName: 'Bridge Casa',
       lastChangelogId: 0,
     });
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue(3);
+    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue({
+      syncedCount: 3,
+      backlogReadCount: 5,
+      hasMorePending: false,
+    });
+    (retentionModule.pruneOperationLog as jest.Mock).mockResolvedValue({
+      prunedCount: 7,
+      deletedSyncedCount: 4,
+      deletedDeadLetterCount: 3,
+    });
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (runtimeStatusModule.recordCycleActive as jest.Mock).mockResolvedValue(undefined);
+    (runtimeStatusModule.recordBacklogReadCount as jest.Mock).mockResolvedValue(undefined);
+    (runtimeStatusModule.recordPrunedOperationsCount as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('persists attempt and success for a foreground service cycle', async () => {
+    const runtime = buildRuntime();
     const result = await runHeadlessSyncCycle({
-      rawDb,
+      runtime,
       triggerSource: 'foreground_service',
     });
 
     expect(result).toEqual({ kind: 'success', syncedCount: 3 });
-    expect(dbClient.runMigrations).toHaveBeenCalledWith(rawDb);
+    expect(runtime.open).toHaveBeenCalled();
     expect(dbClient.getBridgeConfigSnapshot).toHaveBeenCalledWith(rawDb);
     expect(runtimeStatusModule.recordSyncAttemptStarted).toHaveBeenCalledWith(
       rawDb,
       'foreground_service',
       expect.any(Number),
     );
+    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, true);
     expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
+    expect(runtimeStatusModule.recordBacklogReadCount).toHaveBeenCalledWith(rawDb, 5);
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalledWith(
       rawDb,
       'foreground_service',
       expect.any(Number),
       3,
     );
+    expect(retentionModule.pruneOperationLog).toHaveBeenCalledWith(rawDb);
+    expect(runtimeStatusModule.recordPrunedOperationsCount).toHaveBeenCalledWith(rawDb, 7);
+    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, false);
     expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
   });
 
@@ -80,13 +118,14 @@ describe('headless-sync-cycle helpers', () => {
     });
 
     const result = await runHeadlessSyncCycle({
-      rawDb,
+      runtime: buildRuntime(),
       triggerSource: 'foreground_service',
     });
 
     expect(result).toEqual({ kind: 'no_op', syncedCount: 0 });
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalled();
     expect(runtimeStatusModule.recordSyncAttemptStarted).not.toHaveBeenCalled();
+    expect(runtimeStatusModule.recordCycleActive).not.toHaveBeenCalled();
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
     expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
   });
@@ -95,7 +134,7 @@ describe('headless-sync-cycle helpers', () => {
     (syncModule.syncPendingOperations as jest.Mock).mockRejectedValue(new Error('Network Error'));
 
     const result = await runHeadlessSyncCycle({
-      rawDb,
+      runtime: buildRuntime(),
       triggerSource: 'foreground_service',
     });
 
@@ -105,6 +144,7 @@ describe('headless-sync-cycle helpers', () => {
       'foreground_service',
       expect.any(Number),
     );
+    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, true);
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
     expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
       rawDb,
@@ -112,5 +152,26 @@ describe('headless-sync-cycle helpers', () => {
       expect.any(Number),
       'Network Error',
     );
+    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, false);
+  });
+
+  it('returns success when pruning fails after a successful sync', async () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (retentionModule.pruneOperationLog as jest.Mock).mockRejectedValue(new Error('prune failed'));
+
+    const result = await runHeadlessSyncCycle({
+      runtime: buildRuntime(),
+      triggerSource: 'foreground_service',
+    });
+
+    expect(result).toEqual({ kind: 'success', syncedCount: 3 });
+    expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalled();
+    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[runHeadlessSyncCycle] Operation-log pruning failed',
+      expect.any(Error),
+    );
+
+    consoleWarnSpy.mockRestore();
   });
 });

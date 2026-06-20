@@ -28,6 +28,7 @@ export interface OpenSyncSQLiteRuntimeParams {
  */
 export interface SyncSQLiteRuntime {
   readonly owner: SyncSQLiteOwner;
+  readonly rawDb: SQLiteDatabase | null;
   readonly isOpen: () => boolean;
   readonly open: () => Promise<SQLiteDatabase>;
   readonly withDatabase: <TResult>(

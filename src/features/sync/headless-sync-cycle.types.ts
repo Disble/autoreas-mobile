@@ -1,8 +1,8 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SyncSQLiteRuntime } from './sqlite-sync-runtime.types';
 import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 
 export interface RunHeadlessSyncCycleParams {
-  readonly rawDb: SQLiteDatabase;
+  readonly runtime: SyncSQLiteRuntime;
   readonly triggerSource: SyncRuntimeTriggerSource;
 }
 

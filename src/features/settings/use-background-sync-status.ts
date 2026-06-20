@@ -52,6 +52,9 @@ export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
       lastFailureMessage: latestSnapshot.lastFailureMessage,
       lastTriggerSource: latestSnapshot.lastTriggerSource,
       lastSyncedCount: latestSnapshot.lastSyncedCount,
+      isCycleActive: latestSnapshot.isCycleActive ?? false,
+      lastBacklogReadCount: latestSnapshot.lastBacklogReadCount ?? 0,
+      lastPrunedOperationsCount: latestSnapshot.lastPrunedOperationsCount ?? 0,
     };
   }, [rawDb, snapshots]);
 

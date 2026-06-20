@@ -1,40 +1,68 @@
 import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { Platform } from 'react-native';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import { createNotifeeForegroundServiceAdapter } from '../../../src/features/sync/notifee-foreground-service-adapter';
-import * as dbClient from '../../../src/infrastructure/db/client';
 import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
+import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
+import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 
 const mockStart = jest.fn<Promise<void>, []>();
 const mockStop = jest.fn<Promise<void>, []>();
 const mockIsRunning = jest.fn<boolean, []>();
+const mockRuntimeClose = jest.fn<Promise<void>, []>();
+
+let capturedRunCycle: (() => Promise<void>) | null = null;
 
 jest.mock('../../../src/features/sync/foreground-sync-runner.helpers', () => ({
-  createForegroundSyncRunner: jest.fn(() => ({
-    start: mockStart,
-    stop: mockStop,
-    isRunning: mockIsRunning,
-  })),
-}));
+  createForegroundSyncRunner: jest.fn((params: { runCycle: () => Promise<void> }) => {
+    capturedRunCycle = params.runCycle;
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
-  openAppDatabaseSync: jest.fn(),
+    return {
+      start: mockStart,
+      stop: mockStop,
+      isRunning: mockIsRunning,
+    };
+  }),
 }));
 
 jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
   runHeadlessSyncCycle: jest.fn(),
 }));
 
+jest.mock('../../../src/features/sync/sqlite-sync-runtime.helpers', () => ({
+  createSyncSQLiteRuntime: jest.fn(),
+}));
+
 describe('notifee-foreground-service-adapter', () => {
   const platformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
+  const rawDb = { id: 'raw-db' } as unknown as SQLiteDatabase;
+
+  function buildRuntime(owner: 'foreground_service' = 'foreground_service'): SyncSQLiteRuntime {
+    return {
+      owner,
+      rawDb,
+      isOpen: () => true,
+      open: jest.fn().mockResolvedValue(rawDb),
+      withDatabase: jest.fn(),
+      close: mockRuntimeClose,
+    } as unknown as SyncSQLiteRuntime;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (dbClient.openAppDatabaseSync as jest.Mock).mockReturnValue({ id: 'raw-db' });
+    capturedRunCycle = null;
+    mockRuntimeClose.mockResolvedValue(undefined);
+
+    (sqliteSyncRuntimeModule.createSyncSQLiteRuntime as jest.Mock).mockReturnValue(buildRuntime());
     (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
       kind: 'success',
       syncedCount: 1,
     });
-    mockStart.mockResolvedValue(undefined);
+    mockStart.mockImplementation(async () => {
+      if (capturedRunCycle) {
+        await capturedRunCycle();
+      }
+    });
     mockStop.mockResolvedValue(undefined);
     mockIsRunning.mockReturnValue(false);
   });
@@ -82,7 +110,9 @@ describe('notifee-foreground-service-adapter', () => {
     await foregroundServiceTask();
 
     expect(mockStart).toHaveBeenCalledTimes(1);
-    expect(dbClient.openAppDatabaseSync).not.toHaveBeenCalled();
+    expect(sqliteSyncRuntimeModule.createSyncSQLiteRuntime).toHaveBeenCalledWith({
+      owner: 'foreground_service',
+    });
     await expect(adapter.getStatus()).resolves.toEqual({
       registrationStatus: 'registered',
       executionMode: 'android_foreground_service',
@@ -91,7 +121,7 @@ describe('notifee-foreground-service-adapter', () => {
     });
   });
 
-  it('stops foreground notification and reports unregistered state', async () => {
+  it('stops foreground notification, closes the runtime, and reports unregistered state', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'android' });
     (notifee.requestPermission as jest.Mock).mockResolvedValue({
       authorizationStatus: AuthorizationStatus.AUTHORIZED,
@@ -100,10 +130,15 @@ describe('notifee-foreground-service-adapter', () => {
     const adapter = createNotifeeForegroundServiceAdapter();
 
     await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
     await adapter.unregister();
 
     expect(mockStop).toHaveBeenCalledTimes(1);
     expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
     await expect(adapter.getStatus()).resolves.toEqual({
       registrationStatus: 'unregistered',
       executionMode: 'android_foreground_service',
@@ -118,10 +153,8 @@ describe('notifee-foreground-service-adapter', () => {
       authorizationStatus: AuthorizationStatus.AUTHORIZED,
     });
     mockStart.mockImplementation(async () => {
-      const rawDb = dbClient.openAppDatabaseSync();
-
       await headlessSyncCycleModule.runHeadlessSyncCycle({
-        rawDb,
+        runtime: buildRuntime(),
         triggerSource: 'foreground_service',
       });
     });
@@ -134,14 +167,13 @@ describe('notifee-foreground-service-adapter', () => {
 
     await foregroundServiceTask();
 
-    expect(dbClient.openAppDatabaseSync).toHaveBeenCalledTimes(1);
     expect(headlessSyncCycleModule.runHeadlessSyncCycle).toHaveBeenCalledWith({
-      rawDb: { id: 'raw-db' },
+      runtime: expect.objectContaining({ owner: 'foreground_service' }),
       triggerSource: 'foreground_service',
     });
   });
 
-  it('stops the runner when the notification stop action is pressed', async () => {
+  it('stops the runner and closes the runtime when the notification stop action is pressed', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'android' });
     (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
       authorizationStatus: AuthorizationStatus.AUTHORIZED,
@@ -150,6 +182,10 @@ describe('notifee-foreground-service-adapter', () => {
     const adapter = createNotifeeForegroundServiceAdapter();
 
     await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
 
     const backgroundEventHandler = (notifee.onBackgroundEvent as jest.Mock).mock.calls[0]?.[0];
 
@@ -161,12 +197,35 @@ describe('notifee-foreground-service-adapter', () => {
 
     expect(mockStop).toHaveBeenCalledTimes(1);
     expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
     await expect(adapter.getStatus()).resolves.toEqual({
       registrationStatus: 'unregistered',
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
     });
+  });
+
+  it('closes the runtime on a terminal cycle error', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+    (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockRejectedValue(
+      new Error('terminal'),
+    );
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask().catch(() => {
+      // The implementation rethrows the cycle error after closing the runtime.
+    });
+
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not mark the service as running when notification permission is denied', async () => {

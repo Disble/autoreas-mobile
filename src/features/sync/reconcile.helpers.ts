@@ -15,12 +15,17 @@ import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
 } from './last-changelog.helpers';
-import { syncStateByDatabase } from './reconcile.constants';
+import { readOperationLogBacklog } from './operation-log-retention.helpers';
+import {
+  RECONCILE_BACKLOG_BATCH_LIMIT,
+  syncStateByDatabase,
+} from './reconcile.constants';
 import {
   type ReconcileAppliedOperation,
   ReconcileResponseSchema,
   type ReconcileAnimeChange,
 } from './reconcile.schema';
+import type { SyncPendingOperationsResult } from './reconcile.types';
 
 class ReconcileHttpError extends Error {
   readonly status: number;
@@ -149,9 +154,12 @@ function logReconcileHttpError(
 
 /**
  * Orchestrates the mobile reconcile cycle against the bridge using a per-database in-flight guard.
- * It moves pending rows to processing, confirms only evidenced operations, reapplies bridge changes, and advances the changelog cursor without regressing it.
+ * It reads a bounded backlog of pending rows, confirms only evidenced operations, reapplies bridge changes,
+ * and advances the changelog cursor without regressing it.
  */
-export async function syncPendingOperations(rawDb: SQLiteDatabase) {
+export async function syncPendingOperations(
+  rawDb: SQLiteDatabase,
+): Promise<SyncPendingOperationsResult> {
   const syncKey = rawDb as object;
   const syncState = syncStateByDatabase.get(syncKey) ?? {
     inFlight: null,
@@ -164,15 +172,25 @@ export async function syncPendingOperations(rawDb: SQLiteDatabase) {
     return syncState.inFlight;
   }
 
-  const run = async (): Promise<number> => {
+  const run = async (): Promise<SyncPendingOperationsResult> => {
     let totalConfirmed = 0;
+    let totalBacklogRead = 0;
+    let hasMorePending = false;
 
     do {
       syncState.rerunRequested = false;
-      totalConfirmed += await performSyncPendingOperations(rawDb);
+      const batch = await performSyncPendingOperations(rawDb);
+
+      totalConfirmed += batch.syncedCount;
+      totalBacklogRead += batch.backlogReadCount;
+      hasMorePending = batch.hasMorePending;
     } while (syncState.rerunRequested);
 
-    return totalConfirmed;
+    return {
+      syncedCount: totalConfirmed,
+      backlogReadCount: totalBacklogRead,
+      hasMorePending,
+    };
   };
 
   syncState.inFlight = run().finally(() => {
@@ -184,29 +202,28 @@ export async function syncPendingOperations(rawDb: SQLiteDatabase) {
   return syncState.inFlight;
 }
 
-async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
+async function performSyncPendingOperations(
+  rawDb: SQLiteDatabase,
+): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
     throw new Error('Bridge config is missing or incomplete');
   }
 
-  let pendingOps: OperationLogRow[] = [];
-
-  await withExclusiveWrite(rawDb, async (writeDb) => {
-    pendingOps = await writeDb
-      .select()
-      .from(operationLog)
-      .where(eq(operationLog.status, 'pending'));
-
-    if (pendingOps.length === 0) {
-      return;
-    }
-
-    await writeDb
-      .update(operationLog)
-      .set({ status: 'processing' })
-      .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+  const pendingOps = await readOperationLogBacklog(rawDb, {
+    status: ['pending'],
+    limit: RECONCILE_BACKLOG_BATCH_LIMIT,
+    orderBy: 'oldest_first',
   });
+
+  if (pendingOps.length > 0) {
+    await withExclusiveWrite(rawDb, async (writeDb) => {
+      await writeDb
+        .update(operationLog)
+        .set({ status: 'processing' })
+        .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+    });
+  }
 
   const baseUrl = `http://${config.ip}:${config.port}`;
   const reconcileUrl = `${baseUrl}/api/sync/reconcile`;
@@ -290,7 +307,11 @@ async function performSyncPendingOperations(rawDb: SQLiteDatabase) {
       }
     });
 
-    return confirmedIds.length;
+    return {
+      syncedCount: confirmedIds.length,
+      backlogReadCount: pendingOps.length,
+      hasMorePending: pendingOps.length === RECONCILE_BACKLOG_BATCH_LIMIT,
+    };
   } catch (error) {
     if (pendingOps.length > 0) {
       await withExclusiveWrite(rawDb, async (writeDb) => {

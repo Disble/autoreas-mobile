@@ -67,17 +67,17 @@ export function useSyncFacade(): UseSyncFacadeResult {
     const attemptedAt = Date.now();
     const syncPromise = recordSyncAttemptStarted(rawDb, source, attemptedAt)
       .then(() => syncPendingOperations(rawDb))
-      .then(async (syncedCount) => {
+      .then(async (result) => {
         const syncedAt = Date.now();
 
-        await recordSyncAttemptSucceeded(rawDb, source, syncedAt, syncedCount);
+        await recordSyncAttemptSucceeded(rawDb, source, syncedAt, result.syncedCount);
 
         setLastSyncAt(syncedAt);
         setSyncState((currentState) =>
           transitionSyncState(currentState, { type: 'SYNC_SUCCEEDED', syncedAt }),
         );
 
-        return syncedCount;
+        return result.syncedCount;
       })
       .catch(async (error) => {
         const message = error instanceof Error ? error.message : 'Sync failed';

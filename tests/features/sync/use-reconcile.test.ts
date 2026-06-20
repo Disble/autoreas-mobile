@@ -6,7 +6,6 @@ jest.mock('expo-sqlite', () => ({
   openDatabaseSync: jest.fn(),
 }));
 
-// Mock everything from client
 jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
@@ -14,29 +13,50 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
 }));
 
 describe('syncPendingOperations', () => {
-  let rawDb: any;
-  let mockDb: any;
-  let mockUpdateSet: any;
-  let mockUpdateWhere: any;
-  let withExclusiveWriteCall = 0;
+  let rawDb: {
+    getAllAsync: jest.Mock<Promise<unknown[]>, [string, ...unknown[]]>;
+  };
+  let mockDb: {
+    update: jest.Mock;
+  };
+  let mockUpdateSet: jest.Mock;
+  let mockUpdateWhere: jest.Mock;
+  let withExclusiveWriteCall: number;
+
+  function buildPendingOp(overrides: Partial<{
+    id: number;
+    animeId: string;
+    operation: string;
+    payload: string;
+    status: string;
+    createdAt: number;
+  }> = {}) {
+    return {
+      id: 1,
+      animeId: 'anime1',
+      operation: 'update',
+      payload: JSON.stringify({ nrocapvisto: 5 }),
+      status: 'pending',
+      createdAt: Date.now(),
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
-    rawDb = {}; // Fake sqlite connection
+    rawDb = {
+      getAllAsync: jest.fn().mockResolvedValue([]),
+    };
     withExclusiveWriteCall = 0;
-    
-    // Mock the query builder for update
+
     mockUpdateWhere = jest.fn();
     mockUpdateSet = jest.fn().mockReturnValue({ where: mockUpdateWhere });
-    
+
     mockDb = {
-      select: jest.fn().mockReturnThis(),
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn(),
       update: jest.fn().mockReturnValue({ set: mockUpdateSet }),
     };
 
     (dbClient.createDrizzleDb as jest.Mock).mockReturnValue(mockDb);
-    
+
     (dbClient.withExclusiveWrite as jest.Mock).mockImplementation(async (db, task) => {
       withExclusiveWriteCall += 1;
 
@@ -50,7 +70,7 @@ describe('syncPendingOperations', () => {
         );
       }
 
-      return task(mockDb, db); // Simulate transaction success and run the task
+      return task(mockDb, db);
     });
 
     global.fetch = jest.fn();
@@ -60,75 +80,82 @@ describe('syncPendingOperations', () => {
     jest.clearAllMocks();
   });
 
-  it('No hace nada si falta la configuracion', async () => {
+  it('rejects when bridge config is missing or incomplete', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue(null);
 
-    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Bridge config is missing or incomplete');
+    await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
+      'Bridge config is missing or incomplete',
+    );
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('Siempre hace POST a /api/sync/reconcile aunque no haya pending operations', async () => {
+  it('still posts to /api/sync/reconcile when the backlog is empty', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
       token: 'token123',
       deviceId: 'device-abc',
     });
-    mockDb.where.mockResolvedValue([]); // pendingOps = []
 
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
     });
 
-    const result = await syncPendingOperations(rawDb);
-    expect(result).toBe(0);
+    const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
+
+    expect(result).toEqual({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+    expect(rawDb.getAllAsync).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE status IN (?) ORDER BY created_at ASC, id ASC LIMIT ?'),
+      'pending',
+      200,
+    );
     expect(global.fetch).toHaveBeenCalledWith(
       'http://192.168.1.10:8080/api/sync/reconcile',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer token123' }),
-      })
+      }),
     );
   });
 
-  it('Si hay error de red, vuelve processing a pending y propaga el error', async () => {
+  it('reverts processing rows to pending on network error and propagates the error', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
       token: 'token123',
     });
 
-    mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
-    ]);
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
     (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Network Error'));
 
-    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Network Error');
+    await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
+      'Network Error',
+    );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
-  it('Si el bridge responde con error HTTP, vuelve processing a pending y propaga el error', async () => {
+  it('reverts processing rows to pending on HTTP error and propagates the error', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
       token: 'token123',
     });
 
-    mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
-    ]);
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
     (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500 });
 
-    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Reconcile failed: 500');
+    await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
+      'Reconcile failed: 500',
+    );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
-  it('Si el bridge responde con 400, mueve processing a dead_letter y loguea el payload rechazado', async () => {
+  it('moves processing rows to dead_letter on client HTTP error and logs the rejected payload', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
@@ -138,15 +165,8 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    mockDb.where.mockResolvedValue([
-      {
-        id: 1,
-        animeId: 'anime1',
-        operation: 'update',
-        payload: JSON.stringify({ nrocapvisto: -1 }),
-        status: 'pending',
-        createdAt: 1710000000000,
-      },
+    rawDb.getAllAsync.mockResolvedValue([
+      buildPendingOp({ payload: JSON.stringify({ nrocapvisto: -1 }), createdAt: 1710000000000 }),
     ]);
 
     (global.fetch as jest.Mock).mockResolvedValue({
@@ -155,7 +175,9 @@ describe('syncPendingOperations', () => {
       text: async () => JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
     });
 
-    await expect(syncPendingOperations(rawDb)).rejects.toThrow('Reconcile failed: 400');
+    await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
+      'Reconcile failed: 400',
+    );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter' });
     expect(warnSpy).toHaveBeenCalledWith(
@@ -164,13 +186,13 @@ describe('syncPendingOperations', () => {
         url: 'http://192.168.1.10:8080/api/sync/reconcile',
         status: 400,
         responseBody: JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
-      })
+      }),
     );
 
     warnSpy.mockRestore();
   });
 
-  it('sanea lastChangelogId inválido antes de serializar el request body', async () => {
+  it('sanitizes an invalid lastChangelogId before serializing the request body', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
@@ -180,15 +202,8 @@ describe('syncPendingOperations', () => {
       lastChangelogId: 'last_changelog_id',
     });
 
-    mockDb.where.mockResolvedValue([
-      {
-        id: 1,
-        animeId: 'anime1',
-        operation: 'update',
-        payload: JSON.stringify({ nrocapvisto: 5 }),
-        status: 'pending',
-        createdAt: 1710000000000,
-      },
+    rawDb.getAllAsync.mockResolvedValue([
+      buildPendingOp({ createdAt: 1710000000000 }),
     ]);
 
     (global.fetch as jest.Mock).mockResolvedValue({
@@ -196,7 +211,7 @@ describe('syncPendingOperations', () => {
       json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
     });
 
-    await syncPendingOperations(rawDb);
+    await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(global.fetch).toHaveBeenCalledWith(
       'http://192.168.1.10:8080/api/sync/reconcile',
@@ -213,11 +228,11 @@ describe('syncPendingOperations', () => {
             },
           ],
         }),
-      })
+      }),
     );
   });
 
-  it('Conexion exitosa -> prioriza applied_operations para marcar synced', async () => {
+  it('marks rows as synced when applied_operations confirms them', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
@@ -225,9 +240,7 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
-    ]);
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
@@ -253,9 +266,9 @@ describe('syncPendingOperations', () => {
       }),
     });
 
-    const syncedCount = await syncPendingOperations(rawDb);
+    const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(syncedCount).toBe(1);
+    expect(result).toEqual({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
     expect(global.fetch).toHaveBeenCalledWith(
       'http://192.168.1.10:8080/api/sync/reconcile',
       expect.objectContaining({
@@ -264,14 +277,14 @@ describe('syncPendingOperations', () => {
           'Content-Type': 'application/json',
           Authorization: 'Bearer token123',
         },
-      })
+      }),
     );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalled();
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
   });
 
-  it('No marca synced si applied_operations rechaza la operación aunque haya bridge_changes', async () => {
+  it('does not mark synced when applied_operations rejects the operation even if bridge_changes exist', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
@@ -279,9 +292,7 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
-    ]);
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
@@ -307,13 +318,13 @@ describe('syncPendingOperations', () => {
       }),
     });
 
-    const syncedCount = await syncPendingOperations(rawDb);
+    const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(syncedCount).toBe(0);
+    expect(result.syncedCount).toBe(0);
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
   });
 
-  it('No marca synced si bridge no devuelve evidencia de aplicación', async () => {
+  it('does not mark synced when the bridge returns no application evidence', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
@@ -321,18 +332,16 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    mockDb.where.mockResolvedValue([
-      { id: 1, animeId: 'anime1', operation: 'update', payload: JSON.stringify({ nrocapvisto: 5 }), status: 'pending', createdAt: Date.now() },
-    ]);
+    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
     });
 
-    const syncedCount = await syncPendingOperations(rawDb);
+    const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(syncedCount).toBe(0);
+    expect(result.syncedCount).toBe(0);
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
   });
 });
