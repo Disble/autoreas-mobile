@@ -151,6 +151,30 @@ export function buildBackgroundSyncSection({
   });
 
   tiles.push({
+    id: 'backlogReadCount',
+    label: 'Backlog leído',
+    value: String(snapshot.lastBacklogReadCount),
+    tone: 'default',
+    iconName: 'list-outline',
+  });
+
+  tiles.push({
+    id: 'prunedOperationsCount',
+    label: 'Ops. podadas',
+    value: String(snapshot.lastPrunedOperationsCount),
+    tone: snapshot.lastPrunedOperationsCount > 0 ? 'success' : 'default',
+    iconName: 'trash-outline',
+  });
+
+  tiles.push({
+    id: 'cycleActive',
+    label: 'Ciclo activo',
+    value: snapshot.isCycleActive ? 'Sí' : 'No',
+    tone: snapshot.isCycleActive ? 'accent' : 'default',
+    iconName: snapshot.isCycleActive ? 'pulse-outline' : 'power-outline',
+  });
+
+  tiles.push({
     id: 'foregroundService',
     label: 'Servicio persistente',
     value: snapshot.isForegroundServiceRunning ? 'Activo' : 'Inactivo',

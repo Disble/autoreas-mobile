@@ -67,6 +67,24 @@ describe('settings-screen.helpers', () => {
       tone: 'default',
       iconName: 'sync-outline',
     });
+    expect(tileMap.backlogReadCount).toMatchObject({
+      label: 'Backlog leído',
+      value: '0',
+      tone: 'default',
+      iconName: 'list-outline',
+    });
+    expect(tileMap.prunedOperationsCount).toMatchObject({
+      label: 'Ops. podadas',
+      value: '0',
+      tone: 'default',
+      iconName: 'trash-outline',
+    });
+    expect(tileMap.cycleActive).toMatchObject({
+      label: 'Ciclo activo',
+      value: 'No',
+      tone: 'default',
+      iconName: 'power-outline',
+    });
     expect(tileMap.foregroundService).toMatchObject({
       label: 'Servicio persistente',
       value: 'Inactivo',
@@ -110,6 +128,9 @@ describe('settings-screen.helpers', () => {
         'lastSuccess',
         'lastTrigger',
         'syncedCount',
+        'backlogReadCount',
+        'prunedOperationsCount',
+        'cycleActive',
         'foregroundService',
         'notificationPermission',
       ]),
@@ -143,6 +164,47 @@ describe('settings-screen.helpers', () => {
     expect(tileMap.executionMode.value).toBe('Servicio foreground Android');
     expect(tileMap.foregroundService.value).toBe('Activo');
     expect(tileMap.notificationPermission.value).toBe('Permitida');
+  });
+
+  it('reflects active cycle and recent pruning in tile tones', () => {
+    const section = buildBackgroundSyncSection({
+      isConfigured: true,
+      snapshot: {
+        registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775812200000,
+        lastFailureMessage: null,
+        lastTriggerSource: 'app_active',
+        lastSyncedCount: 3,
+        isCycleActive: true,
+        lastBacklogReadCount: 150,
+        lastPrunedOperationsCount: 42,
+      },
+    });
+
+    const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
+
+    expect(tileMap.cycleActive).toMatchObject({
+      label: 'Ciclo activo',
+      value: 'Sí',
+      tone: 'accent',
+      iconName: 'pulse-outline',
+    });
+    expect(tileMap.backlogReadCount).toMatchObject({
+      label: 'Backlog leído',
+      value: '150',
+      tone: 'default',
+      iconName: 'list-outline',
+    });
+    expect(tileMap.prunedOperationsCount).toMatchObject({
+      label: 'Ops. podadas',
+      value: '42',
+      tone: 'success',
+      iconName: 'trash-outline',
+    });
   });
 
   it('emits only a single "not available" tile when the bridge is not paired', () => {
