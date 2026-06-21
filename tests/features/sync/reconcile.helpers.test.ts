@@ -179,7 +179,7 @@ describe('reconcile helpers', () => {
 
     expect(parsed.data.applied_operations).toEqual([]);
     expect(parsed.data.bridge_changes).toEqual([]);
-    expect(parsed.data.conflicts).toEqual([]);
+    expect('conflicts' in parsed.data).toBe(false);
   });
 
   it('ReconcileResponseSchema normaliza colecciones top-level ausentes a arrays vacíos', () => {
@@ -196,7 +196,7 @@ describe('reconcile helpers', () => {
 
     expect(parsed.data.applied_operations).toEqual([]);
     expect(parsed.data.bridge_changes).toEqual([]);
-    expect(parsed.data.conflicts).toEqual([]);
+    expect('conflicts' in parsed.data).toBe(false);
   });
 });
 

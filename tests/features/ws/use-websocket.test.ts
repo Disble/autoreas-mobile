@@ -1,7 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 import * as dbClient from '../../../src/infrastructure/db/client';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
-import * as initialSync from '../../../src/features/sync/use-initial-sync';
 import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
@@ -10,11 +9,6 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
 
 jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
   useOptionalSQLiteContext: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/use-initial-sync', () => ({
-  upsertAnimeFromBridge: jest.fn(),
-  deleteAnimeLocally: jest.fn(),
 }));
 
 function buildWsMock() {
@@ -113,10 +107,11 @@ describe('useWebSocket', () => {
     expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps bridge snapshot updates working while enabled', async () => {
-    (initialSync.upsertAnimeFromBridge as jest.Mock).mockResolvedValue(undefined);
+  it('routes anime_changed through the reconcile callback instead of clobbering the row directly', async () => {
+    const onSyncRequired = jest.fn();
+    const fetchSpy = jest.spyOn(global, 'fetch');
 
-    renderHook(() => useWebSocket({ enabled: true }));
+    renderHook(() => useWebSocket({ enabled: true, onSyncRequired }));
 
     await act(async () => {
       await Promise.resolve();
@@ -133,6 +128,55 @@ describe('useWebSocket', () => {
       await Promise.resolve();
     });
 
-    expect(initialSync.upsertAnimeFromBridge).toHaveBeenCalledWith(rawDb, 'anime-1');
+    expect(onSyncRequired).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes anime_created through the reconcile callback instead of clobbering the row directly', async () => {
+    const onSyncRequired = jest.fn();
+    const fetchSpy = jest.spyOn(global, 'fetch');
+
+    renderHook(() => useWebSocket({ enabled: true, onSyncRequired }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
+
+    await act(async () => {
+      mockWs.onmessage?.({
+        data: JSON.stringify({ type: 'anime_created', anime_id: 'anime-2' }),
+      } as MessageEvent);
+      await Promise.resolve();
+    });
+
+    expect(onSyncRequired).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes anime_deleted through the reconcile callback instead of a direct local delete', async () => {
+    const onSyncRequired = jest.fn();
+
+    renderHook(() => useWebSocket({ enabled: true, onSyncRequired }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
+
+    await act(async () => {
+      mockWs.onmessage?.({
+        data: JSON.stringify({ type: 'anime_deleted', anime_id: 'anime-3' }),
+      } as MessageEvent);
+      await Promise.resolve();
+    });
+
+    expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
 });

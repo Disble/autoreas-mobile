@@ -2,10 +2,6 @@ import { useEffect, useRef } from 'react';
 import { bridgeClient } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
-import {
-  deleteAnimeLocally,
-  upsertAnimeFromBridge,
-} from '../sync/use-initial-sync';
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
@@ -100,17 +96,21 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
             const data = JSON.parse(event.data);
             const parsed = WsMessageSchema.parse(data);
 
-            if (parsed.type === 'sync_required') {
+            // Every anime event (created/changed/deleted) carries only `anime_id` -- it has no
+            // `changed_fields`/`timestamp`, so it cannot safely drive a targeted write on its
+            // own. Funnel ALL of them through the same reconcile trigger `sync_required` uses:
+            // reconcile is the only path that carries the rich shape the merge boundary needs
+            // (changed_fields + timestamp + snapshot), with the staleness guard and outbox
+            // protection applied. This intentionally replaces the old GET-then-clobber writer.
+            if (
+              parsed.type === 'sync_required' ||
+              parsed.type === 'anime_changed' ||
+              parsed.type === 'anime_created' ||
+              parsed.type === 'anime_deleted'
+            ) {
               onSyncRequiredRef.current?.();
               return;
             }
-
-            if (parsed.type === 'anime_deleted') {
-              await deleteAnimeLocally(rawDb, parsed.anime_id);
-              return;
-            }
-
-            await upsertAnimeFromBridge(rawDb, parsed.anime_id);
           } catch (error) {
             console.error('Error processing WS message', error);
           }

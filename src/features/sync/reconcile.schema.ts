@@ -18,11 +18,17 @@ export const ReconcileAppliedOperationSchema = z.object({
   applied: z.boolean(),
 });
 
+// NOTE (Conflict Honesty, see spec): remote->local resolution is deterministic field-level
+// last-writer-wins, guarded by the per-anime `last_applied_change_ms` staleness guard and
+// protected by the local outbox (see merge/merge-decision.helpers.ts). Ties (equal timestamp)
+// keep the local row; the incoming change is dropped. The bridge may still send a `conflicts`
+// field, but mobile never types or branches on it -- there is no real cross-repo conflict
+// detection to act on, and presenting one would be dead scaffolding. Any such field is
+// silently stripped by zod's default unknown-key handling.
 export const ReconcileResponseSchema = z.object({
   status: z.string(),
   applied_operations: ReconcileArrayFallback(ReconcileAppliedOperationSchema),
   bridge_changes: ReconcileArrayFallback(ReconcileAnimeChangeSchema),
-  conflicts: ReconcileArrayFallback(z.unknown()),
   last_changelog_id: z.number().optional(),
 });
 
