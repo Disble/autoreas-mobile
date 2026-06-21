@@ -2,7 +2,7 @@ import {
   getSetupQrScannerPermissionMessage,
   getSetupQrScannerPermissionState,
   shouldIgnoreSetupQrScan,
-} from '../setup-qr-scanner.helpers';
+} from '../../../src/features/setup/ui/SetupQrScanner/setup-qr-scanner.helpers';
 
 describe('setup-qr-scanner helpers', () => {
   it('maps a granted permission snapshot to the granted state', () => {

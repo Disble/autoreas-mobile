@@ -1,7 +1,7 @@
 import React from 'react';
 import { useCameraPermissions } from 'expo-camera';
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { SetupQrScanner } from '../SetupQrScanner';
+import { SetupQrScanner } from '../../../src/features/setup/ui/SetupQrScanner/SetupQrScanner';
 
 describe('SetupQrScanner', () => {
   const requestPermission = jest.fn();

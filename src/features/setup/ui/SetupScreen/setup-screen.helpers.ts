@@ -18,37 +18,44 @@ import type {
 
 /**
  * Parses a pairing deep link and extracts form values when the URL matches the app contract.
- * This isolates URL parsing so the hook only coordinates state updates and toast side effects.
+ * Intentionally avoids the global `URL` host/path getters: React Native's `URL` polyfill
+ * (and `expo-linking`'s `parse`, which wraps it) only implements `hostname`/`pathname` for
+ * `http(s)` schemes, so for the custom `autoreas-mobile://` scheme they return empty and the
+ * `pair` host becomes invisible — which silently breaks QR/deep-link pairing in the app while
+ * Node's spec-compliant URL keeps unit tests green. We match the scheme + host as a literal
+ * prefix and read the query via `URLSearchParams`, which is scheme-agnostic and behaves
+ * identically in Hermes and Node.
  */
 export function parseSetupDeepLink(url: string | null): BridgePairingPayload | null {
   if (!url) {
     return null;
   }
 
-  try {
-    const parsedUrl = new URL(url);
-    const normalizedPath = parsedUrl.pathname.replace(/\/+$/, '');
+  const trimmedUrl = url.trim();
+  const canonicalPrefix = `${SETUP_DEEP_LINK_SCHEME}://${SETUP_DEEP_LINK_HOST}`;
 
-    if (
-      parsedUrl.protocol.replace(':', '') !== SETUP_DEEP_LINK_SCHEME ||
-      parsedUrl.hostname !== SETUP_DEEP_LINK_HOST ||
-      (normalizedPath !== '' && normalizedPath !== '/')
-    ) {
-      return null;
-    }
-
-    const params = new URLSearchParams(parsedUrl.search);
-    const parsedPayload = SetupPairingPayloadSchema.safeParse({
-      version: params.get('v'),
-      ip: params.get('ip'),
-      port: params.get('port'),
-      token: params.get('token'),
-    });
-
-    return parsedPayload.success ? parsedPayload.data : null;
-  } catch {
+  if (!trimmedUrl.startsWith(canonicalPrefix)) {
     return null;
   }
+
+  const remainder = trimmedUrl.slice(canonicalPrefix.length);
+  const queryIndex = remainder.indexOf('?');
+  const pathSegment = queryIndex === -1 ? remainder : remainder.slice(0, queryIndex);
+
+  if (pathSegment !== '' && pathSegment !== '/') {
+    return null;
+  }
+
+  const queryString = queryIndex === -1 ? '' : remainder.slice(queryIndex + 1).split('#')[0];
+  const params = new URLSearchParams(queryString);
+  const parsedPayload = SetupPairingPayloadSchema.safeParse({
+    version: params.get('v'),
+    ip: params.get('ip'),
+    port: params.get('port'),
+    token: params.get('token'),
+  });
+
+  return parsedPayload.success ? parsedPayload.data : null;
 }
 
 /**
