@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { applyAnimePartial, upsertAnime } from '../../../infrastructure/db/anime-repository';
 import type { AppDatabase } from '../../../infrastructure/db/client';
 import { animes } from '../../../infrastructure/db/schema';
-import { buildPartialUpdate } from './field-merge.helpers';
+import { buildPartialUpdate, deriveChangedFields } from './field-merge.helpers';
 import { decideMerge } from './merge-decision.helpers';
 import type { MergeContext, RemoteAnimeChange } from './merge.types';
 
@@ -60,12 +60,37 @@ export async function applyRemoteChanges(
         }
 
         if (change.changeType === 'create') {
-          await upsertAnime(db, change.snapshot);
-        } else {
-          const { columns } = buildPartialUpdate(change.changedFields, change.snapshot);
-          await applyAnimePartial(db, change.recordId, columns, change.timestamp);
+          await upsertAnime(db, change.snapshot, change.timestamp);
+          applied += 1;
+          break;
         }
 
+        // The bridge watcher detects legacy edits by content hash and does NOT populate
+        // `changed_fields` at runtime, so it almost always arrives empty. When it does, derive
+        // the changed set by diffing the snapshot against the current local row instead of
+        // writing nothing. If the row doesn't exist locally yet, treat it as a cold create.
+        let effectiveFields: readonly string[] = change.changedFields;
+        if (effectiveFields.length === 0) {
+          const [currentRow] = await db
+            .select()
+            .from(animes)
+            .where(eq(animes._id, change.recordId))
+            .limit(1);
+
+          if (!currentRow) {
+            await upsertAnime(db, change.snapshot, change.timestamp);
+            applied += 1;
+            break;
+          }
+
+          effectiveFields = deriveChangedFields(
+            change.snapshot,
+            currentRow as Record<string, unknown>,
+          );
+        }
+
+        const { columns } = buildPartialUpdate(effectiveFields, change.snapshot);
+        await applyAnimePartial(db, change.recordId, columns, change.timestamp);
         applied += 1;
         break;
       }

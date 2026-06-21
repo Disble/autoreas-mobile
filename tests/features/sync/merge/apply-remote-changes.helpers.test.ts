@@ -83,14 +83,76 @@ describe("applyRemoteChanges", () => {
     expect(result.deferred).toBe(0);
   });
 
-  it("change_type create hace un insert completo vía upsertAnime", async () => {
-    const change = makeChange({ changeType: "create", snapshot: makeSnapshot() });
+  it("change_type create hace un insert completo vía upsertAnime y estampa el guard", async () => {
+    const change = makeChange({ changeType: "create", snapshot: makeSnapshot(), timestamp: 100 });
     const ctx = makeContext();
     const db = {} as never;
 
     const result = await applyRemoteChanges(db, [change], ctx);
 
-    expect(upsertAnime).toHaveBeenCalledWith(db, change.snapshot);
+    expect(upsertAnime).toHaveBeenCalledWith(db, change.snapshot, 100);
+    expect(applyAnimePartial).not.toHaveBeenCalled();
+    expect(result.applied).toBe(1);
+  });
+
+  it("update con changed_fields vacío deriva los campos diffeando contra la fila local", async () => {
+    // The bridge sends empty changed_fields at runtime; the coordinator reads the local row
+    // and applies only the fields that actually differ (here: estado), never the full snapshot.
+    const currentRow = {
+      _id: "anime-1",
+      nombre: "Naruto",
+      estado: 0,
+      nrocapvisto: 12,
+      totalcap: 220,
+      dias: JSON.stringify([]),
+      generos: JSON.stringify([]),
+      tipo: 1,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: null,
+      fechaEstreno: null,
+      fechaCreacion: null,
+      fechaEliminacion: null,
+      portada: null,
+      pagina: null,
+      carpeta: null,
+      estudios: null,
+      origen: null,
+      duracion: null,
+      lastAppliedChangeMs: 100,
+    };
+    const limit = jest.fn().mockResolvedValue([currentRow]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    const db = { select: jest.fn().mockReturnValue({ from }) } as never;
+
+    // snapshot keeps nrocapvisto at the local value (12) but flips estado to 1.
+    const change = makeChange({
+      changedFields: [],
+      timestamp: 150,
+      snapshot: makeSnapshot({ estado: 1, nrocapvisto: 12 }),
+    });
+    const ctx = makeContext({ guardByRecordId: new Map([["anime-1", 100]]) });
+
+    const result = await applyRemoteChanges(db, [change], ctx);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(db, "anime-1", { estado: 1 }, 150);
+    expect(upsertAnime).not.toHaveBeenCalled();
+    expect(result.applied).toBe(1);
+  });
+
+  it("update con changed_fields vacío y fila inexistente hace cold insert vía upsertAnime", async () => {
+    const limit = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    const db = { select: jest.fn().mockReturnValue({ from }) } as never;
+
+    const change = makeChange({ changedFields: [], timestamp: 150, snapshot: makeSnapshot() });
+    const ctx = makeContext();
+
+    const result = await applyRemoteChanges(db, [change], ctx);
+
+    expect(upsertAnime).toHaveBeenCalledWith(db, change.snapshot, 150);
     expect(applyAnimePartial).not.toHaveBeenCalled();
     expect(result.applied).toBe(1);
   });

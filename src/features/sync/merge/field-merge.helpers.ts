@@ -2,6 +2,34 @@ import type { Anime } from '../../../infrastructure/validation/anime-schema';
 import type { FieldMergeResult } from './merge.types';
 
 /**
+ * Mergeable `animes` columns the merge boundary may write from a remote snapshot, mirroring
+ * the field set `upsertAnime` persists (everything except the immutable `_id` and the
+ * sync-internal `last_applied_change_ms` guard). Used both to map a `changed_fields` entry to
+ * a column value and to derive the changed set when the bridge omits `changed_fields`.
+ */
+export const MERGEABLE_FIELDS = [
+  'nombre',
+  'estado',
+  'nrocapvisto',
+  'totalcap',
+  'activo',
+  'primeravez',
+  'dias',
+  'generos',
+  'tipo',
+  'fechaUltCapVisto',
+  'fechaEstreno',
+  'fechaCreacion',
+  'fechaEliminacion',
+  'portada',
+  'pagina',
+  'carpeta',
+  'estudios',
+  'origen',
+  'duracion',
+] as const;
+
+/**
  * Whitelist of remote `changed_fields` names mapped to the local `animes` column value,
  * mirroring the field set `upsertAnime` already writes. Serializes `dias`/`generos` to JSON
  * the same way the cold-load writer does, keeping both writers consistent.
@@ -77,6 +105,36 @@ export function buildPartialUpdate(
   }
 
   return { columns, skippedFields };
+}
+
+/**
+ * Derives the effective changed-field set by diffing the remote snapshot against the current
+ * local row, for the (runtime-normal) case where the bridge sends an empty `changed_fields`:
+ * the autoreas-bridge watcher detects legacy edits by content hash and cannot say WHICH fields
+ * changed, so mobile reconstructs the set itself. Returns only mergeable fields whose snapshot
+ * value differs from the persisted value. This is safe against clobbering un-acked local edits
+ * because the merge boundary already defers any anime with a pending outbox op: when there is
+ * no pending op, the local row equals the last bridge-synced state, so a diff surfaces exactly
+ * what the legacy side changed.
+ */
+export function deriveChangedFields(
+  snapshot: Anime,
+  currentRow: Record<string, unknown>,
+): string[] {
+  const changed: string[] = [];
+
+  for (const field of MERGEABLE_FIELDS) {
+    const mapped = mapKnownField(field, snapshot);
+    if (mapped === undefined) {
+      continue;
+    }
+
+    if (mapped.value !== currentRow[field]) {
+      changed.push(field);
+    }
+  }
+
+  return changed;
 }
 
 /**
