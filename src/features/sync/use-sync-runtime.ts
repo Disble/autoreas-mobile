@@ -12,6 +12,7 @@ import {
 import { createSyncExecutionFacade } from "./sync-execution-facade";
 import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
+import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
 import { useSyncFacade } from "./use-sync-facade";
 import type {
@@ -106,6 +107,11 @@ export function useSyncRuntime(
   // app restart. Mounted at the runtime root alongside WS/AppState/network wiring since it
   // shares the same foreground-only lifecycle.
   useRemoteChangeDrain();
+
+  // Snapshot-authoritative heal on mount + app-resume: pulls the bridge's full anime list and
+  // converges any rows that drifted out of sync (or changes a background cycle missed),
+  // skipping animes with un-acked local outbox ops. Replaces the need for a manual refresh.
+  useForegroundResync();
 
   useEffect(() => {
     if (!props.isBootstrapped) {

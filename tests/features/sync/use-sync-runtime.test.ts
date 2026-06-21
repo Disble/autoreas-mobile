@@ -84,6 +84,10 @@ jest.mock("../../../src/features/sync/use-remote-change-drain", () => ({
   useRemoteChangeDrain: jest.fn(),
 }));
 
+jest.mock("../../../src/features/sync/use-foreground-resync", () => ({
+  useForegroundResync: jest.fn(),
+}));
+
 function emitAppState(status: string) {
   appStateListeners.forEach((listener) => {
     listener(status);
