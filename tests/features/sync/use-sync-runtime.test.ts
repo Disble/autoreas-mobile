@@ -7,6 +7,7 @@ import * as syncExecutionFacadeModule from "../../../src/features/sync/sync-exec
 import * as syncFacadeModule from "../../../src/features/sync/use-sync-facade";
 import * as runtimeStatusModule from "../../../src/features/sync/sync-runtime-status.helpers";
 import { useSyncRuntime } from "../../../src/features/sync/use-sync-runtime";
+import { useRemoteChangeDrain } from "../../../src/features/sync/use-remote-change-drain";
 import { useWebSocket } from "../../../src/features/ws/use-websocket";
 
 const appStateListeners: ((status: string) => void)[] = [];
@@ -77,6 +78,10 @@ jest.mock("../../../src/features/sync/sync-runtime-status.helpers", () => ({
 
 jest.mock("../../../src/features/ws/use-websocket", () => ({
   useWebSocket: jest.fn(),
+}));
+
+jest.mock("../../../src/features/sync/use-remote-change-drain", () => ({
+  useRemoteChangeDrain: jest.fn(),
 }));
 
 function emitAppState(status: string) {
@@ -181,6 +186,7 @@ describe("useSyncRuntime", () => {
         onSyncRequired: expect.any(Function),
       }),
     );
+    expect(useRemoteChangeDrain).toHaveBeenCalled();
   });
 
   it("stays idle and unregisters background sync when no pairing exists", async () => {

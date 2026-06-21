@@ -76,7 +76,7 @@ describe('headless-sync-cycle helpers', () => {
     (runtimeStatusModule.recordPrunedOperationsCount as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('persists attempt and success for a foreground service cycle', async () => {
+  it('persists attempt and success for a foreground service cycle, applying in staged mode (never deferred)', async () => {
     const runtime = buildRuntime();
     const result = await runHeadlessSyncCycle({
       runtime,
@@ -92,7 +92,13 @@ describe('headless-sync-cycle helpers', () => {
       expect.any(Number),
     );
     expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, true);
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
+    // The headless/background runtime owns an isolated, non-reactive connection
+    // (enableChangeListener:false). It MUST pass 'staged' so the reconcile apply step never
+    // writes `animes` directly on this connection -- a mis-set 'deferred' here would
+    // silently reintroduce the non-reactive-write regression with no UI feedback.
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb, 'staged');
+    expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb, 'deferred');
+    expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb);
     expect(runtimeStatusModule.recordBacklogReadCount).toHaveBeenCalledWith(rawDb, 5);
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalledWith(
       rawDb,

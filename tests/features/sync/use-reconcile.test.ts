@@ -20,6 +20,16 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
   withDeferredWrite: jest.fn(),
 }));
 
+jest.mock('../../../src/features/sync/merge', () => ({
+  applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
+  loadGuardMap: jest.fn().mockResolvedValue(new Map()),
+  loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
+}));
+
+jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
+  stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
+}));
+
 const RECONCILE_URL = 'http://192.168.1.10:8080/api/sync/reconcile';
 
 describe('syncPendingOperations', () => {

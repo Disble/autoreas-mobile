@@ -1,14 +1,12 @@
 import { eq, inArray } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient } from '../../infrastructure/api';
-import { upsertAnime } from '../../infrastructure/db/anime-repository';
 import {
   getBridgeConfigSnapshot,
   withDeferredWrite,
   withExclusiveWrite,
 } from '../../infrastructure/db/client';
 import {
-  animes,
   bridgeConfig,
   operationLog,
   type OperationLogRow,
@@ -17,7 +15,10 @@ import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
 } from './last-changelog.helpers';
+import { applyRemoteChanges, loadGuardMap, loadPendingOutboxRecordIds } from './merge';
+import type { RemoteAnimeChange } from './merge/merge.types';
 import { readOperationLogBacklog } from './operation-log-retention.helpers';
+import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import {
   RECONCILE_BACKLOG_BATCH_LIMIT,
   syncStateByDatabase,
@@ -27,7 +28,7 @@ import {
   ReconcileResponseSchema,
   type ReconcileAnimeChange,
 } from './reconcile.schema';
-import type { SyncPendingOperationsResult } from './reconcile.types';
+import type { ReconcileApplyMode, SyncPendingOperationsResult } from './reconcile.types';
 
 class ReconcileHttpError extends Error {
   readonly status: number;
@@ -148,9 +149,17 @@ function logReconcileHttpError(
  * Orchestrates the mobile reconcile cycle against the bridge using a per-database in-flight guard.
  * It reads a bounded backlog of pending rows, confirms only evidenced operations, reapplies bridge changes,
  * and advances the changelog cursor without regressing it.
+ *
+ * `applyMode` selects where pulled `bridge_changes` land: `'deferred'` (default) applies
+ * directly to `animes` on the shared reactive connection for foreground callers; `'staged'`
+ * writes into `pending_remote_changes` instead, for callers running on the isolated
+ * non-reactive background connection (the headless sync cycle). Passing the wrong mode for
+ * a background connection silently reintroduces the non-reactive-write regression, so
+ * callers must derive it explicitly rather than relying on the default.
  */
 export async function syncPendingOperations(
   rawDb: SQLiteDatabase,
+  applyMode: ReconcileApplyMode = 'deferred',
 ): Promise<SyncPendingOperationsResult> {
   const syncKey = rawDb as object;
   const syncState = syncStateByDatabase.get(syncKey) ?? {
@@ -171,7 +180,7 @@ export async function syncPendingOperations(
 
     do {
       syncState.rerunRequested = false;
-      const batch = await performSyncPendingOperations(rawDb);
+      const batch = await performSyncPendingOperations(rawDb, applyMode);
 
       totalConfirmed += batch.syncedCount;
       totalBacklogRead += batch.backlogReadCount;
@@ -194,8 +203,23 @@ export async function syncPendingOperations(
   return syncState.inFlight;
 }
 
+/**
+ * Normalizes a wire-shape `ReconcileAnimeChange` into the merge boundary's `RemoteAnimeChange`
+ * DTO. Reconcile is the "rich" entry shape (carries `changed_fields` + `timestamp` always).
+ */
+function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange {
+  return {
+    recordId: change.record_id,
+    changeType: change.change_type,
+    changedFields: change.changed_fields,
+    snapshot: change.snapshot,
+    timestamp: change.timestamp,
+  };
+}
+
 async function performSyncPendingOperations(
   rawDb: SQLiteDatabase,
+  applyMode: ReconcileApplyMode,
 ): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
@@ -256,17 +280,37 @@ async function performSyncPendingOperations(
       .map((operation) => operation.id)
       .filter((id) => !confirmedIds.includes(id));
 
-    // Apply pulled bridge changes on the shared connection (deferred write) so local
-    // `useLiveQuery` consumers observe the new data immediately. The exclusive-transaction
-    // path opens a separate connection that never fires expo-sqlite change notifications,
-    // which left the UI stale after every reconcile.
-    await withDeferredWrite(rawDb, async (writeDb) => {
-      for (const change of bridge_changes) {
-        if (change.change_type === 'delete') {
-          await writeDb.delete(animes).where(eq(animes._id, change.record_id));
-        } else if (change.snapshot) {
-          await upsertAnime(writeDb, change.snapshot);
-        }
+    const normalizedChanges = bridge_changes.map(normalizeBridgeChange);
+
+    // Route every pulled bridge change through the single merge boundary instead of the old
+    // full-row clobber. `applyMode` selects the write sink:
+    // - 'deferred' (foreground): writes `animes` on the shared reactive connection inside
+    //   `withDeferredWrite`, so local `useLiveQuery` consumers observe the new data
+    //   immediately.
+    // - 'staged' (background/headless): never touches `animes`; stages into
+    //   `pending_remote_changes` on the isolated non-reactive connection instead, deferring
+    //   the real apply to the foreground drain hook. This is what makes the background
+    //   runtime safe to run on a connection that cannot fire change notifications.
+    // Op-log status writes and the changelog cursor advance stay in the same transaction in
+    // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
+    const applyChangesInTransaction = applyMode === 'staged' ? withExclusiveWrite : withDeferredWrite;
+
+    await applyChangesInTransaction(rawDb, async (writeDb) => {
+      if (applyMode === 'staged') {
+        await stagePendingRemoteChanges(writeDb, normalizedChanges);
+      } else {
+        const recordIds = normalizedChanges.map((change) => change.recordId);
+        const [guardByRecordId, pendingOutboxRecordIds] = await Promise.all([
+          loadGuardMap(writeDb, recordIds),
+          loadPendingOutboxRecordIds(writeDb),
+        ]);
+
+        await applyRemoteChanges(
+          writeDb,
+          normalizedChanges,
+          { guardByRecordId, pendingOutboxRecordIds },
+          'deferred',
+        );
       }
 
       if (confirmedIds.length > 0) {

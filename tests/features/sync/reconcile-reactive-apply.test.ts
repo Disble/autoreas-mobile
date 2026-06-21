@@ -1,6 +1,7 @@
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client';
+import * as mergeModule from '../../../src/features/sync/merge';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 
 jest.mock('../../../src/infrastructure/api', () => ({
@@ -15,6 +16,16 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn().mockResolvedValue(undefined),
   withDeferredWrite: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../src/features/sync/merge', () => ({
+  applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
+  loadGuardMap: jest.fn().mockResolvedValue(new Map()),
+  loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
+}));
+
+jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
+  stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
@@ -40,9 +51,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
   });
 
   it('writes pulled changes through the shared reactive connection so useLiveQuery refreshes immediately', async () => {
-    const whereMock = jest.fn().mockResolvedValue(undefined);
-    const deleteMock = jest.fn().mockReturnValue({ where: whereMock });
-    const writeDb = { delete: deleteMock };
+    const writeDb = {};
 
     (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
@@ -74,6 +83,16 @@ describe('reconcile applies remote bridge changes reactively', () => {
 
     expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
-    expect(deleteMock).toHaveBeenCalled();
+    expect(mergeModule.applyRemoteChanges).toHaveBeenCalledWith(
+      writeDb,
+      expect.arrayContaining([
+        expect.objectContaining({ recordId: 'anime-1', changeType: 'delete' }),
+      ]),
+      expect.objectContaining({
+        guardByRecordId: expect.any(Map),
+        pendingOutboxRecordIds: expect.any(Set),
+      }),
+      'deferred',
+    );
   });
 });

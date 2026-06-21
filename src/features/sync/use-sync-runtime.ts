@@ -12,6 +12,7 @@ import {
 import { createSyncExecutionFacade } from "./sync-execution-facade";
 import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
+import { useRemoteChangeDrain } from "./use-remote-change-drain";
 import { useSyncFacade } from "./use-sync-facade";
 import type {
   UseSyncRuntimeProps,
@@ -99,6 +100,12 @@ export function useSyncRuntime(
     enabled: isWebSocketEnabled,
     onSyncRequired: handleWebSocketSyncRequired,
   });
+
+  // Drains background-staged remote changes into `animes` on the foreground reactive
+  // connection (mount + app-resume) so headless sync results become visible without an
+  // app restart. Mounted at the runtime root alongside WS/AppState/network wiring since it
+  // shares the same foreground-only lifecycle.
+  useRemoteChangeDrain();
 
   useEffect(() => {
     if (!props.isBootstrapped) {

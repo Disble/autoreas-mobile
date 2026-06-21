@@ -35,7 +35,12 @@ export async function runHeadlessSyncCycle(
   await recordCycleActive(rawDb, true);
 
   try {
-    const { syncedCount, backlogReadCount } = await syncPendingOperations(rawDb);
+    // The headless/background runtime opens an isolated, non-reactive connection
+    // (enableChangeListener:false, useNewConnection:true). It must apply pulled bridge
+    // changes in 'staged' mode so the reconcile apply step never writes `animes` directly
+    // on this connection -- only the foreground drain hook writes `animes`, on the shared
+    // reactive connection, where `useLiveQuery` can observe it.
+    const { syncedCount, backlogReadCount } = await syncPendingOperations(rawDb, 'staged');
 
     await recordBacklogReadCount(rawDb, backlogReadCount);
     await recordSyncAttemptSucceeded(
