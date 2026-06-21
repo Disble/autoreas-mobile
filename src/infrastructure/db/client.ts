@@ -119,6 +119,22 @@ async function ensureOperationLogRetentionIndex(rawDb: SQLiteDatabase) {
   );
 }
 
+/**
+ * Adds the per-anime staleness-guard column when missing. The column is intentionally
+ * nullable with no default and no backfill: NULL means "older than any remote change",
+ * so every pre-existing row accepts the first remote change that targets it.
+ */
+async function ensureAnimesGuardColumn(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(animes)');
+  const hasGuardColumn = columns.some((column) => column.name === 'last_applied_change_ms');
+
+  if (!hasGuardColumn) {
+    await rawDb.runAsync(
+      'ALTER TABLE animes ADD COLUMN last_applied_change_ms INTEGER'
+    );
+  }
+}
+
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
@@ -127,6 +143,7 @@ export async function runMigrations(rawDb: SQLiteDatabase) {
     ensureBridgeConfigLastChangelogId(rawDb),
     ensureSyncRuntimeStatusExecutionColumns(rawDb),
     ensureOperationLogRetentionIndex(rawDb),
+    ensureAnimesGuardColumn(rawDb),
   ]);
   return db;
 }

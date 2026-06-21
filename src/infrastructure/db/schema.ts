@@ -26,6 +26,7 @@ export const animes = sqliteTable("animes", {
   estudios: text("estudios"),
   origen: text("origen"),
   duracion: integer("duracion"),
+  lastAppliedChangeMs: integer("last_applied_change_ms"),
 });
 
 export const operationLog = sqliteTable(

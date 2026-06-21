@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import type { Anime } from "../validation/anime-schema";
 import type { AppDatabase } from "./client";
 import { animes } from "./schema";
@@ -38,4 +39,23 @@ export async function upsertAnime(
       target: animes._id,
       set: mappedFields,
     });
+}
+
+/**
+ * Applies only the given columns to an existing `animes` row and advances the per-anime
+ * staleness guard in the same statement. Used by the merge boundary to write a partial
+ * update built from `changed_fields`, never the full snapshot row, so untouched local
+ * fields (e.g. an in-flight optimistic `nrocapvisto`) are never clobbered. Complements
+ * `upsertAnime`, which remains the cold-load/full-row writer for initial sync only.
+ */
+export async function applyAnimePartial(
+  db: AppDatabase,
+  recordId: string,
+  partialColumns: Partial<Record<string, unknown>>,
+  guardMs: number,
+): Promise<void> {
+  await db
+    .update(animes)
+    .set({ ...partialColumns, lastAppliedChangeMs: guardMs })
+    .where(eq(animes._id, recordId));
 }

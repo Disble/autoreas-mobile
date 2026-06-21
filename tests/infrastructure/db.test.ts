@@ -201,6 +201,10 @@ describe("db client tracer helpers", () => {
           ];
         }
 
+        if (query === "PRAGMA table_info(animes)") {
+          return [{ name: "_id" }, { name: "last_applied_change_ms" }];
+        }
+
         return [];
       }),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),

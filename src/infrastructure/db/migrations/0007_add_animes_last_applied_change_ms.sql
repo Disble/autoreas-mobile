@@ -1,0 +1,1 @@
+ALTER TABLE `animes` ADD `last_applied_change_ms` integer;

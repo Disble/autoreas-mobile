@@ -41,6 +41,7 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     estudios: null,
     origen: null,
     duracion: null,
+    lastAppliedChangeMs: null,
     ...overrides,
   };
 }
