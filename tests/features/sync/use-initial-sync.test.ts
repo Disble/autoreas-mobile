@@ -1,4 +1,9 @@
-import { initialSync } from '../../../src/features/sync/use-initial-sync';
+import {
+  deleteAnimeLocally,
+  initialSync,
+  upsertAnimeFromBridge,
+} from '../../../src/features/sync/use-initial-sync';
+import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client';
 import * as initialSyncHelpers from '../../../src/features/sync/initial-sync.helpers';
 
@@ -8,7 +13,20 @@ jest.mock('expo-sqlite', () => ({
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withExclusiveWrite: jest.fn(),
+  withExclusiveWrite: jest.fn().mockResolvedValue(undefined),
+  withDeferredWrite: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../src/infrastructure/api', () => ({
+  bridgeClient: { getAnime: jest.fn() },
+}));
+
+jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
+  upsertAnime: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../src/infrastructure/validation/anime-schema', () => ({
+  AnimeSchema: { safeParse: (data: unknown) => ({ success: true, data }) },
 }));
 
 jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
@@ -57,5 +75,38 @@ describe('initialSync', () => {
       'Bridge config is missing or incomplete',
     );
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe('realtime anime writes stay reactive for useLiveQuery', () => {
+  const rawDb = { name: 'raw-db' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('upsertAnimeFromBridge writes through the shared reactive connection (withDeferredWrite)', async () => {
+    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
+      id: 1,
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'auth-secret',
+    });
+    (bridgeClient.getAnime as jest.Mock).mockResolvedValue({
+      ok: true,
+      data: { _id: 'anime-1' },
+    });
+
+    await upsertAnimeFromBridge(rawDb as never, 'anime-1');
+
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
+  });
+
+  it('deleteAnimeLocally writes through the shared reactive connection (withDeferredWrite)', async () => {
+    await deleteAnimeLocally(rawDb as never, 'anime-1');
+
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
   });
 });

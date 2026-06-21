@@ -4,7 +4,7 @@ import { bridgeClient } from "../../infrastructure/api";
 import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   getBridgeConfigSnapshot,
-  withExclusiveWrite,
+  withDeferredWrite,
 } from "../../infrastructure/db/client";
 import { animes } from "../../infrastructure/db/schema";
 import { AnimeSchema, type Anime } from "../../infrastructure/validation/anime-schema";
@@ -53,7 +53,7 @@ export async function upsertAnimeFromBridge(
   const anime = await fetchAnimeById(rawDb, animeId);
   if (!anime) return;
 
-  await withExclusiveWrite(rawDb, async (txDb) => {
+  await withDeferredWrite(rawDb, async (txDb) => {
     await upsertAnime(txDb, anime);
   });
 }
@@ -62,7 +62,7 @@ export async function deleteAnimeLocally(
   rawDb: SQLiteDatabase,
   animeId: string,
 ): Promise<void> {
-  await withExclusiveWrite(rawDb, async (db) => {
+  await withDeferredWrite(rawDb, async (db) => {
     await db.delete(animes).where(eq(animes._id, animeId));
   });
 }

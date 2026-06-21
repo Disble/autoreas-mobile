@@ -17,6 +17,7 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn(),
+  withDeferredWrite: jest.fn(),
 }));
 
 const RECONCILE_URL = 'http://192.168.1.10:8080/api/sync/reconcile';
@@ -94,6 +95,12 @@ describe('syncPendingOperations', () => {
 
       return task(mockDb, db);
     });
+
+    // The reconcile apply block now runs on the shared reactive connection (deferred write)
+    // so local useLiveQuery consumers refresh immediately after pulling bridge changes.
+    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (db, task) =>
+      task(mockDb, db),
+    );
   });
 
   afterEach(() => {

@@ -35,18 +35,19 @@ export async function fetchInitialSyncSnapshot(
 }
 
 /**
- * Persists a fetched anime snapshot using the shared exclusive-write queue.
- * Reusing one writer keeps hydration consistent with the rest of the offline-first data layer.
+ * Persists a fetched anime snapshot using the queued non-exclusive write path.
+ * Writing on the shared connection keeps `useLiveQuery` consumers reactive so the list
+ * hydrates immediately, while the write queue still preserves per-database ordering.
  */
 export async function persistInitialSyncSnapshot(
-  rawDb: Parameters<typeof withExclusiveWrite>[0],
+  rawDb: Parameters<typeof withDeferredWrite>[0],
   remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>,
 ): Promise<number> {
   if (remoteAnimes.length === 0) {
     return 0;
   }
 
-  await withExclusiveWrite(rawDb, async (db) => {
+  await withDeferredWrite(rawDb, async (db) => {
     for (const anime of remoteAnimes) {
       await upsertAnime(db, anime);
     }

@@ -4,6 +4,7 @@ import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
 import {
   getBridgeConfigSnapshot,
+  withDeferredWrite,
   withExclusiveWrite,
 } from '../../infrastructure/db/client';
 import {
@@ -255,7 +256,11 @@ async function performSyncPendingOperations(
       .map((operation) => operation.id)
       .filter((id) => !confirmedIds.includes(id));
 
-    await withExclusiveWrite(rawDb, async (writeDb) => {
+    // Apply pulled bridge changes on the shared connection (deferred write) so local
+    // `useLiveQuery` consumers observe the new data immediately. The exclusive-transaction
+    // path opens a separate connection that never fires expo-sqlite change notifications,
+    // which left the UI stale after every reconcile.
+    await withDeferredWrite(rawDb, async (writeDb) => {
       for (const change of bridge_changes) {
         if (change.change_type === 'delete') {
           await writeDb.delete(animes).where(eq(animes._id, change.record_id));

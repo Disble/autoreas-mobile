@@ -77,15 +77,16 @@ describe('initial-sync helpers', () => {
     expect(result).toEqual(animeSnapshot);
   });
 
-  it('persists fetched anime rows without touching bridge config', async () => {
-    (withExclusiveWrite as jest.Mock).mockImplementation(async (_db, task) => {
+  it('persists fetched anime rows through the deferred write so live queries can observe it', async () => {
+    (withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task({}, {});
     });
 
     const count = await persistInitialSyncSnapshot(rawDb as never, animeSnapshot);
 
     expect(count).toBe(1);
-    expect(withExclusiveWrite).toHaveBeenCalledTimes(1);
+    expect(withDeferredWrite).toHaveBeenCalledTimes(1);
+    expect(withExclusiveWrite).not.toHaveBeenCalled();
     expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, animeSnapshot[0]);
   });
 
