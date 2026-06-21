@@ -3,6 +3,28 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 const jsdocPlugin = require('eslint-plugin-jsdoc');
 
+// Bridge Boundary: every conversation with autoreas-bridge MUST go through the
+// BridgeClient adapter (src/infrastructure/api). Features are forbidden from owning
+// raw transport (fetch / WebSocket / hand-built http(s)/ws(s) URLs) so base-URL
+// resolution, auth injection, error taxonomy, and diagnostics stay in one seam.
+const noRawBridgeTransport = [
+  {
+    selector: "CallExpression[callee.name='fetch']",
+    message:
+      'Bridge Boundary: features must not call fetch() directly. Go through the BridgeClient adapter (src/infrastructure/api) so transport, auth, and error handling stay centralized.',
+  },
+  {
+    selector: "NewExpression[callee.name='WebSocket']",
+    message:
+      'Bridge Boundary: features must not instantiate WebSocket directly. Use bridgeClient.openWebSocket() from src/infrastructure/api.',
+  },
+  {
+    selector: 'TemplateElement[value.cooked=/^(https?|wss?):\\/\\//]',
+    message:
+      'Bridge Boundary: features must not build raw http(s)/ws(s) URLs. Resolve URLs through the BridgeClient adapter (src/infrastructure/api).',
+  },
+];
+
 module.exports = defineConfig([
   expoConfig,
   {
@@ -102,7 +124,19 @@ module.exports = defineConfig([
           selector: 'TSTypeAliasDeclaration',
           message: 'Strict Colocation: Type aliases must be declared in a separate .types.ts file, not inside the component or hook.',
         },
+        ...noRawBridgeTransport,
       ],
+    },
+  },
+  // BARRIER 1b: bridge transport boundary for non-hook feature modules
+  // (helpers, tasks, plain .ts). use-*.ts and *.types.ts are excluded because they
+  // already own a no-restricted-syntax block above; flat config replaces (not merges)
+  // same-rule arrays, so overlapping here would silently drop those barriers.
+  {
+    files: ['src/features/**/*.ts'],
+    ignores: ['src/features/**/use-*.ts', 'src/features/**/*.types.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...noRawBridgeTransport],
     },
   },
   // BARRIER 2: readonly props in dedicated type files

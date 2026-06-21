@@ -13,6 +13,7 @@ This project follows Spec-Driven Development (SDD), but architecture drift betwe
 5. **The 500-Line Rule**: If any file exceeds 500 lines, it must be refactored immediately (extract into sub-components or use Facade Hooks).
 6. **Reference Feature**: If in doubt about how to structure code, look at the `src/features/animes` directory as your ABSOLUTE SOURCE OF TRUTH.
 7. **Scaffolding Generators**: NEVER create feature folders manually. You MUST use `npm run generate:feature <name>` to scaffold new components.
+8. **Bridge Boundary Rule**: ALL communication with `autoreas-bridge` (HTTP + WebSocket) MUST go through the `BridgeClient` adapter in `src/infrastructure/api`. Feature code is FORBIDDEN from calling `fetch()`, instantiating `new WebSocket(...)`, or building raw `http(s)://`/`ws(s)://` URLs — consume `bridgeClient` instead. Enforced deterministically by ESLint (`no-restricted-syntax`, "Bridge Boundary") on `src/features/**`; only `src/infrastructure/api/**` may own transport. This is the barrier that stops a scattered-connection regression from happening again.
 
 ### Mandatory SDD Automation Override
 

@@ -12,6 +12,7 @@
 8. **The 500-Line Rule**: If any file exceeds 500 lines, it must be refactored immediately (extract into sub-components or use Facade Hooks).
 9. **Reference Feature**: If in doubt about how to structure code, look at the `src/features/animes` directory as your ABSOLUTE SOURCE OF TRUTH.
 10. **Scaffolding Generators**: NEVER create feature folders manually. You MUST use `npm run generate:feature <name>` to scaffold new components.
+11. **Bridge Boundary Rule**: ALL communication with `autoreas-bridge` (HTTP and WebSocket) MUST go through the `BridgeClient` adapter in `src/infrastructure/api`. Feature code is FORBIDDEN from calling `fetch()`, instantiating `new WebSocket(...)`, or hand-building `http(s)://`/`ws(s)://` URLs. Consume `bridgeClient` (`pairDevice` / `listAnimes` / `getAnime` / `reconcile` / `openWebSocket`) instead, so base-URL resolution, auth injection, error taxonomy, and diagnostics live in ONE seam. *ESLint Enforcement*: the `no-restricted-syntax` "Bridge Boundary" rules fail the build on any raw transport under `src/features/**`. The adapter (`src/infrastructure/api/**`) is the only place allowed to own transport.
 
 ## Spec-Driven Development (SDD) & Delegation Guardrails
 

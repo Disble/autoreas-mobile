@@ -27,7 +27,7 @@ src/
 ├── infrastructure/    # 4. ADAPTERS (The dirty world)
 │   ├── db/            # Drizzle client, schemas, migrations, and Repositories.
 │   ├── validation/    # Global Zod schemas.
-│   └── api/           # HTTP clients.
+│   └── api/           # BridgeClient adapter — the ONLY owner of bridge HTTP/WS transport.
 │
 └── helpers/           # 5. UTILITIES
     └── hooks/         # Generic shared hooks.
@@ -130,7 +130,16 @@ If ANY file (`.ts` or `.tsx`) exceeds 500 lines, it violates the Single Responsi
 To ensure these rules are respected by all agents and developers:
 * **Generators:** Complex features must be scaffolded using `npm run generate:feature`. Manual creation is forbidden.
 * **ESLint:** Strict rules enforce `max-lines` (500), delivery-layer purity, strict colocation, Zod placement, readonly props, and helper documentation.
+* **Bridge Boundary:** ESLint (`no-restricted-syntax`, the "Bridge Boundary" rules in `eslint.config.js`) forbids `fetch()`, `new WebSocket()`, and raw `http(s)://`/`ws(s)://` URL building anywhere under `src/features/**`. The barrier is deterministic-first: it fails the build, then this doc explains why.
 * **AGENTS.md:** AI agents are strictly instructed to follow these rules under the "CRITICAL ARCHITECTURE CONSTRAINTS" section.
+
+## 11. The Bridge Boundary (Single Transport Adapter)
+
+Talking to `autoreas-bridge` is an **adapter concern**, exactly like the database. Just as features consume Repositories instead of touching Drizzle, they consume the **`BridgeClient`** port (`src/infrastructure/api`) instead of touching `fetch`/`WebSocket`.
+
+* **One seam:** `BridgeClient` is the single place that resolves the base URL (`http://ip:port`), builds the websocket URL (`ws://ip:port/ws`), injects the `Authorization` header, normalizes responses to `{ ok, status, data, rawBody, url }`, distinguishes a transient `BridgeUnreachableError` (retry) from an HTTP error (e.g. `4xx` → permanent), and exposes a diagnostic logging seam.
+* **Semantic methods:** features call `bridgeClient.pairDevice / listAnimes / getAnime / reconcile / openWebSocket` — never a raw URL.
+* **Why this exists:** the connection logic was once duplicated across five feature files with five different error styles, which made a transport bug impossible to localize. Centralizing it — and enforcing the boundary in the linter — is what prevents that regression from returning.
 
 ---
 *If in doubt, refer to the `src/features/animes` directory as the Gold Standard for implementation.*
