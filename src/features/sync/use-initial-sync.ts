@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { SQLiteDatabase } from "expo-sqlite";
+import { bridgeClient } from "../../infrastructure/api";
 import { upsertAnime } from "../../infrastructure/db/anime-repository";
 import {
   getBridgeConfigSnapshot,
@@ -34,18 +35,14 @@ export async function fetchAnimeById(
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) return null;
 
-  const url = `http://${config.ip}:${config.port}/api/animes/${animeId}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-    },
-  });
+  const result = await bridgeClient.getAnime(
+    { ip: config.ip, port: config.port, token: config.token },
+    animeId,
+  );
 
-  if (!response.ok) return null;
+  if (!result.ok) return null;
 
-  const raw = await response.json();
-  const parsed = AnimeSchema.safeParse(raw);
+  const parsed = AnimeSchema.safeParse(result.data);
   return parsed.success ? parsed.data : null;
 }
 

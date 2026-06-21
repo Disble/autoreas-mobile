@@ -1,3 +1,4 @@
+import { bridgeClient } from '../../../src/infrastructure/api';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import * as dbClient from '../../../src/infrastructure/db/client';
 
@@ -6,11 +7,19 @@ jest.mock('expo-sqlite', () => ({
   openDatabaseSync: jest.fn(),
 }));
 
+jest.mock('../../../src/infrastructure/api', () => ({
+  bridgeClient: {
+    reconcile: jest.fn(),
+  },
+}));
+
 jest.mock('../../../src/infrastructure/db/client', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn(),
 }));
+
+const RECONCILE_URL = 'http://192.168.1.10:8080/api/sync/reconcile';
 
 describe('syncPendingOperations', () => {
   let rawDb: {
@@ -22,6 +31,19 @@ describe('syncPendingOperations', () => {
   let mockUpdateSet: jest.Mock;
   let mockUpdateWhere: jest.Mock;
   let withExclusiveWriteCall: number;
+
+  const reconcileMock = bridgeClient.reconcile as jest.Mock;
+
+  function reconcileResult(overrides: Record<string, unknown> = {}) {
+    return {
+      ok: true,
+      status: 202,
+      data: { status: 'accepted', bridge_changes: [], conflicts: [] },
+      rawBody: '{}',
+      url: RECONCILE_URL,
+      ...overrides,
+    };
+  }
 
   function buildPendingOp(overrides: Partial<{
     id: number;
@@ -72,8 +94,6 @@ describe('syncPendingOperations', () => {
 
       return task(mockDb, db);
     });
-
-    global.fetch = jest.fn();
   });
 
   afterEach(() => {
@@ -86,7 +106,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Bridge config is missing or incomplete',
     );
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(reconcileMock).not.toHaveBeenCalled();
   });
 
   it('still posts to /api/sync/reconcile when the backlog is empty', async () => {
@@ -97,10 +117,7 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
-    });
+    reconcileMock.mockResolvedValue(reconcileResult());
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
@@ -110,11 +127,12 @@ describe('syncPendingOperations', () => {
       'pending',
       200,
     );
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/sync/reconcile',
+    expect(reconcileMock).toHaveBeenCalledWith(
+      { ip: '192.168.1.10', port: 8080, token: 'token123' },
       expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer token123' }),
+        device_id: 'device-abc',
+        last_changelog_id: 0,
+        pending_operations: [],
       }),
     );
   });
@@ -128,7 +146,7 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Network Error'));
+    reconcileMock.mockRejectedValueOnce(new TypeError('Network Error'));
 
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Network Error',
@@ -137,7 +155,7 @@ describe('syncPendingOperations', () => {
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
-  it('reverts processing rows to pending on HTTP error and propagates the error', async () => {
+  it('reverts processing rows to pending on server HTTP error and propagates the error', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
       port: 8080,
@@ -146,7 +164,9 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500 });
+    reconcileMock.mockResolvedValue(
+      reconcileResult({ ok: false, status: 500, data: null, rawBody: null }),
+    );
 
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 500',
@@ -157,6 +177,7 @@ describe('syncPendingOperations', () => {
 
   it('moves processing rows to dead_letter on client HTTP error and logs the rejected payload', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const responseBody = JSON.stringify({ error: 'nrocapvisto must be >= 0' });
 
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
@@ -169,11 +190,9 @@ describe('syncPendingOperations', () => {
       buildPendingOp({ payload: JSON.stringify({ nrocapvisto: -1 }), createdAt: 1710000000000 }),
     ]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: async () => JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
-    });
+    reconcileMock.mockResolvedValue(
+      reconcileResult({ ok: false, status: 400, data: { error: 'nrocapvisto must be >= 0' }, rawBody: responseBody }),
+    );
 
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 400',
@@ -183,9 +202,9 @@ describe('syncPendingOperations', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '[syncPendingOperations] Reconcile request failed',
       expect.objectContaining({
-        url: 'http://192.168.1.10:8080/api/sync/reconcile',
+        url: RECONCILE_URL,
         status: 400,
-        responseBody: JSON.stringify({ error: 'nrocapvisto must be >= 0' }),
+        responseBody,
       }),
     );
 
@@ -206,29 +225,24 @@ describe('syncPendingOperations', () => {
       buildPendingOp({ createdAt: 1710000000000 }),
     ]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
-    });
+    reconcileMock.mockResolvedValue(reconcileResult());
 
     await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/sync/reconcile',
-      expect.objectContaining({
-        body: JSON.stringify({
-          device_id: 'device-abc',
-          last_changelog_id: 0,
-          pending_operations: [
-            {
-              anime_id: 'anime1',
-              operation: 'update',
-              payload: { nrocapvisto: 5 },
-              created_at: 1710000000000,
-            },
-          ],
-        }),
-      }),
+    expect(reconcileMock).toHaveBeenCalledWith(
+      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      {
+        device_id: 'device-abc',
+        last_changelog_id: 0,
+        pending_operations: [
+          {
+            anime_id: 'anime1',
+            operation: 'update',
+            payload: { nrocapvisto: 5 },
+            created_at: 1710000000000,
+          },
+        ],
+      },
     );
   });
 
@@ -246,18 +260,13 @@ describe('syncPendingOperations', () => {
       buildPendingOp({ createdAt: 1710000000000 }),
     ]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
-    });
+    reconcileMock.mockResolvedValue(reconcileResult());
 
     await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/sync/reconcile',
-      expect.objectContaining({
-        body: expect.stringContaining('"last_changelog_id":0'),
-      }),
+    expect(reconcileMock).toHaveBeenCalledWith(
+      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      expect.objectContaining({ last_changelog_id: 0 }),
     );
   });
 
@@ -271,42 +280,37 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'accepted',
-        applied_operations: [
-          {
-            anime_id: 'anime1',
-            operation: 'update',
-            applied: true,
-          },
-        ],
-        bridge_changes: [
-          {
-            record_id: 'anime1',
-            change_type: 'update',
-            changed_fields: ['nrocapvisto'],
-            timestamp: Date.now(),
-          },
-        ],
-        conflicts: [],
-        last_changelog_id: 99,
+    reconcileMock.mockResolvedValue(
+      reconcileResult({
+        data: {
+          status: 'accepted',
+          applied_operations: [
+            {
+              anime_id: 'anime1',
+              operation: 'update',
+              applied: true,
+            },
+          ],
+          bridge_changes: [
+            {
+              record_id: 'anime1',
+              change_type: 'update',
+              changed_fields: ['nrocapvisto'],
+              timestamp: Date.now(),
+            },
+          ],
+          conflicts: [],
+          last_changelog_id: 99,
+        },
       }),
-    });
+    );
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(result).toEqual({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/sync/reconcile',
-      expect.objectContaining({
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer token123',
-        },
-      }),
+    expect(reconcileMock).toHaveBeenCalledWith(
+      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      expect.objectContaining({ device_id: 'device-abc' }),
     );
     expect(dbClient.withExclusiveWrite).toHaveBeenCalled();
     expect(mockDb.update).toHaveBeenCalled();
@@ -324,29 +328,30 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'accepted',
-        applied_operations: [
-          {
-            anime_id: 'anime1',
-            operation: 'update',
-            applied: true,
-          },
-        ],
-        bridge_changes: [
-          {
-            record_id: 'anime1',
-            change_type: 'update',
-            changed_fields: ['nrocapvisto'],
-            timestamp: 1710000001000,
-          },
-        ],
-        conflicts: [],
-        last_changelog_id: 10,
+    reconcileMock.mockResolvedValue(
+      reconcileResult({
+        data: {
+          status: 'accepted',
+          applied_operations: [
+            {
+              anime_id: 'anime1',
+              operation: 'update',
+              applied: true,
+            },
+          ],
+          bridge_changes: [
+            {
+              record_id: 'anime1',
+              change_type: 'update',
+              changed_fields: ['nrocapvisto'],
+              timestamp: 1710000001000,
+            },
+          ],
+          conflicts: [],
+          last_changelog_id: 10,
+        },
       }),
-    });
+    );
 
     await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
@@ -367,29 +372,30 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'accepted',
-        applied_operations: [
-          {
-            anime_id: 'anime1',
-            operation: 'update',
-            applied: false,
-          },
-        ],
-        bridge_changes: [
-          {
-            record_id: 'anime1',
-            change_type: 'update',
-            changed_fields: ['nrocapvisto'],
-            timestamp: Date.now(),
-          },
-        ],
-        conflicts: [],
-        last_changelog_id: 99,
+    reconcileMock.mockResolvedValue(
+      reconcileResult({
+        data: {
+          status: 'accepted',
+          applied_operations: [
+            {
+              anime_id: 'anime1',
+              operation: 'update',
+              applied: false,
+            },
+          ],
+          bridge_changes: [
+            {
+              record_id: 'anime1',
+              change_type: 'update',
+              changed_fields: ['nrocapvisto'],
+              timestamp: Date.now(),
+            },
+          ],
+          conflicts: [],
+          last_changelog_id: 99,
+        },
       }),
-    });
+    );
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
@@ -407,10 +413,7 @@ describe('syncPendingOperations', () => {
 
     rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
 
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'accepted', bridge_changes: [], conflicts: [] }),
-    });
+    reconcileMock.mockResolvedValue(reconcileResult());
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 

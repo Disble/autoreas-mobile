@@ -1,7 +1,14 @@
 import { renderHook, act } from '@testing-library/react-native';
+import { bridgeClient } from '../../../src/infrastructure/api';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
 import * as initialSyncHelpers from '../../../src/features/sync/initial-sync.helpers';
 import { usePairDevice } from '../../../src/features/setup/use-pair-device';
+
+jest.mock('../../../src/infrastructure/api', () => ({
+  bridgeClient: {
+    pairDevice: jest.fn(),
+  },
+}));
 
 jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
   useOptionalSQLiteContext: jest.fn(),
@@ -15,12 +22,25 @@ jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
 
 describe('usePairDevice', () => {
   const rawDb = { name: 'raw-db' };
-  let mockFetch: jest.Mock;
+  const pairDeviceMock = bridgeClient.pairDevice as jest.Mock;
+
+  function pairResponse(overrides: Record<string, unknown> = {}) {
+    return {
+      ok: true,
+      status: 201,
+      data: {
+        device_id: 'dev-123',
+        device_name: 'My Bridge',
+        auth_token: 'auth-secret',
+      },
+      rawBody: '{}',
+      url: 'http://192.168.1.10:8080/api/devices/pair',
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockFetch = jest.fn();
-    global.fetch = mockFetch;
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockResolvedValue([]);
     (initialSyncHelpers.persistPairedBridgeConfiguration as jest.Mock).mockResolvedValue(0);
@@ -31,14 +51,7 @@ describe('usePairDevice', () => {
   });
 
   it('R3: should return success and save config on 200/201 response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        device_id: 'dev-123',
-        device_name: 'My Bridge',
-        auth_token: 'auth-secret',
-      }),
-    });
+    pairDeviceMock.mockResolvedValueOnce(pairResponse());
 
     const { result } = renderHook(() => usePairDevice());
 
@@ -56,11 +69,10 @@ describe('usePairDevice', () => {
       },
     });
 
-    expect(mockFetch).toHaveBeenCalledWith('http://192.168.1.10:8080/api/devices/pair', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pairing_token: 'pairing123', device_name: 'AutoreasMobile' }),
-    });
+    expect(pairDeviceMock).toHaveBeenCalledWith(
+      { ip: '192.168.1.10', port: 8080 },
+      { pairingToken: 'pairing123', deviceName: 'AutoreasMobile' },
+    );
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).toHaveBeenCalledWith({
       ip: '192.168.1.10',
@@ -85,10 +97,9 @@ describe('usePairDevice', () => {
   });
 
   it('R4: should return error and NOT save config on 400 response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-    });
+    pairDeviceMock.mockResolvedValueOnce(
+      pairResponse({ ok: false, status: 400, data: null, rawBody: null }),
+    );
 
     const { result } = renderHook(() => usePairDevice());
 
@@ -111,13 +122,9 @@ describe('usePairDevice', () => {
   });
 
   it('should expose a friendly retry message when auth_token is missing', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        device_id: 'dev-123',
-        device_name: 'Missing fields',
-      }),
-    });
+    pairDeviceMock.mockResolvedValueOnce(
+      pairResponse({ data: { device_id: 'dev-123', device_name: 'Missing fields' } }),
+    );
 
     const { result } = renderHook(() => usePairDevice());
 
@@ -131,19 +138,16 @@ describe('usePairDevice', () => {
       error: 'El Bridge respondió con datos incompletos. Volvé a generar el token e intentá de nuevo.',
     });
 
+    expect(pairDeviceMock).toHaveBeenCalledWith(
+      { ip: '1.1.1.1', port: 80 },
+      { pairingToken: 'xxx', deviceName: 'AutoreasMobile' },
+    );
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
     expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
   });
 
   it('does not persist partial bridge config when initial sync fails after pair success', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        device_id: 'dev-123',
-        device_name: 'My Bridge',
-        auth_token: 'auth-secret',
-      }),
-    });
+    pairDeviceMock.mockResolvedValueOnce(pairResponse());
     (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockRejectedValueOnce(
       new Error('GET /api/animes failed: 500'),
     );
@@ -170,14 +174,7 @@ describe('usePairDevice', () => {
   });
 
   it('shows token guidance when initial sync fails with 401 after pair success', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        device_id: 'dev-123',
-        device_name: 'My Bridge',
-        auth_token: 'auth-secret',
-      }),
-    });
+    pairDeviceMock.mockResolvedValueOnce(pairResponse());
     (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockRejectedValueOnce(
       new Error('GET /api/animes failed: 401'),
     );

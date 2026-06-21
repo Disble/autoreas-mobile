@@ -1,3 +1,4 @@
+import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
 import { withDeferredWrite, withExclusiveWrite } from '../../infrastructure/db/client';
 import { bridgeConfig } from '../../infrastructure/db/schema';
@@ -14,20 +15,17 @@ import type {
 export async function fetchInitialSyncSnapshot(
   config: BridgeFetchCredentials,
 ) {
-  const url = `http://${config.ip}:${config.port}/api/animes`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-    },
+  const result = await bridgeClient.listAnimes({
+    ip: config.ip,
+    port: config.port,
+    token: config.token,
   });
 
-  if (!response.ok) {
-    throw new Error(`GET /api/animes failed: ${response.status}`);
+  if (!result.ok) {
+    throw new Error(`GET /api/animes failed: ${result.status}`);
   }
 
-  const raw = await response.json();
-  const parsed = AnimeListSchema.safeParse(raw);
+  const parsed = AnimeListSchema.safeParse(result.data);
 
   if (!parsed.success) {
     throw new Error(`Invalid anime list from bridge: ${parsed.error.message}`);

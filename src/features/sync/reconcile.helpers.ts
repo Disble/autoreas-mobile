@@ -1,5 +1,6 @@
 import { eq, inArray } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
 import {
   getBridgeConfigSnapshot,
@@ -129,16 +130,6 @@ function isPermanentReconcileError(error: unknown): error is ReconcileHttpError 
   return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
 }
 
-async function readResponseBody(response: Response): Promise<string | null> {
-  if (typeof response.text !== 'function') {
-    return null;
-  }
-
-  const body = await response.text();
-
-  return body.length > 0 ? body : null;
-}
-
 function logReconcileHttpError(
   url: string,
   requestBody: ReturnType<typeof buildReconcileRequestBody>,
@@ -225,8 +216,7 @@ async function performSyncPendingOperations(
     });
   }
 
-  const baseUrl = `http://${config.ip}:${config.port}`;
-  const reconcileUrl = `${baseUrl}/api/sync/reconcile`;
+  const connection = { ip: config.ip, port: config.port, token: config.token };
   const lastChangelogId = getLastChangelogId(config);
   const requestBody = buildReconcileRequestBody(
     config.deviceId ?? undefined,
@@ -235,25 +225,16 @@ async function performSyncPendingOperations(
   );
 
   try {
-    const response = await fetch(reconcileUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.token}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    const result = await bridgeClient.reconcile(connection, requestBody);
 
-    if (!response.ok) {
-      const responseBody = await readResponseBody(response);
-      const error = new ReconcileHttpError(response.status, responseBody);
+    if (!result.ok) {
+      const error = new ReconcileHttpError(result.status, result.rawBody);
 
-      logReconcileHttpError(reconcileUrl, requestBody, error);
+      logReconcileHttpError(result.url, requestBody, error);
       throw error;
     }
 
-    const raw = await response.json();
-    const parsed = ReconcileResponseSchema.safeParse(raw);
+    const parsed = ReconcileResponseSchema.safeParse(result.data);
 
     if (!parsed.success) {
       throw new Error(`Invalid reconcile response: ${parsed.error.message}`);

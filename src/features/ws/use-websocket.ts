@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { bridgeClient } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import {
@@ -82,11 +83,10 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
           return;
         }
 
-        const url = `ws://${config.ip}:${config.port}/ws`;
-        const ws = new (WebSocket as any)(url, null, {
-          headers: {
-            Authorization: `Bearer ${config.token}`,
-          },
+        const ws = bridgeClient.openWebSocket({
+          ip: config.ip,
+          port: config.port,
+          token: config.token,
         });
 
         wsRef.current = ws;

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { bridgeClient } from '../../infrastructure/api';
 import {
   getExpoSQLiteUnavailableError,
   useOptionalSQLiteContext,
@@ -30,27 +31,20 @@ export function usePairDevice() {
           throw getExpoSQLiteUnavailableError();
         }
 
-        const url = `http://${ip}:${port}/api/devices/pair`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            pairing_token: token,
-            device_name: 'AutoreasMobile',
-          }),
-        });
+        const result = await bridgeClient.pairDevice(
+          { ip, port: Number(port) },
+          { pairingToken: token, deviceName: 'AutoreasMobile' },
+        );
 
-        if (!response.ok) {
+        if (!result.ok) {
           throw new Error(
             buildPairRequestFailureMessage({
-              status: response.status,
+              status: result.status,
             }),
           );
         }
 
-        const data = (await response.json()) as PairResponse;
+        const data = result.data as PairResponse;
         const missingFields = getMissingPairResponseFields(data);
 
         if (missingFields.length > 0) {

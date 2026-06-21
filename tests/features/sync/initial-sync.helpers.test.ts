@@ -1,12 +1,18 @@
 import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
-import { withDeferredWrite } from '../../../src/infrastructure/db/client';
-import { withExclusiveWrite } from '../../../src/infrastructure/db/client';
+import { withDeferredWrite, withExclusiveWrite } from '../../../src/infrastructure/db/client';
 import { bridgeConfig } from '../../../src/infrastructure/db/schema';
+import { bridgeClient } from '../../../src/infrastructure/api';
 import {
   fetchInitialSyncSnapshot,
   persistInitialSyncSnapshot,
   persistPairedBridgeConfiguration,
 } from '../../../src/features/sync/initial-sync.helpers';
+
+jest.mock('../../../src/infrastructure/api', () => ({
+  bridgeClient: {
+    listAnimes: jest.fn(),
+  },
+}));
 
 jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn(),
@@ -46,13 +52,15 @@ describe('initial-sync helpers', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    global.fetch = jest.fn();
   });
 
-  it('fetches the initial bridge snapshot with the staged auth token', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({
+  it('fetches the initial bridge snapshot through the bridge client with staged credentials', async () => {
+    (bridgeClient.listAnimes as jest.Mock).mockResolvedValue({
       ok: true,
-      json: async () => animeSnapshot,
+      status: 200,
+      data: animeSnapshot,
+      rawBody: JSON.stringify(animeSnapshot),
+      url: 'http://192.168.1.10:8080/api/animes',
     });
 
     const result = await fetchInitialSyncSnapshot({
@@ -61,15 +69,11 @@ describe('initial-sync helpers', () => {
       token: 'auth-secret',
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://192.168.1.10:8080/api/animes',
-      {
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer auth-secret',
-        },
-      },
-    );
+    expect(bridgeClient.listAnimes).toHaveBeenCalledWith({
+      ip: '192.168.1.10',
+      port: 8080,
+      token: 'auth-secret',
+    });
     expect(result).toEqual(animeSnapshot);
   });
 
