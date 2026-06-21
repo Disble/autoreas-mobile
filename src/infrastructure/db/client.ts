@@ -135,6 +135,26 @@ async function ensureAnimesGuardColumn(rawDb: SQLiteDatabase) {
   }
 }
 
+/**
+ * Creates the `pending_remote_changes` staging table when missing. Background/headless
+ * sync runs (no reactive change listener, separate JS runtime) write remote changes here
+ * instead of applying them to `animes` directly; a foreground drain hook later applies
+ * them via the merge boundary on the shared reactive connection. `IF NOT EXISTS` keeps
+ * reruns a no-op without needing a PRAGMA existence check first.
+ */
+async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(
+    'CREATE TABLE IF NOT EXISTS pending_remote_changes (' +
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+      'record_id TEXT NOT NULL, ' +
+      'change_type TEXT NOT NULL, ' +
+      'changed_fields TEXT NOT NULL, ' +
+      'snapshot TEXT, ' +
+      'timestamp INTEGER NOT NULL, ' +
+      'created_at INTEGER NOT NULL)'
+  );
+}
+
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
@@ -144,6 +164,7 @@ export async function runMigrations(rawDb: SQLiteDatabase) {
     ensureSyncRuntimeStatusExecutionColumns(rawDb),
     ensureOperationLogRetentionIndex(rawDb),
     ensureAnimesGuardColumn(rawDb),
+    ensurePendingRemoteChangesTable(rawDb),
   ]);
   return db;
 }

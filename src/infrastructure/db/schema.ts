@@ -58,6 +58,16 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   lastChangelogId: integer("last_changelog_id").default(0),
 });
 
+export const pendingRemoteChanges = sqliteTable("pending_remote_changes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  recordId: text("record_id").notNull(),
+  changeType: text("change_type").notNull(),
+  changedFields: text("changed_fields").notNull(),
+  snapshot: text("snapshot"),
+  timestamp: integer("timestamp").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   id: integer('id').primaryKey().default(1),
   registrationStatus: text('registration_status')
@@ -91,6 +101,8 @@ export type AnimeRow = typeof animes.$inferSelect;
 export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
+export type PendingRemoteChangeRow = typeof pendingRemoteChanges.$inferSelect;
+export type InsertPendingRemoteChangeRow = typeof pendingRemoteChanges.$inferInsert;
 export type BridgeConfig = typeof bridgeConfig.$inferSelect;
 export type NewBridgeConfig = typeof bridgeConfig.$inferInsert;
 export type SyncRuntimeStatusRow = typeof syncRuntimeStatus.$inferSelect;

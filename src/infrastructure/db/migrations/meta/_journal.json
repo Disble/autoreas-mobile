@@ -57,6 +57,13 @@
       "when": 1782052416301,
       "tag": "0007_add_animes_last_applied_change_ms",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1782053264518,
+      "tag": "0008_add_pending_remote_changes",
+      "breakpoints": true
     }
   ]
 }

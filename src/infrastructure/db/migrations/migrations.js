@@ -9,6 +9,7 @@ import m0004 from './0004_add_foreground_sync_diagnostics.sql';
 import m0005 from './0005_add_operation_log_retention_support.sql';
 import m0006 from './0006_sanitize_bridge_config_changelog_cursor.sql';
 import m0007 from './0007_add_animes_last_applied_change_ms.sql';
+import m0008 from './0008_add_pending_remote_changes.sql';
 
 export default {
   journal,
@@ -21,5 +22,6 @@ export default {
     m0005,
     m0006,
     m0007,
+    m0008,
   },
 };
