@@ -139,9 +139,12 @@ describe('syncPendingOperations', () => {
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(result).toEqual({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+    // Backlog includes 'processing' so ops orphaned by a crashed/killed cycle are recovered
+    // (re-sent + confirmed), instead of perpetually blocking their anime via defer_outbox.
     expect(rawDb.getAllAsync).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE status IN (?) ORDER BY created_at ASC, id ASC LIMIT ?'),
+      expect.stringContaining('WHERE status IN (?, ?) ORDER BY created_at ASC, id ASC LIMIT ?'),
       'pending',
+      'processing',
       200,
     );
     expect(reconcileMock).toHaveBeenCalledWith(

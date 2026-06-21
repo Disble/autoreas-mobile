@@ -226,8 +226,14 @@ async function performSyncPendingOperations(
     throw new Error('Bridge config is missing or incomplete');
   }
 
+  // Include 'processing' so operations orphaned by a cycle that died mid-flight (crash, app
+  // kill, an earlier transport failure) are recovered: they get re-sent and confirmed instead
+  // of staying stuck in 'processing' forever. A stuck 'processing' op is poisonous because
+  // `loadPendingOutboxRecordIds` treats it as un-acked local intent and `defer_outbox` then
+  // drops EVERY remote change for that anime, freezing it permanently out of sync. Re-sending
+  // is safe: cycles are serialized per connection and the patches are absolute/idempotent.
   const pendingOps = await readOperationLogBacklog(rawDb, {
-    status: ['pending'],
+    status: ['pending', 'processing'],
     limit: RECONCILE_BACKLOG_BATCH_LIMIT,
     orderBy: 'oldest_first',
   });
