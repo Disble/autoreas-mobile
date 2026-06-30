@@ -4,6 +4,7 @@ import * as mergeModule from '../../../src/features/sync/merge';
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
+  createDrizzleDb: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
 
@@ -19,6 +20,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 }));
 
 describe('drainPendingRemoteChanges', () => {
+  const mockCreateDrizzleDb = dbClient.createDrizzleDb as jest.Mock;
   const mockWithDeferredWrite = dbClient.withDeferredWrite as jest.Mock;
   const mockApplyRemoteChanges = mergeModule.applyRemoteChanges as jest.Mock;
   const mockLoadGuardMap = mergeModule.loadGuardMap as jest.Mock;
@@ -30,10 +32,22 @@ describe('drainPendingRemoteChanges', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreateDrizzleDb.mockReturnValue({ kind: 'drizzle-db' });
     mockLoadGuardMap.mockResolvedValue(new Map());
     mockLoadPendingOutboxRecordIds.mockResolvedValue(new Set());
     mockApplyRemoteChanges.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 });
     mockDeletePendingRemoteChanges.mockResolvedValue(undefined);
+  });
+
+  it('loads staged rows through a drizzle database instead of the raw SQLite connection', async () => {
+    mockLoadPendingRemoteChanges.mockResolvedValue([]);
+
+    const rawDb = { name: 'drain-db' };
+
+    await drainPendingRemoteChanges(rawDb as never);
+
+    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
+    expect(mockLoadPendingRemoteChanges).toHaveBeenCalledWith({ kind: 'drizzle-db' });
   });
 
   it('no-ops without opening a write transaction when there are no staged rows', async () => {

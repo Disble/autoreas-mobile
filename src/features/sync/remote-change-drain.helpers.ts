@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withDeferredWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
 import { applyRemoteChanges, loadGuardMap, loadPendingOutboxRecordIds } from './merge';
 import {
   deletePendingRemoteChanges,
@@ -34,7 +34,7 @@ export interface DrainPendingRemoteChangesResult {
 export async function drainPendingRemoteChanges(
   rawDb: SQLiteDatabase,
 ): Promise<DrainPendingRemoteChangesResult> {
-  const staged = await loadPendingRemoteChanges(rawDb as never);
+  const staged = await loadPendingRemoteChanges(createDrizzleDb(rawDb));
 
   if (staged.length === 0) {
     return { applied: 0, dropped: 0, deferred: 0, drainedCount: 0 };
