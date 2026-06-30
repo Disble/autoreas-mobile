@@ -2,6 +2,10 @@ import type { ReactElement } from "react";
 import { createElement } from "react";
 import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
+  ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL,
+  ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL,
+} from "./anime-list-screen.constants";
+import {
   ANIME_DAY_FILTER_OPTIONS,
   WEEKDAY_INDEX_TO_FILTER,
 } from "../../anime.constants";
@@ -9,11 +13,19 @@ import { matchesAnimeDayFilter } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
 import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
+import {
+  deriveVisibleSyncStatus as deriveSharedVisibleSyncStatus,
+  isManualSyncAvailableNow,
+} from '../../../sync/sync-visible-status.helpers';
 import type {
   AnimeListScreenContextualHeader,
   AnimeListScreenFilterCounts,
   AnimeListScreenHeaderLeftProps,
   AnimeListScreenHeaderRightProps,
+  AnimeListScreenManualSyncAvailabilityFacts,
+  AnimeListScreenRefreshFeedback,
+  AnimeListScreenSyncFacts,
+  AnimeListScreenVisibleSyncStatus,
 } from "./anime-list-screen.types";
 
 /**
@@ -107,6 +119,65 @@ function buildEmptySubtitle(filter: AnimeDayFilter, isToday: boolean): string {
     return "Al día. Nada pendiente para hoy.";
   }
   return `Sin pendientes para ${filter}`;
+}
+
+/**
+ * Derives the sync banner shown inside AnimeListScreen from runtime sync facts.
+ * The screen stays dumb while product copy, escalation thresholds, and tone decisions live in one pure helper.
+ */
+export function deriveVisibleSyncStatus(
+  facts: AnimeListScreenSyncFacts,
+  now: Date,
+): AnimeListScreenVisibleSyncStatus {
+  const status = deriveSharedVisibleSyncStatus(facts, now);
+  const actionLabel =
+    facts.pendingOpsCount === 0
+      ? null
+      : facts.isBridgeConfigured === false
+        ? ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL
+        : facts.isDeviceOnline === false
+          ? null
+          : ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL;
+
+  return {
+    ...status,
+    actionLabel,
+  };
+}
+
+/**
+ * Builds the warning toast copy shown when a manual refresh fails from the anime list.
+ * The message stays aligned with the shared visible-status model so phone-offline and bridge issues do not blur together.
+ */
+export function buildRefreshFailureFeedback(
+  facts: AnimeListScreenSyncFacts,
+): AnimeListScreenRefreshFeedback {
+  if (facts.isDeviceOnline === false) {
+    return {
+      label: 'Este teléfono está sin internet.',
+      description:
+        'Tu catálogo local sigue disponible y el sync se va a reintentar cuando vuelva la conexión.',
+    };
+  }
+
+  return {
+    label: 'No se pudo sincronizar con el bridge.',
+    description: 'Tus cambios siguen guardados en este dispositivo.',
+  };
+}
+
+/**
+ * Derives whether the AnimeListScreen manual refresh affordances should stay enabled.
+ * The screen uses one gate for header button and pull-to-refresh so both reflect the same sync availability facts.
+ */
+export function deriveManualSyncEnabled(
+  facts: AnimeListScreenManualSyncAvailabilityFacts,
+): boolean {
+  if (facts.isRefreshing) {
+    return false;
+  }
+
+  return isManualSyncAvailableNow(facts);
 }
 
 /**

@@ -5,13 +5,14 @@ import type { AnimeListScreenHeaderRightProps } from "./anime-list-screen.types"
 export function AnimeListScreenHeaderRight({
   refreshAccessibilityLabel,
   isRefreshing,
+  isManualSyncEnabled,
   themeColorForeground,
   handleRefresh,
 }: AnimeListScreenHeaderRightProps) {
   return (
     <Button
       accessibilityLabel={refreshAccessibilityLabel}
-      isDisabled={isRefreshing}
+      isDisabled={isRefreshing || !isManualSyncEnabled}
       isIconOnly
       onPress={() => {
         void handleRefresh();

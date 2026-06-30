@@ -1,7 +1,9 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { FlatList } from 'react-native';
+import { Button } from 'heroui-native';
 import { AnimeListScreenView } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreen';
+import { AnimeListScreenHeaderRight } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderRight';
 import type { AnimeListScreenViewProps } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 
 type AnimeListItem = AnimeListScreenViewProps['animes'][number];
@@ -14,6 +16,10 @@ jest.mock('expo-router', () => ({
 
 jest.mock('expo-status-bar', () => ({
   StatusBar: () => null,
+}));
+
+jest.mock('@expo/vector-icons', () => ({
+  Ionicons: () => null,
 }));
 
 jest.mock('../../../../src/features/animes/ui/AnimeCard', () => ({
@@ -85,7 +91,15 @@ function buildProps(
     isDark: false,
     isEmpty: false,
     isRefreshing: false,
+    isManualSyncEnabled: true,
     refreshAccessibilityLabel: 'Refrescar Mis Animes',
+    syncStatus: {
+      actionLabel: null,
+      chipLabel: 'Catálogo local',
+      description: 'Podés seguir usando esta copia local mientras el bridge no esté disponible.',
+      title: 'Catálogo local listo',
+      tone: 'default',
+    },
     selectedFilter: 'Martes',
     selectedFilterOption: {
       value: 'Martes',
@@ -139,5 +153,70 @@ describe('AnimeListScreenView', () => {
     const list = UNSAFE_getByType(FlatList);
 
     expect(list.props.extraData).toBe(props.isMutatingAnimeById);
+  });
+
+  it('renders the inline sync status copy above the list', () => {
+    const props = buildProps({
+      syncStatus: {
+        actionLabel: 'Revisar bridge',
+        chipLabel: 'Sync pendiente',
+        description: 'Tus cambios siguen guardados en este dispositivo. Hace 6 días que el bridge no confirma cambios.',
+        title: '2 cambios esperando sync',
+        tone: 'danger',
+      },
+    });
+
+    const { getByText } = render(<AnimeListScreenView {...props} />);
+
+    expect(getByText('Sync pendiente')).toBeTruthy();
+    expect(getByText('2 cambios esperando sync')).toBeTruthy();
+    expect(getByText('Revisar bridge')).toBeTruthy();
+  });
+
+  it('opens settings from the inline sync action when the bridge needs attention', () => {
+    const handleOpenSettings = jest.fn();
+    const props = buildProps({
+      handleOpenSettings,
+      syncStatus: {
+        actionLabel: 'Revisar bridge',
+        chipLabel: 'Sync pendiente',
+        description: 'Tus cambios siguen guardados en este dispositivo.',
+        title: '2 cambios esperando sync',
+        tone: 'warning',
+      },
+    });
+
+    const { getByText } = render(<AnimeListScreenView {...props} />);
+
+    fireEvent.press(getByText('Revisar bridge'));
+
+    expect(handleOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables pull to refresh from the same manual-sync gate', () => {
+    const { UNSAFE_getByType } = render(
+      <AnimeListScreenView {...buildProps({ isManualSyncEnabled: false })} />,
+    );
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.refreshControl.props.enabled).toBe(false);
+  });
+
+  it('disables the header refresh button from the same manual-sync gate', () => {
+    const handleRefresh = jest.fn().mockResolvedValue(undefined);
+    const { UNSAFE_getByType } = render(
+      <AnimeListScreenHeaderRight
+        refreshAccessibilityLabel="Refrescar Mis Animes"
+        isRefreshing={false}
+        isManualSyncEnabled={false}
+        themeColorForeground="#ffffff"
+        handleRefresh={handleRefresh}
+      />,
+    );
+
+    const button = UNSAFE_getByType(Button);
+
+    expect(button.props.isDisabled).toBe(true);
   });
 });

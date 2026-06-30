@@ -1,10 +1,12 @@
+import { useNetworkState } from "expo-network";
 import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
-import { useThemeColor } from "heroui-native";
+import { useThemeColor, useToast } from "heroui-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
-import { useIncrementalSyncHandler } from "../../../sync/use-incremental-sync-handler";
+import { useBridgeConfig } from "../../../settings/use-bridge-config";
+import { useSyncFacade } from "../../../sync/use-sync-facade";
 import { ANIME_DAY_FILTER_OPTIONS } from "../../anime.constants";
 import {
   getAnimeDayFilterOption,
@@ -15,8 +17,11 @@ import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { ANIME_LIST_SCREEN_REFRESH_LABEL } from "./anime-list-screen.constants";
 import {
+  buildRefreshFailureFeedback,
   buildContextualHeader,
   computeFilterCounts,
+  deriveManualSyncEnabled,
+  deriveVisibleSyncStatus,
 } from "./anime-list-screen.helpers";
 import type {
   AnimeListScreenProps,
@@ -43,15 +48,19 @@ export function useAnimeListScreen(
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
+  const { toast } = useToast();
   const { isDark } = useAppTheme();
   const [themeColorForeground] = useThemeColor(["foreground"]);
-  const { handleSyncRequired } = useIncrementalSyncHandler();
   const { layout: layoutMode } = useResponsiveLayout();
+  const networkState = useNetworkState();
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
   const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } =
     useMutateAnime();
+  const { isConfigured } = useBridgeConfig();
+  const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount, syncError } =
+    useSyncFacade();
 
   // 5. Derived State (useMemo)
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
@@ -62,6 +71,17 @@ export function useAnimeListScreen(
   );
   const settingsHref = useMemo(() => "/(tabs)/settings" as Href, []);
   const today = useMemo(() => getDefaultAnimeDayFilter(new Date()), []);
+  const isDeviceOnline = useMemo(() => {
+    if (typeof networkState.isInternetReachable === "boolean") {
+      return networkState.isInternetReachable;
+    }
+
+    if (typeof networkState.isConnected === "boolean") {
+      return networkState.isConnected;
+    }
+
+    return null;
+  }, [networkState.isConnected, networkState.isInternetReachable]);
   const filterCounts = useMemo(
     () => computeFilterCounts(allActiveAnimes ?? []),
     [allActiveAnimes],
@@ -70,6 +90,42 @@ export function useAnimeListScreen(
     () => buildContextualHeader(selectedFilter, animes.length, new Date()),
     [selectedFilter, animes.length],
   );
+  const syncStatus = useMemo(
+    () =>
+      deriveVisibleSyncStatus(
+        {
+          connectionStatus,
+          isBridgeConfigured: isConfigured,
+          isDeviceOnline,
+          lastSyncAt,
+          pendingOpsCount,
+          syncError,
+        },
+        new Date(),
+      ),
+    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount, syncError],
+  );
+  const isManualSyncEnabled = useMemo(
+    () =>
+      deriveManualSyncEnabled({
+        connectionStatus,
+        isBridgeConfigured: isConfigured,
+        isDeviceOnline,
+        isRefreshing,
+        lastSyncAt,
+        pendingOpsCount,
+        syncError,
+      }),
+    [
+      connectionStatus,
+      isConfigured,
+      isDeviceOnline,
+      isRefreshing,
+      lastSyncAt,
+      pendingOpsCount,
+      syncError,
+    ],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleSelectedFilterChange = useCallback((filter: AnimeDayFilter) => {
@@ -77,16 +133,45 @@ export function useAnimeListScreen(
   }, []);
 
   const handleRefresh = useCallback(async () => {
+    if (!isManualSyncEnabled) {
+      return;
+    }
+
     setIsRefreshing(true);
 
     try {
-      await handleSyncRequired();
+      await manualSync();
     } catch (error) {
       console.warn("[AnimeListScreen] Manual refresh failed:", error);
+      const feedback = buildRefreshFailureFeedback({
+        connectionStatus,
+        isBridgeConfigured: isConfigured,
+        isDeviceOnline,
+        lastSyncAt,
+        pendingOpsCount,
+        syncError,
+      });
+
+      toast.show({
+        variant: "warning",
+        label: feedback.label,
+        description: feedback.description,
+        duration: 4000,
+      });
     } finally {
       setIsRefreshing(false);
     }
-  }, [handleSyncRequired]);
+  }, [
+    connectionStatus,
+    isConfigured,
+    isManualSyncEnabled,
+    isDeviceOnline,
+    lastSyncAt,
+    manualSync,
+    pendingOpsCount,
+    syncError,
+    toast,
+  ]);
 
   const runMutation = useCallback(
     async (animeId: string, action: (id: string) => Promise<void>) => {
@@ -172,8 +257,10 @@ export function useAnimeListScreen(
     isDark,
     isEmpty,
     isRefreshing,
+    isManualSyncEnabled,
     refreshAccessibilityLabel: ANIME_LIST_SCREEN_REFRESH_LABEL,
     selectedFilter,
+    syncStatus,
     selectedFilterOption,
     settingsHref,
     stateSheetRequest,

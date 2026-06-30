@@ -1,12 +1,16 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { Alert as HeroAlert, Button, Chip } from "heroui-native";
 import { FlatList, RefreshControl, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import { AnimeCard } from "../AnimeCard";
 import { AnimeEmptyState } from "../AnimeEmptyState";
 import { AnimeFilterRail } from "../AnimeFilterRail";
 import { AnimeStateSheet } from "../AnimeStateSheet";
-import { ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS } from "./anime-list-screen.constants";
+import {
+  ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE,
+  ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS,
+} from "./anime-list-screen.constants";
 import {
   buildHeaderLeftRenderer,
   buildHeaderRightRenderer,
@@ -25,7 +29,9 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     isDark,
     isEmpty,
     isRefreshing,
+    isManualSyncEnabled,
     refreshAccessibilityLabel,
+    syncStatus,
     selectedFilter,
     stateSheetRequest,
     themeColorForeground,
@@ -61,6 +67,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
   const headerRight = buildHeaderRightRenderer({
     refreshAccessibilityLabel,
     isRefreshing,
+    isManualSyncEnabled,
     themeColorForeground,
     handleRefresh,
   });
@@ -110,6 +117,38 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
                 {contextualHeader.subtitle}
               </AppText>
             </View>
+
+            <View className="pt-3">
+              <HeroAlert status={syncStatus.tone}>
+                <HeroAlert.Indicator />
+                <HeroAlert.Content>
+                  <View className="flex-row flex-wrap items-center gap-2">
+                    <Chip
+                      color={ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE[syncStatus.tone]}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <Chip.Label>{syncStatus.chipLabel}</Chip.Label>
+                    </Chip>
+                    <HeroAlert.Title>
+                      {syncStatus.title}
+                    </HeroAlert.Title>
+                  </View>
+                  <HeroAlert.Description>
+                    {syncStatus.description}
+                  </HeroAlert.Description>
+                </HeroAlert.Content>
+                {syncStatus.actionLabel ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onPress={handleOpenSettings}
+                  >
+                    <Button.Label>{syncStatus.actionLabel}</Button.Label>
+                  </Button>
+                ) : null}
+              </HeroAlert>
+            </View>
           </View>
 
           {isEmpty ? (
@@ -125,6 +164,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
               columnWrapperClassName={numColumns > 1 ? "gap-4" : undefined}
               refreshControl={
                 <RefreshControl
+                  enabled={isManualSyncEnabled}
                   refreshing={isRefreshing}
                   onRefresh={() => {
                     void handleRefresh();

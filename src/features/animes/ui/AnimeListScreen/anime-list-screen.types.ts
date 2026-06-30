@@ -1,6 +1,11 @@
 import type { Href } from 'expo-router';
 import type { Anime } from '../../../../infrastructure/validation/anime-schema';
 import type { LayoutMode } from '../../../../hooks/use-responsive-layout';
+import type {
+  SyncVisibleStatus,
+  SyncVisibleStatusFacts,
+  SyncVisibleStatusTone,
+} from '../../../sync/sync-visible-status.types';
 import type { AnimeDayFilter, AnimeDayFilterOption } from '../../anime.types';
 
 export type AnimeListScreenProps = Record<never, never>;
@@ -26,8 +31,27 @@ export interface AnimeListScreenHeaderLeftProps {
 export interface AnimeListScreenHeaderRightProps {
   readonly refreshAccessibilityLabel: string;
   readonly isRefreshing: boolean;
+  readonly isManualSyncEnabled: boolean;
   readonly themeColorForeground: string;
   readonly handleRefresh: () => Promise<void>;
+}
+
+export type AnimeListScreenSyncTone = SyncVisibleStatusTone;
+
+export type AnimeListScreenSyncFacts = SyncVisibleStatusFacts;
+
+export interface AnimeListScreenManualSyncAvailabilityFacts
+  extends AnimeListScreenSyncFacts {
+  readonly isRefreshing: boolean;
+}
+
+export interface AnimeListScreenVisibleSyncStatus extends SyncVisibleStatus {
+  readonly actionLabel: string | null;
+}
+
+export interface AnimeListScreenRefreshFeedback {
+  readonly description: string;
+  readonly label: string;
 }
 
 export interface AnimeListScreenViewProps {
@@ -40,7 +64,9 @@ export interface AnimeListScreenViewProps {
   readonly isDark: boolean;
   readonly isEmpty: boolean;
   readonly isRefreshing: boolean;
+  readonly isManualSyncEnabled: boolean;
   readonly refreshAccessibilityLabel: string;
+  readonly syncStatus: AnimeListScreenVisibleSyncStatus;
   readonly selectedFilter: AnimeDayFilter;
   readonly selectedFilterOption: AnimeDayFilterOption;
   readonly settingsHref: Href;

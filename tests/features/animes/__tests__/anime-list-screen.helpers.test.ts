@@ -1,6 +1,9 @@
 import {
+  buildRefreshFailureFeedback,
   buildContextualHeader,
   buildHeaderLeftRenderer,
+  deriveManualSyncEnabled,
+  deriveVisibleSyncStatus,
   buildHeaderRightRenderer,
   computeFilterCounts,
   formatTodayLabel,
@@ -219,6 +222,181 @@ describe("anime-list-screen helpers", () => {
     });
   });
 
+  describe("deriveVisibleSyncStatus", () => {
+    it("returns a neutral local-only state when the bridge is unavailable without backlog", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "offline",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          lastSyncAt: null,
+          pendingOpsCount: 0,
+          syncError: null,
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.tone).toBe("default");
+      expect(status.chipLabel).toBe("Catálogo local");
+      expect(status.title).toBe("Catálogo local listo");
+      expect(status.actionLabel).toBeNull();
+    });
+
+    it("returns a more precise healthy state when the bridge is up to date", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "online",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          lastSyncAt: new Date("2026-04-09T09:58:00.000Z").getTime(),
+          pendingOpsCount: 0,
+          syncError: null,
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.tone).toBe("success");
+      expect(status.chipLabel).toBe("Bridge activo");
+      expect(status.title).toBe("Catálogo al día");
+      expect(status.description).toContain("Última sincronización");
+      expect(status.actionLabel).toBeNull();
+    });
+
+    it("surfaces pending local changes while staying in local mode", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "error",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
+          pendingOpsCount: 3,
+          syncError: "bridge unavailable",
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.tone).toBe("warning");
+      expect(status.chipLabel).toBe("Sync pendiente");
+      expect(status.title).toBe("3 cambios esperando sync");
+      expect(status.actionLabel).toBe("Revisar bridge");
+    });
+
+    it("elevates stale backlog after multiple days without sync", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "error",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          lastSyncAt: new Date("2026-04-03T10:00:00.000Z").getTime(),
+          pendingOpsCount: 2,
+          syncError: "bridge unavailable",
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.tone).toBe("danger");
+      expect(status.title).toBe("2 cambios esperando sync");
+      expect(status.description).toContain("Hace 6 días");
+      expect(status.actionLabel).toBe("Revisar bridge");
+    });
+
+    it("hides the bridge CTA when the phone itself is offline", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "error",
+          isBridgeConfigured: true,
+          isDeviceOnline: false,
+          lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
+          pendingOpsCount: 2,
+          syncError: "bridge unavailable",
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.chipLabel).toBe("Sin conexión");
+      expect(status.actionLabel).toBeNull();
+    });
+
+    it("switches the CTA to pairing when there is backlog without a configured bridge", () => {
+      const status = deriveVisibleSyncStatus(
+        {
+          connectionStatus: "offline",
+          isBridgeConfigured: false,
+          isDeviceOnline: true,
+          lastSyncAt: null,
+          pendingOpsCount: 2,
+          syncError: null,
+        },
+        new Date("2026-04-09T10:00:00.000Z"),
+      );
+
+      expect(status.chipLabel).toBe("Sync pendiente");
+      expect(status.actionLabel).toBe("Emparejar bridge");
+    });
+  });
+
+  describe("buildRefreshFailureFeedback", () => {
+    it("returns phone-offline copy when the device has no internet", () => {
+      const feedback = buildRefreshFailureFeedback({
+        connectionStatus: "error",
+        isBridgeConfigured: true,
+        isDeviceOnline: false,
+        lastSyncAt: null,
+        pendingOpsCount: 1,
+        syncError: "bridge unavailable",
+      });
+
+      expect(feedback.label).toBe("Este teléfono está sin internet.");
+      expect(feedback.description).toContain("sync se va a reintentar");
+    });
+
+    it("returns bridge-specific copy when the phone is online", () => {
+      const feedback = buildRefreshFailureFeedback({
+        connectionStatus: "error",
+        isBridgeConfigured: true,
+        isDeviceOnline: true,
+        lastSyncAt: null,
+        pendingOpsCount: 1,
+        syncError: "bridge unavailable",
+      });
+
+      expect(feedback.label).toBe("No se pudo sincronizar con el bridge.");
+      expect(feedback.description).toBe(
+        "Tus cambios siguen guardados en este dispositivo.",
+      );
+    });
+  });
+
+  describe("deriveManualSyncEnabled", () => {
+    it("returns false while the screen is already refreshing", () => {
+      expect(
+        deriveManualSyncEnabled({
+          connectionStatus: "error",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          isRefreshing: true,
+          lastSyncAt: null,
+          pendingOpsCount: 1,
+          syncError: "bridge unavailable",
+        }),
+      ).toBe(false);
+    });
+
+    it("returns true when manual sync can still start now", () => {
+      expect(
+        deriveManualSyncEnabled({
+          connectionStatus: "error",
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          isRefreshing: false,
+          lastSyncAt: null,
+          pendingOpsCount: 1,
+          syncError: "bridge unavailable",
+        }),
+      ).toBe(true);
+    });
+  });
+
   describe("formatTodayLabel", () => {
     it("formats a weekday with short Spanish names", () => {
       expect(formatTodayLabel(new Date("2026-04-09T10:00:00.000Z"))).toBe(
@@ -261,6 +439,7 @@ describe("anime-list-screen helpers", () => {
       const renderer = buildHeaderRightRenderer({
         refreshAccessibilityLabel: "Actualizar lista",
         isRefreshing: true,
+        isManualSyncEnabled: false,
         themeColorForeground: "#000",
         handleRefresh,
       });
@@ -268,12 +447,13 @@ describe("anime-list-screen helpers", () => {
       const element = renderer();
 
       expect(element.type).toBe(AnimeListScreenHeaderRight);
-      expect(element.props).toMatchObject({
-        refreshAccessibilityLabel: "Actualizar lista",
-        isRefreshing: true,
-        themeColorForeground: "#000",
-        handleRefresh,
-      });
+        expect(element.props).toMatchObject({
+          refreshAccessibilityLabel: "Actualizar lista",
+          isRefreshing: true,
+          isManualSyncEnabled: false,
+          themeColorForeground: "#000",
+          handleRefresh,
+        });
     });
   });
 });
