@@ -88,6 +88,10 @@ jest.mock("../../../src/features/sync/use-foreground-resync", () => ({
   useForegroundResync: jest.fn(),
 }));
 
+jest.mock("../../../src/features/sync/use-season-mode-sync", () => ({
+  useSeasonModeSync: jest.fn(),
+}));
+
 function emitAppState(status: string) {
   appStateListeners.forEach((listener) => {
     listener(status);

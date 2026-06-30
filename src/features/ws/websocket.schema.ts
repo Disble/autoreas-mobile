@@ -19,9 +19,15 @@ const SyncRequiredEventSchema = z.object({
   type: z.literal('sync_required'),
 });
 
+const PreferencesChangedEventSchema = z.object({
+  type: z.literal('preferences_changed'),
+  season_mode: z.boolean(),
+});
+
 export const WsMessageSchema = z.union([
   AnimeChangedEventSchema,
   AnimeCreatedEventSchema,
   AnimeDeletedEventSchema,
   SyncRequiredEventSchema,
+  PreferencesChangedEventSchema,
 ]);

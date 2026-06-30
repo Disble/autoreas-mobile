@@ -65,6 +65,7 @@ export interface AnimeListScreenViewProps {
   readonly isEmpty: boolean;
   readonly isRefreshing: boolean;
   readonly isManualSyncEnabled: boolean;
+  readonly isSeasonMode: boolean;
   readonly refreshAccessibilityLabel: string;
   readonly syncStatus: AnimeListScreenVisibleSyncStatus;
   readonly selectedFilter: AnimeDayFilter;

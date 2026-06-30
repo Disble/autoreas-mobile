@@ -51,6 +51,20 @@ export function buildBridgeHeaders(options: {
 }
 
 /**
+ * Extracts the bridge-owned season-mode flag from a parsed GET /api/status body.
+ * Defaults to false for any missing or malformed shape so a partial, legacy, or
+ * error status payload can never flip the client into season mode by accident —
+ * false is the canonical default (it mirrors the bridge's missing-row sentinel).
+ */
+export function extractSeasonMode(data: unknown): boolean {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+
+  return (data as { season_mode?: unknown }).season_mode === true;
+}
+
+/**
  * Best-effort JSON parse of an already-read response body.
  * Returns null for empty or non-JSON bodies so callers never read the stream twice.
  */

@@ -92,6 +92,7 @@ function buildProps(
     isEmpty: false,
     isRefreshing: false,
     isManualSyncEnabled: true,
+    isSeasonMode: false,
     refreshAccessibilityLabel: 'Refrescar Mis Animes',
     syncStatus: {
       actionLabel: null,
@@ -191,6 +192,18 @@ describe('AnimeListScreenView', () => {
     fireEvent.press(getByText('Revisar bridge'));
 
     expect(handleOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the season-mode indicator only when season mode is on', () => {
+    const { queryByText, rerender } = render(
+      <AnimeListScreenView {...buildProps({ isSeasonMode: false })} />,
+    );
+
+    expect(queryByText('Modo temporada')).toBeNull();
+
+    rerender(<AnimeListScreenView {...buildProps({ isSeasonMode: true })} />);
+
+    expect(queryByText('Modo temporada')).not.toBeNull();
   });
 
   it('disables pull to refresh from the same manual-sync gate', () => {

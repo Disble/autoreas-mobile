@@ -30,6 +30,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     isEmpty,
     isRefreshing,
     isManualSyncEnabled,
+    isSeasonMode,
     refreshAccessibilityLabel,
     syncStatus,
     selectedFilter,
@@ -116,6 +117,11 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
               <AppText className="text-muted text-sm">
                 {contextualHeader.subtitle}
               </AppText>
+              {isSeasonMode && (
+                <Chip color="accent" size="sm" variant="secondary">
+                  <Chip.Label>Modo temporada</Chip.Label>
+                </Chip>
+              )}
             </View>
 
             <View className="pt-3">

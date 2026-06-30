@@ -5,12 +5,17 @@ import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
-export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketProps = {}) {
+export function useWebSocket({
+  enabled = true,
+  onSyncRequired,
+  onPreferencesChanged,
+}: UseWebSocketProps = {}) {
   // 1. Refs
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
   const onSyncRequiredRef = useRef(onSyncRequired);
+  const onPreferencesChangedRef = useRef(onPreferencesChanged);
 
   // 2. State
 
@@ -27,6 +32,10 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
   useEffect(() => {
     onSyncRequiredRef.current = onSyncRequired;
   }, [onSyncRequired]);
+
+  useEffect(() => {
+    onPreferencesChangedRef.current = onPreferencesChanged;
+  }, [onPreferencesChanged]);
 
   useEffect(() => {
     const disconnect = () => {
@@ -109,6 +118,14 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
               parsed.type === 'anime_deleted'
             ) {
               onSyncRequiredRef.current?.();
+              return;
+            }
+
+            // Bridge-owned preference push: the season-mode flag changed. This is NOT an
+            // anime data change, so it must not trigger a reconcile -- it carries its own
+            // value and updates the global season-mode store directly via the callback.
+            if (parsed.type === 'preferences_changed') {
+              onPreferencesChangedRef.current?.(parsed.season_mode);
               return;
             }
           } catch (error) {

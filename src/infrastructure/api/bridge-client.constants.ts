@@ -5,5 +5,6 @@ export const BRIDGE_API_PATHS = {
   pairDevice: '/api/devices/pair',
   animes: '/api/animes',
   reconcile: '/api/sync/reconcile',
+  status: '/api/status',
   ws: '/ws',
 } as const;

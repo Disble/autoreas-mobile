@@ -42,9 +42,18 @@ export function parseAnimeRow(row: AnimeRow): Anime {
 
 /**
  * Resolves the legacy default filter from the current weekday so Mis Animes opens on today's schedule.
- * This preserves the expected day-first UX instead of falling back to status-based tabs.
+ * When the bridge-owned season mode is active, it instead opens on the 'Ver hoy' Estrenos set,
+ * mirroring the bridge's season-mode download selection. This preserves the expected day-first UX
+ * outside of season mode instead of falling back to status-based tabs.
  */
-export function getDefaultAnimeDayFilter(now: Date): AnimeDayFilter {
+export function getDefaultAnimeDayFilter(
+  now: Date,
+  seasonMode = false,
+): AnimeDayFilter {
+  if (seasonMode) {
+    return 'Ver hoy';
+  }
+
   return WEEKDAY_INDEX_TO_FILTER[now.getDay()];
 }
 

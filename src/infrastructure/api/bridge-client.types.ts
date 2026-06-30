@@ -60,6 +60,7 @@ export interface BridgeClient {
     connection: BridgeConnection,
     animeId: string,
   ) => Promise<BridgeHttpResult>;
+  readonly getStatus: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly reconcile: (
     connection: BridgeConnection,
     body: unknown,

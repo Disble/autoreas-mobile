@@ -129,6 +129,12 @@ export function createBridgeClient(
         path: `${BRIDGE_API_PATHS.animes}/${animeId}`,
         token: connection.token,
       }),
+    getStatus: (connection) =>
+      request(connection, {
+        method: 'GET',
+        path: BRIDGE_API_PATHS.status,
+        token: connection.token,
+      }),
     reconcile: (connection, body) =>
       request(connection, {
         method: 'POST',

@@ -2,8 +2,9 @@ import { useNetworkState } from "expo-network";
 import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
 import { useThemeColor, useToast } from "heroui-native";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
+import { useSeasonModeStore } from "../../../../infrastructure/store/season-mode-store";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
 import { useSyncFacade } from "../../../sync/use-sync-facade";
@@ -34,10 +35,11 @@ export function useAnimeListScreen(
 ): AnimeListScreenViewModel {
   // 1. Refs
   const mutatingAnimeByIdRef = useRef<Record<string, boolean>>({});
+  const hasUserSelectedFilterRef = useRef(false);
 
   // 2. State
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
-    getDefaultAnimeDayFilter(new Date()),
+    getDefaultAnimeDayFilter(new Date(), useSeasonModeStore.getState().seasonMode),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
@@ -53,6 +55,7 @@ export function useAnimeListScreen(
   const [themeColorForeground] = useThemeColor(["foreground"]);
   const { layout: layoutMode } = useResponsiveLayout();
   const networkState = useNetworkState();
+  const seasonMode = useSeasonModeStore((state) => state.seasonMode);
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
@@ -129,6 +132,7 @@ export function useAnimeListScreen(
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleSelectedFilterChange = useCallback((filter: AnimeDayFilter) => {
+    hasUserSelectedFilterRef.current = true;
     setSelectedFilter(filter);
   }, []);
 
@@ -246,8 +250,19 @@ export function useAnimeListScreen(
   }, [router, settingsHref]);
 
   // 7. Effects
+  // Soft-follow the season-mode default: while the user has not manually picked a filter,
+  // keep the active filter aligned with the bridge-owned season mode (ON -> 'Ver hoy',
+  // OFF -> today's weekday). Once the user chooses a filter, this stops overriding them.
+  useEffect(() => {
+    if (hasUserSelectedFilterRef.current) {
+      return;
+    }
+
+    setSelectedFilter(getDefaultAnimeDayFilter(new Date(), seasonMode));
+  }, [seasonMode]);
 
   return {
+    isSeasonMode: seasonMode,
     animes,
     filterOptions,
     filterCounts,
