@@ -1,8 +1,3 @@
-import {
-  BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
-  BACKGROUND_SYNC_REGISTRATION_LABELS,
-  BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
-} from './settings-screen.constants';
 import type {
   BackgroundSyncSection,
   BuildBackgroundSyncSectionInput,
@@ -12,6 +7,11 @@ import type {
   ResolvedToneColors,
 } from './settings-screen.types';
 import type { SyncRuntimeRegistrationStatus } from '../../../sync/sync-runtime-status.types';
+import {
+  BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
+  BACKGROUND_SYNC_REGISTRATION_LABELS,
+  BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
+} from './settings-screen.constants';
 
 /**
  * Formats runtime timestamps into a stable, readable UTC label for the Settings surface.

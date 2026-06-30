@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import type { Ionicons } from '@expo/vector-icons';
 import type { BridgeConfig } from '../../../../infrastructure/db/schema';
 import type { LayoutMode } from '../../../../hooks/use-responsive-layout';
+import type { SyncVisibleStatus } from '../../../sync/sync-visible-status.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../sync/sync-runtime-status.types';
 
 export type SettingsScreenProps = Record<never, never>;
@@ -49,13 +50,49 @@ export interface BuildBackgroundSyncSectionInput {
   readonly snapshot: SyncRuntimeStatusSnapshot;
 }
 
+export type SettingsSyncSummaryActionKind = 'go_to_setup' | 'repair_bridge';
+
+export type SettingsBridgeStatusKind =
+  | 'unpaired'
+  | 'healthy'
+  | 'syncing'
+  | 'phone_offline'
+  | 'bridge_unreachable'
+  | 'local_only'
+  | 'pending_backlog'
+  | 'stale_backlog';
+
+export interface SettingsSyncSummary extends SyncVisibleStatus {
+  readonly bridgeStatusKind: SettingsBridgeStatusKind;
+  readonly actionKind: SettingsSyncSummaryActionKind | null;
+  readonly actionLabel: string | null;
+}
+
+export interface SettingsBridgeStatus extends SyncVisibleStatus {
+  readonly bridgeStatusKind: SettingsBridgeStatusKind;
+}
+
+export interface BuildSettingsSyncSummaryInput {
+  readonly isConfigured: boolean;
+  readonly isDeviceOnline: boolean | null;
+  readonly now: Date;
+  readonly syncFacts: {
+    readonly connectionStatus: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
+    readonly lastSyncAt: number | null;
+    readonly pendingOpsCount: number;
+    readonly syncError: string | null;
+  };
+}
+
 export interface SettingsScreenViewModel {
   readonly backgroundSyncSection: BackgroundSyncSection;
+  readonly bridgeStatus: SettingsBridgeStatus;
   readonly config: BridgeConfig | null;
   readonly error: string | null;
   readonly isConfigured: boolean;
   readonly isUnpairing: boolean;
   readonly layoutMode: LayoutMode;
+  readonly syncSummary: SettingsSyncSummary;
   readonly themeColorForeground: string;
   readonly themeColorMuted: string;
   readonly themeColorSuccess: string;
@@ -63,24 +100,27 @@ export interface SettingsScreenViewModel {
   readonly themeColorDanger: string;
   readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
+  readonly handleSyncSummaryAction: (() => void) | null;
 }
 
 export interface SettingsBridgeCardProps {
+  readonly bridgeStatus: SettingsBridgeStatus;
   readonly config: BridgeConfig | null;
   readonly isConfigured: boolean;
   readonly isUnpairing: boolean;
   readonly layoutMode: LayoutMode;
   readonly themeColorForeground: string;
   readonly themeColorMuted: string;
-  readonly themeColorSuccess: string;
   readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
 }
 
 export interface SettingsSyncCardProps {
   readonly colors: ResolvedToneColors;
+  readonly handleSummaryAction: (() => void) | null;
   readonly layoutMode: LayoutMode;
   readonly section: BackgroundSyncSection;
+  readonly summary: SettingsSyncSummary;
 }
 
 export interface SettingsMetricTileProps {

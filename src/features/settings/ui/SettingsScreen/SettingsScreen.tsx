@@ -13,11 +13,13 @@ import { useSettingsScreen } from './use-settings-screen';
 export function SettingsScreen(props: SettingsScreenProps) {
   const {
     backgroundSyncSection,
+    bridgeStatus,
     config,
     error,
     isConfigured,
     isUnpairing,
     layoutMode,
+    syncSummary,
     themeColorDanger,
     themeColorForeground,
     themeColorMuted,
@@ -25,6 +27,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
     themeColorWarning,
     handleGoToSetup,
     handleRePair,
+    handleSyncSummaryAction,
   } = useSettingsScreen(props);
 
   const toneColors: ResolvedToneColors = {
@@ -46,6 +49,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
   const bridgeSlot = (
     <SettingsBridgeCard
+      bridgeStatus={bridgeStatus}
       config={config}
       handleGoToSetup={handleGoToSetup}
       handleRePair={handleRePair}
@@ -54,15 +58,16 @@ export function SettingsScreen(props: SettingsScreenProps) {
       layoutMode={layoutMode}
       themeColorForeground={themeColorForeground}
       themeColorMuted={themeColorMuted}
-      themeColorSuccess={themeColorSuccess}
     />
   );
 
   const syncSlot = (
     <SettingsSyncCard
       colors={toneColors}
+      handleSummaryAction={handleSyncSummaryAction}
       layoutMode={layoutMode}
       section={backgroundSyncSection}
+      summary={syncSummary}
     />
   );
 

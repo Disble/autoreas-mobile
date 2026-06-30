@@ -1,3 +1,4 @@
+import { useNetworkState } from 'expo-network';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
@@ -6,7 +7,14 @@ import { Alert } from 'react-native';
 import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
 import { useBackgroundSyncStatus } from '../../use-background-sync-status';
 import { useBridgeConfig } from '../../use-bridge-config';
-import { buildBackgroundSyncSection } from './settings-screen.helpers';
+import { useSyncFacade } from '../../../sync/use-sync-facade';
+import {
+  buildSettingsBridgeStatus,
+  buildSettingsSyncSummary,
+} from './settings-sync-status.helpers';
+import {
+  buildBackgroundSyncSection,
+} from './settings-screen.helpers';
 import type {
   SettingsScreenProps,
   SettingsScreenViewModel,
@@ -35,15 +43,47 @@ export function useSettingsScreen(
     'danger',
   ]);
   const { layout: layoutMode } = useResponsiveLayout();
+  const networkState = useNetworkState();
 
   // 4. Queries/Mutations
   const { snapshot } = useBackgroundSyncStatus();
   const { config, isConfigured, isUnpairing, error, unpair } = useBridgeConfig();
+  const { connectionStatus, lastSyncAt, pendingOpsCount, syncError } = useSyncFacade();
 
   // 5. Derived State (useMemo)
   const backgroundSyncSection = useMemo(
     () => buildBackgroundSyncSection({ isConfigured, snapshot }),
     [isConfigured, snapshot],
+  );
+  const isDeviceOnline = useMemo(() => {
+    if (typeof networkState.isInternetReachable === 'boolean') {
+      return networkState.isInternetReachable;
+    }
+
+    if (typeof networkState.isConnected === 'boolean') {
+      return networkState.isConnected;
+    }
+
+    return null;
+  }, [networkState.isConnected, networkState.isInternetReachable]);
+  const syncSummary = useMemo(
+    () =>
+      buildSettingsSyncSummary({
+        isConfigured,
+        isDeviceOnline,
+        now: new Date(),
+        syncFacts: {
+          connectionStatus,
+          lastSyncAt,
+          pendingOpsCount,
+          syncError,
+        },
+      }),
+    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount, syncError],
+  );
+  const bridgeStatus = useMemo(
+    () => buildSettingsBridgeStatus(syncSummary),
+    [syncSummary],
   );
 
   // 6. Callbacks (useCallback calling pure helpers)
@@ -76,15 +116,28 @@ export function useSettingsScreen(
     );
   }, [router, unpair]);
 
+  const handleSyncSummaryAction = useCallback(() => {
+    if (syncSummary.actionKind === 'go_to_setup') {
+      handleGoToSetup();
+      return;
+    }
+
+    if (syncSummary.actionKind === 'repair_bridge') {
+      handleRePair();
+    }
+  }, [handleGoToSetup, handleRePair, syncSummary.actionKind]);
+
   // 7. Effects
 
   return {
     backgroundSyncSection,
+    bridgeStatus,
     config,
     error,
     isConfigured,
     isUnpairing,
     layoutMode,
+    syncSummary,
     themeColorForeground,
     themeColorMuted,
     themeColorSuccess,
@@ -92,5 +145,7 @@ export function useSettingsScreen(
     themeColorDanger,
     handleGoToSetup,
     handleRePair,
+    handleSyncSummaryAction:
+      syncSummary.actionKind === null ? null : handleSyncSummaryAction,
   };
 }

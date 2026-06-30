@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Card, cn } from 'heroui-native';
+import { Button, Alert as HeroAlert, Card, Chip, cn } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
+import { STATUS_CHIP_COLOR_BY_TONE } from './settings-screen.constants';
 import type { SettingsBridgeCardProps } from './settings-screen.types';
 
 export function SettingsBridgeCard(props: SettingsBridgeCardProps) {
   const {
+    bridgeStatus,
     config,
     handleGoToSetup,
     handleRePair,
@@ -14,7 +16,6 @@ export function SettingsBridgeCard(props: SettingsBridgeCardProps) {
     layoutMode,
     themeColorForeground,
     themeColorMuted,
-    themeColorSuccess,
   } = props;
 
   const isTabletLandscape = layoutMode === 'tablet-landscape';
@@ -69,23 +70,29 @@ export function SettingsBridgeCard(props: SettingsBridgeCardProps) {
             <Card.Title numberOfLines={1}>
               {config.deviceName || 'Bridge sin nombre'}
             </Card.Title>
-            <View className="flex-row items-center gap-1 rounded-full bg-success/15 px-2 py-0.5">
-              <View
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: themeColorSuccess }}
-              />
-              <AppText className="text-[10px] font-semibold uppercase tracking-wider text-success">
-                Emparejado
-              </AppText>
-            </View>
+            <Chip
+              color={STATUS_CHIP_COLOR_BY_TONE[bridgeStatus.tone]}
+              size="sm"
+              variant="secondary"
+            >
+              <Chip.Label>{bridgeStatus.chipLabel}</Chip.Label>
+            </Chip>
           </View>
           <Card.Description numberOfLines={1}>
-            Conexión local lista para sincronizar
+            {bridgeStatus.title}
           </Card.Description>
         </View>
       </Card.Header>
 
       <Card.Body className="flex-1 gap-2.5 pt-4">
+        <HeroAlert status={bridgeStatus.tone}>
+          <HeroAlert.Indicator />
+          <HeroAlert.Content>
+            <HeroAlert.Title>{bridgeStatus.title}</HeroAlert.Title>
+            <HeroAlert.Description>{bridgeStatus.description}</HeroAlert.Description>
+          </HeroAlert.Content>
+        </HeroAlert>
+
         <View className="flex-row items-center gap-3 rounded-2xl bg-surface-secondary px-3 py-2.5">
           <View className="h-8 w-8 items-center justify-center rounded-full bg-accent/15">
             <Ionicons

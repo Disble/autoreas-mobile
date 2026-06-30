@@ -1,4 +1,4 @@
-import { Alert as HeroAlert, Card, Chip } from 'heroui-native';
+import { Button, Alert as HeroAlert, Card, Chip } from 'heroui-native';
 import { View } from 'react-native';
 import {
   BACKGROUND_SYNC_SECTION_TITLE,
@@ -9,7 +9,7 @@ import { SettingsMetricTileGrid } from './SettingsMetricTileGrid';
 import type { SettingsSyncCardProps } from './settings-screen.types';
 
 export function SettingsSyncCard(props: SettingsSyncCardProps) {
-  const { colors, layoutMode, section } = props;
+  const { colors, handleSummaryAction, layoutMode, section, summary } = props;
   const columns = METRIC_TILE_COLUMNS_BY_LAYOUT[layoutMode];
 
   return (
@@ -33,6 +33,29 @@ export function SettingsSyncCard(props: SettingsSyncCardProps) {
       </Card.Header>
 
       <Card.Body className="flex-1 gap-3 pt-4">
+        <View className="gap-2">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Chip color={STATUS_CHIP_COLOR_BY_TONE[summary.tone]} size="sm" variant="secondary">
+              <Chip.Label>{summary.chipLabel}</Chip.Label>
+            </Chip>
+            {summary.actionLabel && handleSummaryAction ? (
+              <Button onPress={handleSummaryAction} size="sm" variant="secondary">
+                <Button.Label>{summary.actionLabel}</Button.Label>
+              </Button>
+            ) : null}
+          </View>
+
+          <HeroAlert status={summary.tone}>
+            <HeroAlert.Indicator />
+            <HeroAlert.Content>
+              <HeroAlert.Title>{summary.title}</HeroAlert.Title>
+              <HeroAlert.Description>{summary.description}</HeroAlert.Description>
+            </HeroAlert.Content>
+          </HeroAlert>
+        </View>
+
+        <View className="h-px w-full bg-surface-secondary" />
+
         <HeroAlert status={section.statusTone}>
           <HeroAlert.Indicator />
           <HeroAlert.Content>

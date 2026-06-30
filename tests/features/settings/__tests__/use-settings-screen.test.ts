@@ -1,9 +1,11 @@
+import { useNetworkState } from 'expo-network';
 import { act, renderHook } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
 import { useResponsiveLayout } from '../../../../src/hooks/use-responsive-layout';
 import { useBackgroundSyncStatus } from '../../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../../src/features/settings/use-bridge-config';
+import { useSyncFacade } from '../../../../src/features/sync/use-sync-facade';
 import { useSettingsScreen } from '../../../../src/features/settings/ui/SettingsScreen/use-settings-screen';
 
 jest.mock('expo-router', () => ({
@@ -14,12 +16,20 @@ jest.mock('heroui-native', () => ({
   useThemeColor: jest.fn(() => ['#111111', '#777777', '#22c55e', '#f97316', '#ef4444']),
 }));
 
+jest.mock('expo-network', () => ({
+  useNetworkState: jest.fn(),
+}));
+
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({
   useBridgeConfig: jest.fn(),
 }));
 
 jest.mock('../../../../src/features/settings/use-background-sync-status', () => ({
   useBackgroundSyncStatus: jest.fn(),
+}));
+
+jest.mock('../../../../src/features/sync/use-sync-facade', () => ({
+  useSyncFacade: jest.fn(),
 }));
 
 jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
@@ -60,11 +70,26 @@ describe('useSettingsScreen', () => {
         lastFailureMessage: 'Bridge timeout after 10s',
         lastTriggerSource: 'background_task',
         lastSyncedCount: 4,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
       },
+    });
+    (useSyncFacade as jest.Mock).mockReturnValue({
+      connectionStatus: 'error',
+      lastSyncAt: 1775811900000,
+      pendingOpsCount: 3,
+      requestSync: jest.fn(),
+      syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+      manualSync: jest.fn(),
     });
     (useResponsiveLayout as jest.Mock).mockReturnValue({
       layout: 'phone',
       isCompact: true,
+    });
+    (useNetworkState as jest.Mock).mockReturnValue({
+      isConnected: true,
+      isInternetReachable: true,
     });
   });
 
@@ -79,6 +104,10 @@ describe('useSettingsScreen', () => {
     expect(result.current.backgroundSyncSection.tiles.map((tile) => tile.id)).toEqual(
       expect.arrayContaining(['registration', 'lastFailure']),
     );
+    expect(result.current.syncSummary.title).toBe('3 cambios esperando sync');
+    expect(result.current.bridgeStatus.chipLabel).toBe('Sync pendiente');
+    expect(result.current.bridgeStatus.title).toBe('3 cambios esperando sync');
+    expect(result.current.syncSummary.actionKind).toBe('repair_bridge');
   });
 
   it('exposes the responsive layout mode to the view', () => {
@@ -100,15 +129,39 @@ describe('useSettingsScreen', () => {
       error: null,
       unpair,
     });
+    (useSyncFacade as jest.Mock).mockReturnValue({
+      connectionStatus: 'offline',
+      lastSyncAt: null,
+      pendingOpsCount: 0,
+      requestSync: jest.fn(),
+      syncError: null,
+      manualSync: jest.fn(),
+    });
 
     const { result } = renderHook(() => useSettingsScreen({}));
 
     act(() => {
-      result.current.handleGoToSetup();
+      result.current.handleSyncSummaryAction?.();
     });
 
     expect(push).toHaveBeenCalledWith('/setup');
     expect(result.current.backgroundSyncSection.status).toBe('Sin bridge emparejado');
+    expect(result.current.bridgeStatus.title).toBe('Sin bridge configurado');
+    expect(result.current.syncSummary.actionKind).toBe('go_to_setup');
+  });
+
+  it('does not expose a repair CTA when the phone is offline', () => {
+    (useNetworkState as jest.Mock).mockReturnValue({
+      isConnected: false,
+      isInternetReachable: false,
+    });
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.syncSummary.chipLabel).toBe('Sin conexión');
+    expect(result.current.bridgeStatus.title).toBe('Teléfono sin internet');
+    expect(result.current.syncSummary.actionKind).toBeNull();
+    expect(result.current.handleSyncSummaryAction).toBeNull();
   });
 
   it('confirms unpairing and redirects to setup in repair mode after success', async () => {
@@ -117,7 +170,7 @@ describe('useSettingsScreen', () => {
     const { result } = renderHook(() => useSettingsScreen({}));
 
     act(() => {
-      result.current.handleRePair();
+      result.current.handleSyncSummaryAction?.();
     });
 
     const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
