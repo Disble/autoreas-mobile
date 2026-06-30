@@ -100,36 +100,46 @@ export function useWebSocket({
           reconnectAttemptRef.current = 0;
         };
 
-        ws.onmessage = async (event: MessageEvent) => {
+        ws.onmessage = (event: MessageEvent) => {
+          let data: unknown;
           try {
-            const data = JSON.parse(event.data);
-            const parsed = WsMessageSchema.parse(data);
+            data = JSON.parse(event.data);
+          } catch {
+            // Non-JSON frame: ignore rather than crash the socket handler.
+            return;
+          }
 
-            // Every anime event (created/changed/deleted) carries only `anime_id` -- it has no
-            // `changed_fields`/`timestamp`, so it cannot safely drive a targeted write on its
-            // own. Funnel ALL of them through the same reconcile trigger `sync_required` uses:
-            // reconcile is the only path that carries the rich shape the merge boundary needs
-            // (changed_fields + timestamp + snapshot), with the staleness guard and outbox
-            // protection applied. This intentionally replaces the old GET-then-clobber writer.
-            if (
-              parsed.type === 'sync_required' ||
-              parsed.type === 'anime_changed' ||
-              parsed.type === 'anime_created' ||
-              parsed.type === 'anime_deleted'
-            ) {
-              onSyncRequiredRef.current?.();
-              return;
-            }
+          const result = WsMessageSchema.safeParse(data);
+          if (!result.success) {
+            // Unrecognized message type (e.g. a newer bridge added one this client
+            // does not know yet). Ignore it quietly so forward-incompatible frames
+            // never surface as a runtime error box -- the contract stays additive.
+            return;
+          }
 
-            // Bridge-owned preference push: the season-mode flag changed. This is NOT an
-            // anime data change, so it must not trigger a reconcile -- it carries its own
-            // value and updates the global season-mode store directly via the callback.
-            if (parsed.type === 'preferences_changed') {
-              onPreferencesChangedRef.current?.(parsed.season_mode);
-              return;
-            }
-          } catch (error) {
-            console.error('Error processing WS message', error);
+          const parsed = result.data;
+
+          // Every anime event (created/changed/deleted) carries only `anime_id` -- it has no
+          // `changed_fields`/`timestamp`, so it cannot safely drive a targeted write on its
+          // own. Funnel ALL of them through the same reconcile trigger `sync_required` uses:
+          // reconcile is the only path that carries the rich shape the merge boundary needs
+          // (changed_fields + timestamp + snapshot), with the staleness guard and outbox
+          // protection applied. This intentionally replaces the old GET-then-clobber writer.
+          if (
+            parsed.type === 'sync_required' ||
+            parsed.type === 'anime_changed' ||
+            parsed.type === 'anime_created' ||
+            parsed.type === 'anime_deleted'
+          ) {
+            onSyncRequiredRef.current?.();
+            return;
+          }
+
+          // Bridge-owned preference push: the season-mode flag changed. This is NOT an
+          // anime data change, so it must not trigger a reconcile -- it carries its own
+          // value and updates the global season-mode store directly via the callback.
+          if (parsed.type === 'preferences_changed') {
+            onPreferencesChangedRef.current?.(parsed.season_mode);
           }
         };
 
