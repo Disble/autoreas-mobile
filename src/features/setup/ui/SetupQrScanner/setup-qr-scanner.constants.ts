@@ -1,4 +1,6 @@
 export const SETUP_QR_SCANNER_TITLE = 'Escaneá el QR del Bridge';
+export const SETUP_QR_SCANNER_SUBTITLE = 'Apuntá la cámara al código del Bridge.';
+export const SETUP_QR_SCANNER_HINT = 'Alineá el QR dentro del recuadro';
 export const SETUP_QR_SCANNER_REQUEST_PERMISSION_LABEL = 'Habilitar cámara';
 export const SETUP_QR_SCANNER_CLOSE_LABEL = 'Cerrar escáner';
 export const SETUP_QR_SCANNER_BUSY_LABEL = 'Procesando QR...';

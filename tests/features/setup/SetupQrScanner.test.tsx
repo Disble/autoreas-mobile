@@ -2,6 +2,20 @@ import React from 'react';
 import { useCameraPermissions } from 'expo-camera';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { SetupQrScanner } from '../../../src/features/setup/ui/SetupQrScanner/SetupQrScanner';
+import { SETUP_QR_SCANNER_CLOSE_LABEL } from '../../../src/features/setup/ui/SetupQrScanner/setup-qr-scanner.constants';
+
+jest.mock('@expo/vector-icons', () => ({
+  Ionicons: 'Ionicons',
+}));
+
+jest.mock('react-native-safe-area-context', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: ({ children, ...props }: any) => <View {...props}>{children}</View>,
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  };
+});
 
 describe('SetupQrScanner', () => {
   const requestPermission = jest.fn();
@@ -55,5 +69,26 @@ describe('SetupQrScanner', () => {
     });
 
     expect(onScan).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the full-screen scanner from the floating close control', () => {
+    const onClose = jest.fn();
+    (useCameraPermissions as jest.Mock).mockReturnValue([
+      { granted: true, canAskAgain: true },
+      requestPermission,
+    ]);
+
+    render(
+      <SetupQrScanner
+        isBusy={false}
+        isOpen
+        onClose={onClose}
+        onScan={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText(SETUP_QR_SCANNER_CLOSE_LABEL));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
