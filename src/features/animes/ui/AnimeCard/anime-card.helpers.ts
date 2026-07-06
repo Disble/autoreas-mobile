@@ -124,7 +124,7 @@ export function getAnimeSeasonStatus(
 
   return {
     label: 'Sin nota de temporada',
-    description: 'Candidato activo',
+    description: 'Disponible para calificar',
     tone: 'accent',
     showRatingCta: true,
   };

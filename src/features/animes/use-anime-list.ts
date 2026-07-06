@@ -12,8 +12,13 @@ import {
   type SeasonRatingQueueRow,
 } from "../../infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
+import { useSeasonModeStore } from "../../infrastructure/store/season-mode-store";
 import { buildAnimeSeasonProjection } from "./anime-season.helpers";
-import { parseAnimeRow, sortAnimesBySelectedDay } from "./anime.helpers";
+import {
+  matchesAnimeDayFilter,
+  parseAnimeRow,
+  sortAnimesBySelectedDay,
+} from "./anime.helpers";
 import type { AnimeListItem } from "./anime-season.types";
 import type { AnimeDayFilter } from "./anime.types";
 
@@ -23,6 +28,7 @@ export function useAnimeList(filter: AnimeDayFilter) {
   const activeSeasonSnapshot = useActiveSeasonStore(
     (state) => state.activeSeasonSnapshot,
   );
+  const seasonMode = useSeasonModeStore((state) => state.seasonMode);
 
   const animeQuery = useMemo(() => {
     if (!db) {
@@ -45,22 +51,28 @@ export function useAnimeList(filter: AnimeDayFilter) {
     seasonRatingQueueQuery,
     [],
   );
+  const allowLocalActiveFallback = useMemo(
+    () => seasonMode && filter === "Ver hoy",
+    [filter, seasonMode],
+  );
 
   const allActiveAnimes = useMemo<AnimeListItem[]>(() => {
     if (!data) return [];
     return data.map((row) => {
       const anime = parseAnimeRow(row);
 
-      return {
-        ...anime,
-        seasonProjection: buildAnimeSeasonProjection({
-          animeId: anime._id,
-          activeSeasonSnapshot,
-          seasonRatingQueueRows,
-        }),
-      };
-    });
-  }, [activeSeasonSnapshot, data, seasonRatingQueueRows]);
+        return {
+          ...anime,
+          seasonProjection: buildAnimeSeasonProjection({
+            animeId: anime._id,
+            allowLocalActiveFallback:
+              allowLocalActiveFallback && matchesAnimeDayFilter(anime, filter),
+            activeSeasonSnapshot,
+            seasonRatingQueueRows,
+          }),
+        };
+      });
+  }, [activeSeasonSnapshot, allowLocalActiveFallback, data, filter, seasonRatingQueueRows]);
 
   const parsedData = useMemo(
     () => sortAnimesBySelectedDay(allActiveAnimes, filter),

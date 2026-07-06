@@ -1,6 +1,7 @@
 import { renderHook } from "@testing-library/react-native";
 import { useActiveSeasonStore } from "../../../infrastructure/store/active-season-store";
 import { enqueueSeasonRatingIntent } from "../../../features/sync/season-rating-queue.helpers";
+import { LOCAL_ACTIVE_SEASON_ID } from "../anime-season.constants";
 import { useSeasonRatingIntent } from "../use-season-rating-intent";
 import { createMockRawDb } from "./use-season-rating-intent.helpers";
 
@@ -51,11 +52,20 @@ describe("useSeasonRatingIntent", () => {
     nowSpy.mockRestore();
   });
 
-  it("does nothing when there is no active season snapshot", async () => {
+  it("uses the local active fallback season id when no active snapshot is hydrated", async () => {
+    (enqueueSeasonRatingIntent as jest.Mock).mockResolvedValue(undefined);
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_752_400_000_000);
     const { result } = renderHook(() => useSeasonRatingIntent());
 
     await result.current.submitSeasonRatingIntent("anime-1", 4);
 
-    expect(enqueueSeasonRatingIntent).not.toHaveBeenCalled();
+    expect(enqueueSeasonRatingIntent).toHaveBeenCalledWith(createMockRawDb(), {
+      seasonId: LOCAL_ACTIVE_SEASON_ID,
+      animeId: "anime-1",
+      nota: 4,
+      ratedAt: 1_752_400_000_000,
+    });
+
+    nowSpy.mockRestore();
   });
 });

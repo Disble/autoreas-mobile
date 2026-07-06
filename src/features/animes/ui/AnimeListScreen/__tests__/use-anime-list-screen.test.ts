@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react-native";
+import { LOCAL_ACTIVE_SEASON_ID } from "../../../anime-season.constants";
 import { useAnimeListScreen } from "../use-anime-list-screen";
 import { buildSeasonAwareAnimeListItem } from "./use-anime-list-screen.helpers";
 
@@ -94,6 +95,38 @@ describe("useAnimeListScreen", () => {
       bridgeRating: 4,
       pendingRating: 6,
       pendingStatus: "pending",
+      pendingFailureKind: null,
+    });
+  });
+
+  it("opens season rating sheet for the local active fallback projection", () => {
+    const fallbackAnime = {
+      ...buildSeasonAwareAnimeListItem(),
+      seasonProjection: {
+        seasonId: LOCAL_ACTIVE_SEASON_ID,
+        bridgeRating: null,
+        bridgeRatingSource: null,
+        localIntent: null,
+      },
+    };
+    const { useAnimeList } = jest.requireMock("../../../use-anime-list");
+    useAnimeList.mockReturnValue({
+      data: [fallbackAnime],
+      allActiveAnimes: [fallbackAnime],
+    });
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    act(() => {
+      result.current.handleOpenSeasonRatingSheet("anime-1");
+    });
+
+    expect(result.current.seasonRatingSheetRequest).toEqual({
+      animeId: "anime-1",
+      animeTitle: "Blue Box",
+      bridgeRating: null,
+      pendingRating: null,
+      pendingStatus: null,
       pendingFailureKind: null,
     });
   });

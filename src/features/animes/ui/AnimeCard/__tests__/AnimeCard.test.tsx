@@ -1,5 +1,6 @@
 import React from "react";
 import { fireEvent, render } from "@testing-library/react-native";
+import { LOCAL_ACTIVE_SEASON_ID } from "../../../anime-season.constants";
 import { AnimeCard } from "../AnimeCard";
 import {
   buildAnimeCardAnime,
@@ -70,5 +71,27 @@ describe("AnimeCard", () => {
     fireEvent.press(getByText("Temporada"));
 
     expect(onOpenSeasonRatingSheet).toHaveBeenCalledWith("anime-1");
+  });
+
+  it("shows the season CTA for local active fallback without bridge confirmation", () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            seasonProjection: {
+              seasonId: LOCAL_ACTIVE_SEASON_ID,
+              bridgeRating: null,
+              bridgeRatingSource: null,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText("Sin nota de temporada")).toBeTruthy();
+    expect(getByText("Disponible para calificar")).toBeTruthy();
+    expect(getByText("Temporada")).toBeTruthy();
   });
 });

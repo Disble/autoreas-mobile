@@ -4,6 +4,7 @@ import {
   useOptionalSQLiteContext,
 } from "../../infrastructure/db/native-runtime";
 import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
+import { LOCAL_ACTIVE_SEASON_ID } from "./anime-season.constants";
 import { enqueueSeasonRatingIntent } from "../sync/season-rating-queue.helpers";
 import type { SeasonRatingValue } from "./ui/SeasonRatingSheet/season-rating-sheet.types";
 
@@ -29,12 +30,8 @@ export function useSeasonRatingIntent() {
         throw getExpoSQLiteUnavailableError();
       }
 
-      if (!activeSeasonSnapshot) {
-        return;
-      }
-
       await enqueueSeasonRatingIntent(rawDb, {
-        seasonId: activeSeasonSnapshot.seasonId,
+        seasonId: activeSeasonSnapshot?.seasonId ?? LOCAL_ACTIVE_SEASON_ID,
         animeId,
         nota: rating,
         ratedAt: Date.now(),

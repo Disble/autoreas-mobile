@@ -8,6 +8,15 @@ import type {
   SeasonRatingQueueStatus,
 } from "../sync/season-rating-queue.types";
 import type { SeasonRatingQueueRow } from "../../infrastructure/db/schema";
+import { LOCAL_ACTIVE_SEASON_ID } from "./anime-season.constants";
+
+function buildSeasonIntentLookupIds(seasonId: string): readonly string[] {
+  if (seasonId === LOCAL_ACTIVE_SEASON_ID) {
+    return [seasonId];
+  }
+
+  return [seasonId, LOCAL_ACTIVE_SEASON_ID];
+}
 
 /**
  * Picks the latest durable season-rating intent for one anime within the active season.
@@ -15,11 +24,11 @@ import type { SeasonRatingQueueRow } from "../../infrastructure/db/schema";
  */
 export function selectLatestSeasonRatingIntent(
   animeId: string,
-  seasonId: string,
+  seasonIds: readonly string[],
   seasonRatingQueueRows: readonly SeasonRatingQueueRow[],
 ): AnimeSeasonLocalIntent | null {
   const matchingRows = seasonRatingQueueRows.filter(
-    (row) => row.animeId === animeId && row.seasonId === seasonId,
+    (row) => row.animeId === animeId && seasonIds.includes(row.seasonId),
   );
 
   if (matchingRows.length === 0) {
@@ -50,24 +59,38 @@ export function selectLatestSeasonRatingIntent(
 export function buildAnimeSeasonProjection(
   input: BuildAnimeSeasonProjectionInput,
 ): AnimeSeasonProjection | null {
-  const { activeSeasonSnapshot, animeId, seasonRatingQueueRows } = input;
-  if (!activeSeasonSnapshot) {
+  const {
+    activeSeasonSnapshot,
+    allowLocalActiveFallback,
+    animeId,
+    seasonRatingQueueRows,
+  } = input;
+  const candidate = activeSeasonSnapshot?.candidatesByAnimeId[animeId] ?? null;
+
+  if (!candidate && !allowLocalActiveFallback) {
     return null;
   }
 
-  const candidate = activeSeasonSnapshot.candidatesByAnimeId[animeId];
+  const seasonId = activeSeasonSnapshot?.seasonId ?? LOCAL_ACTIVE_SEASON_ID;
+  const localIntent = selectLatestSeasonRatingIntent(
+    animeId,
+    buildSeasonIntentLookupIds(seasonId),
+    seasonRatingQueueRows,
+  );
+
   if (!candidate) {
-    return null;
+    return {
+      seasonId,
+      bridgeRating: null,
+      bridgeRatingSource: null,
+      localIntent,
+    };
   }
 
   return {
-    seasonId: activeSeasonSnapshot.seasonId,
+    seasonId,
     bridgeRating: candidate.bridgeRating,
     bridgeRatingSource: candidate.bridgeRatingSource,
-    localIntent: selectLatestSeasonRatingIntent(
-      animeId,
-      activeSeasonSnapshot.seasonId,
-      seasonRatingQueueRows,
-    ),
+    localIntent,
   };
 }

@@ -1,4 +1,5 @@
 import type { SeasonRatingQueueRow } from "../../../infrastructure/db/schema";
+import { LOCAL_ACTIVE_SEASON_ID } from "../anime-season.constants";
 import {
   buildAnimeSeasonProjection,
   selectLatestSeasonRatingIntent,
@@ -22,10 +23,14 @@ function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRat
 
 describe("anime season helpers", () => {
   it("picks the latest local intent for the active candidate", () => {
-    const latest = selectLatestSeasonRatingIntent("anime-1", "season-2026-q3", [
-      buildQueueRow({ id: 1, nota: 3, createdAt: 1_752_000_100_000 }),
-      buildQueueRow({ id: 2, nota: 6, createdAt: 1_752_000_200_000, status: "failed", lastFailureKind: "auth_repair" }),
-    ]);
+    const latest = selectLatestSeasonRatingIntent(
+      "anime-1",
+      ["season-2026-q3", LOCAL_ACTIVE_SEASON_ID],
+      [
+        buildQueueRow({ id: 1, nota: 3, createdAt: 1_752_000_100_000 }),
+        buildQueueRow({ id: 2, nota: 6, createdAt: 1_752_000_200_000, status: "failed", lastFailureKind: "auth_repair" }),
+      ],
+    );
 
     expect(latest).toEqual({
       nota: 6,
@@ -56,6 +61,7 @@ describe("anime season helpers", () => {
           },
         },
       },
+      allowLocalActiveFallback: false,
       seasonRatingQueueRows: [buildQueueRow({ nota: 6 })],
     });
 
@@ -79,8 +85,57 @@ describe("anime season helpers", () => {
           candidates: [],
           candidatesByAnimeId: {},
         },
+        allowLocalActiveFallback: false,
         seasonRatingQueueRows: [buildQueueRow({ animeId: "anime-2" })],
       }),
     ).toBeNull();
+  });
+
+  it("builds a local active fallback projection for Ver hoy without snapshot hydration", () => {
+    const projection = buildAnimeSeasonProjection({
+      animeId: "anime-1",
+      allowLocalActiveFallback: true,
+      activeSeasonSnapshot: null,
+      seasonRatingQueueRows: [],
+    });
+
+    expect(projection).toEqual({
+      seasonId: LOCAL_ACTIVE_SEASON_ID,
+      bridgeRating: null,
+      bridgeRatingSource: null,
+      localIntent: null,
+    });
+  });
+
+  it("keeps the active season id for fallback projection when snapshot exists but candidate is missing", () => {
+    const projection = buildAnimeSeasonProjection({
+      animeId: "anime-1",
+      allowLocalActiveFallback: true,
+      activeSeasonSnapshot: {
+        seasonId: "season-2026-q3",
+        candidates: [],
+        candidatesByAnimeId: {},
+      },
+      seasonRatingQueueRows: [
+        buildQueueRow({
+          seasonId: "season-2026-q3",
+          animeId: "anime-1",
+          nota: 5,
+        }),
+      ],
+    });
+
+    expect(projection).toEqual({
+      seasonId: "season-2026-q3",
+      bridgeRating: null,
+      bridgeRatingSource: null,
+      localIntent: {
+        nota: 5,
+        ratedAt: 1_752_000_000_000,
+        createdAt: 1_752_000_100_000,
+        status: "pending",
+        failureKind: null,
+      },
+    });
   });
 });
