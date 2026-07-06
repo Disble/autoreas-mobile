@@ -5,15 +5,26 @@ import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
 } from "../../infrastructure/db/native-runtime";
-import { animes, type AnimeRow } from "../../infrastructure/db/schema";
+import {
+  animes,
+  seasonRatingQueue,
+  type AnimeRow,
+  type SeasonRatingQueueRow,
+} from "../../infrastructure/db/schema";
+import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
+import { buildAnimeSeasonProjection } from "./anime-season.helpers";
 import { parseAnimeRow, sortAnimesBySelectedDay } from "./anime.helpers";
+import type { AnimeListItem } from "./anime-season.types";
 import type { AnimeDayFilter } from "./anime.types";
 
 export function useAnimeList(filter: AnimeDayFilter) {
   const rawDb = useOptionalSQLiteContext();
   const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);
+  const activeSeasonSnapshot = useActiveSeasonStore(
+    (state) => state.activeSeasonSnapshot,
+  );
 
-  const query = useMemo(() => {
+  const animeQuery = useMemo(() => {
     if (!db) {
       return null;
     }
@@ -21,12 +32,35 @@ export function useAnimeList(filter: AnimeDayFilter) {
     return db.select().from(animes).where(eq(animes.activo, 1));
   }, [db]);
 
-  const { data } = useOptionalLiveQuery<AnimeRow[]>(query, []);
+  const seasonRatingQueueQuery = useMemo(() => {
+    if (!db) {
+      return null;
+    }
 
-  const allActiveAnimes = useMemo(() => {
+    return db.select().from(seasonRatingQueue);
+  }, [db]);
+
+  const { data } = useOptionalLiveQuery<AnimeRow[]>(animeQuery, []);
+  const { data: seasonRatingQueueRows } = useOptionalLiveQuery<SeasonRatingQueueRow[]>(
+    seasonRatingQueueQuery,
+    [],
+  );
+
+  const allActiveAnimes = useMemo<AnimeListItem[]>(() => {
     if (!data) return [];
-    return data.map(parseAnimeRow);
-  }, [data]);
+    return data.map((row) => {
+      const anime = parseAnimeRow(row);
+
+      return {
+        ...anime,
+        seasonProjection: buildAnimeSeasonProjection({
+          animeId: anime._id,
+          activeSeasonSnapshot,
+          seasonRatingQueueRows,
+        }),
+      };
+    });
+  }, [activeSeasonSnapshot, data, seasonRatingQueueRows]);
 
   const parsedData = useMemo(
     () => sortAnimesBySelectedDay(allActiveAnimes, filter),

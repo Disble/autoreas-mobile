@@ -16,6 +16,7 @@ import {
 import type { AnimeDayFilter } from "../../anime.types";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
+import { useSeasonRatingIntent } from "../../use-season-rating-intent";
 import { ANIME_LIST_SCREEN_REFRESH_LABEL } from "./anime-list-screen.constants";
 import {
   buildRefreshFailureFeedback,
@@ -28,7 +29,9 @@ import type {
   AnimeListScreenProps,
   AnimeListScreenViewModel,
   AnimeStateSheetRequest,
+  SeasonRatingSheetRequest,
 } from "./anime-list-screen.types";
+import type { SeasonRatingValue } from "../SeasonRatingSheet/season-rating-sheet.types";
 
 export function useAnimeListScreen(
   _props: AnimeListScreenProps,
@@ -47,6 +50,8 @@ export function useAnimeListScreen(
   >({});
   const [stateSheetRequest, setStateSheetRequest] =
     useState<AnimeStateSheetRequest | null>(null);
+  const [seasonRatingSheetRequest, setSeasonRatingSheetRequest] =
+    useState<SeasonRatingSheetRequest | null>(null);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
@@ -61,6 +66,7 @@ export function useAnimeListScreen(
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
   const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } =
     useMutateAnime();
+  const { submitSeasonRatingIntent } = useSeasonRatingIntent();
   const { isConfigured } = useBridgeConfig();
   const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount, syncError } =
     useSyncFacade();
@@ -233,6 +239,35 @@ export function useAnimeListScreen(
     setStateSheetRequest(null);
   }, []);
 
+  const handleOpenSeasonRatingSheet = useCallback(
+    (animeId: string) => {
+      const anime = animes.find((currentAnime) => currentAnime._id === animeId);
+      const seasonProjection = anime?.seasonProjection ?? null;
+      if (!anime || !seasonProjection) {
+        return;
+      }
+
+      setSeasonRatingSheetRequest({
+        animeId,
+        animeTitle: anime.nombre,
+        bridgeRating: seasonProjection.bridgeRating,
+        pendingRating: seasonProjection.localIntent?.nota ?? null,
+        pendingStatus:
+          seasonProjection.localIntent?.status === "failed"
+            ? "failed"
+            : seasonProjection.localIntent?.status === "pending"
+              ? "pending"
+              : null,
+        pendingFailureKind: seasonProjection.localIntent?.failureKind ?? null,
+      });
+    },
+    [animes],
+  );
+
+  const handleCloseSeasonRatingSheet = useCallback(() => {
+    setSeasonRatingSheetRequest(null);
+  }, []);
+
   const handleStateSheetSelect = useCallback(
     async (estado: number) => {
       const request = stateSheetRequest;
@@ -243,6 +278,19 @@ export function useAnimeListScreen(
       await setEstado(request.animeId, estado);
     },
     [setEstado, stateSheetRequest],
+  );
+
+  const handleSeasonRatingSubmit = useCallback(
+    async (rating: SeasonRatingValue) => {
+      const request = seasonRatingSheetRequest;
+      if (!request) {
+        return;
+      }
+
+      await submitSeasonRatingIntent(request.animeId, rating);
+      setSeasonRatingSheetRequest(null);
+    },
+    [seasonRatingSheetRequest, submitSeasonRatingIntent],
   );
 
   const handleOpenSettings = useCallback(() => {
@@ -279,6 +327,7 @@ export function useAnimeListScreen(
     selectedFilterOption,
     settingsHref,
     stateSheetRequest,
+    seasonRatingSheetRequest,
     themeColorForeground,
     today,
     handleCapMinus,
@@ -286,10 +335,13 @@ export function useAnimeListScreen(
     handleCapPlus,
     handleCapPlusHalf,
     handleCloseStateSheet,
+    handleCloseSeasonRatingSheet,
     handleOpenSettings,
+    handleOpenSeasonRatingSheet,
     handleOpenStateSheet,
     handleRefresh,
     handleSelectedFilterChange,
+    handleSeasonRatingSubmit,
     handleStateSheetSelect,
   };
 }

@@ -1,11 +1,13 @@
 import type { Href } from 'expo-router';
-import type { Anime } from '../../../../infrastructure/validation/anime-schema';
 import type { LayoutMode } from '../../../../hooks/use-responsive-layout';
 import type {
   SyncVisibleStatus,
   SyncVisibleStatusFacts,
   SyncVisibleStatusTone,
 } from '../../../sync/sync-visible-status.types';
+import type { AnimeListItem } from '../../anime-season.types';
+import type { SeasonRatingFailureKind } from '../../../sync/season-rating-queue.types';
+import type { SeasonRatingValue } from '../SeasonRatingSheet/season-rating-sheet.types';
 import type { AnimeDayFilter, AnimeDayFilterOption } from '../../anime.types';
 
 export type AnimeListScreenProps = Record<never, never>;
@@ -21,6 +23,15 @@ export interface AnimeListScreenContextualHeader {
 export interface AnimeStateSheetRequest {
   readonly animeId: string;
   readonly currentEstado: number;
+}
+
+export interface SeasonRatingSheetRequest {
+  readonly animeId: string;
+  readonly animeTitle: string;
+  readonly bridgeRating: number | null;
+  readonly pendingRating: number | null;
+  readonly pendingStatus: 'pending' | 'failed' | null;
+  readonly pendingFailureKind: SeasonRatingFailureKind | null;
 }
 
 export interface AnimeListScreenHeaderLeftProps {
@@ -55,7 +66,7 @@ export interface AnimeListScreenRefreshFeedback {
 }
 
 export interface AnimeListScreenViewProps {
-  readonly animes: Anime[];
+  readonly animes: AnimeListItem[];
   readonly filterOptions: readonly AnimeDayFilterOption[];
   readonly filterCounts: AnimeListScreenFilterCounts;
   readonly contextualHeader: AnimeListScreenContextualHeader;
@@ -72,6 +83,7 @@ export interface AnimeListScreenViewProps {
   readonly selectedFilterOption: AnimeDayFilterOption;
   readonly settingsHref: Href;
   readonly stateSheetRequest: AnimeStateSheetRequest | null;
+  readonly seasonRatingSheetRequest: SeasonRatingSheetRequest | null;
   readonly themeColorForeground: string;
   readonly today: AnimeDayFilter;
   readonly handleCapMinus: (animeId: string) => Promise<void>;
@@ -80,9 +92,12 @@ export interface AnimeListScreenViewProps {
   readonly handleCapPlusHalf: (animeId: string) => Promise<void>;
   readonly handleCloseStateSheet: () => void;
   readonly handleOpenSettings: () => void;
+  readonly handleCloseSeasonRatingSheet: () => void;
+  readonly handleOpenSeasonRatingSheet: (animeId: string) => void;
   readonly handleOpenStateSheet: (animeId: string, currentEstado: number) => void;
   readonly handleRefresh: () => Promise<void>;
   readonly handleSelectedFilterChange: (filter: AnimeDayFilter) => void;
+  readonly handleSeasonRatingSubmit: (rating: SeasonRatingValue) => Promise<void>;
   readonly handleStateSheetSelect: (estado: number) => Promise<void>;
 }
 

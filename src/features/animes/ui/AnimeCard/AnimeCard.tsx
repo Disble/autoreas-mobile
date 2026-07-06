@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Button, Card, Chip } from "heroui-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import { CHIP_TONE_COLOR_MAP } from "./anime-card.helpers";
@@ -15,6 +14,7 @@ export function AnimeCard(props: AnimeCardProps) {
     disableDecrease,
     disableIncrease,
     stateChip,
+    seasonStatus,
     restantesShown,
     restantesLabel,
     toggleRestantesShown,
@@ -23,6 +23,7 @@ export function AnimeCard(props: AnimeCardProps) {
     handleStateBadgePress,
     handleCapPlusLongPress,
     handleCapMinusLongPress,
+    handleOpenSeasonRatingSheet,
   } = useAnimeCard(props);
 
   const chaptersLabel =
@@ -61,6 +62,21 @@ export function AnimeCard(props: AnimeCardProps) {
             >
               <AppText className="text-muted text-xs">{metaLabel}</AppText>
             </Pressable>
+
+            {seasonStatus ? (
+              <View className="mt-2 gap-1">
+                <Chip
+                  color={seasonStatus.tone === "warning" ? "warning" : "accent"}
+                  size="sm"
+                  variant="secondary"
+                >
+                  <Chip.Label>{seasonStatus.label}</Chip.Label>
+                </Chip>
+                <AppText className="text-muted text-xs">
+                  {seasonStatus.description}
+                </AppText>
+              </View>
+            ) : null}
           </View>
 
           {stateChip.isDefault ? (
@@ -97,6 +113,16 @@ export function AnimeCard(props: AnimeCardProps) {
       </Card.Body>
 
       <View className="flex-row items-center justify-end gap-2 px-3 pb-3 pt-1">
+        {seasonStatus?.showRatingCta ? (
+          <Button
+            accessibilityLabel="Abrir calificación de temporada"
+            onPress={handleOpenSeasonRatingSheet}
+            size="sm"
+            variant="secondary"
+          >
+            <Button.Label>Temporada</Button.Label>
+          </Button>
+        ) : null}
         {isMutationLocked ? (
           <Button
             accessibilityLabel="Reanudar anime"

@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
+import { seasonRatingQueue } from '../../infrastructure/db/schema';
 import type {
   CreateSeasonRatingQueueEntryInput,
   DrainSeasonRatingQueueResult,
@@ -35,6 +36,24 @@ export function createSeasonRatingQueueEntry(
     lastAttemptAt: null,
     lastFailureKind: null,
   };
+}
+
+/**
+ * Persists one season-rating intent into the dedicated durable queue before runtime delivery.
+ * Writing intent first guarantees pending UI truth even when the immediate bridge attempt never starts.
+ */
+export async function enqueueSeasonRatingIntent(
+  rawDb: SQLiteDatabase,
+  input: CreateSeasonRatingQueueEntryInput,
+  clock: SeasonRatingQueueClock = defaultQueueClock,
+): Promise<SeasonRatingQueueEntry> {
+  const entry = createSeasonRatingQueueEntry(input, clock);
+
+  await withDeferredWrite(rawDb, async (db) => {
+    await db.insert(seasonRatingQueue).values(entry);
+  });
+
+  return entry;
 }
 
 /**

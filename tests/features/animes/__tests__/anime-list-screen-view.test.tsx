@@ -39,9 +39,9 @@ jest.mock('../../../../src/features/animes/ui/AnimeStateSheet', () => ({
 }));
 
 function buildAnime(id: string): AnimeListItem {
-  return {
-    _id: id,
-    nombre: id,
+    return {
+      _id: id,
+      nombre: id,
     estado: 0,
     nrocapvisto: 0,
     totalcap: null,
@@ -57,11 +57,12 @@ function buildAnime(id: string): AnimeListItem {
     portada: null,
     pagina: null,
     carpeta: null,
-    estudios: null,
-    origen: null,
-    duracion: null,
-  };
-}
+      estudios: null,
+      origen: null,
+      duracion: null,
+      seasonProjection: null,
+    };
+  }
 
 function buildProps(
   overrides: Partial<AnimeListScreenViewProps> = {},
@@ -114,15 +115,19 @@ function buildProps(
     handleCapMinusHalf: jest.fn().mockResolvedValue(undefined),
     handleCapPlus: jest.fn().mockResolvedValue(undefined),
     handleCapPlusHalf: jest.fn().mockResolvedValue(undefined),
-    handleCloseStateSheet: jest.fn(),
-    handleOpenSettings: jest.fn(),
-    handleOpenStateSheet: jest.fn(),
-    handleRefresh: jest.fn().mockResolvedValue(undefined),
-    handleSelectedFilterChange: jest.fn(),
-    handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
-}
+     handleCloseStateSheet: jest.fn(),
+      handleCloseSeasonRatingSheet: jest.fn(),
+      handleOpenSettings: jest.fn(),
+      handleOpenSeasonRatingSheet: jest.fn(),
+      handleOpenStateSheet: jest.fn(),
+      handleRefresh: jest.fn().mockResolvedValue(undefined),
+      handleSelectedFilterChange: jest.fn(),
+      handleSeasonRatingSubmit: jest.fn().mockResolvedValue(undefined),
+      handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
+      seasonRatingSheetRequest: null,
+      ...overrides,
+    };
+  }
 
 describe('AnimeListScreenView', () => {
   it('uses three columns in tablet landscape layout', () => {

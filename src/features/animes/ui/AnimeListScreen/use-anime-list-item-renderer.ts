@@ -8,6 +8,7 @@ export function useAnimeListItemRenderer(
   handleCapPlus: AnimeListScreenViewProps["handleCapPlus"],
   handleCapPlusHalf: AnimeListScreenViewProps["handleCapPlusHalf"],
   handleCapMinusHalf: AnimeListScreenViewProps["handleCapMinusHalf"],
+  handleOpenSeasonRatingSheet: AnimeListScreenViewProps["handleOpenSeasonRatingSheet"],
   handleOpenStateSheet: AnimeListScreenViewProps["handleOpenStateSheet"],
 ) {
   const getAnimeCardProps = useCallback(
@@ -26,6 +27,9 @@ export function useAnimeListItemRenderer(
       onCapPlusHalf: () => {
         void handleCapPlusHalf(item._id);
       },
+      onOpenSeasonRatingSheet: (animeId) => {
+        handleOpenSeasonRatingSheet(animeId);
+      },
       onOpenStateSheet: (animeId, currentEstado) => {
         handleOpenStateSheet(animeId, currentEstado);
       },
@@ -35,6 +39,7 @@ export function useAnimeListItemRenderer(
       handleCapMinusHalf,
       handleCapPlus,
       handleCapPlusHalf,
+      handleOpenSeasonRatingSheet,
       handleOpenStateSheet,
       isMutatingAnimeById,
     ],

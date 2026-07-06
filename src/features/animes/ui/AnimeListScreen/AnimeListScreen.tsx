@@ -3,10 +3,11 @@ import { StatusBar } from "expo-status-bar";
 import { Alert as HeroAlert, Button, Chip } from "heroui-native";
 import { FlatList, RefreshControl, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
-import { AnimeCard } from "../AnimeCard";
+import { AnimeCard } from "../AnimeCard/AnimeCard";
 import { AnimeEmptyState } from "../AnimeEmptyState";
-import { AnimeFilterRail } from "../AnimeFilterRail";
-import { AnimeStateSheet } from "../AnimeStateSheet";
+import { AnimeFilterRail } from "../AnimeFilterRail/AnimeFilterRail";
+import { SeasonRatingSheet } from "../SeasonRatingSheet/SeasonRatingSheet";
+import { AnimeStateSheet } from "../AnimeStateSheet/AnimeStateSheet";
 import {
   ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE,
   ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS,
@@ -41,12 +42,16 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     handleCapMinusHalf,
     handleCapPlus,
     handleCapPlusHalf,
+    handleCloseSeasonRatingSheet,
     handleCloseStateSheet,
     handleOpenSettings,
+    handleOpenSeasonRatingSheet,
     handleOpenStateSheet,
     handleRefresh,
+    handleSeasonRatingSubmit,
     handleSelectedFilterChange,
     handleStateSheetSelect,
+    seasonRatingSheetRequest,
   } = props;
 
   const isTabletLandscape = layoutMode === "tablet-landscape";
@@ -59,6 +64,7 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
     handleCapPlus,
     handleCapPlusHalf,
     handleCapMinusHalf,
+    handleOpenSeasonRatingSheet,
     handleOpenStateSheet,
   );
   const headerLeft = buildHeaderLeftRenderer({
@@ -195,6 +201,19 @@ export function AnimeListScreenView(props: AnimeListScreenViewProps) {
           void handleStateSheetSelect(estado);
         }}
         onClose={handleCloseStateSheet}
+      />
+
+      <SeasonRatingSheet
+        animeTitle={seasonRatingSheetRequest?.animeTitle ?? ""}
+        bridgeRating={seasonRatingSheetRequest?.bridgeRating ?? null}
+        isOpen={seasonRatingSheetRequest !== null}
+        onClose={handleCloseSeasonRatingSheet}
+        onSubmit={(rating) => {
+          void handleSeasonRatingSubmit(rating);
+        }}
+        pendingFailureKind={seasonRatingSheetRequest?.pendingFailureKind ?? null}
+        pendingRating={seasonRatingSheetRequest?.pendingRating ?? null}
+        pendingStatus={seasonRatingSheetRequest?.pendingStatus ?? null}
       />
 
       <StatusBar style={isDark ? "light" : "dark"} />

@@ -83,10 +83,10 @@ export function matchesAnimeDayFilter(
  * Filters and sorts visible animes for the selected legacy day.
  * It excludes rows without the active `dias` mapping and keeps a deterministic fallback by name and id.
  */
-export function sortAnimesBySelectedDay(
-  animes: readonly Anime[],
+export function sortAnimesBySelectedDay<TAnime extends Anime>(
+  animes: readonly TAnime[],
   filter: AnimeDayFilter,
-): Anime[] {
+): TAnime[] {
   return animes
     .filter((anime) => matchesAnimeDayFilter(anime, filter))
     .sort((left, right) => {

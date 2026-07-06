@@ -123,6 +123,7 @@ describe("useAnimeList", () => {
     expect(result.current.data[0]?.dias).toEqual([
       { dia: "Ver hoy", orden: 1 },
     ]);
+    expect(result.current.data[0]?.seasonProjection).toBeNull();
   });
 
   it("mantiene animes no-Viendo disponibles en el dataset expuesto", () => {

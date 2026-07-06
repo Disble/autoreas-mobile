@@ -1,3 +1,5 @@
+import type { AnimeSeasonProjection } from '../../anime-season.types';
+
 /**
  * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
  * This prevents the UI from offering Cap+ or Cap- actions that contradict the persisted business status.
@@ -71,4 +73,59 @@ export function getRestantesLabel(
   }
 
   return `${remaining} restantes`;
+}
+
+export type AnimeSeasonStatusTone = 'accent' | 'warning';
+
+export interface AnimeSeasonStatusDescriptor {
+  readonly label: string;
+  readonly description: string;
+  readonly tone: AnimeSeasonStatusTone;
+  readonly showRatingCta: boolean;
+}
+
+/**
+ * Builds the season badge/copy shown on each anime card.
+ * Confirmed bridge rating and local pending or failed intent stay separated so users never confuse one for the other.
+ */
+export function getAnimeSeasonStatus(
+  seasonProjection: AnimeSeasonProjection | null | undefined,
+): AnimeSeasonStatusDescriptor | null {
+  if (!seasonProjection) {
+    return null;
+  }
+
+  if (seasonProjection.localIntent?.status === 'failed') {
+    return {
+      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
+      description: 'Requiere reparación en bridge',
+      tone: 'warning',
+      showRatingCta: true,
+    };
+  }
+
+  if (seasonProjection.localIntent?.status === 'pending') {
+    return {
+      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
+      description: 'Esperando confirmación del bridge',
+      tone: 'warning',
+      showRatingCta: true,
+    };
+  }
+
+  if (seasonProjection.bridgeRating != null) {
+    return {
+      label: `Temporada ${seasonProjection.bridgeRating}/6`,
+      description: 'Confirmado por bridge',
+      tone: 'accent',
+      showRatingCta: true,
+    };
+  }
+
+  return {
+    label: 'Sin nota de temporada',
+    description: 'Candidato activo',
+    tone: 'accent',
+    showRatingCta: true,
+  };
 }

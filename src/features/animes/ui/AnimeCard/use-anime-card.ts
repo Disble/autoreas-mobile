@@ -3,6 +3,7 @@ import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
   canIncrease,
+  getAnimeSeasonStatus,
   getRestantesLabel,
   getStateChip,
   isAnimeMutationLocked,
@@ -56,6 +57,10 @@ export function useAnimeCard(props: AnimeCardProps) {
     () => getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap),
     [props.anime.nrocapvisto, props.anime.totalcap]
   );
+  const seasonStatus = useMemo(
+    () => getAnimeSeasonStatus(props.anime.seasonProjection),
+    [props.anime.seasonProjection],
+  );
 
   // 6. Callbacks
   const toggleRestantesShown = useCallback(() => {
@@ -82,6 +87,10 @@ export function useAnimeCard(props: AnimeCardProps) {
     onCapMinusHalfRef.current?.();
   }, []);
 
+  const handleOpenSeasonRatingSheet = useCallback(() => {
+    props.onOpenSeasonRatingSheet?.(props.anime._id);
+  }, [props]);
+
   // 7. Effects
 
   return {
@@ -89,6 +98,7 @@ export function useAnimeCard(props: AnimeCardProps) {
     disableDecrease,
     disableIncrease,
     stateChip,
+    seasonStatus,
     restantesShown,
     restantesLabel,
     toggleRestantesShown,
@@ -97,5 +107,6 @@ export function useAnimeCard(props: AnimeCardProps) {
     handleStateBadgePress,
     handleCapPlusLongPress,
     handleCapMinusLongPress,
+    handleOpenSeasonRatingSheet,
   };
 }

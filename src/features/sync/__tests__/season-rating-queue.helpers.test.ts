@@ -7,6 +7,7 @@ import {
 import {
   createSeasonRatingQueueEntry,
   drainSeasonRatingQueue,
+  enqueueSeasonRatingIntent,
   markSeasonRatingQueueEntrySyncing,
   resolveSeasonRatingDelivery,
 } from '../season-rating-queue.helpers';
@@ -201,6 +202,42 @@ describe('season rating queue helpers', () => {
       deliveredCount: 1,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
+    });
+  });
+
+  it('persists a durable season rating intent before any sync attempt', async () => {
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        _database: SQLiteDatabase,
+        task: (db: { insert: jest.Mock }, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => {
+        const insert = jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) }));
+        return task({ insert }, rawDb);
+      },
+    );
+
+    const entry = await enqueueSeasonRatingIntent(
+      rawDb,
+      {
+        seasonId: 'season-2026-q3',
+        animeId: 'anime-4',
+        nota: 5,
+        ratedAt: 1_752_300_000_000,
+      },
+      { now: () => 1_752_300_100_000 },
+    );
+
+    expect(withDeferredWrite).toHaveBeenCalledTimes(1);
+    expect(entry).toEqual({
+      seasonId: 'season-2026-q3',
+      animeId: 'anime-4',
+      nota: 5,
+      ratedAt: 1_752_300_000_000,
+      status: 'pending',
+      createdAt: 1_752_300_100_000,
+      updatedAt: 1_752_300_100_000,
+      lastAttemptAt: null,
+      lastFailureKind: null,
     });
   });
 
