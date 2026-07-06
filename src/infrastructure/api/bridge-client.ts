@@ -1,5 +1,6 @@
 import { BRIDGE_API_PATHS } from './bridge-client.constants';
 import {
+  buildPostActiveSeasonRatingBody,
   buildBridgeBaseUrl,
   buildBridgeHeaders,
   buildBridgeUrl,
@@ -13,6 +14,7 @@ import type {
   BridgeConnection,
   BridgeHttpResult,
   BridgePairDeviceRequest,
+  PostActiveSeasonRatingRequest,
   BridgeRequestSpec,
 } from './bridge-client.types';
 
@@ -134,6 +136,22 @@ export function createBridgeClient(
         method: 'GET',
         path: BRIDGE_API_PATHS.status,
         token: connection.token,
+      }),
+    getActiveSeason: (connection) =>
+      request(connection, {
+        method: 'GET',
+        path: BRIDGE_API_PATHS.activeSeason,
+        token: connection.token,
+      }),
+    postActiveSeasonRating: (
+      connection,
+      seasonRatingRequest: PostActiveSeasonRatingRequest,
+    ) =>
+      request(connection, {
+        method: 'POST',
+        path: BRIDGE_API_PATHS.activeSeasonRating,
+        token: connection.token,
+        body: buildPostActiveSeasonRatingBody(seasonRatingRequest),
       }),
     reconcile: (connection, body) =>
       request(connection, {

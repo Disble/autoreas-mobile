@@ -47,6 +47,7 @@ describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    jest.useFakeTimers().setSystemTime(new Date(1782810300000));
 
     (useRouter as jest.Mock).mockReturnValue({
       push: mockPush,
@@ -100,6 +101,7 @@ describe('SettingsScreen', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 

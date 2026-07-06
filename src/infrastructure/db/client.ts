@@ -155,6 +155,26 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   );
 }
 
+async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(
+    'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+      'season_id TEXT NOT NULL, ' +
+      'anime_id TEXT NOT NULL, ' +
+      'nota INTEGER NOT NULL, ' +
+      'rated_at INTEGER NOT NULL, ' +
+      "status TEXT NOT NULL DEFAULT 'pending', " +
+      'created_at INTEGER NOT NULL, ' +
+      'updated_at INTEGER NOT NULL, ' +
+      'last_attempt_at INTEGER, ' +
+      'last_failure_kind TEXT)'
+  );
+
+  await rawDb.runAsync(
+    'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
+  );
+}
+
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
@@ -165,6 +185,7 @@ export async function runMigrations(rawDb: SQLiteDatabase) {
     ensureOperationLogRetentionIndex(rawDb),
     ensureAnimesGuardColumn(rawDb),
     ensurePendingRemoteChangesTable(rawDb),
+    ensureSeasonRatingQueueTable(rawDb),
   ]);
   return db;
 }

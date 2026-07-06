@@ -48,6 +48,29 @@ export const operationLog = sqliteTable(
   ],
 );
 
+export const seasonRatingQueue = sqliteTable(
+  'season_rating_queue',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    seasonId: text('season_id').notNull(),
+    animeId: text('anime_id').notNull(),
+    nota: integer('nota').notNull(),
+    ratedAt: integer('rated_at').notNull(),
+    status: text('status').notNull().default('pending'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastFailureKind: text('last_failure_kind'),
+  },
+  (table) => [
+    index('season_rating_queue_status_created_at_idx').on(
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
 export const bridgeConfig = sqliteTable("bridge_config", {
   id: integer("id").primaryKey().default(1),
   ip: text("ip"),
@@ -101,6 +124,8 @@ export type AnimeRow = typeof animes.$inferSelect;
 export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
+export type SeasonRatingQueueRow = typeof seasonRatingQueue.$inferSelect;
+export type InsertSeasonRatingQueueRow = typeof seasonRatingQueue.$inferInsert;
 export type PendingRemoteChangeRow = typeof pendingRemoteChanges.$inferSelect;
 export type InsertPendingRemoteChangeRow = typeof pendingRemoteChanges.$inferInsert;
 export type BridgeConfig = typeof bridgeConfig.$inferSelect;

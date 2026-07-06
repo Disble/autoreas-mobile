@@ -3,7 +3,12 @@ import {
   BRIDGE_HTTP_SCHEME,
   BRIDGE_WS_SCHEME,
 } from './bridge-client.constants';
-import type { BridgeConnection } from './bridge-client.types';
+import type {
+  ActiveSeasonCandidateSnapshot,
+  ActiveSeasonSnapshot,
+  BridgeConnection,
+  PostActiveSeasonRatingRequest,
+} from './bridge-client.types';
 
 /**
  * Builds the `http://ip:port` origin for a bridge connection.
@@ -65,6 +70,52 @@ export function extractSeasonMode(data: unknown): boolean {
 }
 
 /**
+ * Extracts the active-season snapshot from a bridge response body and drops malformed entries.
+ * Candidate membership comes ONLY from the bridge `candidates` array so mobile never infers it locally.
+ */
+export function extractActiveSeasonSnapshot(data: unknown): ActiveSeasonSnapshot | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+
+  const seasonId = (data as { season_id?: unknown }).season_id;
+  const rawCandidates = (data as { candidates?: unknown }).candidates;
+
+  if (typeof seasonId !== 'string' || !Array.isArray(rawCandidates)) {
+    return null;
+  }
+
+  const candidates = rawCandidates
+    .map(mapActiveSeasonCandidate)
+    .filter((candidate): candidate is ActiveSeasonCandidateSnapshot => candidate !== null);
+
+  return {
+    seasonId,
+    candidates,
+    candidatesByAnimeId: Object.freeze(
+      candidates.reduce<Record<string, ActiveSeasonCandidateSnapshot>>((accumulator, candidate) => {
+        accumulator[candidate.animeId] = candidate;
+        return accumulator;
+      }, {}),
+    ),
+  };
+}
+
+/**
+ * Serializes a normalized season-rating request into the exact bridge wire contract.
+ * Features can stay camelCase while the adapter remains the only place that owns transport keys.
+ */
+export function buildPostActiveSeasonRatingBody(
+  request: PostActiveSeasonRatingRequest,
+): Record<string, number | string> {
+  return {
+    anime_id: request.animeId,
+    nota: request.nota,
+    rated_at: request.ratedAt,
+  };
+}
+
+/**
  * Best-effort JSON parse of an already-read response body.
  * Returns null for empty or non-JSON bodies so callers never read the stream twice.
  */
@@ -78,4 +129,24 @@ export function parseBridgeResponseBody(rawBody: string | null): unknown {
   } catch {
     return null;
   }
+}
+
+function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnapshot | null {
+  if (typeof candidate !== 'object' || candidate === null) {
+    return null;
+  }
+
+  const animeId = (candidate as { anime_id?: unknown }).anime_id;
+  const notaEstreno = (candidate as { nota_estreno?: unknown }).nota_estreno;
+  const notaSource = (candidate as { nota_source?: unknown }).nota_source;
+
+  if (typeof animeId !== 'string' || animeId.length === 0) {
+    return null;
+  }
+
+  return {
+    animeId,
+    bridgeRating: typeof notaEstreno === 'number' ? notaEstreno : null,
+    bridgeRatingSource: notaSource === 'bridge' ? 'bridge' : null,
+  };
 }
