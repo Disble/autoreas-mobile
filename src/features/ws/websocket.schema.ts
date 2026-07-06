@@ -24,10 +24,15 @@ const PreferencesChangedEventSchema = z.object({
   season_mode: z.boolean(),
 });
 
+const SeasonChangedEventSchema = z.object({
+  type: z.literal('season_changed'),
+});
+
 export const WsMessageSchema = z.union([
   AnimeChangedEventSchema,
   AnimeCreatedEventSchema,
   AnimeDeletedEventSchema,
   SyncRequiredEventSchema,
   PreferencesChangedEventSchema,
+  SeasonChangedEventSchema,
 ]);

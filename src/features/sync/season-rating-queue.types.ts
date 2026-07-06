@@ -17,6 +17,7 @@ export interface CreateSeasonRatingQueueEntryInput {
 }
 
 export interface SeasonRatingQueueEntry {
+  readonly id?: number;
   readonly seasonId: string;
   readonly animeId: string;
   readonly nota: number;
@@ -43,4 +44,10 @@ export interface SeasonRatingDeliveryResolution {
   readonly shouldKeepEntry: boolean;
   readonly shouldRetry: boolean;
   readonly failureKind: SeasonRatingFailureKind | null;
+}
+
+export interface DrainSeasonRatingQueueResult {
+  readonly deliveredCount: number;
+  readonly backlogReadCount: number;
+  readonly shouldRefreshActiveSeason: boolean;
 }

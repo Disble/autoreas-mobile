@@ -1,6 +1,9 @@
-import { BridgeUnreachableError } from '../../infrastructure/api';
+import type { SQLiteDatabase } from 'expo-sqlite';
+import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
+import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
 import type {
   CreateSeasonRatingQueueEntryInput,
+  DrainSeasonRatingQueueResult,
   ResolveSeasonRatingDeliveryInput,
   SeasonRatingDeliveryResolution,
   SeasonRatingQueueClock,
@@ -116,5 +119,161 @@ export function resolveSeasonRatingDelivery(
     shouldKeepEntry: true,
     shouldRetry: true,
     failureKind: input.status ? 'unexpected_response' : null,
+  };
+}
+
+function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
+  return {
+    id: Number(row.id),
+    seasonId: String(row.season_id),
+    animeId: String(row.anime_id),
+    nota: Number(row.nota),
+    ratedAt: Number(row.rated_at),
+    status: row.status as SeasonRatingQueueEntry['status'],
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    lastAttemptAt:
+      row.last_attempt_at === null || row.last_attempt_at === undefined
+        ? null
+        : Number(row.last_attempt_at),
+    lastFailureKind:
+      row.last_failure_kind === null || row.last_failure_kind === undefined
+        ? null
+        : (String(row.last_failure_kind) as SeasonRatingQueueEntry['lastFailureKind']),
+  };
+}
+
+async function readSeasonRatingQueueBacklog(
+  rawDb: SQLiteDatabase,
+): Promise<SeasonRatingQueueEntry[]> {
+  const rows = await rawDb.getAllAsync<Record<string, unknown>>(
+    [
+      'SELECT',
+      '  id,',
+      '  season_id,',
+      '  anime_id,',
+      '  nota,',
+      '  rated_at,',
+      '  status,',
+      '  created_at,',
+      '  updated_at,',
+      '  last_attempt_at,',
+      '  last_failure_kind',
+      'FROM season_rating_queue',
+      "WHERE status IN ('pending', 'syncing')",
+      'ORDER BY created_at ASC, id ASC',
+    ].join(' '),
+  );
+
+  return rows.map(mapQueueRow);
+}
+
+async function updateSeasonRatingQueueEntry(
+  rawDb: SQLiteDatabase,
+  entryId: number,
+  entry: SeasonRatingQueueEntry,
+) {
+  await rawDb.runAsync(
+    [
+      'UPDATE season_rating_queue',
+      'SET status = ?, updated_at = ?, last_attempt_at = ?, last_failure_kind = ?',
+      'WHERE id = ?',
+    ].join(' '),
+    entry.status,
+    entry.updatedAt,
+    entry.lastAttemptAt,
+    entry.lastFailureKind,
+    entryId,
+  );
+}
+
+async function deleteSeasonRatingQueueEntry(rawDb: SQLiteDatabase, entryId: number) {
+  await rawDb.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
+}
+
+/**
+ * Drains durable season-rating intent through the bridge adapter while preserving pending-vs-confirmed truth.
+ * Retryable failures remain queued, terminal responses drop stale intent, and only bridge-confirmed delivery clears the row.
+ */
+export async function drainSeasonRatingQueue(
+  rawDb: SQLiteDatabase,
+  clock: SeasonRatingQueueClock = defaultQueueClock,
+): Promise<DrainSeasonRatingQueueResult> {
+  const config = await getBridgeConfigSnapshot(rawDb);
+
+  if (!config?.ip || !config?.port || !config?.token) {
+    return {
+      deliveredCount: 0,
+      backlogReadCount: 0,
+      shouldRefreshActiveSeason: false,
+    };
+  }
+
+  const backlog = await readSeasonRatingQueueBacklog(rawDb);
+  let deliveredCount = 0;
+  let shouldRefreshActiveSeason = false;
+
+  for (const queuedEntry of backlog) {
+    if (!queuedEntry.id) {
+      continue;
+    }
+
+    const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
+
+    await withDeferredWrite(rawDb, async (_db, tx) => {
+      await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry);
+    });
+
+    let deliveryResolution: SeasonRatingDeliveryResolution;
+
+    try {
+      const result = await bridgeClient.postActiveSeasonRating(
+        {
+          ip: config.ip,
+          port: config.port,
+          token: config.token,
+        },
+        {
+          animeId: queuedEntry.animeId,
+          nota: queuedEntry.nota,
+          ratedAt: queuedEntry.ratedAt,
+        },
+      );
+      deliveryResolution = resolveSeasonRatingDelivery({ status: result.status });
+    } catch (error) {
+      deliveryResolution = resolveSeasonRatingDelivery({ error });
+    }
+
+    if (!deliveryResolution.shouldKeepEntry) {
+      await withDeferredWrite(rawDb, async (_db, tx) => {
+        await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!);
+      });
+    } else if (deliveryResolution.nextQueueStatus) {
+      const nextQueueStatus = deliveryResolution.nextQueueStatus;
+
+      await withDeferredWrite(rawDb, async (_db, tx) => {
+        await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, {
+          ...syncingEntry,
+          status: nextQueueStatus,
+          updatedAt: clock.now(),
+          lastAttemptAt: syncingEntry.lastAttemptAt,
+          lastFailureKind: deliveryResolution.failureKind,
+        });
+      });
+    }
+
+    if (deliveryResolution.state === 'confirmed') {
+      deliveredCount += 1;
+    }
+
+    if (deliveryResolution.state === 'confirmed' || deliveryResolution.failureKind === 'conflict' || deliveryResolution.failureKind === 'not_found') {
+      shouldRefreshActiveSeason = true;
+    }
+  }
+
+  return {
+    deliveredCount,
+    backlogReadCount: backlog.length,
+    shouldRefreshActiveSeason,
   };
 }

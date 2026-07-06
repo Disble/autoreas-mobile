@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import * as dbClient from '../../../src/infrastructure/db/client';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
+import * as seasonQueueModule from '../../../src/features/sync/season-rating-queue.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
@@ -21,6 +22,10 @@ jest.mock('../../../src/features/settings/use-bridge-config', () => ({
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
+  drainSeasonRatingQueue: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -55,6 +60,11 @@ describe('useSyncFacade', () => {
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
+      deliveredCount: 0,
+      backlogReadCount: 0,
+      shouldRefreshActiveSeason: false,
+    });
   });
 
   it('stays passive on mount so root runtime owns bootstrap and websocket wiring', () => {
@@ -83,6 +93,7 @@ describe('useSyncFacade', () => {
 
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
     expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
+    expect(seasonQueueModule.drainSeasonRatingQueue).toHaveBeenCalledWith(rawDb);
   });
 
   it('collapses simultaneous trigger storms into a single in-flight sync request', async () => {

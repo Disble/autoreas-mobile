@@ -7,6 +7,7 @@ import type { UseWebSocketProps } from './websocket.types';
 
 export function useWebSocket({
   enabled = true,
+  onSeasonChanged,
   onSyncRequired,
   onPreferencesChanged,
 }: UseWebSocketProps = {}) {
@@ -14,6 +15,7 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const onSeasonChangedRef = useRef(onSeasonChanged);
   const onSyncRequiredRef = useRef(onSyncRequired);
   const onPreferencesChangedRef = useRef(onPreferencesChanged);
 
@@ -29,6 +31,10 @@ export function useWebSocket({
   // 6. Callbacks (`useCallback` calling pure helpers)
 
   // 7. Effects
+  useEffect(() => {
+    onSeasonChangedRef.current = onSeasonChanged;
+  }, [onSeasonChanged]);
+
   useEffect(() => {
     onSyncRequiredRef.current = onSyncRequired;
   }, [onSyncRequired]);
@@ -132,6 +138,11 @@ export function useWebSocket({
             parsed.type === 'anime_deleted'
           ) {
             onSyncRequiredRef.current?.();
+            return;
+          }
+
+          if (parsed.type === 'season_changed') {
+            onSeasonChangedRef.current?.();
             return;
           }
 

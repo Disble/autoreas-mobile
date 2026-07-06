@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { useBridgeConfig } from '../settings/use-bridge-config';
 import {
   buildPendingOperationsQuery,
   transitionSyncState,
 } from './sync-facade.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
+import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
 import type { SyncState, UseSyncFacadeResult } from './sync-facade.types';
 import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 import {
@@ -13,6 +15,7 @@ import {
   recordSyncAttemptStarted,
   recordSyncAttemptSucceeded,
 } from './sync-runtime-status.helpers';
+import { fetchActiveSeasonFromBridge } from './use-season-sync.helpers';
 
 export function useSyncFacade(): UseSyncFacadeResult {
   // 1. Refs
@@ -26,6 +29,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
+  const setActiveSeasonSnapshot = useActiveSeasonStore((state) => state.setActiveSeasonSnapshot);
 
   // 4. Queries/Mutations
   const pendingOperationsQuery = useMemo(
@@ -68,6 +72,18 @@ export function useSyncFacade(): UseSyncFacadeResult {
     const syncPromise = recordSyncAttemptStarted(rawDb, source, attemptedAt)
       .then(() => syncPendingOperations(rawDb))
       .then(async (result) => {
+        const seasonDrainResult = await drainSeasonRatingQueue(rawDb);
+
+        if (seasonDrainResult.shouldRefreshActiveSeason) {
+          try {
+            const snapshot = await fetchActiveSeasonFromBridge(rawDb);
+
+            setActiveSeasonSnapshot(snapshot);
+          } catch {
+            setActiveSeasonSnapshot(null);
+          }
+        }
+
         const syncedAt = Date.now();
 
         await recordSyncAttemptSucceeded(rawDb, source, syncedAt, result.syncedCount);
@@ -93,7 +109,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
     inFlightSyncRef.current = syncPromise;
 
     return syncPromise;
-  }, [handleSyncFailure, isConfigured, rawDb]);
+  }, [handleSyncFailure, isConfigured, rawDb, setActiveSeasonSnapshot]);
 
   const manualSync = useCallback(() => requestSync('manual'), [requestSync]);
 
