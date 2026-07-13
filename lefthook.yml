@@ -7,3 +7,16 @@ pre-commit:
       run: bunx tsc --noEmit
     test:
       run: bun run test
+  jobs:
+    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+    - name: fallow
+      run: bun run audit
+    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+    - name: lint
+      run: bun run lint
+    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+    - name: typecheck
+      run: bun run typecheck
+    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+    - name: test
+      run: bun run test
