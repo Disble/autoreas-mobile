@@ -1,13 +1,16 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
+import type { BridgeConnection } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
 import { seasonRatingQueue } from '../../infrastructure/db/schema';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
+import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
 import type {
   CreateSeasonRatingQueueEntryInput,
   DrainSeasonRatingQueueResult,
   ResolveSeasonRatingDeliveryInput,
   SeasonRatingDeliveryResolution,
+  SeasonRatingDeliveryAttempt,
   SeasonRatingQueueClock,
   SeasonRatingQueueEntry,
 } from './season-rating-queue.types';
@@ -50,6 +53,8 @@ export async function enqueueSeasonRatingIntent(
   await withDeferredWrite(rawDb, async (db) => {
     await db.insert(seasonRatingQueue).values(entry);
   });
+
+  invalidateSyncConnectionOnline();
 
   return entry;
 }
@@ -181,7 +186,7 @@ async function readSeasonRatingQueueBacklog(
       '  last_attempt_at,',
       '  last_failure_kind',
       'FROM season_rating_queue',
-      "WHERE status IN ('pending', 'syncing')",
+      "WHERE status IN ('pending', 'syncing', 'failed')",
       'ORDER BY created_at ASC, id ASC',
     ].join(' '),
   );
@@ -212,6 +217,40 @@ async function deleteSeasonRatingQueueEntry(rawDb: SQLiteDatabase, entryId: numb
   await rawDb.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
 }
 
+async function deliverQueuedSeasonRating(
+  connection: BridgeConnection,
+  queuedEntry: SeasonRatingQueueEntry,
+): Promise<SeasonRatingDeliveryAttempt> {
+  try {
+    const result = await bridgeClient.postActiveSeasonRating(connection, {
+      animeId: queuedEntry.animeId,
+      nota: queuedEntry.nota,
+      ratedAt: queuedEntry.ratedAt,
+    });
+    const resolution = resolveSeasonRatingDelivery({ status: result.status });
+
+    return {
+      resolution,
+      failure: resolution.state !== 'confirmed'
+        ? new Error(`Season rating delivery incomplete: ${resolution.failureKind ?? result.status}`)
+        : null,
+    };
+  } catch (error) {
+    return {
+      resolution: resolveSeasonRatingDelivery({ error }),
+      failure: error instanceof Error ? error : new Error('Season rating delivery failed'),
+    };
+  }
+}
+
+function shouldRefreshAfterSeasonRatingDelivery(
+  resolution: SeasonRatingDeliveryResolution,
+): boolean {
+  return resolution.state === 'confirmed'
+    || resolution.failureKind === 'conflict'
+    || resolution.failureKind === 'not_found';
+}
+
 /**
  * Drains durable season-rating intent through the bridge adapter while preserving pending-vs-confirmed truth.
  * Retryable failures remain queued, terminal responses drop stale intent, and only bridge-confirmed delivery clears the row.
@@ -227,12 +266,14 @@ export async function drainSeasonRatingQueue(
       deliveredCount: 0,
       backlogReadCount: 0,
       shouldRefreshActiveSeason: false,
+      failure: null,
     };
   }
 
   const backlog = await readSeasonRatingQueueBacklog(rawDb);
   let deliveredCount = 0;
   let shouldRefreshActiveSeason = false;
+  let firstFailure: Error | null = null;
 
   for (const queuedEntry of backlog) {
     if (!queuedEntry.id) {
@@ -245,25 +286,11 @@ export async function drainSeasonRatingQueue(
       await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry);
     });
 
-    let deliveryResolution: SeasonRatingDeliveryResolution;
-
-    try {
-      const result = await bridgeClient.postActiveSeasonRating(
-        {
-          ip: config.ip,
-          port: config.port,
-          token: config.token,
-        },
-        {
-          animeId: queuedEntry.animeId,
-          nota: queuedEntry.nota,
-          ratedAt: queuedEntry.ratedAt,
-        },
+    const { resolution: deliveryResolution, failure: deliveryFailure } =
+      await deliverQueuedSeasonRating(
+        { ip: config.ip, port: config.port, token: config.token },
+        queuedEntry,
       );
-      deliveryResolution = resolveSeasonRatingDelivery({ status: result.status });
-    } catch (error) {
-      deliveryResolution = resolveSeasonRatingDelivery({ error });
-    }
 
     if (!deliveryResolution.shouldKeepEntry) {
       await withDeferredWrite(rawDb, async (_db, tx) => {
@@ -287,14 +314,17 @@ export async function drainSeasonRatingQueue(
       deliveredCount += 1;
     }
 
-    if (deliveryResolution.state === 'confirmed' || deliveryResolution.failureKind === 'conflict' || deliveryResolution.failureKind === 'not_found') {
+    if (shouldRefreshAfterSeasonRatingDelivery(deliveryResolution)) {
       shouldRefreshActiveSeason = true;
     }
+
+    firstFailure ??= deliveryFailure;
   }
 
   return {
     deliveredCount,
     backlogReadCount: backlog.length,
     shouldRefreshActiveSeason,
+    failure: firstFailure,
   };
 }

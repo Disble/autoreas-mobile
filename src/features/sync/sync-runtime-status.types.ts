@@ -9,6 +9,7 @@ export type SyncRuntimeTriggerSource =
   | 'manual'
   | 'app_active'
   | 'network_regained'
+  | 'local_mutation'
   | 'ws_sync_required'
   | 'foreground_service'
   | 'background_task';

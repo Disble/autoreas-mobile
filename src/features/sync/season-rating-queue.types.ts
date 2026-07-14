@@ -59,4 +59,11 @@ export interface DrainSeasonRatingQueueResult {
   readonly deliveredCount: number;
   readonly backlogReadCount: number;
   readonly shouldRefreshActiveSeason: boolean;
+  readonly failure: Error | null;
+}
+
+/** Defines the outcome of attempting delivery for one queued season rating. */
+export interface SeasonRatingDeliveryAttempt {
+  readonly resolution: SeasonRatingDeliveryResolution;
+  readonly failure: Error | null;
 }

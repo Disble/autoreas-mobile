@@ -30,6 +30,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+// eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
 const RECONCILE_URL = 'http://192.168.1.10:8080/api/sync/reconcile';
 
 describe('syncPendingOperations', () => {
@@ -420,6 +421,7 @@ describe('syncPendingOperations', () => {
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(result.syncedCount).toBe(0);
+    expect(result.hasMorePending).toBe(true);
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
   });
 

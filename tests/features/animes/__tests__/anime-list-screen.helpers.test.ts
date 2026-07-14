@@ -226,7 +226,7 @@ describe("anime-list-screen helpers", () => {
     it("returns a neutral local-only state when the bridge is unavailable without backlog", () => {
       const status = deriveVisibleSyncStatus(
         {
-          connectionStatus: "offline",
+          connectionStatus: "idle",
           isBridgeConfigured: true,
           isDeviceOnline: true,
           lastSyncAt: null,
@@ -265,7 +265,7 @@ describe("anime-list-screen helpers", () => {
     it("surfaces pending local changes while staying in local mode", () => {
       const status = deriveVisibleSyncStatus(
         {
-          connectionStatus: "error",
+          connectionStatus: "unreachable",
           isBridgeConfigured: true,
           isDeviceOnline: true,
           lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
@@ -284,7 +284,7 @@ describe("anime-list-screen helpers", () => {
     it("elevates stale backlog after multiple days without sync", () => {
       const status = deriveVisibleSyncStatus(
         {
-          connectionStatus: "error",
+          connectionStatus: "unreachable",
           isBridgeConfigured: true,
           isDeviceOnline: true,
           lastSyncAt: new Date("2026-04-03T10:00:00.000Z").getTime(),
@@ -303,7 +303,7 @@ describe("anime-list-screen helpers", () => {
     it("hides the bridge CTA when the phone itself is offline", () => {
       const status = deriveVisibleSyncStatus(
         {
-          connectionStatus: "error",
+          connectionStatus: "unreachable",
           isBridgeConfigured: true,
           isDeviceOnline: false,
           lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
@@ -320,7 +320,7 @@ describe("anime-list-screen helpers", () => {
     it("switches the CTA to pairing when there is backlog without a configured bridge", () => {
       const status = deriveVisibleSyncStatus(
         {
-          connectionStatus: "offline",
+          connectionStatus: "idle",
           isBridgeConfigured: false,
           isDeviceOnline: true,
           lastSyncAt: null,
@@ -338,7 +338,7 @@ describe("anime-list-screen helpers", () => {
   describe("buildRefreshFailureFeedback", () => {
     it("returns phone-offline copy when the device has no internet", () => {
       const feedback = buildRefreshFailureFeedback({
-        connectionStatus: "error",
+        connectionStatus: "unreachable",
         isBridgeConfigured: true,
         isDeviceOnline: false,
         lastSyncAt: null,
@@ -352,7 +352,7 @@ describe("anime-list-screen helpers", () => {
 
     it("returns bridge-specific copy when the phone is online", () => {
       const feedback = buildRefreshFailureFeedback({
-        connectionStatus: "error",
+        connectionStatus: "unreachable",
         isBridgeConfigured: true,
         isDeviceOnline: true,
         lastSyncAt: null,
@@ -371,7 +371,7 @@ describe("anime-list-screen helpers", () => {
     it("returns false while the screen is already refreshing", () => {
       expect(
         deriveManualSyncEnabled({
-          connectionStatus: "error",
+          connectionStatus: "unreachable",
           isBridgeConfigured: true,
           isDeviceOnline: true,
           isRefreshing: true,
@@ -385,7 +385,7 @@ describe("anime-list-screen helpers", () => {
     it("returns true when manual sync can still start now", () => {
       expect(
         deriveManualSyncEnabled({
-          connectionStatus: "error",
+          connectionStatus: "unreachable",
           isBridgeConfigured: true,
           isDeviceOnline: true,
           isRefreshing: false,

@@ -9,6 +9,13 @@ import type {
 } from './anime-mutation.types';
 import { eq } from 'drizzle-orm';
 import { syncPendingOperations } from '../sync/reconcile.helpers';
+import {
+  beginSyncConnectionAttempt,
+  markSyncConnectionFailed,
+  markSyncConnectionPending,
+  publishSyncConnectionAttempt,
+} from '../sync/sync-connection-store/sync-connection-store.helpers';
+import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
@@ -220,10 +227,34 @@ export async function applyAnimeMutationPatch(
 
   if (!didMutate) return;
 
+  const syncAttempt = beginSyncConnectionAttempt();
+
   // Sincroniza en background — no bloquea la UI
-  void syncPendingOperations(rawDb).catch((err: unknown) => {
-    console.warn(`[${label}] Sync failed:`, err);
-  });
+  void syncPendingOperations(rawDb)
+    .then(() => {
+      markSyncConnectionPending(syncAttempt);
+    })
+    .catch(async (err: unknown) => {
+      const failure = err instanceof Error ? err : new Error('Sync failed');
+
+      await publishSyncConnectionAttempt({
+        attempt: syncAttempt,
+        persistTelemetry: async () => {
+          try {
+            await recordSyncAttemptFailed(
+              rawDb,
+              'local_mutation',
+              Date.now(),
+              failure.message,
+            );
+          } catch (telemetryError) {
+            console.warn(`[${label}] Failed to persist sync failure telemetry`, telemetryError);
+          }
+        },
+        publishConnection: () => markSyncConnectionFailed(syncAttempt, failure),
+      });
+      console.warn(`[${label}] Sync failed:`, err);
+    });
 }
 
 function parseStoredJson(value: string): unknown {

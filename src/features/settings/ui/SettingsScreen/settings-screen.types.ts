@@ -4,6 +4,7 @@ import type { BridgeConfig } from '../../../../infrastructure/db/schema';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type { SyncVisibleStatus } from '../../../sync/sync-visible-status.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../sync/sync-runtime-status.types';
+import type { SyncConnectionStatus } from '../../../sync/sync-connection-store/sync-connection-store.types';
 
 /** Defines the settings screen props value shape. */
 export type SettingsScreenProps = Record<never, never>;
@@ -66,6 +67,7 @@ export type SettingsBridgeStatusKind =
   | 'syncing'
   | 'phone_offline'
   | 'bridge_unreachable'
+  | 'sync_error'
   | 'local_only'
   | 'pending_backlog'
   | 'stale_backlog';
@@ -88,7 +90,7 @@ export interface BuildSettingsSyncSummaryInput {
   readonly isDeviceOnline: boolean | null;
   readonly now: Date;
   readonly syncFacts: {
-    readonly connectionStatus: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
+    readonly connectionStatus: SyncConnectionStatus;
     readonly lastSyncAt: number | null;
     readonly pendingOpsCount: number;
     readonly syncError: string | null;

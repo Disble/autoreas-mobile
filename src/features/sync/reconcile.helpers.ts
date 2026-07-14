@@ -344,7 +344,9 @@ async function performSyncPendingOperations(
     return {
       syncedCount: confirmedIds.length,
       backlogReadCount: pendingOps.length,
-      hasMorePending: pendingOps.length === RECONCILE_BACKLOG_BATCH_LIMIT,
+      hasMorePending:
+        unconfirmedIds.length > 0 ||
+        pendingOps.length === RECONCILE_BACKLOG_BATCH_LIMIT,
     };
   } catch (error) {
     if (pendingOps.length > 0) {

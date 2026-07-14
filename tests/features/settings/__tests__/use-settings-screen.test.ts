@@ -76,7 +76,7 @@ describe('useSettingsScreen', () => {
       },
     });
     (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'error',
+      connectionStatus: 'unreachable',
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
@@ -105,8 +105,8 @@ describe('useSettingsScreen', () => {
       expect.arrayContaining(['registration', 'lastFailure']),
     );
     expect(result.current.syncSummary.title).toBe('3 cambios esperando sync');
-    expect(result.current.bridgeStatus.chipLabel).toBe('Sync pendiente');
-    expect(result.current.bridgeStatus.title).toBe('3 cambios esperando sync');
+    expect(result.current.bridgeStatus.chipLabel).toBe('Bridge no disponible');
+    expect(result.current.bridgeStatus.title).toBe('Bridge configurado pero inaccesible');
     expect(result.current.syncSummary.actionKind).toBe('repair_bridge');
   });
 
@@ -130,7 +130,7 @@ describe('useSettingsScreen', () => {
       unpair,
     });
     (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'offline',
+      connectionStatus: 'idle',
       lastSyncAt: null,
       pendingOpsCount: 0,
       requestSync: jest.fn(),

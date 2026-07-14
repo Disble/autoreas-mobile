@@ -86,7 +86,7 @@ describe('SettingsScreen', () => {
     });
 
     (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'error',
+      connectionStatus: 'unreachable',
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
@@ -117,8 +117,9 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText('Estado de sync en segundo plano')).toBeTruthy();
-    expect(screen.getAllByText('Sync pendiente')).toHaveLength(2);
-    expect(screen.getAllByText('3 cambios esperando sync')).toHaveLength(3);
+    expect(screen.getByText('Sync pendiente')).toBeTruthy();
+    expect(screen.getByText('Bridge no disponible')).toBeTruthy();
+    expect(screen.getByText('3 cambios esperando sync')).toBeTruthy();
     expect(
       screen.getAllByText('Tus cambios siguen guardados en este dispositivo. Hace 81 días que el bridge no confirma cambios.'),
     ).toHaveLength(2);
@@ -132,7 +133,7 @@ describe('SettingsScreen', () => {
 
   it('R1c: muestra bridge no disponible en la card izquierda cuando falla el reachability sin backlog viejo', () => {
     (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'error',
+      connectionStatus: 'unreachable',
       lastSyncAt: Date.now() - 60 * 60 * 1000,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
@@ -156,7 +157,7 @@ describe('SettingsScreen', () => {
       unpair: mockUnpair,
     });
     (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'offline',
+      connectionStatus: 'idle',
       lastSyncAt: null,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
