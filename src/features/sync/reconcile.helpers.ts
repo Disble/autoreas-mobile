@@ -16,7 +16,7 @@ import {
   shouldPersistLastChangelogId,
 } from './last-changelog.helpers';
 import { applyRemoteChanges, loadGuardMap, loadPendingOutboxRecordIds } from './merge';
-import type { RemoteAnimeChange } from './merge/merge.types';
+import type { RemoteAnimeChange } from './merge';
 import { readOperationLogBacklog } from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import {
@@ -176,7 +176,7 @@ export async function syncPendingOperations(
   const run = async (): Promise<SyncPendingOperationsResult> => {
     let totalConfirmed = 0;
     let totalBacklogRead = 0;
-    let hasMorePending = false;
+    let hasMorePending: boolean;
 
     do {
       syncState.rerunRequested = false;

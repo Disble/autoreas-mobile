@@ -12,6 +12,8 @@ export const RECONCILE_BACKLOG_BATCH_LIMIT = 200;
  */
 export const PENDING_OPERATIONS_LIVE_QUERY_LIMIT = 200;
 
+/** Provides the shared sync state by database value. */
+
 export const syncStateByDatabase = new WeakMap<object, {
   inFlight: Promise<SyncPendingOperationsResult> | null;
   rerunRequested: boolean;

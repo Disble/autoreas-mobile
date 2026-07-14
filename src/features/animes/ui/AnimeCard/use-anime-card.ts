@@ -9,6 +9,7 @@ import {
   isAnimeMutationLocked,
 } from './anime-card.helpers';
 
+/** Coordinates anime card state and actions. */
 export function useAnimeCard(props: AnimeCardProps) {
   // 1. Refs
   const onCapMinusRef = useRef(props.onCapMinus);

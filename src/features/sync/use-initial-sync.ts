@@ -5,6 +5,7 @@ import {
   persistInitialSyncSnapshot,
 } from './initial-sync.helpers';
 
+/** Executes the initial sync operation. */
 export async function initialSync(rawDb: SQLiteDatabase): Promise<number> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {

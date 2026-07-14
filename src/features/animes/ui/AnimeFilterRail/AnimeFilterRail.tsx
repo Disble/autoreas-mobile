@@ -1,5 +1,4 @@
 import { Chip, cn } from "heroui-native";
-import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import type {
@@ -8,7 +7,8 @@ import type {
 } from "./anime-filter-rail.types";
 import { useAnimeFilterRail } from "./use-anime-filter-rail";
 
-export function AnimeFilterRail(props: AnimeFilterRailProps) {
+/** Renders the anime filter rail interface. */
+export function AnimeFilterRail(props: Readonly<AnimeFilterRailProps>) {
   const { items, orientation, handleSelect } = useAnimeFilterRail(props);
 
   if (orientation === "horizontal") {
@@ -58,7 +58,8 @@ export function AnimeFilterRail(props: AnimeFilterRailProps) {
   );
 }
 
-export function VerticalRailRow({ item, onSelect }: VerticalRailRowProps) {
+/** Renders the vertical rail row interface. */
+export function VerticalRailRow({ item, onSelect }: Readonly<VerticalRailRowProps>) {
   const showSection = item.isFirstPseudoDay;
   const hasBacklog = item.count > 0;
   const accessibilityLabel = hasBacklog

@@ -12,11 +12,15 @@ const setupPortSchema = z
     return port >= 1 && port <= 65535;
   });
 
+/** Validates setup screen form schema payloads at runtime. */
+
 export const SetupScreenFormSchema = z.object({
   ip: setupTextSchema,
   port: setupPortSchema,
   token: setupTextSchema,
 });
+
+/** Validates setup pairing payload schema payloads at runtime. */
 
 export const SetupPairingPayloadSchema = SetupScreenFormSchema.extend({
   version: z.literal(SETUP_DEEP_LINK_SUPPORTED_VERSION),

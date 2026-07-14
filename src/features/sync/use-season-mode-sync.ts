@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import { useSeasonModeStore } from '../../infrastructure/store/season-mode-store';
 import { fetchSeasonModeFromBridge } from './season-mode-sync.helpers';
-import type { UseSeasonModeSyncProps } from './use-season-mode-sync.types';
+import type { UseSeasonModeSyncProps } from './season-mode-sync.types';
 
+/** Coordinates season mode sync state and actions. */
 export function useSeasonModeSync({ enabled }: UseSeasonModeSyncProps): void {
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -27,4 +28,5 @@ export function useSeasonModeSync({ enabled }: UseSeasonModeSyncProps): void {
       active = false;
     };
   }, [enabled, rawDb, setSeasonMode]);
+  return undefined;
 }

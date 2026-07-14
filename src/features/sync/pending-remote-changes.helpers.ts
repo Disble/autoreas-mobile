@@ -1,17 +1,8 @@
 import { asc, inArray } from 'drizzle-orm';
 import type { AppDatabase } from '../../infrastructure/db/client';
 import { pendingRemoteChanges } from '../../infrastructure/db/schema';
-import type { RemoteAnimeChange } from './merge/merge.types';
-
-/**
- * A staging row paired with the `RemoteAnimeChange` it normalizes to, plus the staging
- * table's own `id` (`stagingId`) so callers can delete exactly the rows they drained
- * without re-deriving a match against the original change.
- */
-export interface PendingRemoteChangeEntry {
-  readonly stagingId: number;
-  readonly change: RemoteAnimeChange;
-}
+import type { RemoteAnimeChange } from './merge';
+import type { PendingRemoteChangeEntry } from './pending-remote-changes.types';
 
 /**
  * Persists a batch of normalized remote changes into the `pending_remote_changes` staging
@@ -62,7 +53,9 @@ export async function loadPendingRemoteChanges(
       recordId: row.recordId,
       changeType: row.changeType as RemoteAnimeChange['changeType'],
       changedFields: JSON.parse(row.changedFields) as readonly string[],
-      snapshot: row.snapshot ? JSON.parse(row.snapshot) : undefined,
+      snapshot: row.snapshot
+        ? (JSON.parse(row.snapshot) as RemoteAnimeChange['snapshot'])
+        : undefined,
       timestamp: row.timestamp,
     },
   }));

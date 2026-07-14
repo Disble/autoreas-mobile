@@ -38,3 +38,11 @@ export interface FieldMergeResult {
   readonly columns: Record<string, unknown>;
   readonly skippedFields: readonly string[];
 }
+
+
+/** Summarizes how a remote-change batch was classified by the merge boundary. */
+export interface ApplyRemoteChangesResult {
+  readonly applied: number;
+  readonly dropped: number;
+  readonly deferred: number;
+}

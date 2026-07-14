@@ -55,4 +55,5 @@ export function useRemoteChangeDrain(): void {
       subscription.remove();
     };
   }, [runDrain]);
+  return undefined;
 }

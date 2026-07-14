@@ -1,7 +1,9 @@
 import type { SyncExecutionMode } from './sync-execution-mode.types';
 
+/** Defines the sync runtime registration status value shape. */
 export type SyncRuntimeRegistrationStatus = 'registered' | 'unregistered' | 'unsupported';
 
+/** Defines the sync runtime trigger source value shape. */
 export type SyncRuntimeTriggerSource =
   | 'bootstrap'
   | 'manual'
@@ -11,6 +13,7 @@ export type SyncRuntimeTriggerSource =
   | 'foreground_service'
   | 'background_task';
 
+/** Defines the data contract for sync runtime status snapshot. */
 export interface SyncRuntimeStatusSnapshot {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
   readonly executionMode: SyncExecutionMode;
@@ -26,6 +29,7 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastPrunedOperationsCount: number;
 }
 
+/** Defines the data contract for sync runtime status patch. */
 export interface SyncRuntimeStatusPatch {
   readonly registrationStatus?: SyncRuntimeRegistrationStatus;
   readonly executionMode?: SyncExecutionMode;

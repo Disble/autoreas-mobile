@@ -20,6 +20,7 @@ try {
   // Expo may re-evaluate this module during tests or fast refresh.
 }
 
+/** Executes the register background sync task operation. */
 export async function registerBackgroundSyncTask() {
   const isRegistered = await TaskManager.isTaskRegisteredAsync(
     BACKGROUND_SYNC_TASK_NAME,
@@ -33,6 +34,7 @@ export async function registerBackgroundSyncTask() {
   }
 }
 
+/** Executes the unregister background sync task operation. */
 export async function unregisterBackgroundSyncTask() {
   const isRegistered = await TaskManager.isTaskRegisteredAsync(
     BACKGROUND_SYNC_TASK_NAME,
@@ -43,6 +45,7 @@ export async function unregisterBackgroundSyncTask() {
   }
 }
 
+/** Executes the is background sync task registered operation. */
 export async function isBackgroundSyncTaskRegistered() {
   return TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK_NAME);
 }

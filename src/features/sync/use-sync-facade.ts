@@ -15,8 +15,9 @@ import {
   recordSyncAttemptStarted,
   recordSyncAttemptSucceeded,
 } from './sync-runtime-status.helpers';
-import { fetchActiveSeasonFromBridge } from './use-season-sync.helpers';
+import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
 
+/** Coordinates sync facade state and actions. */
 export function useSyncFacade(): UseSyncFacadeResult {
   // 1. Refs
   const inFlightSyncRef = useRef<Promise<number> | null>(null);

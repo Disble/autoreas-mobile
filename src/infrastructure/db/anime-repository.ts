@@ -3,6 +3,7 @@ import type { Anime } from "../validation/anime-schema";
 import type { AppDatabase } from "./client";
 import { animes } from "./schema";
 
+/** Executes the upsert anime operation. */
 export async function upsertAnime(
   db: AppDatabase,
   anime: Anime,

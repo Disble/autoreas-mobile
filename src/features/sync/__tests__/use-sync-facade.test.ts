@@ -11,7 +11,7 @@ import {
   recordSyncAttemptSucceeded,
 } from '../sync-runtime-status.helpers';
 import { useSyncFacade } from '../use-sync-facade';
-import { fetchActiveSeasonFromBridge } from '../use-season-sync.helpers';
+import { fetchActiveSeasonFromBridge } from '../season-sync.helpers';
 
 jest.mock('../../../infrastructure/db/native-runtime', () => ({
   useOptionalLiveQuery: jest.fn(),
@@ -35,7 +35,7 @@ jest.mock('../season-rating-queue.helpers', () => ({
   drainSeasonRatingQueue: jest.fn(),
 }));
 
-jest.mock('../use-season-sync.helpers', () => ({
+jest.mock('../season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
 }));
 

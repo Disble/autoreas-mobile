@@ -22,6 +22,7 @@ import {
 import type { AnimeListItem } from "./anime-season.types";
 import type { AnimeDayFilter } from "./anime.types";
 
+/** Coordinates anime list state and actions. */
 export function useAnimeList(filter: AnimeDayFilter) {
   const rawDb = useOptionalSQLiteContext();
   const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);

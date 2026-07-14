@@ -33,6 +33,7 @@ describe('settings-screen.helpers', () => {
 
     expect(section.statusTone).toBe('danger');
     expect(section.title).toBe('Último sync con error');
+    expect(section.description).toContain('el último fallo');
     expect(section.status).toBe('Registrado');
 
     const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type SQLiteDatabase } from "expo-sqlite";
 import { syncPendingOperations } from "./reconcile.helpers";
 
+/** Coordinates reconcile state and actions. */
 export function useReconcile() {
   const queryClient = useQueryClient();
 
@@ -12,7 +13,7 @@ export function useReconcile() {
       return result.syncedCount;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["operationLog"] });
+      queryClient.invalidateQueries({ queryKey: ["operationLog"] }).catch(() => undefined);
     },
   });
 }

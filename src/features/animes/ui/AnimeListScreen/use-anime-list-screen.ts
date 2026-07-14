@@ -31,8 +31,9 @@ import type {
   AnimeStateSheetRequest,
   SeasonRatingSheetRequest,
 } from "./anime-list-screen.types";
-import type { SeasonRatingValue } from "../SeasonRatingSheet/season-rating-sheet.types";
+import type { SeasonRatingValue } from "../SeasonRatingSheet";
 
+/** Coordinates anime list screen state and actions. */
 export function useAnimeListScreen(
   _props: AnimeListScreenProps,
 ): AnimeListScreenViewModel {
@@ -78,7 +79,7 @@ export function useAnimeListScreen(
     () => getAnimeDayFilterOption(selectedFilter),
     [selectedFilter],
   );
-  const settingsHref = useMemo(() => "/(tabs)/settings" as Href, []);
+  const settingsHref = "/(tabs)/settings" satisfies Href;
   const today = useMemo(() => getDefaultAnimeDayFilter(new Date()), []);
   const isDeviceOnline = useMemo(() => {
     if (typeof networkState.isInternetReachable === "boolean") {
@@ -247,17 +248,19 @@ export function useAnimeListScreen(
         return;
       }
 
+      let pendingStatus: "failed" | "pending" | null = null;
+      if (seasonProjection.localIntent?.status === "failed") {
+        pendingStatus = "failed";
+      } else if (seasonProjection.localIntent?.status === "pending") {
+        pendingStatus = "pending";
+      }
+
       setSeasonRatingSheetRequest({
         animeId,
         animeTitle: anime.nombre,
         bridgeRating: seasonProjection.bridgeRating,
         pendingRating: seasonProjection.localIntent?.nota ?? null,
-        pendingStatus:
-          seasonProjection.localIntent?.status === "failed"
-            ? "failed"
-            : seasonProjection.localIntent?.status === "pending"
-              ? "pending"
-              : null,
+        pendingStatus,
         pendingFailureKind: seasonProjection.localIntent?.failureKind ?? null,
       });
     },

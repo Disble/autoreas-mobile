@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { AnimeEmptyStateProps } from './anime-empty-state.types';
 import { buildAnimeEmptyState } from './anime-empty-state.helpers';
 
+/** Coordinates anime empty state state and actions. */
 export function useAnimeEmptyState(props: AnimeEmptyStateProps) {
   // 1. Refs
   // 2. State

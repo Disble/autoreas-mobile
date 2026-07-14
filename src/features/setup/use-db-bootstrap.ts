@@ -8,6 +8,7 @@ import {
 import { getSQLiteProvider } from "../../infrastructure/db/native-runtime";
 import type { BootState, UseDbBootstrapResult } from "./db-bootstrap.types";
 
+/** Coordinates db bootstrap state and actions. */
 export function useDbBootstrap(): UseDbBootstrapResult {
   // 1. Refs
 

@@ -3,11 +3,12 @@ import { Image } from "expo-image";
 import { Button, Card, Chip } from "heroui-native";
 import { Pressable, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
-import { CHIP_TONE_COLOR_MAP } from "./anime-card.helpers";
+import { CHIP_TONE_COLOR_MAP } from "./anime-card.constants";
 import type { AnimeCardProps } from "./anime-card.types";
 import { useAnimeCard } from "./use-anime-card";
 
-export function AnimeCard(props: AnimeCardProps) {
+/** Renders the anime card interface. */
+export function AnimeCard(props: Readonly<AnimeCardProps>) {
   const { anime } = props;
   const {
     isMutationLocked,

@@ -16,7 +16,8 @@ import {
 import type { SetupQrScannerProps } from './setup-qr-scanner.types';
 import { useSetupQrScanner } from './use-setup-qr-scanner';
 
-export function SetupQrScanner(props: SetupQrScannerProps) {
+/** Renders the setup qr scanner interface. */
+export function SetupQrScanner(props: Readonly<SetupQrScannerProps>) {
   const {
     canRenderCamera,
     isOpen,

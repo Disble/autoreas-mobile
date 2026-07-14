@@ -5,6 +5,7 @@ import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
+/** Coordinates web socket state and actions. */
 export function useWebSocket({
   enabled = true,
   onSeasonChanged,
@@ -107,9 +108,13 @@ export function useWebSocket({
         };
 
         ws.onmessage = (event: MessageEvent) => {
+          if (typeof event.data !== 'string') {
+            return;
+          }
+
           let data: unknown;
           try {
-            data = JSON.parse(event.data);
+            data = JSON.parse(event.data) as unknown;
           } catch {
             // Non-JSON frame: ignore rather than crash the socket handler.
             return;

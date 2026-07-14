@@ -1,27 +1,17 @@
 import { cn } from 'heroui-native';
-import { type FC, type PropsWithChildren } from 'react';
-import { ScrollView, type ScrollViewProps } from 'react-native';
-import Animated, { type AnimatedProps } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useHeaderHeight from '../helpers/hooks/use-header-height';
+import { AnimatedScreenScrollView } from './screen-scroll-view.constants';
+import type { ScreenScrollViewWithChildrenProps } from './screen-scroll-view.types';
 
-const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
-
-interface Props extends AnimatedProps<ScrollViewProps> {
-  className?: string;
-  contentContainerClassName?: string;
-}
-
-export const ScreenScrollView: FC<PropsWithChildren<Props>> = ({
-  children,
-  className,
-  contentContainerClassName,
-  ...props
-}) => {
+/** Renders a scrollable screen with safe-area and header spacing. */
+export function ScreenScrollView(props: Readonly<ScreenScrollViewWithChildrenProps>) {
+  const { children, className, contentContainerClassName, ...scrollViewProps } = props;
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+
   return (
-    <AnimatedScrollView
+    <AnimatedScreenScrollView
       className={cn('bg-background', className)}
       contentContainerClassName={cn('px-5', contentContainerClassName)}
       contentContainerStyle={{
@@ -29,9 +19,9 @@ export const ScreenScrollView: FC<PropsWithChildren<Props>> = ({
         paddingBottom: insets.bottom + 32,
       }}
       showsVerticalScrollIndicator={false}
-      {...props}
+      {...scrollViewProps}
     >
       {children}
-    </AnimatedScrollView>
+    </AnimatedScreenScrollView>
   );
-};
+}

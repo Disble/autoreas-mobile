@@ -1,4 +1,7 @@
+/** Provides the shared season rating values value. */
 export const SEASON_RATING_VALUES = [1, 2, 3, 4, 5, 6] as const;
+
+/** Provides the shared season rating sheet copy value. */
 
 export const SEASON_RATING_SHEET_COPY = {
   title: "Calificar temporada",

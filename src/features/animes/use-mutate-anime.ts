@@ -12,6 +12,7 @@ import {
   buildSetEstadoPatch,
 } from "./anime-mutation.helpers";
 
+/** Coordinates mutate anime state and actions. */
 export function useMutateAnime() {
   const rawDb = useOptionalSQLiteContext();
 

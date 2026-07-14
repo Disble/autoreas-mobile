@@ -1,7 +1,9 @@
 import type { UseSyncFacadeResult } from './sync-facade.types';
 
+/** Defines the sync visible status tone value shape. */
 export type SyncVisibleStatusTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
 
+/** Defines the data contract for sync visible status facts. */
 export interface SyncVisibleStatusFacts {
   readonly connectionStatus: UseSyncFacadeResult['connectionStatus'];
   readonly isBridgeConfigured?: boolean;
@@ -11,6 +13,7 @@ export interface SyncVisibleStatusFacts {
   readonly syncError: string | null;
 }
 
+/** Defines the data contract for sync visible status. */
 export interface SyncVisibleStatus {
   readonly chipLabel: string;
   readonly description: string;

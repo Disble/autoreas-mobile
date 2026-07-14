@@ -1,21 +1,15 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
-import { applyRemoteChanges, loadGuardMap, loadPendingOutboxRecordIds } from './merge';
+import {
+  applyRemoteChanges,
+  loadGuardMap,
+  loadPendingOutboxRecordIds,
+} from './merge';
 import {
   deletePendingRemoteChanges,
   loadPendingRemoteChanges,
 } from './pending-remote-changes.helpers';
-
-/**
- * Outcome of one drain pass: how the merge boundary classified the staged batch, plus how
- * many staging rows were drained (read + deleted) in this pass.
- */
-export interface DrainPendingRemoteChangesResult {
-  readonly applied: number;
-  readonly dropped: number;
-  readonly deferred: number;
-  readonly drainedCount: number;
-}
+import type { DrainPendingRemoteChangesResult } from './remote-change-drain.types';
 
 /**
  * Applies every currently staged `pending_remote_changes` row to `animes` via the shared

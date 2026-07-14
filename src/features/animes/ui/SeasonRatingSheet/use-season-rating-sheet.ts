@@ -11,6 +11,7 @@ import type {
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 
+/** Coordinates season rating sheet state and actions. */
 export function useSeasonRatingSheet(
   props: SeasonRatingSheetProps,
 ): SeasonRatingSheetViewModel & {

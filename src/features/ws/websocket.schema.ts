@@ -28,6 +28,8 @@ const SeasonChangedEventSchema = z.object({
   type: z.literal('season_changed'),
 });
 
+/** Validates ws message schema payloads at runtime. */
+
 export const WsMessageSchema = z.union([
   AnimeChangedEventSchema,
   AnimeCreatedEventSchema,

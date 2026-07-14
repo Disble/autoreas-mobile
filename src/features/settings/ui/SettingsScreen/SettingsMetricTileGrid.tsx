@@ -3,7 +3,8 @@ import { chunkTiles } from './settings-screen.helpers';
 import { SettingsMetricTile } from './SettingsMetricTile';
 import type { SettingsMetricTileGridProps } from './settings-screen.types';
 
-export function SettingsMetricTileGrid(props: SettingsMetricTileGridProps) {
+/** Renders the settings metric tile grid interface. */
+export function SettingsMetricTileGrid(props: Readonly<SettingsMetricTileGridProps>) {
   const { colors, columns, tiles } = props;
   const rows = chunkTiles(tiles, columns);
 

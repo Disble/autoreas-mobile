@@ -1,4 +1,4 @@
-import { extractSeasonMode } from '../../../src/infrastructure/api/bridge-client.helpers';
+import { extractSeasonMode } from '../../../src/infrastructure/api/bridge-client/bridge-url.helpers';
 
 describe('extractSeasonMode', () => {
   it('returns true when the status body reports season_mode true', () => {

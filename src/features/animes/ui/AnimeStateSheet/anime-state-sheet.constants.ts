@@ -1,6 +1,10 @@
 import type { AnimeEstadoDefinition, AnimeStateSheetTone } from './anime-state-sheet.types';
 
+/** Provides the shared anime state sheet title value. */
+
 export const ANIME_STATE_SHEET_TITLE = 'Cambiar estado';
+
+/** Provides the shared tone label class value. */
 
 export const TONE_LABEL_CLASS: Readonly<Record<AnimeStateSheetTone, string>> = {
   default: 'text-foreground',
@@ -8,6 +12,8 @@ export const TONE_LABEL_CLASS: Readonly<Record<AnimeStateSheetTone, string>> = {
   warning: 'text-warning',
   danger: 'text-danger',
 };
+
+/** Provides the shared tone icon color value. */
 
 export const TONE_ICON_COLOR: Readonly<Record<AnimeStateSheetTone, string>> = {
   default: '#6B7280',

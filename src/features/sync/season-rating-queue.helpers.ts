@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
 import { seasonRatingQueue } from '../../infrastructure/db/schema';
+import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import type {
   CreateSeasonRatingQueueEntryInput,
   DrainSeasonRatingQueueResult,
@@ -11,9 +12,6 @@ import type {
   SeasonRatingQueueEntry,
 } from './season-rating-queue.types';
 
-const defaultQueueClock: SeasonRatingQueueClock = {
-  now: () => Date.now(),
-};
 
 /**
  * Creates a durable season-rating queue entry that preserves the original user rating timestamp.
@@ -21,7 +19,7 @@ const defaultQueueClock: SeasonRatingQueueClock = {
  */
 export function createSeasonRatingQueueEntry(
   input: CreateSeasonRatingQueueEntryInput,
-  clock: SeasonRatingQueueClock = defaultQueueClock,
+  clock: SeasonRatingQueueClock = DEFAULT_SEASON_RATING_QUEUE_CLOCK,
 ): SeasonRatingQueueEntry {
   const now = clock.now();
 
@@ -45,7 +43,7 @@ export function createSeasonRatingQueueEntry(
 export async function enqueueSeasonRatingIntent(
   rawDb: SQLiteDatabase,
   input: CreateSeasonRatingQueueEntryInput,
-  clock: SeasonRatingQueueClock = defaultQueueClock,
+  clock: SeasonRatingQueueClock = DEFAULT_SEASON_RATING_QUEUE_CLOCK,
 ): Promise<SeasonRatingQueueEntry> {
   const entry = createSeasonRatingQueueEntry(input, clock);
 
@@ -62,7 +60,7 @@ export async function enqueueSeasonRatingIntent(
  */
 export function markSeasonRatingQueueEntrySyncing(
   entry: SeasonRatingQueueEntry,
-  clock: SeasonRatingQueueClock = defaultQueueClock,
+  clock: SeasonRatingQueueClock = DEFAULT_SEASON_RATING_QUEUE_CLOCK,
 ): SeasonRatingQueueEntry {
   const now = clock.now();
 
@@ -141,6 +139,13 @@ export function resolveSeasonRatingDelivery(
   };
 }
 
+function readFailureKind(value: unknown): SeasonRatingQueueEntry['lastFailureKind'] {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value as SeasonRatingQueueEntry['lastFailureKind'];
+}
+
 function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
   return {
     id: Number(row.id),
@@ -155,10 +160,7 @@ function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
       row.last_attempt_at === null || row.last_attempt_at === undefined
         ? null
         : Number(row.last_attempt_at),
-    lastFailureKind:
-      row.last_failure_kind === null || row.last_failure_kind === undefined
-        ? null
-        : (String(row.last_failure_kind) as SeasonRatingQueueEntry['lastFailureKind']),
+    lastFailureKind: readFailureKind(row.last_failure_kind),
   };
 }
 
@@ -216,7 +218,7 @@ async function deleteSeasonRatingQueueEntry(rawDb: SQLiteDatabase, entryId: numb
  */
 export async function drainSeasonRatingQueue(
   rawDb: SQLiteDatabase,
-  clock: SeasonRatingQueueClock = defaultQueueClock,
+  clock: SeasonRatingQueueClock = DEFAULT_SEASON_RATING_QUEUE_CLOCK,
 ): Promise<DrainSeasonRatingQueueResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
 

@@ -7,6 +7,7 @@ import {
   withDeferredWrite,
   withExclusiveWrite,
 } from "../../src/infrastructure/db/client";
+import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
 import { bridgeConfig } from "../../src/infrastructure/db/schema";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime";
 
@@ -146,6 +147,27 @@ describe("db client tracer helpers", () => {
         }),
       })
     );
+  });
+
+  it("aplica solamente las columnas ausentes y conserva el orden declarado", async () => {
+    const rawDb = {
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await ensureMissingColumns(
+      rawDb as never,
+      new Set(["already_present"]),
+      [
+        { columnName: "first_missing", sql: "ALTER first" },
+        { columnName: "already_present", sql: "ALTER existing" },
+        { columnName: "second_missing", sql: "ALTER second" },
+      ],
+    );
+
+    expect(rawDb.runAsync.mock.calls).toEqual([
+      ["ALTER first"],
+      ["ALTER second"],
+    ]);
   });
 
   it("repara bridge_config legacy agregando last_changelog_id y sanea valores inválidos", async () => {

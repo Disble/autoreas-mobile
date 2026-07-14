@@ -2,23 +2,13 @@ import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/clie
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import type {
+  AnimeMutationPatchBuilder,
+  AnimeMutationSyncPatch,
+  SerializedMutationOperation,
+} from './anime-mutation.types';
 import { eq } from 'drizzle-orm';
 import { syncPendingOperations } from '../sync/reconcile.helpers';
-
-export type AnimeMutationPatchBuilder = (anime: Anime, now: number) => AnimeMutationSyncPatch;
-
-export interface AnimeMutationSyncPatch {
-  readonly nrocapvisto: number;
-  readonly fechaUltCapVisto: number;
-  readonly estado?: number;
-  readonly fechaEstreno?: number;
-  readonly primeravez?: boolean;
-}
-
-export interface SerializedMutationOperation {
-  readonly operation: 'update';
-  readonly payload: string;
-}
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
@@ -236,13 +226,17 @@ export async function applyAnimeMutationPatch(
   });
 }
 
+function parseStoredJson(value: string): unknown {
+  return JSON.parse(value) as unknown;
+}
+
 function parseStoredAnimeRow(row: AnimeRow) {
   return {
     ...row,
-    dias: typeof row.dias === 'string' ? JSON.parse(row.dias) : (row.dias ?? []),
+    dias: typeof row.dias === 'string' ? parseStoredJson(row.dias) : (row.dias ?? []),
     generos:
       typeof row.generos === 'string'
-        ? JSON.parse(row.generos)
+        ? parseStoredJson(row.generos)
         : (row.generos ?? []),
   };
 }

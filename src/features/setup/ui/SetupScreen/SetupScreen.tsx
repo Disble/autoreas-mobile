@@ -13,7 +13,7 @@ import {
 } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
-import { SetupQrScanner } from '../SetupQrScanner/SetupQrScanner';
+import { SetupQrScanner } from '../SetupQrScanner';
 import {
   SETUP_PAIR_BUTTON_LABEL,
   SETUP_QR_SCAN_BUTTON_LABEL,
@@ -21,7 +21,8 @@ import {
 import type { SetupScreenProps } from './setup-screen.types';
 import { useSetupScreen } from './use-setup-screen';
 
-export function SetupScreen(props: SetupScreenProps) {
+/** Renders the setup screen interface. */
+export function SetupScreen(props: Readonly<SetupScreenProps>) {
   const {
     error,
     ip,

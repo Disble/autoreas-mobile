@@ -7,7 +7,6 @@ import { ReconcileResponseSchema } from '../../../src/features/sync/reconcile.sc
 import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client';
 import * as mergeModule from '../../../src/features/sync/merge';
-import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 
@@ -23,11 +22,6 @@ jest.mock('../../../src/infrastructure/db/client', () => ({
 
 jest.mock('../../../src/features/sync/merge', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
-  loadGuardMap: jest.fn().mockResolvedValue(new Map()),
-  loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
-}));
-
-jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
   loadGuardMap: jest.fn().mockResolvedValue(new Map()),
   loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
 }));
@@ -205,9 +199,9 @@ describe('syncPendingOperations applyMode routing', () => {
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
   const mockApplyRemoteChanges = mergeModule.applyRemoteChanges as jest.Mock;
-  const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
+  const mockLoadGuardMap = mergeModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =
-    mergeContextModule.loadPendingOutboxRecordIds as jest.Mock;
+    mergeModule.loadPendingOutboxRecordIds as jest.Mock;
   const mockStagePendingRemoteChanges =
     pendingRemoteChangesModule.stagePendingRemoteChanges as jest.Mock;
 
@@ -230,7 +224,7 @@ describe('syncPendingOperations applyMode routing', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
-      url: 'http://192.168.1.10:8080/api/sync/reconcile',
+      url: 'https://192.168.1.10:8080/api/sync/reconcile',
       rawBody: '{}',
       data: {
         status: 'accepted',
@@ -352,7 +346,7 @@ describe('syncPendingOperations applyMode routing', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
-      url: 'http://192.168.1.10:8080/api/sync/reconcile',
+      url: 'https://192.168.1.10:8080/api/sync/reconcile',
       rawBody: '{}',
       data: {
         status: 'accepted',

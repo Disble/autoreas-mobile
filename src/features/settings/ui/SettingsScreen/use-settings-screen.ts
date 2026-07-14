@@ -1,5 +1,4 @@
 import { useNetworkState } from 'expo-network';
-import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useThemeColor } from 'heroui-native';
 import { useCallback, useMemo } from 'react';
@@ -20,6 +19,7 @@ import type {
   SettingsScreenViewModel,
 } from './settings-screen.types';
 
+/** Coordinates settings screen state and actions. */
 export function useSettingsScreen(
   _props: SettingsScreenProps,
 ): SettingsScreenViewModel {
@@ -88,7 +88,7 @@ export function useSettingsScreen(
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleGoToSetup = useCallback(() => {
-    router.push('/setup' as Href);
+    router.push('/setup');
   }, [router]);
 
   const handleRePair = useCallback(() => {
@@ -104,12 +104,14 @@ export function useSettingsScreen(
         {
           text: 'Re-emparejar',
           style: 'destructive',
-          onPress: async () => {
-            const result = await unpair();
-
-            if (result.success) {
-              router.replace('/setup?repair=1' as Href);
-            }
+          onPress: () => {
+            unpair()
+              .then((result) => {
+                if (result.success) {
+                  router.replace('/setup?repair=1');
+                }
+              })
+              .catch(() => undefined);
           },
         },
       ]

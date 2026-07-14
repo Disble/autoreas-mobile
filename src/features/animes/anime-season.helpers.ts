@@ -35,13 +35,15 @@ export function selectLatestSeasonRatingIntent(
     return null;
   }
 
-  const latestRow = matchingRows.sort((left, right) => {
+  matchingRows.sort((left, right) => {
     if (left.createdAt !== right.createdAt) {
       return right.createdAt - left.createdAt;
     }
 
     return (right.id ?? 0) - (left.id ?? 0);
-  })[0];
+  });
+
+  const latestRow = matchingRows[0];
 
   return {
     nota: latestRow.nota,

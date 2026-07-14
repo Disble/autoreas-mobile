@@ -2,13 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button } from "heroui-native";
 import type { AnimeListScreenHeaderRightProps } from "./anime-list-screen.types";
 
+/** Renders the anime list screen header right interface. */
 export function AnimeListScreenHeaderRight({
   refreshAccessibilityLabel,
   isRefreshing,
   isManualSyncEnabled,
   themeColorForeground,
   handleRefresh,
-}: AnimeListScreenHeaderRightProps) {
+}: Readonly<AnimeListScreenHeaderRightProps>) {
   return (
     <Button
       accessibilityLabel={refreshAccessibilityLabel}

@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
 import { ScreenScrollView } from '../../../../components/screen-scroll-view';
 import { SettingsBridgeCard } from './SettingsBridgeCard';
+import { SETTINGS_CONTAINER_WIDTH_CLASS } from './settings-screen.constants';
 import { SettingsSyncCard } from './SettingsSyncCard';
 import type {
   ResolvedToneColors,
@@ -10,7 +11,8 @@ import type {
 } from './settings-screen.types';
 import { useSettingsScreen } from './use-settings-screen';
 
-export function SettingsScreen(props: SettingsScreenProps) {
+/** Renders the settings screen interface. */
+export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
   const {
     backgroundSyncSection,
     bridgeStatus,
@@ -39,12 +41,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
   };
 
   const isTabletLandscape = layoutMode === 'tablet-landscape';
-  const isTabletPortrait = layoutMode === 'tablet-portrait';
-  const containerWidthClass = isTabletLandscape
-    ? 'max-w-[1120px]'
-    : isTabletPortrait
-      ? 'max-w-[760px]'
-      : 'max-w-full';
+  const containerWidthClass = SETTINGS_CONTAINER_WIDTH_CLASS[layoutMode];
   const sectionGapClass = isTabletLandscape ? 'gap-6' : 'gap-5';
 
   const bridgeSlot = (

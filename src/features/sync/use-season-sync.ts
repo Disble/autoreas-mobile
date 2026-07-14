@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
-import { fetchActiveSeasonFromBridge } from './use-season-sync.helpers';
-import type { UseSeasonSyncProps, UseSeasonSyncResult } from './use-season-sync.types';
+import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
+import type { UseSeasonSyncProps, UseSeasonSyncResult } from './season-sync.types';
 
+/** Coordinates season sync state and actions. */
 export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncResult {
   // 1. Refs
 

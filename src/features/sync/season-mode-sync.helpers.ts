@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { bridgeClient } from '../../infrastructure/api';
-import { extractSeasonMode } from '../../infrastructure/api/bridge-client.helpers';
+import { bridgeClient, extractSeasonMode } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
 
 /**

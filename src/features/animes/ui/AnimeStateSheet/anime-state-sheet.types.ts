@@ -1,7 +1,10 @@
+/** Defines the anime estado value value shape. */
 export type AnimeEstadoValue = 0 | 1 | 2 | 3;
 
+/** Defines the anime state sheet tone value shape. */
 export type AnimeStateSheetTone = 'default' | 'success' | 'warning' | 'danger';
 
+/** Defines the data contract for anime estado definition. */
 export interface AnimeEstadoDefinition {
   readonly value: AnimeEstadoValue;
   readonly label: string;
@@ -10,6 +13,7 @@ export interface AnimeEstadoDefinition {
   readonly tone: AnimeStateSheetTone;
 }
 
+/** Defines the data contract for anime state sheet option. */
 export interface AnimeStateSheetOption {
   readonly value: AnimeEstadoValue;
   readonly label: string;
@@ -19,6 +23,7 @@ export interface AnimeStateSheetOption {
   readonly isSelected: boolean;
 }
 
+/** Defines the data contract for anime state sheet props. */
 export interface AnimeStateSheetProps {
   readonly visible: boolean;
   readonly currentEstado: number;

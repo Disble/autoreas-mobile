@@ -4,9 +4,23 @@
 import { createRecommendedConfig } from 'dlinter-ts-react';
 
 export default [
+  {
+    ignores: ['uniwind-types.d.ts', 'uniwind.d.ts'],
+  },
   ...createRecommendedConfig({
     infrastructure: {
       importPatterns: ['(^|/)infrastructure(/|$)'],
     },
   }),
+  {
+    files: ['metro.config.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        __dirname: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+      },
+    },
+  },
 ];

@@ -10,7 +10,8 @@ import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate';
 import type { AppRootLayoutProps } from './app-root-layout.types';
 import { useAppRootLayout } from './use-app-root-layout';
 
-export function AppRootLayout(props: AppRootLayoutProps) {
+/** Renders the app root layout interface. */
+export function AppRootLayout(props: Readonly<AppRootLayoutProps>) {
   const {
     SQLiteProvider,
     bootState,

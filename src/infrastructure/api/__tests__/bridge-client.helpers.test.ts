@@ -1,7 +1,7 @@
 import {
   buildPostActiveSeasonRatingBody,
   extractActiveSeasonSnapshot,
-} from '../bridge-client.helpers';
+} from '../bridge-client/bridge-url.helpers';
 
 describe('bridge client season helpers', () => {
   it('maps a bridge snapshot into a candidate-only projection', () => {

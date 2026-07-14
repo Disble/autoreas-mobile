@@ -4,9 +4,10 @@ import { FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { AnimeListScreenView } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreen';
 import { AnimeListScreenHeaderRight } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderRight';
-import type { AnimeListScreenViewProps } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
+import { AnimeListScreenStatusSection } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection';
+import type { AnimeListScreenRenderModel } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 
-type AnimeListItem = AnimeListScreenViewProps['animes'][number];
+type AnimeListItem = AnimeListScreenRenderModel['animes'][number];
 
 jest.mock('expo-router', () => ({
   Stack: {
@@ -23,8 +24,12 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 jest.mock('../../../../src/features/animes/ui/AnimeCard', () => ({
-  AnimeCard: () => null,
+  AnimeCard: jest.fn(() => null),
 }));
+
+const mockAnimeCard = jest.requireMock(
+  '../../../../src/features/animes/ui/AnimeCard',
+).AnimeCard as jest.Mock;
 
 jest.mock('../../../../src/features/animes/ui/AnimeEmptyState', () => ({
   AnimeEmptyState: () => null,
@@ -65,8 +70,8 @@ function buildAnime(id: string): AnimeListItem {
   }
 
 function buildProps(
-  overrides: Partial<AnimeListScreenViewProps> = {},
-): AnimeListScreenViewProps {
+  overrides: Partial<AnimeListScreenRenderModel> = {},
+): AnimeListScreenRenderModel {
   return {
     animes: [buildAnime('anime-1')],
     filterOptions: [],
@@ -124,14 +129,63 @@ function buildProps(
       handleSelectedFilterChange: jest.fn(),
       handleSeasonRatingSubmit: jest.fn().mockResolvedValue(undefined),
       handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
+      getAnimeCardProps: jest.fn((anime) => ({
+        anime,
+        isMutating: false,
+        onCapMinus: jest.fn(),
+        onCapMinusHalf: jest.fn(),
+        onCapPlus: jest.fn(),
+        onCapPlusHalf: jest.fn(),
+        onOpenSeasonRatingSheet: jest.fn(),
+        onOpenStateSheet: jest.fn(),
+      })),
       seasonRatingSheetRequest: null,
       ...overrides,
     };
   }
 
 describe('AnimeListScreenView', () => {
+  it('renders list items through the AnimeCard public contract', () => {
+    const props = buildProps();
+    mockAnimeCard.mockClear();
+
+    render(<AnimeListScreenView model={props} />);
+
+    expect(mockAnimeCard).toHaveBeenCalled();
+    expect(mockAnimeCard.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ anime: props.animes[0] }),
+    );
+  });
+
+  it('renders season and sync status copy without inventing a missing action', () => {
+    const handleOpenSettings = jest.fn();
+    const { getByText, queryByText } = render(
+      <AnimeListScreenStatusSection
+        contextualHeader={{
+          title: 'Martes',
+          subtitle: '1 anime para ver',
+          isToday: true,
+        }}
+        isSeasonMode
+        syncStatus={{
+          actionLabel: null,
+          chipLabel: 'Catálogo local',
+          description: 'La copia local sigue disponible.',
+          title: 'Catálogo local listo',
+          tone: 'default',
+        }}
+        handleOpenSettings={handleOpenSettings}
+      />,
+    );
+
+    expect(getByText('Modo temporada')).toBeTruthy();
+    expect(getByText('Catálogo local listo')).toBeTruthy();
+    expect(queryByText('Revisar bridge')).toBeNull();
+    expect(handleOpenSettings).not.toHaveBeenCalled();
+  });
+
   it('uses three columns in tablet landscape layout', () => {
-    const { UNSAFE_getByType } = render(<AnimeListScreenView {...buildProps()} />);
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={buildProps()} />);
 
     const list = UNSAFE_getByType(FlatList);
 
@@ -140,7 +194,7 @@ describe('AnimeListScreenView', () => {
 
   it('wraps landscape grid items so each card fills its column width', () => {
     const props = buildProps();
-    const { UNSAFE_getByType } = render(<AnimeListScreenView {...props} />);
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={props} />);
 
     const list = UNSAFE_getByType(FlatList);
     const row = list.props.renderItem({ item: props.animes[0] });
@@ -154,7 +208,7 @@ describe('AnimeListScreenView', () => {
         'anime-1': true,
       },
     });
-    const { UNSAFE_getByType } = render(<AnimeListScreenView {...props} />);
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={props} />);
 
     const list = UNSAFE_getByType(FlatList);
 
@@ -172,7 +226,7 @@ describe('AnimeListScreenView', () => {
       },
     });
 
-    const { getByText } = render(<AnimeListScreenView {...props} />);
+    const { getByText } = render(<AnimeListScreenView model={props} />);
 
     expect(getByText('Sync pendiente')).toBeTruthy();
     expect(getByText('2 cambios esperando sync')).toBeTruthy();
@@ -192,7 +246,7 @@ describe('AnimeListScreenView', () => {
       },
     });
 
-    const { getByText } = render(<AnimeListScreenView {...props} />);
+    const { getByText } = render(<AnimeListScreenView model={props} />);
 
     fireEvent.press(getByText('Revisar bridge'));
 
@@ -201,19 +255,19 @@ describe('AnimeListScreenView', () => {
 
   it('shows the season-mode indicator only when season mode is on', () => {
     const { queryByText, rerender } = render(
-      <AnimeListScreenView {...buildProps({ isSeasonMode: false })} />,
+      <AnimeListScreenView model={buildProps({ isSeasonMode: false })} />,
     );
 
     expect(queryByText('Modo temporada')).toBeNull();
 
-    rerender(<AnimeListScreenView {...buildProps({ isSeasonMode: true })} />);
+    rerender(<AnimeListScreenView model={buildProps({ isSeasonMode: true })} />);
 
     expect(queryByText('Modo temporada')).not.toBeNull();
   });
 
   it('disables pull to refresh from the same manual-sync gate', () => {
     const { UNSAFE_getByType } = render(
-      <AnimeListScreenView {...buildProps({ isManualSyncEnabled: false })} />,
+      <AnimeListScreenView model={buildProps({ isManualSyncEnabled: false })} />,
     );
 
     const list = UNSAFE_getByType(FlatList);

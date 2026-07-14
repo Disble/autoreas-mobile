@@ -1,13 +1,10 @@
 import { cn } from 'heroui-native';
-import React from 'react';
-import { Text as RNText, type TextProps as RNTextProps } from 'react-native';
+import { Text as RNText } from 'react-native';
+import type { AppTextProps } from './app-text.types';
 
-export const AppText = React.forwardRef<RNText, RNTextProps>((props, ref) => {
+/** Renders application text with the shared font styling. */
+export function AppText(props: Readonly<AppTextProps>) {
   const { className, ...restProps } = props;
 
-  return (
-    <RNText ref={ref} className={cn('font-normal', className)} {...restProps} />
-  );
-});
-
-AppText.displayName = 'AppText';
+  return <RNText className={cn('font-normal', className)} {...restProps} />;
+}

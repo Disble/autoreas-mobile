@@ -4,7 +4,8 @@ import { SEASON_RATING_SHEET_COPY } from "./season-rating-sheet.constants";
 import type { SeasonRatingSheetProps } from "./season-rating-sheet.types";
 import { useSeasonRatingSheet } from "./use-season-rating-sheet";
 
-export function SeasonRatingSheet(props: SeasonRatingSheetProps) {
+/** Renders the season rating sheet interface. */
+export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
     animeTitle,
     bridgeSummary,

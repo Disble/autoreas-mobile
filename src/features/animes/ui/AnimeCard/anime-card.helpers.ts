@@ -1,4 +1,6 @@
 import type { AnimeSeasonProjection } from '../../anime-season.types';
+import { STATE_CHIP_BY_ESTADO } from './anime-card.constants';
+import type { AnimeSeasonStatusDescriptor, AnimeStateChipDescriptor } from './anime-card.types';
 
 /**
  * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
@@ -22,28 +24,6 @@ export const canDecrease = (nrocapvisto: number) => {
  */
 export const canIncrease = (nrocapvisto: number, totalcap: number | null | undefined) => {
   return totalcap == null || nrocapvisto < totalcap;
-};
-
-export type AnimeStateChipTone = 'accent' | 'success' | 'warning' | 'danger';
-
-export interface AnimeStateChipDescriptor {
-  readonly label: string;
-  readonly tone: AnimeStateChipTone;
-  readonly isDefault: boolean;
-}
-
-export const CHIP_TONE_COLOR_MAP: Readonly<Record<AnimeStateChipTone, 'accent' | 'success' | 'warning' | 'danger'>> = {
-  accent: 'accent',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-};
-
-const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescriptor>> = {
-  0: { label: 'Viendo', tone: 'accent', isDefault: true },
-  1: { label: 'Finalizado', tone: 'success', isDefault: false },
-  2: { label: 'No me gustó', tone: 'danger', isDefault: false },
-  3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
 
 /**
@@ -73,15 +53,6 @@ export function getRestantesLabel(
   }
 
   return `${remaining} restantes`;
-}
-
-export type AnimeSeasonStatusTone = 'accent' | 'warning';
-
-export interface AnimeSeasonStatusDescriptor {
-  readonly label: string;
-  readonly description: string;
-  readonly tone: AnimeSeasonStatusTone;
-  readonly showRatingCta: boolean;
 }
 
 /**

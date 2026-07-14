@@ -24,6 +24,7 @@ import type {
 } from "./sync-runtime.types";
 import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
 
+/** Coordinates sync runtime state and actions. */
 export function useSyncRuntime(
   props: UseSyncRuntimeProps,
 ): UseSyncRuntimeResult {

@@ -3,6 +3,7 @@ import { useSyncRuntime } from '../../../sync/use-sync-runtime';
 import type { SyncRuntimeGateProps } from './sync-runtime-gate.types';
 import { getSyncRuntimeGateLabel } from './sync-runtime-gate.helpers';
 
+/** Coordinates sync runtime gate state and actions. */
 export function useSyncRuntimeGate(props: SyncRuntimeGateProps) {
   // 1. Refs
 

@@ -2,9 +2,14 @@ import { fetchSeasonModeFromBridge } from '../../../src/features/sync/season-mod
 import { bridgeClient } from '../../../src/infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../../src/infrastructure/db/client';
 
-jest.mock('../../../src/infrastructure/api', () => ({
-  bridgeClient: { getStatus: jest.fn() },
-}));
+jest.mock('../../../src/infrastructure/api', () => {
+  const actual = jest.requireActual('../../../src/infrastructure/api');
+
+  return {
+    ...actual,
+    bridgeClient: { getStatus: jest.fn() },
+  };
+});
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),

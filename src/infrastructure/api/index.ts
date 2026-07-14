@@ -1,4 +1,10 @@
-export { BridgeUnreachableError, bridgeClient, createBridgeClient } from './bridge-client';
+export {
+  BridgeUnreachableError,
+  bridgeClient,
+  createBridgeClient,
+  extractActiveSeasonSnapshot,
+  extractSeasonMode,
+} from './bridge-client';
 export type {
   ActiveSeasonCandidateSnapshot,
   ActiveSeasonRatingSource,
@@ -10,6 +16,6 @@ export type {
   BridgeHttpMethod,
   BridgeHttpResult,
   BridgePairDeviceRequest,
-  PostActiveSeasonRatingRequest,
   BridgeRequestSpec,
-} from './bridge-client.types';
+  PostActiveSeasonRatingRequest,
+} from './bridge-client';
