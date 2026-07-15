@@ -12,7 +12,7 @@ export const BRIDGE_API_PATHS = {
   reconcile: '/api/sync/reconcile',
   status: '/api/status',
   activeSeason: '/api/seasons/active',
-  activeSeasonRating: '/api/seasons/active/rating',
+  activeSeasonRating: '/api/seasons/active/ratings',
   ws: '/ws',
 } as const;
 

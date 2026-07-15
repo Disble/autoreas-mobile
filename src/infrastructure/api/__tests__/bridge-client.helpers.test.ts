@@ -66,7 +66,7 @@ describe('bridge client season helpers', () => {
       }),
     ).toEqual({
       anime_id: 'anime-9',
-      nota: 4,
+      grade: 4,
       rated_at: 1_752_300_000_000,
     });
   });

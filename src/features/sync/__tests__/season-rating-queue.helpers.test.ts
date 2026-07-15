@@ -86,7 +86,7 @@ describe('season rating queue helpers', () => {
 
   it('treats unreachable delivery as a retryable pending state', () => {
     const resolution = resolveSeasonRatingDelivery({
-      error: new BridgeUnreachableError('http://bridge.test/api/seasons/active/rating', 'offline'),
+      error: new BridgeUnreachableError('http://bridge.test/api/seasons/active/ratings', 'offline'),
     });
 
     expect(resolution).toEqual({
@@ -165,7 +165,7 @@ describe('season rating queue helpers', () => {
       status: 204,
       data: null,
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active/rating',
+      url: 'http://127.0.0.1:8080/api/seasons/active/ratings',
     });
 
     const result = await drainSeasonRatingQueue(rawDb, {
@@ -266,7 +266,7 @@ describe('season rating queue helpers', () => {
       },
     ]);
     (bridgeClient.postActiveSeasonRating as jest.Mock).mockRejectedValue(
-      new BridgeUnreachableError('http://127.0.0.1:8080/api/seasons/active/rating', 'offline'),
+      new BridgeUnreachableError('http://127.0.0.1:8080/api/seasons/active/ratings', 'offline'),
     );
 
     const result = await drainSeasonRatingQueue(rawDb, {
@@ -318,7 +318,7 @@ describe('season rating queue helpers', () => {
       status: 404,
       data: null,
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active/rating',
+      url: 'http://127.0.0.1:8080/api/seasons/active/ratings',
     });
 
     const result = await drainSeasonRatingQueue(rawDb, {

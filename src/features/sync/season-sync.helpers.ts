@@ -82,19 +82,19 @@ function isValidActiveSeasonPayload(data: unknown): boolean {
 
     const value = candidate as {
       anime_id?: unknown;
-      nota_estreno?: unknown;
-      nota_source?: unknown;
+      grade?: unknown;
+      grade_source?: unknown;
     };
 
     return (
       typeof value.anime_id === 'string' &&
       value.anime_id.length > 0 &&
-      (value.nota_estreno === undefined ||
-        value.nota_estreno === null ||
-        (typeof value.nota_estreno === 'number' && Number.isFinite(value.nota_estreno))) &&
-      (value.nota_source === undefined ||
-        value.nota_source === null ||
-        value.nota_source === 'bridge')
+      (value.grade === undefined ||
+        value.grade === null ||
+        (typeof value.grade === 'number' && Number.isFinite(value.grade))) &&
+      (value.grade_source === undefined ||
+        value.grade_source === null ||
+        value.grade_source === 'bridge')
     );
   });
 }
