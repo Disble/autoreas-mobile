@@ -11,6 +11,7 @@ import {
 } from '../sync/sync-runtime-status.constants';
 import type { UseBackgroundSyncStatusResult } from './background-sync-status.types';
 
+/** Coordinates background sync status state and actions. */
 export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
   // 1. Refs
 

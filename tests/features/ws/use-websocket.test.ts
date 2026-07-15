@@ -107,6 +107,64 @@ describe('useWebSocket', () => {
     expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores an unrecognized message type without throwing or invoking callbacks', async () => {
+    const onSyncRequired = jest.fn();
+    const onPreferencesChanged = jest.fn();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    renderHook(() =>
+      useWebSocket({ enabled: true, onSyncRequired, onPreferencesChanged }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
+
+    await act(async () => {
+      mockWs.onmessage?.({
+        data: JSON.stringify({ type: 'some_future_message', foo: 1 }),
+      } as MessageEvent);
+      await Promise.resolve();
+    });
+
+    expect(onSyncRequired).not.toHaveBeenCalled();
+    expect(onPreferencesChanged).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('routes preferences_changed to the preferences callback, not the reconcile callback', async () => {
+    const onSyncRequired = jest.fn();
+    const onPreferencesChanged = jest.fn();
+
+    renderHook(() =>
+      useWebSocket({ enabled: true, onSyncRequired, onPreferencesChanged }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockWs.onopen?.({} as Event);
+    });
+
+    await act(async () => {
+      mockWs.onmessage?.({
+        data: JSON.stringify({ type: 'preferences_changed', season_mode: true }),
+      } as MessageEvent);
+      await Promise.resolve();
+    });
+
+    expect(onPreferencesChanged).toHaveBeenCalledWith(true);
+    expect(onSyncRequired).not.toHaveBeenCalled();
+  });
+
   it('routes anime_changed through the reconcile callback instead of clobbering the row directly', async () => {
     const onSyncRequired = jest.fn();
     const fetchSpy = jest.spyOn(global, 'fetch');

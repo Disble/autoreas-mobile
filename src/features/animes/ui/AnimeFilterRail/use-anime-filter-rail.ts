@@ -3,6 +3,7 @@ import type { AnimeDayFilter } from '../../anime.types';
 import { buildAnimeFilterRailItems } from './anime-filter-rail.helpers';
 import type { AnimeFilterRailProps } from './anime-filter-rail.types';
 
+/** Coordinates anime filter rail state and actions. */
 export function useAnimeFilterRail(props: AnimeFilterRailProps) {
   // 1. Refs
   // 2. State

@@ -8,7 +8,8 @@ import {
 import { SettingsMetricTileGrid } from './SettingsMetricTileGrid';
 import type { SettingsSyncCardProps } from './settings-screen.types';
 
-export function SettingsSyncCard(props: SettingsSyncCardProps) {
+/** Renders the settings sync card interface. */
+export function SettingsSyncCard(props: Readonly<SettingsSyncCardProps>) {
   const { colors, handleSummaryAction, layoutMode, section, summary } = props;
   const columns = METRIC_TILE_COLUMNS_BY_LAYOUT[layoutMode];
 

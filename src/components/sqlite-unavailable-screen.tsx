@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { AppText } from './app-text';
 import { useSQLiteUnavailableMessage } from '../features/setup/use-sqlite-unavailable-message';
 
+/** Renders the sqlite unavailable screen interface. */
 export function SQLiteUnavailableScreen() {
   const { message } = useSQLiteUnavailableMessage();
 

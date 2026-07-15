@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { useURL } from 'expo-linking';
+import { useLinkingURL } from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from 'heroui-native';
 import { SetupScreen } from '../../../src/features/setup/ui/SetupScreen';
@@ -11,7 +11,7 @@ jest.mock('expo-router', () => ({
 }));
 
 jest.mock('expo-linking', () => ({
-  useURL: jest.fn(),
+  useLinkingURL: jest.fn(),
 }));
 
 jest.mock('../../../src/features/setup/use-pair-device', () => ({
@@ -22,35 +22,40 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
 
-jest.mock('../../../src/features/setup/ui/SetupQrScanner/SetupQrScanner', () => ({
-  SetupQrScanner: ({
-    isOpen,
-    onScan,
-  }: {
-    readonly isOpen: boolean;
-    readonly onScan: (rawValue: string) => void;
-  }) => {
-    const { Pressable, Text, View } = require('react-native');
+jest.mock('../../../src/features/setup/ui/SetupQrScanner', () => {
+  const { Pressable, Text, View } =
+    jest.requireActual<typeof import('react-native')>('react-native');
 
-    if (!isOpen) {
-      return null;
-    }
+  return {
+    SetupQrScanner: ({
+      isOpen,
+      onScan,
+    }: {
+      readonly isOpen: boolean;
+      readonly onScan: (rawValue: string) => void;
+    }) => {
+      if (!isOpen) {
+        return null;
+      }
 
-    return (
-      <View>
-        <Text>Mock QR Scanner</Text>
-        <Pressable
-          onPress={() => onScan('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc')}
-          testID="mock-scan-valid"
-        />
-        <Pressable
-          onPress={() => onScan('autoreas://pair?ip=192.168.1.10&port=8080&token=abc')}
-          testID="mock-scan-invalid"
-        />
-      </View>
-    );
-  },
-}));
+      return (
+        <View>
+          <Text>Mock QR Scanner</Text>
+          <Pressable
+            onPress={() =>
+              onScan('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc')
+            }
+            testID="mock-scan-valid"
+          />
+          <Pressable
+            onPress={() => onScan('autoreas://pair?ip=192.168.1.10&port=8080&token=abc')}
+            testID="mock-scan-invalid"
+          />
+        </View>
+      );
+    },
+  };
+});
 
 describe('SetupScreen', () => {
   const mockReplace = jest.fn();
@@ -59,7 +64,7 @@ describe('SetupScreen', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (useURL as jest.Mock).mockReturnValue(null);
+    (useLinkingURL as jest.Mock).mockReturnValue(null);
     (useLocalSearchParams as jest.Mock).mockReturnValue({});
     (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
     (usePairDevice as jest.Mock).mockReturnValue({
@@ -92,7 +97,7 @@ describe('SetupScreen', () => {
 
   it('prefills and auto-submits the canonical deep link through the shared pairing pipeline', async () => {
     mockPair.mockResolvedValueOnce({ success: true });
-    (useURL as jest.Mock).mockReturnValue(
+    (useLinkingURL as jest.Mock).mockReturnValue(
       'autoreas-mobile://pair?v=1&ip=192.168.1.50&port=3000&token=linktoken',
     );
 
@@ -112,7 +117,7 @@ describe('SetupScreen', () => {
   });
 
   it('ignores the stale launch deep link when setup is opened from re-pair', async () => {
-    (useURL as jest.Mock).mockReturnValue(
+    (useLinkingURL as jest.Mock).mockReturnValue(
       'autoreas-mobile://pair?v=1&ip=192.168.1.50&port=3000&token=linktoken',
     );
     (useLocalSearchParams as jest.Mock).mockReturnValue({ repair: '1' });
@@ -129,7 +134,7 @@ describe('SetupScreen', () => {
   });
 
   it('rejects invalid QR or deep-link payloads without calling pairing', async () => {
-    (useURL as jest.Mock).mockReturnValue('autoreas://pair?ip=192.168.1.50&port=3000&token=linktoken');
+    (useLinkingURL as jest.Mock).mockReturnValue('autoreas://pair?ip=192.168.1.50&port=3000&token=linktoken');
 
     render(<SetupScreen />);
 

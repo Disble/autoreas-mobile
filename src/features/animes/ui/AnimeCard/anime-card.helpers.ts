@@ -1,3 +1,7 @@
+import type { AnimeSeasonProjection } from '../../anime-season.types';
+import { STATE_CHIP_BY_ESTADO } from './anime-card.constants';
+import type { AnimeSeasonStatusDescriptor, AnimeStateChipDescriptor } from './anime-card.types';
+
 /**
  * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
  * This prevents the UI from offering Cap+ or Cap- actions that contradict the persisted business status.
@@ -20,28 +24,6 @@ export const canDecrease = (nrocapvisto: number) => {
  */
 export const canIncrease = (nrocapvisto: number, totalcap: number | null | undefined) => {
   return totalcap == null || nrocapvisto < totalcap;
-};
-
-export type AnimeStateChipTone = 'accent' | 'success' | 'warning' | 'danger';
-
-export interface AnimeStateChipDescriptor {
-  readonly label: string;
-  readonly tone: AnimeStateChipTone;
-  readonly isDefault: boolean;
-}
-
-export const CHIP_TONE_COLOR_MAP: Readonly<Record<AnimeStateChipTone, 'accent' | 'success' | 'warning' | 'danger'>> = {
-  accent: 'accent',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-};
-
-const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescriptor>> = {
-  0: { label: 'Viendo', tone: 'accent', isDefault: true },
-  1: { label: 'Finalizado', tone: 'success', isDefault: false },
-  2: { label: 'No me gustó', tone: 'danger', isDefault: false },
-  3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
 
 /**
@@ -71,4 +53,50 @@ export function getRestantesLabel(
   }
 
   return `${remaining} restantes`;
+}
+
+/**
+ * Builds the season badge/copy shown on each anime card.
+ * Confirmed bridge rating and local pending or failed intent stay separated so users never confuse one for the other.
+ */
+export function getAnimeSeasonStatus(
+  seasonProjection: AnimeSeasonProjection | null | undefined,
+): AnimeSeasonStatusDescriptor | null {
+  if (!seasonProjection) {
+    return null;
+  }
+
+  if (seasonProjection.localIntent?.status === 'failed') {
+    return {
+      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
+      description: 'Requiere reparación en bridge',
+      tone: 'warning',
+      showRatingCta: true,
+    };
+  }
+
+  if (seasonProjection.localIntent?.status === 'pending') {
+    return {
+      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
+      description: 'Esperando confirmación del bridge',
+      tone: 'warning',
+      showRatingCta: true,
+    };
+  }
+
+  if (seasonProjection.bridgeRating != null) {
+    return {
+      label: `Temporada ${seasonProjection.bridgeRating}/6`,
+      description: 'Confirmado por bridge',
+      tone: 'accent',
+      showRatingCta: true,
+    };
+  }
+
+  return {
+    label: 'Sin nota de temporada',
+    description: 'Disponible para calificar',
+    tone: 'accent',
+    showRatingCta: true,
+  };
 }

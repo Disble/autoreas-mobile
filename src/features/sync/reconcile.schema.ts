@@ -4,6 +4,8 @@ import { AnimeSchema } from '../../infrastructure/validation/anime-schema';
 const ReconcileArrayFallback = <TSchema extends z.ZodTypeAny>(itemSchema: TSchema) =>
   z.array(itemSchema).nullish().transform((value) => value ?? []);
 
+/** Validates reconcile anime change schema payloads at runtime. */
+
 export const ReconcileAnimeChangeSchema = z.object({
   record_id: z.string(),
   change_type: z.enum(['create', 'update', 'delete']),
@@ -11,6 +13,8 @@ export const ReconcileAnimeChangeSchema = z.object({
   snapshot: AnimeSchema.optional(),
   timestamp: z.number(),
 });
+
+/** Validates reconcile applied operation schema payloads at runtime. */
 
 export const ReconcileAppliedOperationSchema = z.object({
   anime_id: z.string(),
@@ -25,6 +29,7 @@ export const ReconcileAppliedOperationSchema = z.object({
 // field, but mobile never types or branches on it -- there is no real cross-repo conflict
 // detection to act on, and presenting one would be dead scaffolding. Any such field is
 // silently stripped by zod's default unknown-key handling.
+/** Validates reconcile response schema payloads at runtime. */
 export const ReconcileResponseSchema = z.object({
   status: z.string(),
   applied_operations: ReconcileArrayFallback(ReconcileAppliedOperationSchema),
@@ -32,6 +37,9 @@ export const ReconcileResponseSchema = z.object({
   last_changelog_id: z.number().optional(),
 });
 
+/** Defines the reconcile applied operation value shape. */
 export type ReconcileAppliedOperation = z.infer<typeof ReconcileAppliedOperationSchema>;
+/** Defines the reconcile anime change value shape. */
 export type ReconcileAnimeChange = z.infer<typeof ReconcileAnimeChangeSchema>;
+/** Defines the reconcile response value shape. */
 export type ReconcileResponse = z.infer<typeof ReconcileResponseSchema>;

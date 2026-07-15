@@ -24,7 +24,8 @@ describe('drainPendingRemoteChanges', () => {
   const mockWithDeferredWrite = dbClient.withDeferredWrite as jest.Mock;
   const mockApplyRemoteChanges = mergeModule.applyRemoteChanges as jest.Mock;
   const mockLoadGuardMap = mergeModule.loadGuardMap as jest.Mock;
-  const mockLoadPendingOutboxRecordIds = mergeModule.loadPendingOutboxRecordIds as jest.Mock;
+  const mockLoadPendingOutboxRecordIds =
+    mergeModule.loadPendingOutboxRecordIds as jest.Mock;
   const mockLoadPendingRemoteChanges =
     pendingRemoteChangesModule.loadPendingRemoteChanges as jest.Mock;
   const mockDeletePendingRemoteChanges =

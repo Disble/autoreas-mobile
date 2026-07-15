@@ -1,12 +1,16 @@
+import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type {
   SyncRuntimeRegistrationStatus,
   SyncRuntimeTriggerSource,
 } from '../../../sync/sync-runtime-status.types';
 import type { SyncExecutionMode } from '../../../sync/sync-execution-mode.types';
-import type { LayoutMode } from '../../../../hooks/use-responsive-layout';
-import type { MetricTileTone } from './settings-screen.types';
+import type { BackgroundSyncSectionTone } from './settings-screen.types';
+
+/** Provides the shared background sync section title value. */
 
 export const BACKGROUND_SYNC_SECTION_TITLE = 'Estado de sync en segundo plano';
+
+/** Provides the shared background sync registration labels value. */
 
 export const BACKGROUND_SYNC_REGISTRATION_LABELS: Record<
   SyncRuntimeRegistrationStatus,
@@ -17,6 +21,8 @@ export const BACKGROUND_SYNC_REGISTRATION_LABELS: Record<
   unsupported: 'No soportado',
 };
 
+/** Provides the shared background sync trigger source labels value. */
+
 export const BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS: Record<
   SyncRuntimeTriggerSource,
   string
@@ -25,17 +31,22 @@ export const BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS: Record<
   manual: 'Sync manual',
   app_active: 'Volvió al foreground',
   network_regained: 'Reconexión de red',
+  local_mutation: 'Cambio local',
   ws_sync_required: 'WebSocket pidió sync',
   foreground_service: 'Servicio foreground',
   background_task: 'Task en segundo plano',
 };
+
+/** Provides the shared background sync execution mode labels value. */
 
 export const BACKGROUND_SYNC_EXECUTION_MODE_LABELS: Record<SyncExecutionMode, string> = {
   best_effort_background_task: 'Task best-effort',
   android_foreground_service: 'Servicio foreground Android',
 };
 
-export const METRIC_TILE_TONE_BG_CLASS: Record<MetricTileTone, string> = {
+/** Provides the shared metric tile tone bg class value. */
+
+export const METRIC_TILE_TONE_BG_CLASS: Record<BackgroundSyncSectionTone, string> = {
   default: 'bg-surface-secondary',
   accent: 'bg-accent/15',
   success: 'bg-success/15',
@@ -43,7 +54,9 @@ export const METRIC_TILE_TONE_BG_CLASS: Record<MetricTileTone, string> = {
   danger: 'bg-danger/15',
 };
 
-export const METRIC_TILE_TONE_TEXT_CLASS: Record<MetricTileTone, string> = {
+/** Provides the shared metric tile tone text class value. */
+
+export const METRIC_TILE_TONE_TEXT_CLASS: Record<BackgroundSyncSectionTone, string> = {
   default: 'text-foreground',
   accent: 'text-accent',
   success: 'text-success',
@@ -51,14 +64,18 @@ export const METRIC_TILE_TONE_TEXT_CLASS: Record<MetricTileTone, string> = {
   danger: 'text-danger',
 };
 
+/** Provides the shared metric tile columns by layout value. */
+
 export const METRIC_TILE_COLUMNS_BY_LAYOUT: Record<LayoutMode, number> = {
   phone: 2,
   'tablet-portrait': 3,
   'tablet-landscape': 3,
 };
 
+/** Provides the shared status chip color by tone value. */
+
 export const STATUS_CHIP_COLOR_BY_TONE: Record<
-  MetricTileTone,
+  BackgroundSyncSectionTone,
   'default' | 'accent' | 'success' | 'warning' | 'danger'
 > = {
   default: 'default',
@@ -66,4 +83,12 @@ export const STATUS_CHIP_COLOR_BY_TONE: Record<
   success: 'success',
   warning: 'warning',
   danger: 'danger',
+};
+
+
+/** Maps responsive layout modes to the Settings content width class. */
+export const SETTINGS_CONTAINER_WIDTH_CLASS: Readonly<Record<LayoutMode, string>> = {
+  phone: 'max-w-full',
+  'tablet-portrait': 'max-w-[760px]',
+  'tablet-landscape': 'max-w-[1120px]',
 };

@@ -1,17 +1,19 @@
 import { useCallback } from "react";
-import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
-import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
+import type { AnimeCardProps } from "../AnimeCard";
+import type { AnimeListScreenViewModel } from "./anime-list-screen.types";
 
+/** Coordinates anime list item renderer state and actions. */
 export function useAnimeListItemRenderer(
-  isMutatingAnimeById: AnimeListScreenViewProps["isMutatingAnimeById"],
-  handleCapMinus: AnimeListScreenViewProps["handleCapMinus"],
-  handleCapPlus: AnimeListScreenViewProps["handleCapPlus"],
-  handleCapPlusHalf: AnimeListScreenViewProps["handleCapPlusHalf"],
-  handleCapMinusHalf: AnimeListScreenViewProps["handleCapMinusHalf"],
-  handleOpenStateSheet: AnimeListScreenViewProps["handleOpenStateSheet"],
+  isMutatingAnimeById: AnimeListScreenViewModel["isMutatingAnimeById"],
+  handleCapMinus: AnimeListScreenViewModel["handleCapMinus"],
+  handleCapPlus: AnimeListScreenViewModel["handleCapPlus"],
+  handleCapPlusHalf: AnimeListScreenViewModel["handleCapPlusHalf"],
+  handleCapMinusHalf: AnimeListScreenViewModel["handleCapMinusHalf"],
+  handleOpenSeasonRatingSheet: AnimeListScreenViewModel["handleOpenSeasonRatingSheet"],
+  handleOpenStateSheet: AnimeListScreenViewModel["handleOpenStateSheet"],
 ) {
   const getAnimeCardProps = useCallback(
-    (item: AnimeListScreenViewProps["animes"][number]): AnimeCardProps => ({
+    (item: AnimeListScreenViewModel["animes"][number]): AnimeCardProps => ({
       anime: item,
       isMutating: !!isMutatingAnimeById[item._id],
       onCapMinus: () => {
@@ -26,6 +28,9 @@ export function useAnimeListItemRenderer(
       onCapPlusHalf: () => {
         void handleCapPlusHalf(item._id);
       },
+      onOpenSeasonRatingSheet: (animeId) => {
+        handleOpenSeasonRatingSheet(animeId);
+      },
       onOpenStateSheet: (animeId, currentEstado) => {
         handleOpenStateSheet(animeId, currentEstado);
       },
@@ -35,6 +40,7 @@ export function useAnimeListItemRenderer(
       handleCapMinusHalf,
       handleCapPlus,
       handleCapPlusHalf,
+      handleOpenSeasonRatingSheet,
       handleOpenStateSheet,
       isMutatingAnimeById,
     ],

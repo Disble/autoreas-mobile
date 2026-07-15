@@ -9,7 +9,8 @@ import {
 import { resolveToneIconColor } from './settings-screen.helpers';
 import type { SettingsMetricTileProps } from './settings-screen.types';
 
-export function SettingsMetricTile(props: SettingsMetricTileProps) {
+/** Renders the settings metric tile interface. */
+export function SettingsMetricTile(props: Readonly<SettingsMetricTileProps>) {
   const { colors, tile } = props;
   const iconColor = resolveToneIconColor(tile.tone, colors);
 

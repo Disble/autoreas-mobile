@@ -111,6 +111,35 @@ function getOfflinePhoneDescription(hasPendingChanges: boolean): string {
   return 'Este teléfono está sin internet. Tu copia local sigue disponible y el sync se va a reintentar cuando vuelva la conexión.';
 }
 
+function deriveNoPendingSyncStatus(
+  facts: SyncVisibleStatusFacts,
+): SyncVisibleStatus {
+  if (facts.isBridgeConfigured === false) {
+    return {
+      chipLabel: 'Modo local',
+      description: getUnpairedLocalModeDescription(),
+      title: 'Catálogo local listo',
+      tone: 'default',
+    };
+  }
+
+  if (facts.isDeviceOnline === false) {
+    return {
+      chipLabel: 'Sin conexión',
+      description: getOfflinePhoneDescription(false),
+      title: 'Catálogo local listo',
+      tone: 'default',
+    };
+  }
+
+  return {
+    chipLabel: 'Catálogo local',
+    description: getLocalModeDescription(facts.syncError),
+    title: 'Catálogo local listo',
+    tone: 'default',
+  };
+}
+
 /**
  * Derives the shared offline-first sync status copy used across screens.
  * Centralizing the copy and thresholds keeps local/bridge semantics consistent without global state.
@@ -142,30 +171,7 @@ export function deriveVisibleSyncStatus(
   }
 
   if (facts.pendingOpsCount === 0) {
-    if (facts.isBridgeConfigured === false) {
-      return {
-        chipLabel: 'Modo local',
-        description: getUnpairedLocalModeDescription(),
-        title: 'Catálogo local listo',
-        tone: 'default',
-      };
-    }
-
-    if (facts.isDeviceOnline === false) {
-      return {
-        chipLabel: 'Sin conexión',
-        description: getOfflinePhoneDescription(false),
-        title: 'Catálogo local listo',
-        tone: 'default',
-      };
-    }
-
-    return {
-      chipLabel: 'Catálogo local',
-      description: getLocalModeDescription(facts.syncError),
-      title: 'Catálogo local listo',
-      tone: 'default',
-    };
+    return deriveNoPendingSyncStatus(facts);
   }
 
   const pendingChangesLabel = buildPendingChangesLabel(facts.pendingOpsCount);

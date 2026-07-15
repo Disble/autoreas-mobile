@@ -1,17 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import AntDesign from '@expo/vector-icons/AntDesign';
 import * as Haptics from 'expo-haptics';
 import { Button } from 'heroui-native';
-import { type FC } from 'react';
 import { Platform } from 'react-native';
 import Animated, { FadeOut, ZoomIn } from 'react-native-reanimated';
-import { withUniwind } from 'uniwind';
 import { useAppTheme } from '../contexts/app-theme-context';
+import { StyledAntDesign, StyledIonicons } from './theme-toggle.constants';
 
-const StyledIonicons = withUniwind(Ionicons);
-const StyledAntDesign = withUniwind(AntDesign);
-
-export const ThemeToggle: FC = () => {
+/** Renders the application theme toggle control. */
+export function ThemeToggle() {
   const { toggleTheme, isLight } = useAppTheme();
 
   return (
@@ -22,7 +17,7 @@ export const ThemeToggle: FC = () => {
       accessibilityLabel={isLight ? 'Activar modo oscuro' : 'Activar modo claro'}
       onPressIn={() => {
         if (Platform.OS === 'ios') {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
         }
       }}
       onPress={toggleTheme}
@@ -38,4 +33,4 @@ export const ThemeToggle: FC = () => {
       )}
     </Button>
   );
-};
+}

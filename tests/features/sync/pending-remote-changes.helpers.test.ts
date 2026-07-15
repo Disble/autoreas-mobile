@@ -4,7 +4,7 @@ import {
   stagePendingRemoteChanges,
 } from "../../../src/features/sync/pending-remote-changes.helpers";
 import { pendingRemoteChanges } from "../../../src/infrastructure/db/schema";
-import type { RemoteAnimeChange } from "../../../src/features/sync/merge/merge.types";
+import type { RemoteAnimeChange } from "../../../src/features/sync/merge";
 
 jest.mock("drizzle-orm", () => ({
   asc: jest.fn((column) => ({ column, dir: "asc" })),
@@ -56,7 +56,7 @@ describe("stagePendingRemoteChanges", () => {
     );
 
     const inserted = values.mock.calls[0][0];
-    expect(inserted[0].snapshot).toBe(null);
+    expect(inserted[0].snapshot).toBeNull();
   });
 
   it("batch vacío no llama a insert", async () => {

@@ -1,6 +1,9 @@
 import { renderHook } from "@testing-library/react-native";
+import { LOCAL_ACTIVE_SEASON_ID } from "../../../../src/features/animes/anime-season.constants";
 import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
+import { useActiveSeasonStore } from "../../../../src/infrastructure/store/active-season-store";
+import { useSeasonModeStore } from "../../../../src/infrastructure/store/season-mode-store";
 
 const mockUseOptionalSQLiteContext = jest.fn();
 const mockUseOptionalLiveQuery = jest.fn();
@@ -46,9 +49,17 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
   };
 }
 
+function mockLiveQueryData(animeRows: AnimeRow[], seasonQueueRows: readonly unknown[] = []) {
+  mockUseOptionalLiveQuery
+    .mockImplementationOnce(() => ({ data: animeRows }))
+    .mockImplementationOnce(() => ({ data: seasonQueueRows }));
+}
+
 describe("useAnimeList", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
+    useSeasonModeStore.setState({ seasonMode: false });
 
     mockUseOptionalSQLiteContext.mockReturnValue({ name: "raw-db" });
     mockWhere.mockReturnValue({ query: "active-animes" });
@@ -58,8 +69,7 @@ describe("useAnimeList", () => {
   });
 
   it("filtra por día y ordena por dias[].orden ascendente", () => {
-    mockUseOptionalLiveQuery.mockReturnValue({
-      data: [
+    mockLiveQueryData([
         buildRow({
           _id: "anime-3",
           nombre: "Zeta",
@@ -80,8 +90,7 @@ describe("useAnimeList", () => {
           nombre: "Outside",
           dias: JSON.stringify([{ dia: "Viernes", orden: 1 }]),
         }),
-      ],
-    });
+      ]);
 
     const { result } = renderHook(() => useAnimeList("Jueves"));
 
@@ -95,8 +104,7 @@ describe("useAnimeList", () => {
   });
 
   it("filtra pseudo-días de estrenos usando dias[].dia", () => {
-    mockUseOptionalLiveQuery.mockReturnValue({
-      data: [
+    mockLiveQueryData([
         buildRow({
           _id: "anime-seen",
           nombre: "Seen",
@@ -112,8 +120,7 @@ describe("useAnimeList", () => {
           nombre: "Later",
           dias: JSON.stringify([{ dia: "Sin ver", orden: 2 }]),
         }),
-      ],
-    });
+      ]);
 
     const { result } = renderHook(() => useAnimeList("Ver hoy"));
 
@@ -123,11 +130,11 @@ describe("useAnimeList", () => {
     expect(result.current.data[0]?.dias).toEqual([
       { dia: "Ver hoy", orden: 1 },
     ]);
+    expect(result.current.data[0]?.seasonProjection).toBeNull();
   });
 
   it("mantiene animes no-Viendo disponibles en el dataset expuesto", () => {
-    mockUseOptionalLiveQuery.mockReturnValue({
-      data: [
+    mockLiveQueryData([
         buildRow({
           _id: "anime-watching",
           nombre: "Watching",
@@ -140,8 +147,7 @@ describe("useAnimeList", () => {
           estado: 1,
           dias: JSON.stringify([{ dia: "Jueves", orden: 0 }]),
         }),
-      ],
-    });
+      ]);
 
     const { result } = renderHook(() => useAnimeList("Jueves"));
 
@@ -153,5 +159,25 @@ describe("useAnimeList", () => {
       "anime-completed",
       "anime-watching",
     ]);
+  });
+
+  it("projects a local season fallback for Ver hoy while season mode is active and snapshot is missing", () => {
+    useSeasonModeStore.setState({ seasonMode: true });
+    mockLiveQueryData([
+      buildRow({
+        _id: "anime-today",
+        nombre: "Today",
+        dias: JSON.stringify([{ dia: "Ver hoy", orden: 1 }]),
+      }),
+    ]);
+
+    const { result } = renderHook(() => useAnimeList("Ver hoy"));
+
+    expect(result.current.data[0]?.seasonProjection).toEqual({
+      seasonId: LOCAL_ACTIVE_SEASON_ID,
+      bridgeRating: null,
+      bridgeRatingSource: null,
+      localIntent: null,
+    });
   });
 });

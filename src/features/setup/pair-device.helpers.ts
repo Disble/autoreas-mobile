@@ -53,7 +53,7 @@ export function buildPairResponseValidationFailureMessage(params: {
  * Initial sync currently throws string messages, so parsing preserves the status without changing the sync layer contract.
  */
 export function extractHttpStatusFromErrorMessage(message: string): number | null {
-  const matchedStatus = message.match(/:\s*(\d{3})(?:\D|$)/);
+  const matchedStatus = /:\s*(\d{3})(?:\D|$)/.exec(message);
 
   if (!matchedStatus) {
     return null;

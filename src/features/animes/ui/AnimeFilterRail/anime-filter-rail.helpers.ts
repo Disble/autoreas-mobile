@@ -1,11 +1,10 @@
-import { ANIME_PSEUDO_DAY_FILTERS } from '../../anime.constants';
 import type { AnimePseudoDayFilter } from '../../anime.types';
+import { PSEUDO_DAY_SET } from './anime-filter-rail.constants';
 import type {
   AnimeFilterRailItem,
   BuildAnimeFilterRailItemsInput,
 } from './anime-filter-rail.types';
 
-const PSEUDO_DAY_SET: ReadonlySet<AnimePseudoDayFilter> = new Set(ANIME_PSEUDO_DAY_FILTERS);
 
 /**
  * Projects the raw filter options into rail items enriched with counts, selection, and today flag.

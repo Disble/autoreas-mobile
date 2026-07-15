@@ -1,5 +1,4 @@
-import { useURL } from 'expo-linking';
-import type { Href } from 'expo-router';
+import { useLinkingURL } from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from 'heroui-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -20,6 +19,7 @@ import type {
   SetupScreenViewModel,
 } from './setup-screen.types';
 
+/** Coordinates setup screen state and actions. */
 export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
   // 1. Refs
   const initialDeepLinkUrlRef = useRef<string | null>(null);
@@ -35,7 +35,7 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
   const router = useRouter();
   const { toast } = useToast();
   const localSearchParams = useLocalSearchParams<{ readonly repair?: string | string[] }>();
-  const url = useURL();
+  const url = useLinkingURL();
 
   // 4. Queries/Mutations
   const { pair, isLoading, error } = usePairDevice();
@@ -78,7 +78,7 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
           label: 'Emparejado correctamente',
           duration: 2000,
         });
-        router.replace('/(tabs)' as Href);
+        router.replace('/(tabs)');
         return;
       }
 
@@ -137,8 +137,8 @@ export function useSetupScreen(_props: SetupScreenProps): SetupScreenViewModel {
     [handleAutofillPayload, toast],
   );
 
-  const handlePair = useCallback(async () => {
-    await submitPairing(formState);
+  const handlePair = useCallback(() => {
+    submitPairing(formState).catch(() => undefined);
   }, [formState, submitPairing]);
 
   const handleToggleScanner = useCallback(() => {

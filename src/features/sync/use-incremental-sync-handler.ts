@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { UseIncrementalSyncHandlerResult } from "./incremental-sync-handler.types";
 import { useSyncFacade } from './use-sync-facade';
 
+/** Coordinates incremental sync handler state and actions. */
 export function useIncrementalSyncHandler(): UseIncrementalSyncHandlerResult {
   // 1. Refs
 

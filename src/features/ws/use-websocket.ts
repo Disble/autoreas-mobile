@@ -5,12 +5,20 @@ import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
-export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketProps = {}) {
+/** Coordinates web socket state and actions. */
+export function useWebSocket({
+  enabled = true,
+  onSeasonChanged,
+  onSyncRequired,
+  onPreferencesChanged,
+}: UseWebSocketProps = {}) {
   // 1. Refs
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const onSeasonChangedRef = useRef(onSeasonChanged);
   const onSyncRequiredRef = useRef(onSyncRequired);
+  const onPreferencesChangedRef = useRef(onPreferencesChanged);
 
   // 2. State
 
@@ -25,8 +33,16 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
 
   // 7. Effects
   useEffect(() => {
+    onSeasonChangedRef.current = onSeasonChanged;
+  }, [onSeasonChanged]);
+
+  useEffect(() => {
     onSyncRequiredRef.current = onSyncRequired;
   }, [onSyncRequired]);
+
+  useEffect(() => {
+    onPreferencesChangedRef.current = onPreferencesChanged;
+  }, [onPreferencesChanged]);
 
   useEffect(() => {
     const disconnect = () => {
@@ -91,28 +107,55 @@ export function useWebSocket({ enabled = true, onSyncRequired }: UseWebSocketPro
           reconnectAttemptRef.current = 0;
         };
 
-        ws.onmessage = async (event: MessageEvent) => {
-          try {
-            const data = JSON.parse(event.data);
-            const parsed = WsMessageSchema.parse(data);
+        ws.onmessage = (event: MessageEvent) => {
+          if (typeof event.data !== 'string') {
+            return;
+          }
 
-            // Every anime event (created/changed/deleted) carries only `anime_id` -- it has no
-            // `changed_fields`/`timestamp`, so it cannot safely drive a targeted write on its
-            // own. Funnel ALL of them through the same reconcile trigger `sync_required` uses:
-            // reconcile is the only path that carries the rich shape the merge boundary needs
-            // (changed_fields + timestamp + snapshot), with the staleness guard and outbox
-            // protection applied. This intentionally replaces the old GET-then-clobber writer.
-            if (
-              parsed.type === 'sync_required' ||
-              parsed.type === 'anime_changed' ||
-              parsed.type === 'anime_created' ||
-              parsed.type === 'anime_deleted'
-            ) {
-              onSyncRequiredRef.current?.();
-              return;
-            }
-          } catch (error) {
-            console.error('Error processing WS message', error);
+          let data: unknown;
+          try {
+            data = JSON.parse(event.data) as unknown;
+          } catch {
+            // Non-JSON frame: ignore rather than crash the socket handler.
+            return;
+          }
+
+          const result = WsMessageSchema.safeParse(data);
+          if (!result.success) {
+            // Unrecognized message type (e.g. a newer bridge added one this client
+            // does not know yet). Ignore it quietly so forward-incompatible frames
+            // never surface as a runtime error box -- the contract stays additive.
+            return;
+          }
+
+          const parsed = result.data;
+
+          // Every anime event (created/changed/deleted) carries only `anime_id` -- it has no
+          // `changed_fields`/`timestamp`, so it cannot safely drive a targeted write on its
+          // own. Funnel ALL of them through the same reconcile trigger `sync_required` uses:
+          // reconcile is the only path that carries the rich shape the merge boundary needs
+          // (changed_fields + timestamp + snapshot), with the staleness guard and outbox
+          // protection applied. This intentionally replaces the old GET-then-clobber writer.
+          if (
+            parsed.type === 'sync_required' ||
+            parsed.type === 'anime_changed' ||
+            parsed.type === 'anime_created' ||
+            parsed.type === 'anime_deleted'
+          ) {
+            onSyncRequiredRef.current?.();
+            return;
+          }
+
+          if (parsed.type === 'season_changed') {
+            onSeasonChangedRef.current?.();
+            return;
+          }
+
+          // Bridge-owned preference push: the season-mode flag changed. This is NOT an
+          // anime data change, so it must not trigger a reconcile -- it carries its own
+          // value and updates the global season-mode store directly via the callback.
+          if (parsed.type === 'preferences_changed') {
+            onPreferencesChangedRef.current?.(parsed.season_mode);
           }
         };
 

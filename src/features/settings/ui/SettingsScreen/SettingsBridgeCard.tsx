@@ -5,7 +5,8 @@ import { AppText } from '../../../../components/app-text';
 import { STATUS_CHIP_COLOR_BY_TONE } from './settings-screen.constants';
 import type { SettingsBridgeCardProps } from './settings-screen.types';
 
-export function SettingsBridgeCard(props: SettingsBridgeCardProps) {
+/** Renders the settings bridge card interface. */
+export function SettingsBridgeCard(props: Readonly<SettingsBridgeCardProps>) {
   const {
     bridgeStatus,
     config,

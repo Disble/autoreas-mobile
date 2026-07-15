@@ -16,6 +16,7 @@ import {
 } from './pair-device.helpers';
 import type { PairDeviceResult, PairParams, PairResponse } from './pair-device.types';
 
+/** Coordinates pair device state and actions. */
 export function usePairDevice() {
   const rawDb = useOptionalSQLiteContext();
   const [isLoading, setIsLoading] = useState(false);
@@ -74,6 +75,7 @@ export function usePairDevice() {
             buildInitialSyncFailureMessage({
               cause,
             }),
+            { cause: err },
           );
         }
 

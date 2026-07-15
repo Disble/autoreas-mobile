@@ -12,6 +12,7 @@ import type {
   SetupQrScannerViewModel,
 } from './setup-qr-scanner.types';
 
+/** Coordinates setup qr scanner state and actions. */
 export function useSetupQrScanner(
   props: SetupQrScannerProps,
 ): SetupQrScannerViewModel {

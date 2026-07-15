@@ -54,4 +54,5 @@ export function useForegroundResync(): void {
       subscription.remove();
     };
   }, [runResync]);
+  return undefined;
 }

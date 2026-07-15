@@ -46,6 +46,14 @@ function resolveBridgeStatusKind({
     return 'phone_offline';
   }
 
+  if (syncFacts.connectionStatus === 'sync_error') {
+    return 'sync_error';
+  }
+
+  if (syncFacts.connectionStatus === 'unreachable') {
+    return 'bridge_unreachable';
+  }
+
   if (syncFacts.pendingOpsCount > 0) {
     const daysSinceLastSync = getDaysSinceTimestamp(syncFacts.lastSyncAt, now);
     const isStaleBacklog =
@@ -53,10 +61,6 @@ function resolveBridgeStatusKind({
       daysSinceLastSync * 24 >= SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS;
 
     return isStaleBacklog ? 'stale_backlog' : 'pending_backlog';
-  }
-
-  if (syncFacts.connectionStatus === 'error' || syncFacts.syncError !== null) {
-    return 'bridge_unreachable';
   }
 
   return 'local_only';
@@ -96,7 +100,11 @@ export function buildSettingsSyncSummary({
     };
   }
 
-  if (syncFacts.pendingOpsCount > 0 && isDeviceOnline !== false) {
+  if (
+    syncFacts.connectionStatus !== 'sync_error' &&
+    syncFacts.pendingOpsCount > 0 &&
+    isDeviceOnline !== false
+  ) {
     return {
       ...status,
       bridgeStatusKind,
@@ -160,6 +168,15 @@ export function buildSettingsBridgeStatus(
         description: summary.description,
         title: 'Bridge configurado pero inaccesible',
         tone: 'warning',
+      };
+    case 'sync_error':
+      return {
+        bridgeStatusKind: summary.bridgeStatusKind,
+        chipLabel: 'Bridge disponible',
+        description:
+          'El bridge respondió, pero no pudo completar el sync. Tus cambios locales siguen pendientes hasta corregir el rechazo.',
+        title: 'El bridge rechazó el sync',
+        tone: 'danger',
       };
     case 'local_only':
       return {

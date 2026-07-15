@@ -4,6 +4,9 @@ import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
   ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL,
   ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL,
+  PSEUDO_DAY_TITLE,
+  SHORT_MONTH_BY_INDEX,
+  SHORT_WEEKDAY_BY_INDEX,
 } from "./anime-list-screen.constants";
 import {
   ANIME_DAY_FILTER_OPTIONS,
@@ -56,37 +59,6 @@ export function computeFilterCounts(
   return counts;
 }
 
-const PSEUDO_DAY_TITLE: Readonly<Record<string, string>> = {
-  "Ver hoy": "Para ver hoy",
-  "Sin ver": "Sin ver",
-  Visto: "Vistos",
-};
-
-const SHORT_WEEKDAY_BY_INDEX: readonly string[] = [
-  "Dom",
-  "Lun",
-  "Mar",
-  "Mié",
-  "Jue",
-  "Vie",
-  "Sáb",
-];
-
-const SHORT_MONTH_BY_INDEX: readonly string[] = [
-  "ene",
-  "feb",
-  "mar",
-  "abr",
-  "may",
-  "jun",
-  "jul",
-  "ago",
-  "sep",
-  "oct",
-  "nov",
-  "dic",
-];
-
 /**
  * Formats the given date as a compact Spanish label like "Jue 9 abr".
  * Purpose-built for the contextual header badge: short, scannable, locale-safe without Intl.
@@ -130,14 +102,12 @@ export function deriveVisibleSyncStatus(
   now: Date,
 ): AnimeListScreenVisibleSyncStatus {
   const status = deriveSharedVisibleSyncStatus(facts, now);
-  const actionLabel =
-    facts.pendingOpsCount === 0
-      ? null
-      : facts.isBridgeConfigured === false
-        ? ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL
-        : facts.isDeviceOnline === false
-          ? null
-          : ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL;
+  let actionLabel: string | null = null;
+  if (facts.pendingOpsCount > 0 && facts.isBridgeConfigured === false) {
+    actionLabel = ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL;
+  } else if (facts.pendingOpsCount > 0 && facts.isDeviceOnline !== false) {
+    actionLabel = ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL;
+  }
 
   return {
     ...status,

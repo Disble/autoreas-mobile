@@ -8,6 +8,7 @@ import {
 } from '../../infrastructure/db/native-runtime';
 import { bridgeConfig, type BridgeConfig } from '../../infrastructure/db/schema';
 
+/** Coordinates bridge config state and actions. */
 export function useBridgeConfig() {
   const rawDb = useOptionalSQLiteContext();
   const [isUnpairing, setIsUnpairing] = useState(false);

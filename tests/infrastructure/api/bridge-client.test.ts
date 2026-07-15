@@ -47,6 +47,21 @@ describe('bridge-client', () => {
     });
   });
 
+  it('gets status with a bearer token on a bodyless GET', async () => {
+    const fetchFn = jest.fn(async () =>
+      buildResponse({ body: '{"status":"ok","season_mode":true}' }) as unknown as Response,
+    );
+    const client = createBridgeClient({ fetchFn });
+
+    const result = await client.getStatus(connection);
+
+    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:8080/api/status', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer token123' },
+    });
+    expect(result.data).toEqual({ status: 'ok', season_mode: true });
+  });
+
   it('reconciles with content-type, bearer auth and a serialized body', async () => {
     const fetchFn = jest.fn(async () =>
       buildResponse({ status: 202, body: '{"status":"accepted"}' }) as unknown as Response,

@@ -166,12 +166,16 @@ Command:
 docker compose -f docker-compose.eas.yml run --rm eas-build
 ```
 
+> It use `preview` flag and generates an apk with js bundle included.
+
 Alternative profiles:
 
 ```bash
 docker compose -f docker-compose.eas.yml run --rm eas-build development
 docker compose -f docker-compose.eas.yml run --rm eas-build production
 ```
+
+> The flag `development` generates a development build that connects with Metro.
 
 Output:
 

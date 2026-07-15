@@ -41,6 +41,24 @@ describe("anime.helpers", () => {
     expect(result).toBe("Jueves");
   });
 
+  it("resuelve el filtro inicial a 'Ver hoy' cuando el modo temporada está activo", () => {
+    const result = getDefaultAnimeDayFilter(
+      new Date("2026-04-09T10:00:00.000Z"),
+      true,
+    );
+
+    expect(result).toBe("Ver hoy");
+  });
+
+  it("ignora el modo temporada cuando está desactivado y usa el día actual", () => {
+    const result = getDefaultAnimeDayFilter(
+      new Date("2026-04-09T10:00:00.000Z"),
+      false,
+    );
+
+    expect(result).toBe("Jueves");
+  });
+
   it("detecta matches y devuelve el orden del filtro seleccionado", () => {
     const anime = buildAnime({
       dias: [

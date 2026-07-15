@@ -2,10 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable } from "react-native";
 import type { AnimeListScreenHeaderLeftProps } from "./anime-list-screen.types";
 
+/** Renders the anime list screen header left interface. */
 export function AnimeListScreenHeaderLeft({
   handleOpenSettings,
   themeColorForeground,
-}: AnimeListScreenHeaderLeftProps) {
+}: Readonly<AnimeListScreenHeaderLeftProps>) {
   return (
     <Pressable
       accessibilityLabel="Abrir configuración"

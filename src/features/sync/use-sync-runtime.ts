@@ -14,13 +14,17 @@ import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
+import { useSeasonSync } from "./use-season-sync";
+import { useSeasonModeSync } from "./use-season-mode-sync";
 import { useSyncFacade } from "./use-sync-facade";
+import { useSeasonModeStore } from "../../infrastructure/store/season-mode-store";
 import type {
   UseSyncRuntimeProps,
   UseSyncRuntimeResult,
 } from "./sync-runtime.types";
 import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
 
+/** Coordinates sync runtime state and actions. */
 export function useSyncRuntime(
   props: UseSyncRuntimeProps,
 ): UseSyncRuntimeResult {
@@ -39,6 +43,10 @@ export function useSyncRuntime(
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
   const { requestSync } = useSyncFacade();
+  const setSeasonMode = useSeasonModeStore((state) => state.setSeasonMode);
+  const { refreshActiveSeason } = useSeasonSync({
+    enabled: props.isBootstrapped && isConfigured && currentAppState === "active",
+  });
 
   // 4. Queries/Mutations
 
@@ -96,11 +104,29 @@ export function useSyncRuntime(
     requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
+  const handlePreferencesChanged = useCallback(
+    (seasonMode: boolean) => {
+      setSeasonMode(seasonMode);
+    },
+    [setSeasonMode],
+  );
+
+  const handleSeasonChanged = useCallback(() => {
+    void refreshActiveSeason().catch(() => undefined);
+  }, [refreshActiveSeason]);
+
   // 7. Effects
   useWebSocket({
     enabled: isWebSocketEnabled,
+    onSeasonChanged: handleSeasonChanged,
     onSyncRequired: handleWebSocketSyncRequired,
+    onPreferencesChanged: handlePreferencesChanged,
   });
+
+  // Cold-hydrate the global season-mode store from GET /api/status whenever the realtime
+  // channel becomes available. The WS push keeps it live afterwards; this read covers the
+  // case where season mode was already toggled before the app/connection came up.
+  useSeasonModeSync({ enabled: isWebSocketEnabled });
 
   // Drains background-staged remote changes into `animes` on the foreground reactive
   // connection (mount + app-resume) so headless sync results become visible without an

@@ -1,197 +1,88 @@
-import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import { Alert as HeroAlert, Button, Chip } from "heroui-native";
-import { FlatList, RefreshControl, View } from "react-native";
-import { AppText } from "../../../../components/app-text";
-import { AnimeCard } from "../AnimeCard";
-import { AnimeEmptyState } from "../AnimeEmptyState";
-import { AnimeFilterRail } from "../AnimeFilterRail";
-import { AnimeStateSheet } from "../AnimeStateSheet";
-import {
-  ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE,
-  ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS,
-} from "./anime-list-screen.constants";
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { View } from 'react-native';
+import { AnimeListScreenContent } from './AnimeListScreenContent';
+import { AnimeListScreenFilterSection } from './AnimeListScreenFilterSection';
+import { AnimeListScreenSheets } from './AnimeListScreenSheets';
+import { AnimeListScreenStatusSection } from './AnimeListScreenStatusSection';
 import {
   buildHeaderLeftRenderer,
   buildHeaderRightRenderer,
-} from "./anime-list-screen.helpers";
-import type { AnimeListScreenViewProps } from "./anime-list-screen.types";
-import { useAnimeListItemRenderer } from "./use-anime-list-item-renderer";
+} from './anime-list-screen.helpers';
+import type { AnimeListScreenViewProps } from './anime-list-screen.types';
 
-export function AnimeListScreenView(props: AnimeListScreenViewProps) {
-  const {
-    animes,
-    filterOptions,
-    filterCounts,
-    contextualHeader,
-    layoutMode,
-    isMutatingAnimeById,
-    isDark,
-    isEmpty,
-    isRefreshing,
-    isManualSyncEnabled,
-    refreshAccessibilityLabel,
-    syncStatus,
-    selectedFilter,
-    stateSheetRequest,
-    themeColorForeground,
-    today,
-    handleCapMinus,
-    handleCapMinusHalf,
-    handleCapPlus,
-    handleCapPlusHalf,
-    handleCloseStateSheet,
-    handleOpenSettings,
-    handleOpenStateSheet,
-    handleRefresh,
-    handleSelectedFilterChange,
-    handleStateSheetSelect,
-  } = props;
-
-  const isTabletLandscape = layoutMode === "tablet-landscape";
-  const numColumns = isTabletLandscape
-    ? ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS
-    : 1;
-  const { getAnimeCardProps } = useAnimeListItemRenderer(
-    isMutatingAnimeById,
-    handleCapMinus,
-    handleCapPlus,
-    handleCapPlusHalf,
-    handleCapMinusHalf,
-    handleOpenStateSheet,
-  );
+/** Renders the anime list screen view interface. */
+export function AnimeListScreenView(props: Readonly<AnimeListScreenViewProps>) {
+  const { model } = props;
   const headerLeft = buildHeaderLeftRenderer({
-    handleOpenSettings,
-    themeColorForeground,
+    handleOpenSettings: model.handleOpenSettings,
+    themeColorForeground: model.themeColorForeground,
   });
   const headerRight = buildHeaderRightRenderer({
-    refreshAccessibilityLabel,
-    isRefreshing,
-    isManualSyncEnabled,
-    themeColorForeground,
-    handleRefresh,
+    refreshAccessibilityLabel: model.refreshAccessibilityLabel,
+    isRefreshing: model.isRefreshing,
+    isManualSyncEnabled: model.isManualSyncEnabled,
+    themeColorForeground: model.themeColorForeground,
+    handleRefresh: model.handleRefresh,
   });
 
   return (
     <View className="bg-background flex-1">
       <Stack.Screen
         options={{
-          headerTitle: contextualHeader.title,
+          headerTitle: model.contextualHeader.title,
           headerLeft,
           headerRight,
         }}
       />
 
       <View
-        className={isTabletLandscape ? "flex-1 flex-row pt-16" : "flex-1 pt-16"}
+        className={
+          model.layoutMode === 'tablet-landscape'
+            ? 'flex-1 flex-row pt-16'
+            : 'flex-1 pt-16'
+        }
       >
-        {isTabletLandscape ? (
-          <View className="bg-surface-secondary/40 border-border/40 w-60 border-r">
-            <AnimeFilterRail
-              options={filterOptions}
-              counts={filterCounts}
-              selected={selectedFilter}
-              today={today}
-              orientation="vertical"
-              onSelect={handleSelectedFilterChange}
-            />
-          </View>
-        ) : (
-          <AnimeFilterRail
-            options={filterOptions}
-            counts={filterCounts}
-            selected={selectedFilter}
-            today={today}
-            orientation="horizontal"
-            onSelect={handleSelectedFilterChange}
-          />
-        )}
+        <AnimeListScreenFilterSection
+          filterOptions={model.filterOptions}
+          filterCounts={model.filterCounts}
+          selectedFilter={model.selectedFilter}
+          today={model.today}
+          layoutMode={model.layoutMode}
+          handleSelectedFilterChange={model.handleSelectedFilterChange}
+        />
 
         <View className="flex-1">
-          <View className="mx-auto w-full max-w-5xl px-5 pb-3 pt-2">
-            <View className="flex-row items-center gap-2">
-              {contextualHeader.isToday && (
-                <View className="bg-accent h-2 w-2 rounded-full" />
-              )}
-              <AppText className="text-muted text-sm">
-                {contextualHeader.subtitle}
-              </AppText>
-            </View>
-
-            <View className="pt-3">
-              <HeroAlert status={syncStatus.tone}>
-                <HeroAlert.Indicator />
-                <HeroAlert.Content>
-                  <View className="flex-row flex-wrap items-center gap-2">
-                    <Chip
-                      color={ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE[syncStatus.tone]}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      <Chip.Label>{syncStatus.chipLabel}</Chip.Label>
-                    </Chip>
-                    <HeroAlert.Title>
-                      {syncStatus.title}
-                    </HeroAlert.Title>
-                  </View>
-                  <HeroAlert.Description>
-                    {syncStatus.description}
-                  </HeroAlert.Description>
-                </HeroAlert.Content>
-                {syncStatus.actionLabel ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onPress={handleOpenSettings}
-                  >
-                    <Button.Label>{syncStatus.actionLabel}</Button.Label>
-                  </Button>
-                ) : null}
-              </HeroAlert>
-            </View>
-          </View>
-
-          {isEmpty ? (
-            <AnimeEmptyState filter={selectedFilter} />
-          ) : (
-            <FlatList
-              contentContainerClassName="mx-auto w-full max-w-5xl px-5 pb-12"
-              data={animes}
-              extraData={isMutatingAnimeById}
-              key={`anime-list-${numColumns}`}
-              keyExtractor={(item) => item._id}
-              numColumns={numColumns}
-              columnWrapperClassName={numColumns > 1 ? "gap-4" : undefined}
-              refreshControl={
-                <RefreshControl
-                  enabled={isManualSyncEnabled}
-                  refreshing={isRefreshing}
-                  onRefresh={() => {
-                    void handleRefresh();
-                  }}
-                />
-              }
-              renderItem={({ item }) => (
-                <View className={numColumns > 1 ? "flex-1" : undefined}>
-                  <AnimeCard {...getAnimeCardProps(item)} />
-                </View>
-              )}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
+          <AnimeListScreenStatusSection
+            contextualHeader={model.contextualHeader}
+            isSeasonMode={model.isSeasonMode}
+            syncStatus={model.syncStatus}
+            handleOpenSettings={model.handleOpenSettings}
+          />
+          <AnimeListScreenContent
+            animes={model.animes}
+            isEmpty={model.isEmpty}
+            isManualSyncEnabled={model.isManualSyncEnabled}
+            isMutatingAnimeById={model.isMutatingAnimeById}
+            isRefreshing={model.isRefreshing}
+            layoutMode={model.layoutMode}
+            selectedFilter={model.selectedFilter}
+            getAnimeCardProps={model.getAnimeCardProps}
+            handleRefresh={model.handleRefresh}
+          />
         </View>
       </View>
 
-      <AnimeStateSheet
-        visible={stateSheetRequest !== null}
-        currentEstado={stateSheetRequest?.currentEstado ?? 0}
-        onSelect={(estado) => {
-          void handleStateSheetSelect(estado);
-        }}
-        onClose={handleCloseStateSheet}
+      <AnimeListScreenSheets
+        stateSheetRequest={model.stateSheetRequest}
+        seasonRatingSheetRequest={model.seasonRatingSheetRequest}
+        handleCloseSeasonRatingSheet={model.handleCloseSeasonRatingSheet}
+        handleCloseStateSheet={model.handleCloseStateSheet}
+        handleSeasonRatingSubmit={model.handleSeasonRatingSubmit}
+        handleStateSheetSelect={model.handleStateSheetSelect}
       />
 
-      <StatusBar style={isDark ? "light" : "dark"} />
+      <StatusBar style={model.isDark ? 'light' : 'dark'} />
     </View>
   );
 }

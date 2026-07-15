@@ -1,6 +1,7 @@
 import type { SyncExecutionMode } from './sync-execution-mode.types';
 import type { SyncRuntimeRegistrationStatus } from './sync-runtime-status.types';
 
+/** Defines the data contract for sync execution status. */
 export interface SyncExecutionStatus {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
   readonly executionMode: SyncExecutionMode;
@@ -8,6 +9,7 @@ export interface SyncExecutionStatus {
   readonly canShowPersistentNotification: boolean;
 }
 
+/** Defines the data contract for sync execution strategy. */
 export interface SyncExecutionStrategy {
   readonly mode: SyncExecutionMode;
   readonly register: () => Promise<void>;

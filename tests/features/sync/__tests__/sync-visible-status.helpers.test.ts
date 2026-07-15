@@ -8,7 +8,7 @@ describe('sync-visible-status.helpers', () => {
     it('returns false when the phone is offline', () => {
       expect(
         isManualSyncAvailableNow({
-          connectionStatus: 'error',
+          connectionStatus: 'unreachable',
           isBridgeConfigured: true,
           isDeviceOnline: false,
           lastSyncAt: null,
@@ -21,7 +21,7 @@ describe('sync-visible-status.helpers', () => {
     it('returns false when no bridge is configured', () => {
       expect(
         isManualSyncAvailableNow({
-          connectionStatus: 'offline',
+          connectionStatus: 'idle',
           isBridgeConfigured: false,
           isDeviceOnline: true,
           lastSyncAt: null,
@@ -47,7 +47,7 @@ describe('sync-visible-status.helpers', () => {
     it('returns true when the bridge is configured, the phone is online, and retry is possible now', () => {
       expect(
         isManualSyncAvailableNow({
-          connectionStatus: 'error',
+          connectionStatus: 'unreachable',
           isBridgeConfigured: true,
           isDeviceOnline: true,
           lastSyncAt: null,
@@ -61,7 +61,7 @@ describe('sync-visible-status.helpers', () => {
   it('keeps a calm local-only state when no bridge is configured and there is no backlog', () => {
     const status = deriveVisibleSyncStatus(
       {
-        connectionStatus: 'offline',
+        connectionStatus: 'idle',
         isBridgeConfigured: false,
         isDeviceOnline: true,
         lastSyncAt: null,
@@ -99,7 +99,7 @@ describe('sync-visible-status.helpers', () => {
   it('distinguishes a phone-offline backlog from a bridge issue', () => {
     const status = deriveVisibleSyncStatus(
       {
-        connectionStatus: 'error',
+        connectionStatus: 'unreachable',
         isBridgeConfigured: true,
         isDeviceOnline: false,
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
@@ -118,7 +118,7 @@ describe('sync-visible-status.helpers', () => {
   it('escalates a stale backlog when the bridge has not confirmed changes for several days', () => {
     const status = deriveVisibleSyncStatus(
       {
-        connectionStatus: 'error',
+        connectionStatus: 'unreachable',
         isBridgeConfigured: true,
         isDeviceOnline: true,
         lastSyncAt: new Date('2026-04-03T10:00:00.000Z').getTime(),

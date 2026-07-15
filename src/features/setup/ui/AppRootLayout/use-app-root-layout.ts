@@ -15,6 +15,7 @@ import type {
   AppRootLayoutViewModel,
 } from './app-root-layout.types';
 
+/** Coordinates app root layout state and actions. */
 export function useAppRootLayout(
   _props: AppRootLayoutProps,
 ): AppRootLayoutViewModel {

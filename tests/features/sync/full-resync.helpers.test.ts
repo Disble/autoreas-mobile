@@ -2,7 +2,7 @@ import { resyncFromBridgeSnapshot } from '../../../src/features/sync/full-resync
 import { applyAnimePartial, upsertAnime } from '../../../src/infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../../src/infrastructure/db/client';
 import { fetchInitialSyncSnapshot } from '../../../src/features/sync/initial-sync.helpers';
-import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge/merge-context.helpers';
+import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge';
 
 jest.mock('../../../src/infrastructure/db/client', () => ({
   getBridgeConfigSnapshot: jest.fn(),
@@ -18,9 +18,14 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
-  loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
-}));
+jest.mock('../../../src/features/sync/merge', () => {
+  const actual = jest.requireActual('../../../src/features/sync/merge');
+
+  return {
+    ...actual,
+    loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
+  };
+});
 
 const mockGetConfig = getBridgeConfigSnapshot as jest.Mock;
 const mockFetch = fetchInitialSyncSnapshot as jest.Mock;

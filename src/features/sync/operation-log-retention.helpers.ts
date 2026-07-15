@@ -53,9 +53,7 @@ async function pruneRowsByMaxCount(
   rawDb: SQLiteDatabase,
   status: string,
   maxCount: number,
-  ttlPrunedCount: number,
 ) {
-  void ttlPrunedCount;
   const currentCount = await countRowsForStatus(rawDb, status);
   const overflowCount = Math.max(0, currentCount - maxCount);
 
@@ -135,12 +133,11 @@ export async function pruneOperationLog(
     pruneRowsByTtl(rawDb, policy.deadLetter.status, deadLetterCutoff),
   ]);
   const [deletedSyncedByOverflow, deletedDeadLetterByOverflow] = await Promise.all([
-    pruneRowsByMaxCount(rawDb, policy.synced.status, policy.synced.maxCount, deletedSyncedByTtl),
+    pruneRowsByMaxCount(rawDb, policy.synced.status, policy.synced.maxCount),
     pruneRowsByMaxCount(
       rawDb,
       policy.deadLetter.status,
       policy.deadLetter.maxCount,
-      deletedDeadLetterByTtl,
     ),
   ]);
 

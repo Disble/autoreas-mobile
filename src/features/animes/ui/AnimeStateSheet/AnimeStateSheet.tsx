@@ -1,11 +1,7 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import type { ComponentProps } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { cn } from 'heroui-native';
 import { AppText } from '../../../../components/app-text';
 import {
@@ -16,33 +12,17 @@ import {
 import type { AnimeStateSheetProps } from './anime-state-sheet.types';
 import { useAnimeStateSheet } from './use-anime-state-sheet';
 
-export function AnimeStateSheet(props: AnimeStateSheetProps) {
-  const { visible, options, handleSelect, handleClose } = useAnimeStateSheet(props);
-  const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['45%'], []);
-
-  useEffect(() => {
-    if (visible) {
-      sheetRef.current?.snapToIndex(0);
-    } else {
-      sheetRef.current?.close();
-    }
-  }, [visible]);
-
-  const renderBackdrop = useMemo(
-    () =>
-      function Backdrop(backdropProps: BottomSheetBackdropProps) {
-        return (
-          <BottomSheetBackdrop
-            {...backdropProps}
-            appearsOnIndex={0}
-            disappearsOnIndex={-1}
-            pressBehavior="close"
-          />
-        );
-      },
-    [],
-  );
+/** Renders the anime state sheet interface. */
+export function AnimeStateSheet(props: Readonly<AnimeStateSheetProps>) {
+  const {
+    visible,
+    options,
+    handleSelect,
+    handleClose,
+    sheetRef,
+    snapPoints,
+    renderBackdrop,
+  } = useAnimeStateSheet(props);
 
   if (!visible) {
     return null;
@@ -75,7 +55,7 @@ export function AnimeStateSheet(props: AnimeStateSheetProps) {
               )}
             >
               <Ionicons
-                name={option.icon as React.ComponentProps<typeof Ionicons>['name']}
+                name={option.icon as ComponentProps<typeof Ionicons>['name']}
                 size={24}
                 color={TONE_ICON_COLOR[option.tone]}
               />

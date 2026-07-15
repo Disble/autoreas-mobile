@@ -2,8 +2,9 @@ import { useNetworkState } from "expo-network";
 import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
 import { useThemeColor, useToast } from "heroui-native";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
+import { useSeasonModeStore } from "../../../../infrastructure/store/season-mode-store";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
 import { useSyncFacade } from "../../../sync/use-sync-facade";
@@ -15,6 +16,7 @@ import {
 import type { AnimeDayFilter } from "../../anime.types";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
+import { useSeasonRatingIntent } from "../../use-season-rating-intent";
 import { ANIME_LIST_SCREEN_REFRESH_LABEL } from "./anime-list-screen.constants";
 import {
   buildRefreshFailureFeedback,
@@ -27,17 +29,21 @@ import type {
   AnimeListScreenProps,
   AnimeListScreenViewModel,
   AnimeStateSheetRequest,
+  SeasonRatingSheetRequest,
 } from "./anime-list-screen.types";
+import type { SeasonRatingValue } from "../SeasonRatingSheet";
 
+/** Coordinates anime list screen state and actions. */
 export function useAnimeListScreen(
   _props: AnimeListScreenProps,
 ): AnimeListScreenViewModel {
   // 1. Refs
   const mutatingAnimeByIdRef = useRef<Record<string, boolean>>({});
+  const hasUserSelectedFilterRef = useRef(false);
 
   // 2. State
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
-    getDefaultAnimeDayFilter(new Date()),
+    getDefaultAnimeDayFilter(new Date(), useSeasonModeStore.getState().seasonMode),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
@@ -45,6 +51,8 @@ export function useAnimeListScreen(
   >({});
   const [stateSheetRequest, setStateSheetRequest] =
     useState<AnimeStateSheetRequest | null>(null);
+  const [seasonRatingSheetRequest, setSeasonRatingSheetRequest] =
+    useState<SeasonRatingSheetRequest | null>(null);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
@@ -53,11 +61,13 @@ export function useAnimeListScreen(
   const [themeColorForeground] = useThemeColor(["foreground"]);
   const { layout: layoutMode } = useResponsiveLayout();
   const networkState = useNetworkState();
+  const seasonMode = useSeasonModeStore((state) => state.seasonMode);
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
   const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } =
     useMutateAnime();
+  const { submitSeasonRatingIntent } = useSeasonRatingIntent();
   const { isConfigured } = useBridgeConfig();
   const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount, syncError } =
     useSyncFacade();
@@ -69,7 +79,7 @@ export function useAnimeListScreen(
     () => getAnimeDayFilterOption(selectedFilter),
     [selectedFilter],
   );
-  const settingsHref = useMemo(() => "/(tabs)/settings" as Href, []);
+  const settingsHref = "/(tabs)/settings" satisfies Href;
   const today = useMemo(() => getDefaultAnimeDayFilter(new Date()), []);
   const isDeviceOnline = useMemo(() => {
     if (typeof networkState.isInternetReachable === "boolean") {
@@ -129,6 +139,7 @@ export function useAnimeListScreen(
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleSelectedFilterChange = useCallback((filter: AnimeDayFilter) => {
+    hasUserSelectedFilterRef.current = true;
     setSelectedFilter(filter);
   }, []);
 
@@ -229,6 +240,37 @@ export function useAnimeListScreen(
     setStateSheetRequest(null);
   }, []);
 
+  const handleOpenSeasonRatingSheet = useCallback(
+    (animeId: string) => {
+      const anime = animes.find((currentAnime) => currentAnime._id === animeId);
+      const seasonProjection = anime?.seasonProjection ?? null;
+      if (!anime || !seasonProjection) {
+        return;
+      }
+
+      let pendingStatus: "failed" | "pending" | null = null;
+      if (seasonProjection.localIntent?.status === "failed") {
+        pendingStatus = "failed";
+      } else if (seasonProjection.localIntent?.status === "pending") {
+        pendingStatus = "pending";
+      }
+
+      setSeasonRatingSheetRequest({
+        animeId,
+        animeTitle: anime.nombre,
+        bridgeRating: seasonProjection.bridgeRating,
+        pendingRating: seasonProjection.localIntent?.nota ?? null,
+        pendingStatus,
+        pendingFailureKind: seasonProjection.localIntent?.failureKind ?? null,
+      });
+    },
+    [animes],
+  );
+
+  const handleCloseSeasonRatingSheet = useCallback(() => {
+    setSeasonRatingSheetRequest(null);
+  }, []);
+
   const handleStateSheetSelect = useCallback(
     async (estado: number) => {
       const request = stateSheetRequest;
@@ -241,13 +283,37 @@ export function useAnimeListScreen(
     [setEstado, stateSheetRequest],
   );
 
+  const handleSeasonRatingSubmit = useCallback(
+    async (rating: SeasonRatingValue) => {
+      const request = seasonRatingSheetRequest;
+      if (!request) {
+        return;
+      }
+
+      await submitSeasonRatingIntent(request.animeId, rating);
+      setSeasonRatingSheetRequest(null);
+    },
+    [seasonRatingSheetRequest, submitSeasonRatingIntent],
+  );
+
   const handleOpenSettings = useCallback(() => {
     router.push(settingsHref);
   }, [router, settingsHref]);
 
   // 7. Effects
+  // Soft-follow the season-mode default: while the user has not manually picked a filter,
+  // keep the active filter aligned with the bridge-owned season mode (ON -> 'Ver hoy',
+  // OFF -> today's weekday). Once the user chooses a filter, this stops overriding them.
+  useEffect(() => {
+    if (hasUserSelectedFilterRef.current) {
+      return;
+    }
+
+    setSelectedFilter(getDefaultAnimeDayFilter(new Date(), seasonMode));
+  }, [seasonMode]);
 
   return {
+    isSeasonMode: seasonMode,
     animes,
     filterOptions,
     filterCounts,
@@ -264,6 +330,7 @@ export function useAnimeListScreen(
     selectedFilterOption,
     settingsHref,
     stateSheetRequest,
+    seasonRatingSheetRequest,
     themeColorForeground,
     today,
     handleCapMinus,
@@ -271,10 +338,13 @@ export function useAnimeListScreen(
     handleCapPlus,
     handleCapPlusHalf,
     handleCloseStateSheet,
+    handleCloseSeasonRatingSheet,
     handleOpenSettings,
+    handleOpenSeasonRatingSheet,
     handleOpenStateSheet,
     handleRefresh,
     handleSelectedFilterChange,
+    handleSeasonRatingSubmit,
     handleStateSheetSelect,
   };
 }

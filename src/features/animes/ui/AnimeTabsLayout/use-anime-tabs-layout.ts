@@ -7,6 +7,7 @@ import type {
   AnimeTabsLayoutViewModel,
 } from './anime-tabs-layout.types';
 
+/** Coordinates anime tabs layout state and actions. */
 export function useAnimeTabsLayout(
   _props: AnimeTabsLayoutProps,
 ): AnimeTabsLayoutViewModel {

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "src/app/**/*.{ts,tsx}",
+    "app/**/*.{ts,tsx}"
+  ],
+  "ignorePatterns": [
+    "android/**",
+    "ios/**",
+    ".expo/**"
+  ],
+  "ignoreExports": [
+    {
+      "file": "src/**/index.ts",
+      "exports": [
+        "*"
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "files": [
+        "src/**/index.ts"
+      ],
+      "rules": {
+        "unused-types": "off"
+      }
+    }
+  ],
+  "duplicates": {
+    "mode": "semantic",
+    "threshold": 3,
+    "minOccurrences": 3
+  },
+  "rules": {
+    "boundary-violation": "error",
+    "circular-dependencies": "error",
+    "duplicate-exports": "error",
+    "unlisted-dependencies": "error",
+    "unresolved-imports": "error",
+    "unused-dependencies": "error",
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-types": "error"
+  }
+}

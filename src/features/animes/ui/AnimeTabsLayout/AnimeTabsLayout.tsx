@@ -4,7 +4,8 @@ import { ThemeToggle } from '../../../../components/theme-toggle';
 import type { AnimeTabsLayoutProps } from './anime-tabs-layout.types';
 import { useAnimeTabsLayout } from './use-anime-tabs-layout';
 
-export function AnimeTabsLayout(props: AnimeTabsLayoutProps) {
+/** Renders the anime tabs layout interface. */
+export function AnimeTabsLayout(props: Readonly<AnimeTabsLayoutProps>) {
   const {
     headerBackgroundColor,
     isDark,

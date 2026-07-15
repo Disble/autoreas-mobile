@@ -1,17 +1,11 @@
-/**
- * Changelog IDs are sequential integers managed by the bridge. Any value larger
- * than this threshold is almost certainly a corrupted Unix-millisecond timestamp
- * that was mistakenly persisted by older versions. Treat it as invalid so the
- * next reconcile restarts from the beginning of the changelog.
- */
-const MAX_REASONABLE_CHANGELOG_ID = 1_000_000_000_000;
+import { MAX_REASONABLE_CHANGELOG_ID } from './last-changelog.constants';
 
 /**
  * Reads the persisted changelog cursor from bridge config, defaulting to zero.
  * This keeps reconcile and incremental sync aligned on the same resume point.
  */
 export function getLastChangelogId(
-  config: { lastChangelogId?: number | null | unknown } | null,
+  config: { lastChangelogId?: unknown } | null,
 ): number {
   const value = config?.lastChangelogId;
 

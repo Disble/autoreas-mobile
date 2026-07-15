@@ -33,7 +33,7 @@ export async function closeSyncRuntime(rawDb: SQLiteDatabase): Promise<void> {
   }
 
   if (asyncCloseError) {
-    throw asyncCloseError;
+    throw new Error('Failed to close the SQLite sync runtime.', { cause: asyncCloseError });
   }
 }
 

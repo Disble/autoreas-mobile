@@ -94,6 +94,17 @@ jest.mock('heroui-native', () => {
     Description: textWrap('heroui-alert-description'),
   });
 
+  // Compound BottomSheet
+  const BottomSheet = Object.assign(wrap('heroui-bottom-sheet'), {
+    Trigger: pressableWrap('heroui-bottom-sheet-trigger'),
+    Portal: wrap('heroui-bottom-sheet-portal'),
+    Overlay: pressableWrap('heroui-bottom-sheet-overlay'),
+    Content: wrap('heroui-bottom-sheet-content'),
+    Close: pressableWrap('heroui-bottom-sheet-close'),
+    Title: textWrap('heroui-bottom-sheet-title'),
+    Description: textWrap('heroui-bottom-sheet-description'),
+  });
+
   // Compound Tabs
   const Tabs = Object.assign(wrap('heroui-tabs'), {
     List: wrap('heroui-tabs-list'),
@@ -130,6 +141,7 @@ jest.mock('heroui-native', () => {
     Button,
     Chip,
     Alert,
+    BottomSheet,
     Tabs,
     TextField,
     Label,
@@ -147,6 +159,10 @@ jest.mock('heroui-native', () => {
     useToast: jest.fn(() => ({
       toast: { show: jest.fn(), hide: jest.fn() },
       isToastVisible: false,
+    })),
+    useBottomSheetAwareHandlers: jest.fn(() => ({
+      onFocus: jest.fn(),
+      onBlur: jest.fn(),
     })),
   };
 });

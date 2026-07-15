@@ -33,6 +33,7 @@ describe('settings-screen.helpers', () => {
 
     expect(section.statusTone).toBe('danger');
     expect(section.title).toBe('Último sync con error');
+    expect(section.description).toContain('el último fallo');
     expect(section.status).toBe('Registrado');
 
     const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
@@ -283,7 +284,7 @@ describe('settings-screen.helpers', () => {
       isDeviceOnline: true,
       now: new Date('2026-04-09T10:00:00.000Z'),
       syncFacts: {
-        connectionStatus: 'offline',
+        connectionStatus: 'idle',
         lastSyncAt: null,
         pendingOpsCount: 0,
         syncError: null,
@@ -305,7 +306,7 @@ describe('settings-screen.helpers', () => {
       isDeviceOnline: false,
       now: new Date('2026-04-09T10:00:00.000Z'),
       syncFacts: {
-        connectionStatus: 'error',
+        connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
         pendingOpsCount: 2,
         syncError: 'Bridge unreachable at http://192.168.1.10:8080',
@@ -327,7 +328,7 @@ describe('settings-screen.helpers', () => {
       isDeviceOnline: true,
       now: new Date('2026-04-09T10:00:00.000Z'),
       syncFacts: {
-        connectionStatus: 'error',
+        connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
         pendingOpsCount: 3,
         syncError: 'Bridge unreachable at http://192.168.1.10:8080',
@@ -337,7 +338,7 @@ describe('settings-screen.helpers', () => {
     expect(summary.tone).toBe('warning');
     expect(summary.chipLabel).toBe('Sync pendiente');
     expect(summary.title).toBe('3 cambios esperando sync');
-    expect(summary.bridgeStatusKind).toBe('pending_backlog');
+    expect(summary.bridgeStatusKind).toBe('bridge_unreachable');
     expect(summary.actionKind).toBe('repair_bridge');
     expect(summary.actionLabel).toBe('Re-emparejar bridge');
   });
@@ -348,7 +349,7 @@ describe('settings-screen.helpers', () => {
       isDeviceOnline: true,
       now: new Date('2026-04-09T10:00:00.000Z'),
       syncFacts: {
-        connectionStatus: 'error',
+        connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
         pendingOpsCount: 0,
         syncError: 'Bridge unreachable at http://192.168.1.10:8080',
@@ -360,13 +361,35 @@ describe('settings-screen.helpers', () => {
     expect(summary.actionKind).toBeNull();
   });
 
+  it('presents a reachable sync rejection without blaming bridge connectivity', () => {
+    const summary = buildSettingsSyncSummary({
+      isConfigured: true,
+      isDeviceOnline: true,
+      now: new Date('2026-04-09T10:00:00.000Z'),
+      syncFacts: {
+        connectionStatus: 'sync_error',
+        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
+        pendingOpsCount: 2,
+        syncError: 'Reconcile failed: 422',
+      },
+    });
+    const bridgeStatus = buildSettingsBridgeStatus(summary);
+
+    expect(summary.bridgeStatusKind).toBe('sync_error');
+    expect(summary.actionKind).toBeNull();
+    expect(bridgeStatus.chipLabel).toBe('Bridge disponible');
+    expect(bridgeStatus.title).toBe('El bridge rechazó el sync');
+    expect(bridgeStatus.description).toContain('respondió, pero no pudo completar');
+    expect(bridgeStatus.tone).toBe('danger');
+  });
+
   it('marks old pending backlog as stale so the bridge card can escalate it', () => {
     const summary = buildSettingsSyncSummary({
       isConfigured: true,
       isDeviceOnline: true,
       now: new Date('2026-04-09T10:00:00.000Z'),
       syncFacts: {
-        connectionStatus: 'offline',
+        connectionStatus: 'idle',
         lastSyncAt: new Date('2026-04-05T10:00:00.000Z').getTime(),
         pendingOpsCount: 4,
         syncError: null,

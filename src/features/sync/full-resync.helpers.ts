@@ -3,12 +3,13 @@ import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-re
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
 import { animes } from '../../infrastructure/db/schema';
 import { fetchInitialSyncSnapshot } from './initial-sync.helpers';
-import { buildPartialUpdate, deriveChangedFields } from './merge/field-merge.helpers';
-import { loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
+import {
+  buildPartialUpdate,
+  deriveChangedFields,
+  loadPendingOutboxRecordIds,
+} from './merge';
 
-export interface ResyncResult {
-  readonly healed: number;
-}
+import type { ResyncResult } from './full-resync.types';
 
 /**
  * Snapshot-authoritative heal: pulls the bridge's full current anime list and reconciles each
@@ -66,7 +67,7 @@ export async function resyncFromBridgeSnapshot(
 
       const changedFields = deriveChangedFields(
         anime,
-        localRow as Record<string, unknown>,
+        localRow,
       );
 
       if (changedFields.length === 0) {
@@ -80,7 +81,7 @@ export async function resyncFromBridgeSnapshot(
         db,
         anime._id,
         columns,
-        (localRow.lastAppliedChangeMs as number | null) ?? 0,
+        (localRow.lastAppliedChangeMs) ?? 0,
       );
       healed += 1;
     }
