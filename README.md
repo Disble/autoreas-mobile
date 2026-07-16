@@ -160,22 +160,27 @@ Minimum requirements:
 - Docker Desktop with the WSL2 backend enabled
 - `EXPO_TOKEN` loaded in `.env.local`
 
-Command:
+The profile is passed as the last argument. When omitted, it defaults to `preview`.
+
+Preview (default) — self-contained APK with the JS bundle included:
 
 ```bash
 docker compose -f docker-compose.eas.yml run --rm eas-build
 ```
 
-> It use `preview` flag and generates an apk with js bundle included.
-
-Alternative profiles:
+Development — APK that connects to Metro on your machine instead of bundling the JS:
 
 ```bash
 docker compose -f docker-compose.eas.yml run --rm eas-build development
-docker compose -f docker-compose.eas.yml run --rm eas-build production
 ```
 
-> The flag `development` generates a development build that connects with Metro.
+After it finishes, install the APK, start Metro with `bun run start`, and open the app so it attaches to the local bundler.
+
+Production — optimized, self-contained APK:
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build production
+```
 
 Output:
 
