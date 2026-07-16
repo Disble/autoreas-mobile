@@ -130,6 +130,9 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   isCycleActive: integer('is_cycle_active', { mode: 'boolean' }).notNull().default(false),
   lastBacklogReadCount: integer('last_backlog_read_count').notNull().default(0),
   lastPrunedOperationsCount: integer('last_pruned_operations_count').notNull().default(0),
+  isBackgroundTaskRegistered: integer('is_background_task_registered', { mode: 'boolean' })
+    .notNull()
+    .default(false),
 });
 
 /** Defines the anime row value shape. */

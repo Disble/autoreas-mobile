@@ -17,6 +17,8 @@ function createUnsupportedStatus(): SyncExecutionStatus {
     executionMode: 'best_effort_background_task',
     isForegroundServiceRunning: false,
     canShowPersistentNotification: false,
+    // This strategy only owns the FGS path; the WorkManager floor reports its own flag.
+    isBackgroundTaskRegistered: false,
   };
 }
 
@@ -145,6 +147,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         executionMode: 'android_foreground_service',
         isForegroundServiceRunning,
         canShowPersistentNotification,
+        isBackgroundTaskRegistered: false,
       });
     },
   };

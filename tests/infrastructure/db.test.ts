@@ -220,6 +220,7 @@ describe("db client tracer helpers", () => {
             { name: "is_cycle_active" },
             { name: "last_backlog_read_count" },
             { name: "last_pruned_operations_count" },
+            { name: "is_background_task_registered" },
           ];
         }
 
@@ -357,6 +358,9 @@ describe("db client tracer helpers", () => {
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL'
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'

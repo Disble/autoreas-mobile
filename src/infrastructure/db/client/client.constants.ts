@@ -44,4 +44,8 @@ export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefin
     columnName: 'last_pruned_operations_count',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL',
   },
+  {
+    columnName: 'is_background_task_registered',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL',
+  },
 ];

@@ -13,5 +13,6 @@ export function buildSyncExecutionStatusPatch(
     executionMode: status.executionMode,
     isForegroundServiceRunning: status.isForegroundServiceRunning,
     canShowPersistentNotification: status.canShowPersistentNotification,
+    isBackgroundTaskRegistered: status.isBackgroundTaskRegistered,
   };
 }

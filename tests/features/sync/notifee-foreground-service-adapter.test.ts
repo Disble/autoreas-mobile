@@ -83,6 +83,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -118,6 +119,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -144,6 +146,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -203,6 +206,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -245,6 +249,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: false,
     });
   });
 });

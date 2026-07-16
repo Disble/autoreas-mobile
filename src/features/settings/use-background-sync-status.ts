@@ -56,6 +56,7 @@ export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
       isCycleActive: latestSnapshot.isCycleActive ?? false,
       lastBacklogReadCount: latestSnapshot.lastBacklogReadCount ?? 0,
       lastPrunedOperationsCount: latestSnapshot.lastPrunedOperationsCount ?? 0,
+      isBackgroundTaskRegistered: latestSnapshot.isBackgroundTaskRegistered ?? false,
     };
   }, [rawDb, snapshots]);
 

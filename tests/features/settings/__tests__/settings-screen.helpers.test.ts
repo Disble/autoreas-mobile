@@ -28,6 +28,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: false,
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
       },
     });
 
@@ -94,6 +95,11 @@ describe('settings-screen.helpers', () => {
       label: 'Servicio persistente',
       value: 'Inactivo',
     });
+    expect(tileMap.backgroundTask).toMatchObject({
+      label: 'Task periódico',
+      value: 'Registrado',
+      tone: 'success',
+    });
     expect(tileMap.lastFailure).toMatchObject({
       label: 'Último fallo',
       value: 'Bridge timeout after 10s',
@@ -119,6 +125,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: false,
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
       },
     });
 
@@ -137,6 +144,7 @@ describe('settings-screen.helpers', () => {
         'prunedOperationsCount',
         'cycleActive',
         'foregroundService',
+        'backgroundTask',
         'notificationPermission',
       ]),
     );
@@ -158,6 +166,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: false,
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
       },
     });
 
@@ -168,6 +177,8 @@ describe('settings-screen.helpers', () => {
 
     expect(tileMap.executionMode.value).toBe('Servicio foreground Android');
     expect(tileMap.foregroundService.value).toBe('Activo');
+    // WorkManager stays visible and registered alongside the running FGS (non-exclusive registration).
+    expect(tileMap.backgroundTask.value).toBe('Registrado');
     expect(tileMap.notificationPermission.value).toBe('Permitida');
   });
 
@@ -187,6 +198,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: true,
         lastBacklogReadCount: 150,
         lastPrunedOperationsCount: 42,
+        isBackgroundTaskRegistered: false,
       },
     });
 
@@ -228,6 +240,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: false,
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: false,
       },
     });
 
@@ -262,6 +275,7 @@ describe('settings-screen.helpers', () => {
         isCycleActive: false,
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: false,
       },
     });
 

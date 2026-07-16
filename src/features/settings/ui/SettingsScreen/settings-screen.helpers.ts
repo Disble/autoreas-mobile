@@ -59,6 +59,41 @@ function appendOptionalRuntimeTiles(
   }
 }
 
+/**
+ * Builds the two independent registration-path tiles (FGS + WorkManager) plus the
+ * notification-permission tile. Both paths always render simultaneously so Settings
+ * exposes honest per-path visibility instead of collapsing them into one status.
+ */
+function buildRegistrationPathTiles(
+  snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+): MetricTile[] {
+  return [
+    {
+      id: 'foregroundService',
+      label: 'Servicio persistente',
+      value: snapshot.isForegroundServiceRunning ? 'Activo' : 'Inactivo',
+      tone: snapshot.isForegroundServiceRunning ? 'success' : 'warning',
+      iconName: snapshot.isForegroundServiceRunning ? 'radio-outline' : 'pause-circle-outline',
+    },
+    {
+      id: 'backgroundTask',
+      label: 'Task periódico',
+      value: snapshot.isBackgroundTaskRegistered ? 'Registrado' : 'No registrado',
+      tone: snapshot.isBackgroundTaskRegistered ? 'success' : 'warning',
+      iconName: snapshot.isBackgroundTaskRegistered ? 'sync-circle-outline' : 'pause-circle-outline',
+    },
+    {
+      id: 'notificationPermission',
+      label: 'Notif. persistente',
+      value: snapshot.canShowPersistentNotification ? 'Permitida' : 'No disponible',
+      tone: snapshot.canShowPersistentNotification ? 'success' : 'warning',
+      iconName: snapshot.canShowPersistentNotification
+        ? 'notifications-outline'
+        : 'notifications-off-outline',
+    },
+  ];
+}
+
 function buildRuntimeMetricTiles(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
 ): MetricTile[] {
@@ -85,14 +120,12 @@ function buildRuntimeMetricTiles(
 
   appendOptionalRuntimeTiles(tiles, snapshot);
 
-
   tiles.push(
     { id: 'syncedCount', label: 'Ops. confirmadas', value: String(snapshot.lastSyncedCount), tone: 'default', iconName: 'sync-outline' },
     { id: 'backlogReadCount', label: 'Backlog leído', value: String(snapshot.lastBacklogReadCount), tone: 'default', iconName: 'list-outline' },
     { id: 'prunedOperationsCount', label: 'Ops. podadas', value: String(snapshot.lastPrunedOperationsCount), tone: snapshot.lastPrunedOperationsCount > 0 ? 'success' : 'default', iconName: 'trash-outline' },
     { id: 'cycleActive', label: 'Ciclo activo', value: snapshot.isCycleActive ? 'Sí' : 'No', tone: snapshot.isCycleActive ? 'accent' : 'default', iconName: snapshot.isCycleActive ? 'pulse-outline' : 'power-outline' },
-    { id: 'foregroundService', label: 'Servicio persistente', value: snapshot.isForegroundServiceRunning ? 'Activo' : 'Inactivo', tone: snapshot.isForegroundServiceRunning ? 'success' : 'warning', iconName: snapshot.isForegroundServiceRunning ? 'radio-outline' : 'pause-circle-outline' },
-    { id: 'notificationPermission', label: 'Notif. persistente', value: snapshot.canShowPersistentNotification ? 'Permitida' : 'No disponible', tone: snapshot.canShowPersistentNotification ? 'success' : 'warning', iconName: snapshot.canShowPersistentNotification ? 'notifications-outline' : 'notifications-off-outline' },
+    ...buildRegistrationPathTiles(snapshot),
   );
 
   if (snapshot.lastFailureMessage) {

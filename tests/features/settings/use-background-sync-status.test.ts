@@ -49,6 +49,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 0,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -69,6 +70,7 @@ describe('useBackgroundSyncStatus', () => {
           lastSyncedCount: 4,
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
+          isBackgroundTaskRegistered: true,
         },
       ],
     });
@@ -88,6 +90,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 4,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: true,
     });
   });
 
@@ -108,6 +111,7 @@ describe('useBackgroundSyncStatus', () => {
           lastSyncedCount: 0,
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
+          isBackgroundTaskRegistered: false,
         },
       ],
     });
@@ -127,6 +131,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 0,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: false,
     });
   });
 });

@@ -73,7 +73,7 @@ export function buildSyncAttemptFailedPatch(
  * Builds the snapshot patch that marks a sync cycle as active or inactive.
  * This lets Settings distinguish an idle runtime from one that is mid-cycle.
  */
-export function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch {
+function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch {
   return {
     isCycleActive: isActive,
   };
@@ -83,7 +83,7 @@ export function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch
  * Builds the snapshot patch for the latest bounded backlog read size.
  * Bounded reads keep this metric honest without materializing the whole queue.
  */
-export function buildBacklogReadCountPatch(count: number): SyncRuntimeStatusPatch {
+function buildBacklogReadCountPatch(count: number): SyncRuntimeStatusPatch {
   return {
     lastBacklogReadCount: count,
   };
@@ -93,7 +93,7 @@ export function buildBacklogReadCountPatch(count: number): SyncRuntimeStatusPatc
  * Builds the snapshot patch for the latest operation-log prune result.
  * This exposes how much terminal history was reclaimed by TTL or max-count rules.
  */
-export function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch {
+function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch {
   return {
     lastPrunedOperationsCount: count,
   };
@@ -103,7 +103,7 @@ export function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatu
  * Reads the persisted singleton runtime snapshot from SQLite.
  * When no row exists yet, the neutral snapshot is returned instead.
  */
-export async function getSyncRuntimeStatusSnapshot(
+async function getSyncRuntimeStatusSnapshot(
   rawDb: SQLiteDatabase,
 ): Promise<SyncRuntimeStatusSnapshot> {
   const db = createDrizzleDb(rawDb);
@@ -130,6 +130,7 @@ export async function getSyncRuntimeStatusSnapshot(
     isCycleActive: row.isCycleActive ?? false,
     lastBacklogReadCount: row.lastBacklogReadCount ?? 0,
     lastPrunedOperationsCount: row.lastPrunedOperationsCount ?? 0,
+    isBackgroundTaskRegistered: row.isBackgroundTaskRegistered ?? false,
   };
 }
 
@@ -156,6 +157,8 @@ async function persistSyncRuntimeStatusPatch(
     lastBacklogReadCount: patch.lastBacklogReadCount ?? current.lastBacklogReadCount,
     lastPrunedOperationsCount:
       patch.lastPrunedOperationsCount ?? current.lastPrunedOperationsCount,
+    isBackgroundTaskRegistered:
+      patch.isBackgroundTaskRegistered ?? current.isBackgroundTaskRegistered,
   };
 
   await withDeferredWrite(rawDb, async (db) => {
@@ -175,6 +178,7 @@ async function persistSyncRuntimeStatusPatch(
         isCycleActive: next.isCycleActive,
         lastBacklogReadCount: next.lastBacklogReadCount,
         lastPrunedOperationsCount: next.lastPrunedOperationsCount,
+        isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
       })
       .onConflictDoUpdate({
         target: syncRuntimeStatus.id,
@@ -191,6 +195,7 @@ async function persistSyncRuntimeStatusPatch(
           isCycleActive: next.isCycleActive,
           lastBacklogReadCount: next.lastBacklogReadCount,
           lastPrunedOperationsCount: next.lastPrunedOperationsCount,
+          isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
         },
       });
   });

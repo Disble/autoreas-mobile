@@ -78,6 +78,7 @@ export function useSyncRuntime(
                 executionMode: "best_effort_background_task" as const,
                 isForegroundServiceRunning: false,
                 canShowPersistentNotification: false,
+                isBackgroundTaskRegistered: isRegistered,
               };
             },
           },
@@ -172,7 +173,7 @@ export function useSyncRuntime(
     }
 
     void syncExecutionFacade
-      .registerPreferredStrategy()
+      .registerConcurrentStrategies()
       .then(async () => syncExecutionFacade.getStatus())
       .then((status) => {
         setExecutionMode(status.executionMode);

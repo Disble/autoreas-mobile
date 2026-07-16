@@ -5,6 +5,11 @@ function createStrategy(
   mode: SyncExecutionStrategy['mode'],
   registrationStatus: 'registered' | 'unregistered' | 'unsupported',
 ): SyncExecutionStrategy {
+  const isForegroundServiceRunning =
+    mode === 'android_foreground_service' && registrationStatus === 'registered';
+  const isBackgroundTaskRegistered =
+    mode === 'best_effort_background_task' && registrationStatus === 'registered';
+
   return {
     mode,
     register: jest.fn(async () => undefined),
@@ -12,8 +17,9 @@ function createStrategy(
     getStatus: jest.fn(async () => ({
       registrationStatus,
       executionMode: mode,
-      isForegroundServiceRunning: mode === 'android_foreground_service',
-      canShowPersistentNotification: mode === 'android_foreground_service',
+      isForegroundServiceRunning,
+      canShowPersistentNotification: isForegroundServiceRunning,
+      isBackgroundTaskRegistered,
     })),
   };
 }
@@ -38,6 +44,7 @@ describe('sync-execution-facade', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -57,6 +64,7 @@ describe('sync-execution-facade', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: true,
     });
   });
 
@@ -71,5 +79,80 @@ describe('sync-execution-facade', () => {
     await facade.registerPreferredStrategy();
 
     expect(foreground.register).toHaveBeenCalledTimes(1);
+  });
+
+  describe('registerConcurrentStrategies', () => {
+    it('registers both the WorkManager floor and the FGS primary independently, never leaving zero paths', async () => {
+      const foreground = createStrategy('android_foreground_service', 'registered');
+      const bestEffort = createStrategy('best_effort_background_task', 'registered');
+
+      const facade = createSyncExecutionFacade({
+        strategies: [foreground, bestEffort],
+      });
+
+      await facade.registerConcurrentStrategies();
+
+      expect(foreground.register).toHaveBeenCalledTimes(1);
+      expect(bestEffort.register).toHaveBeenCalledTimes(1);
+      expect(facade.hasCurrentStrategy()).toBe(true);
+
+      await expect(facade.getStatus()).resolves.toEqual({
+        registrationStatus: 'registered',
+        executionMode: 'android_foreground_service',
+        isForegroundServiceRunning: true,
+        canShowPersistentNotification: true,
+        isBackgroundTaskRegistered: true,
+      });
+    });
+
+    it('keeps the WorkManager floor registered when the FGS primary fails to register (honest executionMode, no zero paths)', async () => {
+      const foreground = createStrategy('android_foreground_service', 'unregistered');
+      const bestEffort = createStrategy('best_effort_background_task', 'registered');
+
+      const facade = createSyncExecutionFacade({
+        strategies: [foreground, bestEffort],
+      });
+
+      await facade.registerConcurrentStrategies();
+
+      await expect(facade.getStatus()).resolves.toEqual({
+        registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
+        isBackgroundTaskRegistered: true,
+      });
+    });
+
+    it('does not re-register when concurrent strategies are already active', async () => {
+      const foreground = createStrategy('android_foreground_service', 'registered');
+      const bestEffort = createStrategy('best_effort_background_task', 'registered');
+
+      const facade = createSyncExecutionFacade({
+        strategies: [foreground, bestEffort],
+      });
+
+      await facade.registerConcurrentStrategies();
+      await facade.registerConcurrentStrategies();
+
+      expect(foreground.register).toHaveBeenCalledTimes(1);
+      expect(bestEffort.register).toHaveBeenCalledTimes(1);
+    });
+
+    it('unregisters both paths on unregisterCurrentStrategy so neither remains active', async () => {
+      const foreground = createStrategy('android_foreground_service', 'registered');
+      const bestEffort = createStrategy('best_effort_background_task', 'registered');
+
+      const facade = createSyncExecutionFacade({
+        strategies: [foreground, bestEffort],
+      });
+
+      await facade.registerConcurrentStrategies();
+      await facade.unregisterCurrentStrategy();
+
+      expect(foreground.unregister).toHaveBeenCalledTimes(1);
+      expect(bestEffort.unregister).toHaveBeenCalledTimes(1);
+      expect(facade.hasCurrentStrategy()).toBe(false);
+    });
   });
 });
