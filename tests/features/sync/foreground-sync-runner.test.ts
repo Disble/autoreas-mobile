@@ -1,85 +1,151 @@
-jest.useFakeTimers();
-
 import { createForegroundSyncRunner } from '../../../src/features/sync/foreground-sync-runner.helpers';
+import type { ForegroundSyncTicker } from '../../../src/features/sync/native-foreground-sync-ticker.types';
 
 describe('foreground-sync-runner', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jest.clearAllTimers();
-  });
+  function createFakeTicker() {
+    const listeners = new Set<() => void>();
 
-  afterAll(() => {
-    jest.useRealTimers();
-  });
+    const ticker: ForegroundSyncTicker = {
+      start: jest.fn(),
+      stop: jest.fn(),
+      onTick: jest.fn((callback: () => void) => {
+        listeners.add(callback);
+        return () => {
+          listeners.delete(callback);
+        };
+      }),
+      isRunning: jest.fn().mockReturnValue(true),
+    };
 
-  it('runs one cycle immediately and keeps running on the configured interval until stopped', async () => {
-    const runCycle = jest.fn(async () => undefined);
+    return {
+      ticker,
+      fireTick: () => {
+        listeners.forEach((listener) => listener());
+      },
+      listenerCount: () => listeners.size,
+    };
+  }
 
-    const runner = createForegroundSyncRunner({
-      intervalMs: 1_000,
-      runCycle,
-    });
+  it('subscribes to ticker ticks and runs one cycle per tick', async () => {
+    const { ticker, fireTick } = createFakeTicker();
+    const runCycle = jest.fn().mockResolvedValue(undefined);
+    const onCycleError = jest.fn();
 
+    const runner = createForegroundSyncRunner({ ticker, runCycle, onCycleError });
     const servicePromise = runner.start();
 
-    await Promise.resolve();
-
-    expect(runCycle).toHaveBeenCalledTimes(1);
     expect(runner.isRunning()).toBe(true);
+    expect(runCycle).not.toHaveBeenCalled();
 
-    await jest.advanceTimersByTimeAsync(1_000);
+    fireTick();
+    await Promise.resolve();
+    expect(runCycle).toHaveBeenCalledTimes(1);
+
+    fireTick();
+    await Promise.resolve();
     expect(runCycle).toHaveBeenCalledTimes(2);
 
     await runner.stop();
     await servicePromise;
 
     expect(runner.isRunning()).toBe(false);
-
-    await jest.advanceTimersByTimeAsync(3_000);
-    expect(runCycle).toHaveBeenCalledTimes(2);
   });
 
-  it('does not start a second loop when start is called twice while already running', async () => {
-    const runCycle = jest.fn(async () => undefined);
+  it('does not start a second subscription when start is called twice while already running', () => {
+    const { ticker } = createFakeTicker();
+    const runCycle = jest.fn().mockResolvedValue(undefined);
+    const onCycleError = jest.fn();
 
-    const runner = createForegroundSyncRunner({
-      intervalMs: 1_000,
-      runCycle,
-    });
+    const runner = createForegroundSyncRunner({ ticker, runCycle, onCycleError });
 
     const firstPromise = runner.start();
     const secondPromise = runner.start();
 
-    await Promise.resolve();
-    await jest.advanceTimersByTimeAsync(1_000);
-
-    expect(runCycle).toHaveBeenCalledTimes(2);
     expect(secondPromise).toBe(firstPromise);
-
-    await runner.stop();
-    await firstPromise;
+    expect(ticker.onTick).toHaveBeenCalledTimes(1);
   });
 
-  it('continues scheduling future cycles even when one cycle fails', async () => {
-    const runCycle = jest
-      .fn<Promise<void>, []>()
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValue(undefined);
-
+  it('the start promise stays pending until stop is called (Notifee foreground-service contract)', async () => {
+    const { ticker } = createFakeTicker();
     const runner = createForegroundSyncRunner({
-      intervalMs: 1_000,
-      runCycle,
+      ticker,
+      runCycle: jest.fn().mockResolvedValue(undefined),
+      onCycleError: jest.fn(),
     });
 
-    const servicePromise = runner.start();
+    let settled = false;
+    const servicePromise = runner.start().then(() => {
+      settled = true;
+    });
 
     await Promise.resolve();
-    expect(runCycle).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
-    await jest.advanceTimersByTimeAsync(1_000);
+    await runner.stop();
+    await servicePromise;
+
+    expect(settled).toBe(true);
+  });
+
+  it('routes cycle errors to onCycleError instead of swallowing them', async () => {
+    const { ticker, fireTick } = createFakeTicker();
+    const runCycle = jest.fn().mockRejectedValue(new Error('boom'));
+    const onCycleError = jest.fn();
+
+    const runner = createForegroundSyncRunner({ ticker, runCycle, onCycleError });
+    const servicePromise = runner.start();
+
+    fireTick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onCycleError).toHaveBeenCalledTimes(1);
+    expect(onCycleError).toHaveBeenCalledWith(expect.any(Error));
+
+    // The runner keeps subscribing after a failed cycle -- the next tick still runs.
+    fireTick();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(runCycle).toHaveBeenCalledTimes(2);
 
     await runner.stop();
     await servicePromise;
+  });
+
+  it('unsubscribes from the ticker after stop so late ticks are ignored', async () => {
+    const { ticker, fireTick, listenerCount } = createFakeTicker();
+    const runCycle = jest.fn().mockResolvedValue(undefined);
+
+    const runner = createForegroundSyncRunner({ ticker, runCycle, onCycleError: jest.fn() });
+    const servicePromise = runner.start();
+
+    expect(listenerCount()).toBe(1);
+
+    await runner.stop();
+    await servicePromise;
+
+    expect(listenerCount()).toBe(0);
+
+    fireTick();
+    await Promise.resolve();
+
+    expect(runCycle).not.toHaveBeenCalled();
+  });
+
+  it('does not call ticker.start/stop -- ticker lifecycle is owned by the caller', async () => {
+    const { ticker } = createFakeTicker();
+    const runner = createForegroundSyncRunner({
+      ticker,
+      runCycle: jest.fn().mockResolvedValue(undefined),
+      onCycleError: jest.fn(),
+    });
+
+    const servicePromise = runner.start();
+    await runner.stop();
+    await servicePromise;
+
+    expect(ticker.start).not.toHaveBeenCalled();
+    expect(ticker.stop).not.toHaveBeenCalled();
   });
 });

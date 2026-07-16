@@ -1,7 +1,10 @@
+import type { ForegroundSyncTicker } from './native-foreground-sync-ticker.types';
+
 /** Defines the data contract for create foreground sync runner params. */
 export interface CreateForegroundSyncRunnerParams {
-  readonly intervalMs: number;
+  readonly ticker: ForegroundSyncTicker;
   readonly runCycle: () => Promise<void>;
+  readonly onCycleError: (error: unknown) => void | Promise<void>;
 }
 
 /** Defines the data contract for foreground sync runner. */
