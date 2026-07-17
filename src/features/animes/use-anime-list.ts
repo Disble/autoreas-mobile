@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { useMemo } from "react";
-import { createDrizzleDb } from "../../infrastructure/db/client";
+import { createDrizzleDb } from "../../infrastructure/db/client/client.helpers";
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from "../../infrastructure/db/native-runtime";
+} from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import {
   animes,
   seasonRatingQueue,

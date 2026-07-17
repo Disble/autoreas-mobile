@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { bridgeClient } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
-import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
+import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 

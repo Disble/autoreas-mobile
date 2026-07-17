@@ -1,13 +1,13 @@
 import { act, renderHook } from '@testing-library/react-native';
-import * as dbClient from '../../../src/infrastructure/db/client';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import { useWebSocket } from '../../../src/features/ws/use-websocket';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalSQLiteContext: jest.fn(),
 }));
 

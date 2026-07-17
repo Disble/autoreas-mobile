@@ -2,7 +2,7 @@ import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import {
   createDrizzleDb,
   withDeferredWrite,
-} from '../../../src/infrastructure/db/client';
+} from '../../../src/infrastructure/db/client/client.helpers';
 import {
   applyAnimeMutationPatch,
   buildCapPlusPatch,
@@ -22,7 +22,7 @@ import {
   resetSyncConnectionStore,
 } from '../../../src/features/sync/sync-connection-store';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));

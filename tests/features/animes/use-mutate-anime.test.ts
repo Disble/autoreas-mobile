@@ -8,7 +8,7 @@ jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   withDeferredWrite: jest.fn(),
   withExclusiveWrite: jest.fn(),
@@ -30,7 +30,7 @@ const {
   createDrizzleDb: mockCreateDrizzleDb,
   withDeferredWrite: mockWithDeferredWrite,
   withExclusiveWrite: mockWithExclusiveWrite,
-} = jest.requireMock('../../../src/infrastructure/db/client') as {
+} = jest.requireMock('../../../src/infrastructure/db/client/client.helpers') as {
   createDrizzleDb: jest.Mock;
   withDeferredWrite: jest.Mock;
   withExclusiveWrite: jest.Mock;

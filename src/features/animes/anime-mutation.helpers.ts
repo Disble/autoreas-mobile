@@ -1,4 +1,4 @@
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 import type { SQLiteDatabase } from 'expo-sqlite';

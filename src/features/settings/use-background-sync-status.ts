@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { createDrizzleDb } from '../../infrastructure/db/client';
+import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../infrastructure/db/native-runtime';
+} from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { syncRuntimeStatus, type SyncRuntimeStatusRow } from '../../infrastructure/db/schema';
 import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,

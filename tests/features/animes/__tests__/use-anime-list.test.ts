@@ -18,7 +18,17 @@ jest.mock("../../../../src/infrastructure/db/native-runtime", () => ({
     mockUseOptionalLiveQuery(...args),
 }));
 
+jest.mock("../../../../src/infrastructure/db/native-runtime/native-runtime.helpers", () => ({
+  useOptionalSQLiteContext: () => mockUseOptionalSQLiteContext(),
+  useOptionalLiveQuery: (...args: unknown[]) =>
+    mockUseOptionalLiveQuery(...args),
+}));
+
 jest.mock("../../../../src/infrastructure/db/client", () => ({
+  createDrizzleDb: (...args: unknown[]) => mockCreateDrizzleDb(...args),
+}));
+
+jest.mock("../../../../src/infrastructure/db/client/client.helpers", () => ({
   createDrizzleDb: (...args: unknown[]) => mockCreateDrizzleDb(...args),
 }));
 

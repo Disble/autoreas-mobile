@@ -9,7 +9,7 @@ import {
 } from "../../src/infrastructure/db/client";
 import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
 import { bridgeConfig } from "../../src/infrastructure/db/schema";
-import * as nativeRuntime from "../../src/infrastructure/db/native-runtime";
+import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -42,7 +42,7 @@ jest.mock("drizzle-orm/expo-sqlite/migrator", () => ({
   migrate: jest.fn(),
 }));
 
-jest.mock("../../src/infrastructure/db/native-runtime", () => ({
+jest.mock("../../src/infrastructure/db/native-runtime/native-runtime.helpers", () => ({
   getDrizzleFactory: jest.fn(),
   getDrizzleMigrator: jest.fn(),
   getOpenDatabaseSync: jest.fn(),

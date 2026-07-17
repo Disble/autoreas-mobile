@@ -1,7 +1,7 @@
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { runMigrations } from "../../src/infrastructure/db/client";
-import * as nativeRuntime from "../../src/infrastructure/db/native-runtime";
+import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -15,7 +15,7 @@ jest.mock("drizzle-orm/expo-sqlite/migrator", () => ({
   migrate: jest.fn(),
 }));
 
-jest.mock("../../src/infrastructure/db/native-runtime", () => ({
+jest.mock("../../src/infrastructure/db/native-runtime/native-runtime.helpers", () => ({
   getDrizzleFactory: jest.fn(),
   getDrizzleMigrator: jest.fn(),
   getOpenDatabaseSync: jest.fn(),
