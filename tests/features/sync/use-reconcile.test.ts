@@ -1,6 +1,6 @@
 import { bridgeClient } from '../../../src/infrastructure/api';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import * as dbClient from '../../../src/infrastructure/db/client';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 
 jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),
@@ -13,15 +13,18 @@ jest.mock('../../../src/infrastructure/api', () => ({
   },
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/merge', () => ({
+jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
+}));
+
+jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
   loadGuardMap: jest.fn().mockResolvedValue(new Map()),
   loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
 }));

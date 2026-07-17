@@ -1,5 +1,5 @@
 import { inArray } from 'drizzle-orm';
-import { createDrizzleDb } from '../../../src/infrastructure/db/client';
+import { createDrizzleDb } from '../../../src/infrastructure/db/client/client.helpers';
 import { operationLog, seasonRatingQueue } from '../../../src/infrastructure/db/schema';
 import {
   buildPendingOperationsQuery,
@@ -11,7 +11,7 @@ jest.mock('drizzle-orm', () => ({
   inArray: jest.fn((column, values) => ({ column, values })),
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
 }));
 

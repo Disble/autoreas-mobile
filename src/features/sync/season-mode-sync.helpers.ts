@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, extractSeasonMode } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
+import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 
 /**
  * Fetches the bridge's current season-mode flag for a cold hydration of the global store.

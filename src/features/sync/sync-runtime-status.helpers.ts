@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { syncRuntimeStatus } from '../../infrastructure/db/schema';
 import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,

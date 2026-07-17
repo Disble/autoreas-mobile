@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
-import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { useBridgeConfig } from '../settings/use-bridge-config';
 import {
@@ -14,7 +14,7 @@ import {
   invalidateSyncConnectionOnline,
   runSharedForegroundSyncCycle,
   subscribeSyncConnection,
-} from './sync-connection-store';
+} from './sync-connection-store/sync-connection-store.helpers';
 
 /** Coordinates sync facade state and actions. */
 export function useSyncFacade(): UseSyncFacadeResult {

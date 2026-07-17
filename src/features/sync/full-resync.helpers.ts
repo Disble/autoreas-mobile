@@ -1,13 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
+import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes } from '../../infrastructure/db/schema';
 import { fetchInitialSyncSnapshot } from './initial-sync.helpers';
-import {
-  buildPartialUpdate,
-  deriveChangedFields,
-  loadPendingOutboxRecordIds,
-} from './merge';
+import { buildPartialUpdate, deriveChangedFields } from './merge/field-merge.helpers';
+import { loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 
 import type { ResyncResult } from './full-resync.types';
 
@@ -48,8 +45,10 @@ export async function resyncFromBridgeSnapshot(
   let healed = 0;
 
   await withDeferredWrite(rawDb, async (db) => {
-    const pendingOutboxRecordIds = await loadPendingOutboxRecordIds(db);
-    const localRows = await db.select().from(animes);
+    const [pendingOutboxRecordIds, localRows] = await Promise.all([
+      loadPendingOutboxRecordIds(db),
+      db.select().from(animes),
+    ]);
     const localById = new Map(localRows.map((row) => [row._id, row]));
 
     for (const anime of remote) {
@@ -60,6 +59,7 @@ export async function resyncFromBridgeSnapshot(
       const localRow = localById.get(anime._id);
 
       if (!localRow) {
+        // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: writes and the `healed` counter share the single deferred-write transaction; parallelizing rows risks interleaving native SQLite statements on one connection.
         await upsertAnime(db, anime);
         healed += 1;
         continue;

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, extractActiveSeasonSnapshot } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
+import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 
 /** Identifies a reachable bridge response that cannot produce trustworthy active-season truth. */

@@ -1,10 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
-import {
-  applyRemoteChanges,
-  loadGuardMap,
-  loadPendingOutboxRecordIds,
-} from './merge';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
+import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 import {
   deletePendingRemoteChanges,
   loadPendingRemoteChanges,

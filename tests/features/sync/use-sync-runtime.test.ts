@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react-native";
 import { AppState } from "react-native";
-import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime";
+import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 import * as backgroundSyncTaskModule from "../../../src/features/sync/background-sync.task";
 import * as bridgeConfigModule from "../../../src/features/settings/use-bridge-config";
 import * as syncExecutionFacadeModule from "../../../src/features/sync/sync-execution-facade";
@@ -68,7 +68,7 @@ jest.mock("../../../src/features/sync/sync-execution-facade", () => ({
   createSyncExecutionFacade: jest.fn(),
 }));
 
-jest.mock("../../../src/infrastructure/db/native-runtime", () => ({
+jest.mock("../../../src/infrastructure/db/native-runtime/native-runtime.helpers", () => ({
   useOptionalSQLiteContext: jest.fn(),
 }));
 

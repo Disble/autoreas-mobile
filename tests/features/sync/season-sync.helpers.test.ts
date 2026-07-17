@@ -1,5 +1,5 @@
 import { bridgeClient } from '../../../src/infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../../src/infrastructure/db/client';
+import { getBridgeConfigSnapshot } from '../../../src/infrastructure/db/client/client.helpers';
 import { fetchActiveSeasonFromBridge } from '../../../src/features/sync/season-sync.helpers';
 
 jest.mock('../../../src/infrastructure/api', () => ({
@@ -11,7 +11,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
   ).extractActiveSeasonSnapshot,
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
 }));
 

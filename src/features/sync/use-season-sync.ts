@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
 import type { UseSeasonSyncProps, UseSeasonSyncResult } from './season-sync.types';

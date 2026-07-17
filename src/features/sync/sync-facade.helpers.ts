@@ -1,5 +1,5 @@
 import { inArray } from 'drizzle-orm';
-import { createDrizzleDb } from '../../infrastructure/db/client';
+import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';

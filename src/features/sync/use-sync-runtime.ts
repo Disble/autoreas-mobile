@@ -22,7 +22,7 @@ import type {
   UseSyncRuntimeProps,
   UseSyncRuntimeResult,
 } from "./sync-runtime.types";
-import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
+import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 
 /** Coordinates sync runtime state and actions. */
 export function useSyncRuntime(

@@ -1,7 +1,8 @@
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import { bridgeClient } from '../../../src/infrastructure/api';
-import * as dbClient from '../../../src/infrastructure/db/client';
-import * as mergeModule from '../../../src/features/sync/merge';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
+import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
+import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 
 jest.mock('../../../src/infrastructure/api', () => ({
@@ -12,14 +13,17 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn().mockResolvedValue(undefined),
   withDeferredWrite: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../../src/features/sync/merge', () => ({
+jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
+}));
+
+jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
   loadGuardMap: jest.fn().mockResolvedValue(new Map()),
   loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
 }));
@@ -83,7 +87,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
 
     expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
-    expect(mergeModule.applyRemoteChanges).toHaveBeenCalledWith(
+    expect(mergeApplyChangesModule.applyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
         expect.objectContaining({ recordId: 'anime-1', changeType: 'delete' }),

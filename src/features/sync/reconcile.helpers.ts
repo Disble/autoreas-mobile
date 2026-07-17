@@ -5,7 +5,7 @@ import {
   getBridgeConfigSnapshot,
   withDeferredWrite,
   withExclusiveWrite,
-} from '../../infrastructure/db/client';
+} from '../../infrastructure/db/client/client.helpers';
 import {
   bridgeConfig,
   operationLog,
@@ -15,8 +15,9 @@ import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
 } from './last-changelog.helpers';
-import { applyRemoteChanges, loadGuardMap, loadPendingOutboxRecordIds } from './merge';
-import type { RemoteAnimeChange } from './merge';
+import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
+import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
+import type { RemoteAnimeChange } from './merge/merge.types';
 import { readOperationLogBacklog } from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import {
@@ -72,9 +73,15 @@ export function getConfirmedOperationIds(
   appliedOperations: ReconcileAppliedOperation[] | undefined,
   bridgeChanges: ReconcileAnimeChange[],
 ): number[] {
-  return processingOperations
-    .filter((operation) => isOperationConfirmed(operation, appliedOperations, bridgeChanges))
-    .map((operation) => operation.id);
+  const confirmedIds: number[] = [];
+
+  for (const operation of processingOperations) {
+    if (isOperationConfirmed(operation, appliedOperations, bridgeChanges)) {
+      confirmedIds.push(operation.id);
+    }
+  }
+
+  return confirmedIds;
 }
 
 function isOperationConfirmed(
@@ -282,9 +289,14 @@ async function performSyncPendingOperations(
       applied_operations,
       bridge_changes,
     );
-    const unconfirmedIds = pendingOps
-      .map((operation) => operation.id)
-      .filter((id) => !confirmedIds.includes(id));
+    const confirmedIdSet = new Set(confirmedIds);
+    const unconfirmedIds: number[] = [];
+
+    for (const operation of pendingOps) {
+      if (!confirmedIdSet.has(operation.id)) {
+        unconfirmedIds.push(operation.id);
+      }
+    }
 
     const normalizedChanges = bridge_changes.map(normalizeBridgeChange);
 
