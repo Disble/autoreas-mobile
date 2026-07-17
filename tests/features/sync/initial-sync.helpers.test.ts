@@ -1,5 +1,5 @@
 import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
-import { withDeferredWrite, withExclusiveWrite } from '../../../src/infrastructure/db/client';
+import { withDeferredWrite, withExclusiveWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../../src/infrastructure/db/schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
@@ -18,7 +18,7 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withDeferredWrite: jest.fn(),
   withExclusiveWrite: jest.fn(),
 }));

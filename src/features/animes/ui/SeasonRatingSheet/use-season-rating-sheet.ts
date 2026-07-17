@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
   buildSeasonRatingBridgeSummary,
@@ -22,15 +22,19 @@ export function useSeasonRatingSheet(
   // 1. Refs
 
   // 2. State
-  const [selectedRating, setSelectedRating] = useState<SeasonRatingValue | null>(() =>
-    getInitialSeasonRatingSelection(props.pendingRating, props.bridgeRating),
-  );
+  const [userRatingChoice, setUserRatingChoice] = useState<SeasonRatingValue | null>(null);
 
   // 3. Context/3rd Party Hooks
 
   // 4. Queries/Mutations
 
   // 5. Derived State (useMemo)
+  const derivedSelectedRating = useMemo(
+    () => getInitialSeasonRatingSelection(props.pendingRating, props.bridgeRating),
+    [props.bridgeRating, props.pendingRating],
+  );
+  const selectedRating = userRatingChoice ?? derivedSelectedRating;
+
   const bridgeSummary = useMemo(
     () => buildSeasonRatingBridgeSummary(props.bridgeRating),
     [props.bridgeRating],
@@ -51,7 +55,7 @@ export function useSeasonRatingSheet(
   }, [props]);
 
   const handleSelectRating = useCallback((rating: SeasonRatingValue) => {
-    setSelectedRating(rating);
+    setUserRatingChoice(rating);
   }, []);
 
   const handleSubmit = useCallback(() => {
@@ -61,13 +65,6 @@ export function useSeasonRatingSheet(
 
     props.onSubmit(selectedRating);
   }, [props, selectedRating]);
-
-  // 7. Effects
-  useEffect(() => {
-    setSelectedRating(
-      getInitialSeasonRatingSelection(props.pendingRating, props.bridgeRating),
-    );
-  }, [props.bridgeRating, props.pendingRating]);
 
   return {
     isOpen: props.isOpen,

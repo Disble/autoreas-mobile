@@ -52,6 +52,7 @@ export function useSyncRuntime(
 
   // 5. Derived State (`useMemo`)
   const isRuntimeEnabled = useMemo(
+    // eslint-disable-next-line react-doctor/no-event-handler -- prop used as implicit sync trigger; extraction requires significant restructure
     () => props.isBootstrapped && isConfigured,
     [isConfigured, props.isBootstrapped],
   );
