@@ -50,10 +50,7 @@ export function useSetupQrScanner(
     () => isOpen && permissionState === 'granted' && !isBusy,
     [isBusy, isOpen, permissionState],
   );
-  const showPermissionButton = useMemo(
-    () => permissionState !== 'granted',
-    [permissionState],
-  );
+  const showPermissionButton = permissionState !== 'granted';
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleRequestPermission = useCallback(async () => {

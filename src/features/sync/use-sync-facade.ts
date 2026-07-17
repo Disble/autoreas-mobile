@@ -49,10 +49,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   );
 
   // 5. Derived State (`useMemo`)
-  const pendingOpsCount = useMemo(
-    () => pendingOperationRows.length + unresolvedSeasonRatingRows.length,
-    [pendingOperationRows, unresolvedSeasonRatingRows],
-  );
+  const pendingOpsCount = pendingOperationRows.length + unresolvedSeasonRatingRows.length;
 
   // 6. Callbacks (`useCallback` calling pure helpers)
   const requestSync = useCallback((source: SyncRuntimeTriggerSource) => {

@@ -43,7 +43,7 @@ export function useSeasonRatingSheet(
       }),
     [props.pendingFailureKind, props.pendingStatus],
   );
-  const isSubmitDisabled = useMemo(() => selectedRating === null, [selectedRating]);
+  const isSubmitDisabled = selectedRating === null;
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleClose = useCallback(() => {
