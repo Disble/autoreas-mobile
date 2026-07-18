@@ -4,12 +4,12 @@
  */
 export function buildSeasonAwareAnimeListItem() {
   return {
-    _id: "anime-1",
-    nombre: "Blue Box",
+    _id: 'anime-1',
+    nombre: 'Blue Box',
     estado: 0,
     nrocapvisto: 3,
     totalcap: 12,
-    dias: [{ dia: "Ver hoy", orden: 1 }],
+    dias: [{ dia: 'Ver hoy', orden: 1 }],
     generos: [],
     tipo: null,
     activo: 1,
@@ -25,14 +25,14 @@ export function buildSeasonAwareAnimeListItem() {
     origen: null,
     duracion: null,
     seasonProjection: {
-      seasonId: "season-2026-q3",
+      seasonId: 'season-2026-q3',
       bridgeRating: 4,
-      bridgeRatingSource: "bridge" as const,
+      bridgeRatingSource: 'bridge' as const,
       localIntent: {
         nota: 6,
         ratedAt: 1_752_600_000_000,
         createdAt: 1_752_600_100_000,
-        status: "pending" as const,
+        status: 'pending' as const,
         failureKind: null,
       },
     },

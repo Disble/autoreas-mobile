@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { SeasonRatingSheet } from '../SeasonRatingSheet';
+import { SeasonRatingSheet } from '../../../../src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet';
 
 describe('SeasonRatingSheet', () => {
   it('renders bridge truth and pending local truth separately', () => {

@@ -1,4 +1,4 @@
-import { getSyncRuntimeGateLabel } from '../sync-runtime-gate.helpers';
+import { getSyncRuntimeGateLabel } from '../../../../src/features/sync/ui/SyncRuntimeGate/sync-runtime-gate.helpers';
 
 describe('getSyncRuntimeGateLabel', () => {
   it('returns explicit label', () => {

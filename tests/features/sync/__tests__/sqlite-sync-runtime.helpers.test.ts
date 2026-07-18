@@ -2,8 +2,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   closeSyncRuntime,
   createSyncSQLiteRuntime,
-} from '../sqlite-sync-runtime.helpers';
-import type { CloseableSQLiteDatabase } from '../sqlite-sync-runtime.types';
+} from '../../../../src/features/sync/sqlite-sync-runtime.helpers';
+import type { CloseableSQLiteDatabase } from '../../../../src/features/sync/sqlite-sync-runtime.types';
 
 describe('sqlite sync runtime helpers', () => {
   it('opens an isolated non-reactive connection, runs migrations once, and reuses it until close', async () => {

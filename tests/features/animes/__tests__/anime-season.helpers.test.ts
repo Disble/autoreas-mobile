@@ -1,9 +1,9 @@
-import type { SeasonRatingQueueRow } from "../../../infrastructure/db/schema";
-import { LOCAL_ACTIVE_SEASON_ID } from "../anime-season.constants";
+import type { SeasonRatingQueueRow } from "../../../../src/infrastructure/db/schema";
+import { LOCAL_ACTIVE_SEASON_ID } from "../../../../src/features/animes/anime-season.constants";
 import {
   buildAnimeSeasonProjection,
   selectLatestSeasonRatingIntent,
-} from "../anime-season.helpers";
+} from "../../../../src/features/animes/anime-season.helpers";
 
 function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRatingQueueRow {
   return {
@@ -39,6 +39,22 @@ describe("anime season helpers", () => {
       status: "failed",
       failureKind: "auth_repair",
     });
+  });
+
+  it("ignores rows outside the provided season lookup ids", () => {
+    const latest = selectLatestSeasonRatingIntent(
+      "anime-1",
+      ["season-2026-q3"],
+      [buildQueueRow({ seasonId: "season-2025-q4", nota: 9 })],
+    );
+
+    expect(latest).toBeNull();
+  });
+
+  it("returns null when there are no matching rows", () => {
+    const latest = selectLatestSeasonRatingIntent("anime-1", ["season-2026-q3"], []);
+
+    expect(latest).toBeNull();
   });
 
   it("builds projection only for bridge-declared candidates", () => {

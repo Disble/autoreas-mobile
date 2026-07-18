@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
-import { useSeasonRatingSheet } from '../use-season-rating-sheet';
-import type { SeasonRatingSheetProps } from '../season-rating-sheet.types';
+import { useSeasonRatingSheet } from '../../../../src/features/animes/ui/SeasonRatingSheet/use-season-rating-sheet';
+import type { SeasonRatingSheetProps } from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.types';
 
 describe('useSeasonRatingSheet', () => {
   it('derives pending truth ahead of bridge truth', () => {

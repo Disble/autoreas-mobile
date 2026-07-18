@@ -8,8 +8,8 @@ This project follows Spec-Driven Development (SDD), but architecture drift betwe
 
 1. **Dumb UI Rule**: Files with `.tsx` extensions MUST only return JSX and use HeroUI Native primitives + Tailwind classes (`cn()`). ZERO business logic, no `useEffect`, and no database calls are allowed in `.tsx` files.
 2. **Hook Anatomy Rule (10 Steps)**: Custom hooks (`use-*.ts`) MUST follow this strict top-to-bottom order: Imports -> Signature -> 1. Refs -> 2. State -> 3. Context/3rd Party Hooks -> 4. Queries/Mutations -> 5. Derived State (`useMemo`) -> 6. Callbacks (`useCallback` calling pure helpers) -> 7. Effects -> Return.
-3. **Strict Colocation**: Each complex feature UI must be an independent folder with an `index.ts` (public contract), `.tsx` (UI), `use-*.ts` (Logic), `*.helpers.ts` (Pure functions), and an isolated `__tests__/` folder.
-4. **TDD Mandate**: You are PROHIBITED from modifying or creating a helper or hook without first creating or updating its corresponding test file in the `__tests__/` directory.
+3. **Strict Colocation**: Each complex feature UI must be an independent folder with an `index.ts` (public contract), `.tsx` (UI), `use-*.ts` (Logic), and `*.helpers.ts` (Pure functions). Tests are NOT colocated in `src/` — Jest only runs suites under `tests/` (`jest.config.js` `roots`), so every test lives under `tests/features/<feature>/__tests__/`, mirroring the feature path (e.g. `tests/features/animes/__tests__/anime-season.helpers.test.ts` covers `src/features/animes/anime-season.helpers.ts`).
+4. **TDD Mandate**: You are PROHIBITED from modifying or creating a helper or hook without first creating or updating its corresponding test file under `tests/features/<feature>/__tests__/`.
 5. **The 500-Line Rule**: If any file exceeds 500 lines, it must be refactored immediately (extract into sub-components or use Facade Hooks).
 6. **Reference Feature**: If in doubt about how to structure code, look at the `src/features/animes` directory as your ABSOLUTE SOURCE OF TRUTH.
 7. **Scaffolding Generators**: NEVER create feature folders manually. You MUST use `npm run generate:feature <name>` to scaffold new components.

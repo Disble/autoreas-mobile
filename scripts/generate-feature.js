@@ -21,7 +21,20 @@ const kebabComponentName = toKebabCase(componentName);
 
 const featureDir = path.join(__dirname, "..", "src", "features", featureName);
 const componentDir = path.join(featureDir, "ui", componentName);
-const testDir = path.join(componentDir, "__tests__");
+// jest only runs suites under `tests/` (see jest.config.js `roots`), so
+// generated tests must live in the mirrored tests/ tree, not colocated
+// under src/, or they would silently never run.
+const testDir = path.join(
+  __dirname,
+  "..",
+  "tests",
+  "features",
+  featureName,
+  "__tests__",
+);
+const srcComponentImportDir = path
+  .join("../../../../src", "features", featureName, "ui", componentName)
+  .replaceAll("\\", "/");
 
 // Create directories
 [featureDir, path.join(featureDir, "ui"), componentDir, testDir].forEach(
@@ -106,7 +119,7 @@ export const ${componentName}Schema = z.object({
 
 const testComponentTemplate = `import React from 'react';
 import { render } from '@testing-library/react-native';
-import { ${componentName} } from '../${componentName}';
+import { ${componentName} } from '${srcComponentImportDir}/${componentName}';
 
 describe('${componentName}', () => {
   it('renders correctly', () => {
@@ -122,7 +135,7 @@ describe('${componentName}', () => {
 `;
 
 const testHookTemplate = `import { renderHook } from '@testing-library/react-native';
-import { use${componentName} } from '../use-${kebabComponentName}';
+import { use${componentName} } from '${srcComponentImportDir}/use-${kebabComponentName}';
 
 describe('use${componentName}', () => {
   it('returns explicit label when provided', () => {
@@ -139,7 +152,7 @@ describe('use${componentName}', () => {
 });
 `;
 
-const testHelperTemplate = `import { get${componentName}Label } from '../${kebabComponentName}.helpers';
+const testHelperTemplate = `import { get${componentName}Label } from '${srcComponentImportDir}/${kebabComponentName}.helpers';
 
 describe('get${componentName}Label', () => {
   it('returns explicit label', () => {

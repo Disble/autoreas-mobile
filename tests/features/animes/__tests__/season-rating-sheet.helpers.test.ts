@@ -2,7 +2,7 @@ import {
   buildSeasonRatingBridgeSummary,
   buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
-} from '../season-rating-sheet.helpers';
+} from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.helpers';
 
 describe('season rating sheet helpers', () => {
   it('prefers pending rating over bridge rating for local truth', () => {

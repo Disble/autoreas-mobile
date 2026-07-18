@@ -1,13 +1,13 @@
-import type { AnimeCardProps } from "../anime-card.types";
+import type { AnimeCardProps } from '../../../../src/features/animes/ui/AnimeCard/anime-card.types';
 
 /**
  * Builds a baseline AnimeCard anime payload for UI behavior tests.
  * Keeping the fixture in one helper avoids duplicating season and legacy anime fields across cases.
  */
-export function buildAnimeCardAnime(): AnimeCardProps["anime"] {
+export function buildAnimeCardAnime(): AnimeCardProps['anime'] {
   return {
-    _id: "anime-1",
-    nombre: "Dandadan",
+    _id: 'anime-1',
+    nombre: 'Dandadan',
     estado: 0,
     nrocapvisto: 4,
     totalcap: 12,

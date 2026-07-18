@@ -1,8 +1,8 @@
 import { renderHook } from '@testing-library/react-native';
-import { useSyncRuntime } from '../../../use-sync-runtime';
-import { useSyncRuntimeGate } from '../use-sync-runtime-gate';
+import { useSyncRuntime } from '../../../../src/features/sync/use-sync-runtime';
+import { useSyncRuntimeGate } from '../../../../src/features/sync/ui/SyncRuntimeGate/use-sync-runtime-gate';
 
-jest.mock('../../../use-sync-runtime', () => ({
+jest.mock('../../../../src/features/sync/use-sync-runtime', () => ({
   useSyncRuntime: jest.fn(),
 }));
 
