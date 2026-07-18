@@ -9,6 +9,16 @@
     "ios/**",
     ".expo/**"
   ],
+  "ignoreDependencies": [
+    "expo-build-properties",
+    "expo-web-browser",
+    "@react-navigation/bottom-tabs",
+    "@react-native-masked-view/masked-view",
+    "react-native-web",
+    "expo-dev-client",
+    "expo-system-ui",
+    "expo-updates"
+  ],
   "ignoreExports": [
     {
       "file": "src/**/index.ts",
