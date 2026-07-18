@@ -21,7 +21,7 @@ import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
  * Reads the current persisted anime snapshot before mutating it.
  * This centralizes SQLite row parsing so mutation hooks only coordinate workflow steps.
  */
-export async function fetchParsedAnime(
+async function fetchParsedAnime(
   rawDb: SQLiteDatabase,
   animeId: string,
 ): Promise<Anime | null> {

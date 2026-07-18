@@ -1,4 +1,4 @@
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client';
+import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import { pruneOperationLog } from './operation-log-retention.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import {

@@ -27,8 +27,9 @@ export function selectLatestSeasonRatingIntent(
   seasonIds: readonly string[],
   seasonRatingQueueRows: readonly SeasonRatingQueueRow[],
 ): AnimeSeasonLocalIntent | null {
+  const seasonIdSet = new Set(seasonIds);
   const matchingRows = seasonRatingQueueRows.filter(
-    (row) => row.animeId === animeId && seasonIds.includes(row.seasonId),
+    (row) => row.animeId === animeId && seasonIdSet.has(row.seasonId),
   );
 
   if (matchingRows.length === 0) {
