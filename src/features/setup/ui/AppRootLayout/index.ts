@@ -1,1 +1,1 @@
-export { AppRootLayout } from './AppRootLayout';
+export { AppRootLayout } from './AppRootLayout.component';

@@ -7,9 +7,15 @@ import {
 } from '@expo-google-fonts/inter';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useDbBootstrap } from '../../use-db-bootstrap';
-import { renderKeyboardAvoidingWrapper } from './app-root-layout.helpers';
+import {
+  renderKeyboardAvoidingWrapper,
+  resolveAppRootLayoutContent,
+  resolveAppRootLayoutRootContent,
+  resolveAppRootLayoutScreen,
+} from './app-root-layout.helpers';
 import type {
   AppRootLayoutProps,
   AppRootLayoutViewModel,
@@ -20,7 +26,7 @@ export function useAppRootLayout(
   _props: AppRootLayoutProps,
 ): AppRootLayoutViewModel {
   // 1. Refs
-  const hasNavigatedRef = useRef(false);
+  const hasCompletedStartupRef = useRef(false);
 
   // 2. State
 
@@ -40,38 +46,88 @@ export function useAppRootLayout(
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
   const isBootstrapped = bootState.initialized;
+  const shouldRenderRouteSlot = bootState.initialized && !bootState.failure;
+  const startupFailure = bootState.failure;
+  const screen = useMemo(
+    () =>
+      resolveAppRootLayoutScreen({
+        fontsLoaded,
+        hasSQLiteProvider: Boolean(SQLiteProvider),
+        shouldRenderRouteSlot,
+        startupFailure,
+      }),
+    [SQLiteProvider, fontsLoaded, shouldRenderRouteSlot, startupFailure],
+  );
+  const resolvedContent = useMemo(
+    () =>
+      resolveAppRootLayoutContent({
+        screen,
+        startupFailure,
+      }),
+    [screen, startupFailure],
+  );
+  const rootContent = useMemo(
+    () =>
+      resolveAppRootLayoutRootContent({
+        SQLiteProvider,
+        databaseName,
+        handleDatabaseInit,
+        isBootstrapped,
+        preProviderContent: resolvedContent.preProviderContent,
+        providerContent: resolvedContent.providerContent,
+        sqliteOptions,
+      }),
+    [
+      SQLiteProvider,
+      databaseName,
+      handleDatabaseInit,
+      isBootstrapped,
+      resolvedContent.preProviderContent,
+      resolvedContent.providerContent,
+      sqliteOptions,
+    ],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
-  const contentWrapper = useCallback(renderKeyboardAvoidingWrapper, []);
+  const contentWrapper = useCallback(
+    (children: ReactNode) => renderKeyboardAvoidingWrapper(children),
+    [],
+  );
 
   // 7. Effects
   useEffect(() => {
-    SplashScreen.setOptions({
-      duration: 300,
-      fade: true,
-    });
-
-    void SplashScreen.preventAutoHideAsync();
-  }, []);
-
-  useEffect(() => {
-    if (!fontsLoaded || SQLiteProvider || hasNavigatedRef.current) {
+    if (!fontsLoaded || SQLiteProvider || hasCompletedStartupRef.current) {
       return;
     }
 
-    hasNavigatedRef.current = true;
+    hasCompletedStartupRef.current = true;
     void SplashScreen.hideAsync();
   }, [SQLiteProvider, fontsLoaded]);
 
   useEffect(() => {
-    if (!fontsLoaded || !bootState.initialized || !bootState.target || hasNavigatedRef.current) {
+    if (!fontsLoaded || !startupFailure || hasCompletedStartupRef.current) {
       return;
     }
 
-    hasNavigatedRef.current = true;
+    hasCompletedStartupRef.current = true;
+    void SplashScreen.hideAsync();
+  }, [fontsLoaded, startupFailure]);
+
+  useEffect(() => {
+    if (
+      !fontsLoaded ||
+      !bootState.initialized ||
+      !bootState.target ||
+      startupFailure ||
+      hasCompletedStartupRef.current
+    ) {
+      return;
+    }
+
+    hasCompletedStartupRef.current = true;
     router.replace(bootState.target);
     void SplashScreen.hideAsync();
-  }, [bootState.initialized, bootState.target, fontsLoaded, router]);
+  }, [bootState.initialized, bootState.target, fontsLoaded, router, startupFailure]);
 
   return {
     SQLiteProvider,
@@ -81,6 +137,12 @@ export function useAppRootLayout(
     fontsLoaded,
     handleDatabaseInit,
     isBootstrapped,
+    preProviderContent: resolvedContent.preProviderContent,
+    providerContent: resolvedContent.providerContent,
+    rootContent,
+    screen,
+    shouldRenderRouteSlot,
     sqliteOptions,
+    startupFailure,
   };
 }
