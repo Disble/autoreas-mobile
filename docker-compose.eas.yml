@@ -43,7 +43,7 @@ services:
         npm install &&
         echo '--- Starting EAS local build ---' &&
         for attempt in 1 2 3; do
-          eas build --local --platform android --profile $${1:-preview} --non-interactive && break
+          eas build --local --platform android --profile $${0:-preview} --non-interactive && break
           echo \"--- Attempt $$attempt failed, retrying in 5s... ---\" &&
           sleep 5
         done &&

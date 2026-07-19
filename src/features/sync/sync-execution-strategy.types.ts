@@ -7,6 +7,7 @@ export interface SyncExecutionStatus {
   readonly executionMode: SyncExecutionMode;
   readonly isForegroundServiceRunning: boolean;
   readonly canShowPersistentNotification: boolean;
+  readonly isBackgroundTaskRegistered: boolean;
 }
 
 /** Defines the data contract for sync execution strategy. */

@@ -1,15 +1,19 @@
 import { drainPendingRemoteChanges } from '../../../src/features/sync/remote-change-drain.helpers';
-import * as dbClient from '../../../src/infrastructure/db/client';
-import * as mergeModule from '../../../src/features/sync/merge';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
+import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
+import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/merge', () => ({
+jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
   loadGuardMap: jest.fn(),
   loadPendingOutboxRecordIds: jest.fn(),
 }));
@@ -22,10 +26,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 describe('drainPendingRemoteChanges', () => {
   const mockCreateDrizzleDb = dbClient.createDrizzleDb as jest.Mock;
   const mockWithDeferredWrite = dbClient.withDeferredWrite as jest.Mock;
-  const mockApplyRemoteChanges = mergeModule.applyRemoteChanges as jest.Mock;
-  const mockLoadGuardMap = mergeModule.loadGuardMap as jest.Mock;
+  const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
+  const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =
-    mergeModule.loadPendingOutboxRecordIds as jest.Mock;
+    mergeContextModule.loadPendingOutboxRecordIds as jest.Mock;
   const mockLoadPendingRemoteChanges =
     pendingRemoteChangesModule.loadPendingRemoteChanges as jest.Mock;
   const mockDeletePendingRemoteChanges =

@@ -1,4 +1,4 @@
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client';
+import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -21,7 +21,7 @@ import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
  * Reads the current persisted anime snapshot before mutating it.
  * This centralizes SQLite row parsing so mutation hooks only coordinate workflow steps.
  */
-export async function fetchParsedAnime(
+async function fetchParsedAnime(
   rawDb: SQLiteDatabase,
   animeId: string,
 ): Promise<Anime | null> {

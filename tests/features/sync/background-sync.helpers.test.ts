@@ -4,6 +4,7 @@ import {
 } from '../../../src/features/sync/background-sync.helpers';
 import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
+import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 
 const mockClose = jest.fn<Promise<void>, []>();
@@ -14,6 +15,12 @@ jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
 
 jest.mock('../../../src/features/sync/sqlite-sync-runtime.helpers', () => ({
   createSyncSQLiteRuntime: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/sync-cycle-lock.helpers', () => ({
+  withExclusiveSyncCycle: jest.fn(
+    async (params: { run: () => Promise<void> }) => params.run(),
+  ),
 }));
 
 describe('background sync helpers', () => {
@@ -52,6 +59,19 @@ describe('background sync helpers', () => {
       runtime: expect.objectContaining({ owner: 'headless_cycle' }),
       triggerSource: 'background_task',
     });
+    expect(syncCycleLockModule.withExclusiveSyncCycle).toHaveBeenCalledWith(
+      expect.objectContaining({ rawDb, owner: 'headless_cycle' }),
+    );
+    expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('reports a no-op result without running the headless cycle when the lock is held by another owner', async () => {
+    (syncCycleLockModule.withExclusiveSyncCycle as jest.Mock).mockImplementationOnce(
+      async () => undefined,
+    );
+
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({ kind: 'no_op', syncedCount: 0 });
+    expect(headlessSyncCycleModule.runHeadlessSyncCycle).not.toHaveBeenCalled();
     expect(mockClose).toHaveBeenCalled();
   });
 

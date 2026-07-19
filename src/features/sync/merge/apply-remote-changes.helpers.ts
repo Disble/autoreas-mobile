@@ -71,6 +71,7 @@ export async function applyRemoteChanges(
 
     switch (decision) {
       case 'delete': {
+        // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: each change writes/deletes the `animes` row inside the same transaction; changes for the same recordId must apply in order (last-write-wins), so parallelizing would risk out-of-order writes.
         await db.delete(animes).where(eq(animes._id, change.recordId));
         applied += 1;
         break;

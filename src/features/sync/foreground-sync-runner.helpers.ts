@@ -4,21 +4,24 @@ import type {
 } from './foreground-sync-runner.types';
 
 /**
- * Creates a cancellable foreground-sync runner that owns the periodic reconcile loop.
- * This keeps the Notifee adapter focused on native service wiring while the runner controls cadence and shutdown.
+ * Creates a cancellable foreground-sync runner that owns the reconcile-cycle lifecycle.
+ * The cadence itself comes from an injected `ForegroundSyncTicker` (native-driven, immune to JS
+ * timer suspension) -- this runner only subscribes to ticks and reacts. Ticker start/stop lifecycle
+ * is owned by the caller (e.g. the Notifee adapter), not by this runner, so the same ticker instance
+ * can be reused across FGS register/unregister cycles independently of runner start/stop.
  */
 export function createForegroundSyncRunner(
   params: CreateForegroundSyncRunnerParams,
 ): ForegroundSyncRunner {
-  let intervalId: ReturnType<typeof setInterval> | null = null;
   let runningPromise: Promise<void> | null = null;
   let resolveStopPromise: (() => void) | null = null;
+  let unsubscribeTick: (() => void) | null = null;
 
   async function runCycleSafely() {
     try {
       await params.runCycle();
-    } catch {
-      // The next scheduled tick should still run; runtime observability is handled inside the sync cycle.
+    } catch (error) {
+      await params.onCycleError(error);
     }
   }
 
@@ -28,22 +31,15 @@ export function createForegroundSyncRunner(
         return runningPromise;
       }
 
-      runningPromise = (async () => {
-        await runCycleSafely();
+      unsubscribeTick = params.ticker.onTick(() => {
+        void runCycleSafely();
+      });
 
-        intervalId = setInterval(() => {
-          void runCycleSafely();
-        }, params.intervalMs);
-
-        await new Promise<void>((resolve) => {
-          resolveStopPromise = resolve;
-        });
-      })().finally(() => {
-        if (intervalId) {
-          clearInterval(intervalId);
-        }
-
-        intervalId = null;
+      runningPromise = new Promise<void>((resolve) => {
+        resolveStopPromise = resolve;
+      }).finally(() => {
+        unsubscribeTick?.();
+        unsubscribeTick = null;
         runningPromise = null;
         resolveStopPromise = null;
       });
@@ -52,11 +48,6 @@ export function createForegroundSyncRunner(
     },
 
     async stop() {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-
       resolveStopPromise?.();
 
       await runningPromise;

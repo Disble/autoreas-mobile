@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
-import * as dbClient from '../../../src/infrastructure/db/client';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
 import * as seasonQueueModule from '../../../src/features/sync/season-rating-queue.helpers';
 import * as seasonSyncModule from '../../../src/features/sync/season-sync.helpers';
@@ -16,11 +16,11 @@ import {
   resetSyncConnectionStore,
 } from '../../../src/features/sync/sync-connection-store';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalLiveQuery: jest.fn(),
   useOptionalSQLiteContext: jest.fn(),
 }));

@@ -1,13 +1,13 @@
 import * as useInitialSync from '../../../src/features/sync/use-initial-sync';
 import { initialSync } from '../../../src/features/sync/use-initial-sync';
-import * as dbClient from '../../../src/infrastructure/db/client';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as initialSyncHelpers from '../../../src/features/sync/initial-sync.helpers';
 
 jest.mock('expo-sqlite', () => ({
   openDatabaseSync: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
 }));
 

@@ -132,6 +132,7 @@ export async function pruneOperationLog(
     pruneRowsByTtl(rawDb, policy.synced.status, syncedCutoff),
     pruneRowsByTtl(rawDb, policy.deadLetter.status, deadLetterCutoff),
   ]);
+  // eslint-disable-next-line react-doctor/server-sequential-independent-await -- sequential by design: pruneRowsByMaxCount re-counts rows per status, so it must run after the TTL prune above completes or it would compute overflow against a stale (pre-TTL-deletion) count.
   const [deletedSyncedByOverflow, deletedDeadLetterByOverflow] = await Promise.all([
     pruneRowsByMaxCount(rawDb, policy.synced.status, policy.synced.maxCount),
     pruneRowsByMaxCount(

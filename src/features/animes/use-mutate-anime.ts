@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import {
   getExpoSQLiteUnavailableError,
   useOptionalSQLiteContext,
-} from "../../infrastructure/db/native-runtime";
+} from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import {
   applyAnimeMutationPatch,
   buildCapMinusHalfPatch,

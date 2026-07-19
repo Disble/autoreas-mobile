@@ -1,11 +1,11 @@
 import { desc } from 'drizzle-orm';
 import { useCallback, useMemo, useState } from 'react';
-import { clearBridgeConfig, createDrizzleDb } from '../../infrastructure/db/client';
+import { clearBridgeConfig, createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import {
   getExpoSQLiteUnavailableError,
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../infrastructure/db/native-runtime';
+} from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { bridgeConfig, type BridgeConfig } from '../../infrastructure/db/schema';
 
 /** Coordinates bridge config state and actions. */

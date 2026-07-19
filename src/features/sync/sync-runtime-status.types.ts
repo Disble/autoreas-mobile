@@ -28,6 +28,7 @@ export interface SyncRuntimeStatusSnapshot {
   readonly isCycleActive: boolean;
   readonly lastBacklogReadCount: number;
   readonly lastPrunedOperationsCount: number;
+  readonly isBackgroundTaskRegistered: boolean;
 }
 
 /** Defines the data contract for sync runtime status patch. */
@@ -44,4 +45,5 @@ export interface SyncRuntimeStatusPatch {
   readonly isCycleActive?: boolean;
   readonly lastBacklogReadCount?: number;
   readonly lastPrunedOperationsCount?: number;
+  readonly isBackgroundTaskRegistered?: boolean;
 }

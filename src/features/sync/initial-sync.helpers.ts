@@ -1,6 +1,6 @@
 import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
-import { withDeferredWrite, withExclusiveWrite } from '../../infrastructure/db/client';
+import { withDeferredWrite, withExclusiveWrite } from '../../infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../infrastructure/db/schema';
 import { AnimeListSchema } from './initial-sync.schema';
 import type {
@@ -49,6 +49,7 @@ export async function persistInitialSyncSnapshot(
 
   await withDeferredWrite(rawDb, async (db) => {
     for (const anime of remoteAnimes) {
+      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
       await upsertAnime(db, anime);
     }
   });
@@ -77,6 +78,7 @@ export async function persistPairedBridgeConfiguration(
     });
 
     for (const anime of remoteAnimes) {
+      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
       await upsertAnime(db, anime);
     }
   });

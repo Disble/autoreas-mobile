@@ -110,7 +110,7 @@ export function buildPostActiveSeasonRatingBody(
 ): Record<string, number | string> {
   return {
     anime_id: request.animeId,
-    nota: request.nota,
+    grade: request.nota,
     rated_at: request.ratedAt,
   };
 }
@@ -137,8 +137,8 @@ function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnap
   }
 
   const animeId = (candidate as { anime_id?: unknown }).anime_id;
-  const notaEstreno = (candidate as { nota_estreno?: unknown }).nota_estreno;
-  const notaSource = (candidate as { nota_source?: unknown }).nota_source;
+  const grade = (candidate as { grade?: unknown }).grade;
+  const gradeSource = (candidate as { grade_source?: unknown }).grade_source;
 
   if (typeof animeId !== 'string' || animeId.length === 0) {
     return null;
@@ -146,7 +146,7 @@ function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnap
 
   return {
     animeId,
-    bridgeRating: typeof notaEstreno === 'number' ? notaEstreno : null,
-    bridgeRatingSource: notaSource === 'bridge' ? 'bridge' : null,
+    bridgeRating: typeof grade === 'number' ? grade : null,
+    bridgeRatingSource: gradeSource === 'bridge' ? 'bridge' : null,
   };
 }

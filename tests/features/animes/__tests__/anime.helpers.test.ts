@@ -1,6 +1,7 @@
 import {
   getAnimeOrderForFilter,
   getDefaultAnimeDayFilter,
+  isAnimePseudoDayFilter,
   matchesAnimeDayFilter,
   sortAnimesBySelectedDay,
 } from "../../../../src/features/animes/anime.helpers";
@@ -112,5 +113,21 @@ describe("anime.helpers", () => {
       "anime-b",
       "anime-z",
     ]);
+  });
+
+  describe("isAnimePseudoDayFilter", () => {
+    it.each(["Sin ver", "Ver hoy", "Visto"] as const)(
+      "treats %s as an Estrenos pseudo-day filter",
+      (filter) => {
+        expect(isAnimePseudoDayFilter(filter)).toBe(true);
+      },
+    );
+
+    it.each(["Lunes", "Viernes", "Domingo"] as const)(
+      "treats %s as a weekday filter",
+      (filter) => {
+        expect(isAnimePseudoDayFilter(filter)).toBe(false);
+      },
+    );
   });
 });

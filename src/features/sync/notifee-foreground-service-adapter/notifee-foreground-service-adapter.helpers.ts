@@ -6,7 +6,10 @@ import { Platform } from 'react-native';
 import { runHeadlessSyncCycle } from '../headless-sync-cycle.helpers';
 import { FOREGROUND_SYNC_INTERVAL_MS, NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID } from './notifee-foreground-service-adapter.constants';
 import { createForegroundSyncRunner } from '../foreground-sync-runner.helpers';
+import { createNativeForegroundSyncTicker } from '../native-foreground-sync-ticker.helpers';
 import { createSyncSQLiteRuntime } from '../sqlite-sync-runtime.helpers';
+import { withExclusiveSyncCycle } from '../sync-cycle-lock.helpers';
+import { recordSyncAttemptFailed } from '../sync-runtime-status.helpers';
 import type { NotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter.types';
 import type { SyncExecutionStatus } from '../sync-execution-strategy.types';
 import type { SyncSQLiteRuntime } from '../sqlite-sync-runtime.types';
@@ -17,6 +20,8 @@ function createUnsupportedStatus(): SyncExecutionStatus {
     executionMode: 'best_effort_background_task',
     isForegroundServiceRunning: false,
     canShowPersistentNotification: false,
+    // This strategy only owns the FGS path; the WorkManager floor reports its own flag.
+    isBackgroundTaskRegistered: false,
   };
 }
 
@@ -37,17 +42,45 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
     }
   }
 
+  const foregroundSyncTicker = createNativeForegroundSyncTicker();
+
+  async function recordForegroundCycleError(error: unknown) {
+    const message = error instanceof Error ? error.message : 'Foreground sync cycle failed';
+
+    try {
+      if (!serviceRuntime) {
+        serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
+      }
+
+      const rawDb = await serviceRuntime.open();
+
+      await recordSyncAttemptFailed(rawDb, 'foreground_service', Date.now(), message);
+    } catch {
+      // Best-effort observability: if the runtime status snapshot itself cannot be reached here,
+      // there is no further fallback -- this is error-handling code and must never crash the FGS.
+    }
+  }
+
   const foregroundSyncRunner = createForegroundSyncRunner({
-    intervalMs: FOREGROUND_SYNC_INTERVAL_MS,
+    ticker: foregroundSyncTicker,
+    onCycleError: recordForegroundCycleError,
     runCycle: async () => {
       if (!serviceRuntime) {
         serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
       }
 
+      const rawDb = await serviceRuntime.open();
+
       try {
-        await runHeadlessSyncCycle({
-          runtime: serviceRuntime,
-          triggerSource: 'foreground_service',
+        await withExclusiveSyncCycle({
+          rawDb,
+          owner: 'foreground_service',
+          run: async () => {
+            await runHeadlessSyncCycle({
+              runtime: serviceRuntime!,
+              triggerSource: 'foreground_service',
+            });
+          },
         });
       } catch (error) {
         await closeServiceRuntime();
@@ -82,6 +115,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         notifee.onBackgroundEvent(async (event) => {
           if (event.detail.pressAction?.id === 'stop-sync') {
             await foregroundSyncRunner.stop();
+            foregroundSyncTicker.stop();
             await notifee.stopForegroundService();
             isForegroundServiceRunning = false;
             await closeServiceRuntime();
@@ -92,6 +126,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
 
       notifee.registerForegroundService(() => {
         isForegroundServiceRunning = true;
+        foregroundSyncTicker.start(FOREGROUND_SYNC_INTERVAL_MS);
 
         return foregroundSyncRunner.start();
       });
@@ -130,6 +165,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
       }
 
       await foregroundSyncRunner.stop();
+      foregroundSyncTicker.stop();
       await notifee.stopForegroundService();
       isForegroundServiceRunning = false;
       await closeServiceRuntime();
@@ -145,6 +181,7 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         executionMode: 'android_foreground_service',
         isForegroundServiceRunning,
         canShowPersistentNotification,
+        isBackgroundTaskRegistered: false,
       });
     },
   };

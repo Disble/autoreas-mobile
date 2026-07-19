@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AppState } from "react-native";
-import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
+import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import { drainPendingRemoteChanges } from "./remote-change-drain.helpers";
 
 /**

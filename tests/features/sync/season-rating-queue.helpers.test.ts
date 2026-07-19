@@ -3,7 +3,7 @@ import { BridgeUnreachableError, bridgeClient } from '../../../src/infrastructur
 import {
   getBridgeConfigSnapshot,
   withDeferredWrite,
-} from '../../../src/infrastructure/db/client';
+} from '../../../src/infrastructure/db/client/client.helpers';
 import {
   drainSeasonRatingQueue,
   enqueueSeasonRatingIntent,
@@ -27,7 +27,7 @@ jest.mock('../../../src/infrastructure/api', () => {
   };
 });
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));

@@ -5,7 +5,7 @@ import {
   getDrizzleFactory,
   getDrizzleMigrator,
   getOpenDatabaseSync,
-} from "../native-runtime";
+} from "../native-runtime/native-runtime.helpers";
 import * as schema from "../schema";
 
 import {

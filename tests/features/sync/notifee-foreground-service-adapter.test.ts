@@ -4,25 +4,47 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { createNotifeeForegroundServiceAdapter } from '../../../src/features/sync/notifee-foreground-service-adapter';
 import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
+import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
+import * as syncRuntimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 
 const mockStart = jest.fn<Promise<void>, []>();
 const mockStop = jest.fn<Promise<void>, []>();
 const mockIsRunning = jest.fn<boolean, []>();
 const mockRuntimeClose = jest.fn<Promise<void>, []>();
+const mockTickerStart = jest.fn<void, [number]>();
+const mockTickerStop = jest.fn<void, []>();
+const mockTickerOnTick = jest.fn<() => void, [() => void]>();
+const mockTickerIsRunning = jest.fn<boolean, []>();
 
 let capturedRunCycle: (() => Promise<void>) | null = null;
+let capturedOnCycleError: ((error: unknown) => void | Promise<void>) | null = null;
 
 jest.mock('../../../src/features/sync/foreground-sync-runner.helpers', () => ({
-  createForegroundSyncRunner: jest.fn((params: { runCycle: () => Promise<void> }) => {
-    capturedRunCycle = params.runCycle;
+  createForegroundSyncRunner: jest.fn(
+    (params: {
+      runCycle: () => Promise<void>;
+      onCycleError: (error: unknown) => void | Promise<void>;
+    }) => {
+      capturedRunCycle = params.runCycle;
+      capturedOnCycleError = params.onCycleError;
 
-    return {
-      start: mockStart,
-      stop: mockStop,
-      isRunning: mockIsRunning,
-    };
-  }),
+      return {
+        start: mockStart,
+        stop: mockStop,
+        isRunning: mockIsRunning,
+      };
+    },
+  ),
+}));
+
+jest.mock('../../../src/features/sync/native-foreground-sync-ticker.helpers', () => ({
+  createNativeForegroundSyncTicker: jest.fn(() => ({
+    start: mockTickerStart,
+    stop: mockTickerStop,
+    onTick: mockTickerOnTick,
+    isRunning: mockTickerIsRunning,
+  })),
 }));
 
 jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
@@ -31,6 +53,16 @@ jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
 
 jest.mock('../../../src/features/sync/sqlite-sync-runtime.helpers', () => ({
   createSyncSQLiteRuntime: jest.fn(),
+}));
+
+jest.mock('../../../src/features/sync/sync-cycle-lock.helpers', () => ({
+  withExclusiveSyncCycle: jest.fn(
+    async (params: { run: () => Promise<void> }) => params.run(),
+  ),
+}));
+
+jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+  recordSyncAttemptFailed: jest.fn(),
 }));
 
 describe('notifee-foreground-service-adapter', () => {
@@ -51,13 +83,19 @@ describe('notifee-foreground-service-adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     capturedRunCycle = null;
+    capturedOnCycleError = null;
     mockRuntimeClose.mockResolvedValue(undefined);
+    mockTickerOnTick.mockReturnValue(jest.fn());
+    mockTickerIsRunning.mockReturnValue(false);
 
     (sqliteSyncRuntimeModule.createSyncSQLiteRuntime as jest.Mock).mockReturnValue(buildRuntime());
     (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
       kind: 'success',
       syncedCount: 1,
     });
+    (syncCycleLockModule.withExclusiveSyncCycle as jest.Mock).mockImplementation(
+      async (params: { run: () => Promise<void> }) => params.run(),
+    );
     mockStart.mockImplementation(async () => {
       if (capturedRunCycle) {
         await capturedRunCycle();
@@ -83,6 +121,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -110,6 +149,7 @@ describe('notifee-foreground-service-adapter', () => {
     await foregroundServiceTask();
 
     expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockTickerStart).toHaveBeenCalledWith(15_000);
     expect(sqliteSyncRuntimeModule.createSyncSQLiteRuntime).toHaveBeenCalledWith({
       owner: 'foreground_service',
     });
@@ -118,6 +158,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -137,6 +178,7 @@ describe('notifee-foreground-service-adapter', () => {
     await adapter.unregister();
 
     expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(mockTickerStop).toHaveBeenCalledTimes(1);
     expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
     expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
     await expect(adapter.getStatus()).resolves.toEqual({
@@ -144,6 +186,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -173,6 +216,51 @@ describe('notifee-foreground-service-adapter', () => {
     });
   });
 
+  it('wraps the reconcile cycle in the exclusive sync-cycle lock keyed by the foreground_service owner', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
+
+    expect(syncCycleLockModule.withExclusiveSyncCycle).toHaveBeenCalledWith(
+      expect.objectContaining({ rawDb, owner: 'foreground_service' }),
+    );
+  });
+
+  it('records a cycle error to the runtime status snapshot via onCycleError', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
+
+    expect(capturedOnCycleError).not.toBeNull();
+
+    await capturedOnCycleError?.(new Error('cycle exploded'));
+
+    expect(syncRuntimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
+      rawDb,
+      'foreground_service',
+      expect.any(Number),
+      'cycle exploded',
+    );
+  });
+
   it('stops the runner and closes the runtime when the notification stop action is pressed', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'android' });
     (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
@@ -196,6 +284,7 @@ describe('notifee-foreground-service-adapter', () => {
     });
 
     expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(mockTickerStop).toHaveBeenCalledTimes(1);
     expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
     expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
     await expect(adapter.getStatus()).resolves.toEqual({
@@ -203,6 +292,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -245,6 +335,7 @@ describe('notifee-foreground-service-adapter', () => {
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: false,
     });
   });
 });

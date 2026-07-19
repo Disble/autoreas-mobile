@@ -20,6 +20,7 @@ describe('sync runtime status helpers', () => {
       lastSyncedCount: 0,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: false,
     });
   });
 

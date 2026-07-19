@@ -1,10 +1,10 @@
 import { resyncFromBridgeSnapshot } from '../../../src/features/sync/full-resync.helpers';
 import { applyAnimePartial, upsertAnime } from '../../../src/infrastructure/db/anime-repository';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../../src/infrastructure/db/client';
+import { getBridgeConfigSnapshot, withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { fetchInitialSyncSnapshot } from '../../../src/features/sync/initial-sync.helpers';
-import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge';
+import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge/merge-context.helpers';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
@@ -18,9 +18,13 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../../src/features/sync/merge', () => {
-  const actual = jest.requireActual('../../../src/features/sync/merge');
+jest.mock('../../../src/features/sync/merge/field-merge.helpers', () => {
+  const actual = jest.requireActual('../../../src/features/sync/merge/field-merge.helpers');
+  return { ...actual };
+});
 
+jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => {
+  const actual = jest.requireActual('../../../src/features/sync/merge/merge-context.helpers');
   return {
     ...actual,
     loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
@@ -144,5 +148,31 @@ describe('resyncFromBridgeSnapshot', () => {
 
     expect(mockFetch).not.toHaveBeenCalled();
     expect(result.healed).toBe(0);
+  });
+
+  it('reads pending outbox ids and local rows independently, regardless of resolve order', async () => {
+    // loadPendingOutboxRecordIds resolves AFTER the local rows select to prove the two reads
+    // are not sequenced through each other's result (parallelized via Promise.all).
+    let resolvePendingIds!: (ids: Set<string>) => void;
+    mockPendingIds.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePendingIds = resolve;
+      }),
+    );
+    (mockDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+      const db = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockResolvedValue([makeRow({ nrocapvisto: 5 })]),
+        }),
+      };
+      const taskPromise = task(db, db);
+      resolvePendingIds(new Set());
+      return taskPromise;
+    });
+    mockFetch.mockResolvedValue([makeSnapshot({ nrocapvisto: 12 })]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(result.healed).toBe(1);
   });
 });

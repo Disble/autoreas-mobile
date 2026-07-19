@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
-import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime';
+import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { useBridgeConfig } from '../settings/use-bridge-config';
 import {
@@ -14,7 +14,7 @@ import {
   invalidateSyncConnectionOnline,
   runSharedForegroundSyncCycle,
   subscribeSyncConnection,
-} from './sync-connection-store';
+} from './sync-connection-store/sync-connection-store.helpers';
 
 /** Coordinates sync facade state and actions. */
 export function useSyncFacade(): UseSyncFacadeResult {
@@ -49,10 +49,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   );
 
   // 5. Derived State (`useMemo`)
-  const pendingOpsCount = useMemo(
-    () => pendingOperationRows.length + unresolvedSeasonRatingRows.length,
-    [pendingOperationRows, unresolvedSeasonRatingRows],
-  );
+  const pendingOpsCount = pendingOperationRows.length + unresolvedSeasonRatingRows.length;
 
   // 6. Callbacks (`useCallback` calling pure helpers)
   const requestSync = useCallback((source: SyncRuntimeTriggerSource) => {

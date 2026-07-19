@@ -1,4 +1,10 @@
 import { act, renderHook } from '@testing-library/react-native';
+
+jest.mock('heroui-native', () => ({
+  useThemeColor: (tokens: readonly string[]) =>
+    tokens.map((token) => `theme-${token}`),
+}));
+
 import { useAnimeStateSheet } from '../../../src/features/animes/ui/AnimeStateSheet/use-anime-state-sheet';
 import type { AnimeStateSheetProps } from '../../../src/features/animes/ui/AnimeStateSheet/anime-state-sheet.types';
 
@@ -61,5 +67,40 @@ describe('useAnimeStateSheet', () => {
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirrors the visible prop as the declarative isOpen flag', () => {
+    const { result, rerender } = renderHook(
+      (props: AnimeStateSheetProps) => useAnimeStateSheet(props),
+      { initialProps: buildProps({ visible: false }) },
+    );
+
+    expect(result.current.isOpen).toBe(false);
+
+    rerender(buildProps({ visible: true }));
+
+    expect(result.current.isOpen).toBe(true);
+  });
+
+  it('exposes no imperative gorhom wiring once the sheet is HeroUI-driven', () => {
+    const { result } = renderHook(() => useAnimeStateSheet(buildProps()));
+
+    expect(result.current).not.toHaveProperty('sheetRef');
+    expect(result.current).not.toHaveProperty('snapPoints');
+    expect(result.current).not.toHaveProperty('renderBackdrop');
+  });
+
+  it('resolves icon colors from theme tokens instead of hardcoded hex', () => {
+    const { result } = renderHook(() => useAnimeStateSheet(buildProps()));
+
+    expect(Object.keys(result.current.toneIconColors).sort()).toEqual([
+      'danger',
+      'default',
+      'success',
+      'warning',
+    ]);
+    expect(result.current.selectedIconColor).toBe('theme-success');
+    expect(result.current.toneIconColors.danger).toBe('theme-danger');
+    expect(result.current.toneIconColors.default).toBe('theme-muted');
   });
 });

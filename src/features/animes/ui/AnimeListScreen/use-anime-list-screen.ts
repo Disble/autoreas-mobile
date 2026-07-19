@@ -74,7 +74,7 @@ export function useAnimeListScreen(
 
   // 5. Derived State (useMemo)
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
-  const isEmpty = useMemo(() => animes.length === 0, [animes]);
+  const isEmpty = animes.length === 0;
   const selectedFilterOption = useMemo(
     () => getAnimeDayFilterOption(selectedFilter),
     [selectedFilter],

@@ -1,16 +1,16 @@
 import { renderHook } from '@testing-library/react-native';
 import { useBackgroundSyncStatus } from '../../../src/features/settings/use-background-sync-status';
-import { createDrizzleDb } from '../../../src/infrastructure/db/client';
+import { createDrizzleDb } from '../../../src/infrastructure/db/client/client.helpers';
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../../src/infrastructure/db/native-runtime';
+} from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalLiveQuery: jest.fn(),
   useOptionalSQLiteContext: jest.fn(),
 }));
@@ -49,6 +49,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 0,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: false,
     });
   });
 
@@ -69,6 +70,7 @@ describe('useBackgroundSyncStatus', () => {
           lastSyncedCount: 4,
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
+          isBackgroundTaskRegistered: true,
         },
       ],
     });
@@ -88,6 +90,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 4,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: true,
     });
   });
 
@@ -108,6 +111,7 @@ describe('useBackgroundSyncStatus', () => {
           lastSyncedCount: 0,
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
+          isBackgroundTaskRegistered: false,
         },
       ],
     });
@@ -127,6 +131,7 @@ describe('useBackgroundSyncStatus', () => {
       lastSyncedCount: 0,
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
+      isBackgroundTaskRegistered: false,
     });
   });
 });

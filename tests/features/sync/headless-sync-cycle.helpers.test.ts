@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import * as dbClient from '../../../src/infrastructure/db/client';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as retentionModule from '../../../src/features/sync/operation-log-retention.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import {
@@ -8,7 +8,7 @@ import {
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   openAppDatabaseSync: jest.fn(),
   runMigrations: jest.fn(),

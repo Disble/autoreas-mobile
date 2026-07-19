@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { getBridgeConfigSnapshot } from "../../infrastructure/db/client";
+import { getBridgeConfigSnapshot } from "../../infrastructure/db/client/client.helpers";
 import {
   fetchInitialSyncSnapshot,
   persistInitialSyncSnapshot,

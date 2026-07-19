@@ -19,6 +19,7 @@ export const DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
   isCycleActive: false,
   lastBacklogReadCount: 0,
   lastPrunedOperationsCount: 0,
+  isBackgroundTaskRegistered: false,
 };
 
 /** Provides the shared unsupported sync runtime status snapshot value. */
@@ -36,4 +37,5 @@ export const UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot
   isCycleActive: false,
   lastBacklogReadCount: 0,
   lastPrunedOperationsCount: 0,
+  isBackgroundTaskRegistered: false,
 };

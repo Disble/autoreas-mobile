@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
 import type { BridgeConnection } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client';
+import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { seasonRatingQueue } from '../../infrastructure/db/schema';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
@@ -282,6 +282,7 @@ export async function drainSeasonRatingQueue(
 
     const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
 
+    // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (mark syncing -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
     await withDeferredWrite(rawDb, async (_db, tx) => {
       await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry);
     });

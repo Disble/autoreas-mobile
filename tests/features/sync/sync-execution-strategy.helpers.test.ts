@@ -8,12 +8,14 @@ describe('sync-execution-strategy.helpers', () => {
         registrationStatus: 'registered',
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
+        isBackgroundTaskRegistered: true,
       }),
     ).toEqual({
       registrationStatus: 'registered',
       executionMode: 'best_effort_background_task',
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: true,
     });
   });
 
@@ -24,12 +26,32 @@ describe('sync-execution-strategy.helpers', () => {
         registrationStatus: 'registered',
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
+        isBackgroundTaskRegistered: false,
       }),
     ).toEqual({
       registrationStatus: 'registered',
       executionMode: 'android_foreground_service',
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: false,
+    });
+  });
+
+  it('propagates isBackgroundTaskRegistered when both paths are registered concurrently', () => {
+    expect(
+      buildSyncExecutionStatusPatch({
+        executionMode: 'android_foreground_service',
+        registrationStatus: 'registered',
+        isForegroundServiceRunning: true,
+        canShowPersistentNotification: true,
+        isBackgroundTaskRegistered: true,
+      }),
+    ).toEqual({
+      registrationStatus: 'registered',
+      executionMode: 'android_foreground_service',
+      isForegroundServiceRunning: true,
+      canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: true,
     });
   });
 });

@@ -1,5 +1,11 @@
 // Shared Jest bootstrap for Expo 55 / React Native smoke tests.
 
+import type { TextInput } from 'react-native';
+import { installFocusedTestGuard } from './tests/setup/focused-test-guard.helpers';
+import type { MockPrimitiveProps } from './tests/setup/jest-setup.types';
+
+installFocusedTestGuard();
+
 jest.mock('react-native-reanimated', () => {
   const Reanimated = jest.requireActual('react-native-reanimated/mock');
 
@@ -15,9 +21,9 @@ jest.mock('react-native-reanimated', () => {
 
 jest.mock('expo-camera', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require('react');
+  const React = require('react') as typeof import('react');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const RN = require('react-native');
+  const RN = require('react-native') as typeof import('react-native');
 
   const useCameraPermissions = jest.fn(() => [
     {
@@ -27,7 +33,7 @@ jest.mock('expo-camera', () => {
     jest.fn(async () => ({ granted: true, canAskAgain: true })),
   ]);
 
-  const CameraView = ({ children, testID, ...props }: any) =>
+  const CameraView = ({ children, testID, ...props }: MockPrimitiveProps) =>
     React.createElement(RN.View, { testID: testID ?? 'setup-qr-camera', ...props }, children);
 
   return {
@@ -38,34 +44,32 @@ jest.mock('expo-camera', () => {
 
 jest.mock('heroui-native', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require('react');
+  const React = require('react') as typeof import('react');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const RN = require('react-native');
+  const RN = require('react-native') as typeof import('react-native');
   const actual = jest.requireActual('heroui-native');
 
-  /* eslint-disable react/display-name */
   // Simple passthrough wrapper that renders children in a View
   const wrap =
     (testID?: string) =>
-    ({ children, className, ...props }: any) =>
+    ({ children, className: _className, ...props }: MockPrimitiveProps) =>
       React.createElement(RN.View, { testID, ...props }, children);
 
   // Text-like wrapper
   const textWrap =
     (testID?: string) =>
-    ({ children, className, ...props }: any) =>
+    ({ children, className: _className, ...props }: MockPrimitiveProps) =>
       React.createElement(RN.Text, { testID, ...props }, children);
 
   // Pressable-like wrapper
   const pressableWrap =
     (testID?: string) =>
-    ({ children, className, isDisabled, ...props }: any) =>
+    ({ children, className: _className, isDisabled, ...props }: MockPrimitiveProps) =>
       React.createElement(
         RN.Pressable,
         { testID, disabled: isDisabled, ...props },
         children
       );
-  /* eslint-enable react/display-name */
 
   // Compound Card
   const Card = Object.assign(wrap('heroui-card'), {
@@ -123,8 +127,7 @@ jest.mock('heroui-native', () => {
   });
 
   // Input extends TextInput
-  // eslint-disable-next-line react/display-name
-  const Input = React.forwardRef((props: any, ref: any) =>
+  const Input = React.forwardRef<TextInput, MockPrimitiveProps>((props, ref) =>
     React.createElement(RN.TextInput, { ref, ...props })
   );
 
@@ -132,7 +135,7 @@ jest.mock('heroui-native', () => {
   const Spinner = () => React.createElement(RN.ActivityIndicator);
   const Separator = wrap('heroui-separator');
   const Surface = wrap('heroui-surface');
-  const Skeleton = ({ children, isLoading, ...props }: any) =>
+  const Skeleton = ({ children, isLoading: _isLoading, ...props }: MockPrimitiveProps) =>
     React.createElement(RN.View, props, children);
 
   return {
@@ -152,7 +155,7 @@ jest.mock('heroui-native', () => {
     Skeleton,
     // Keep real utilities
     cn: actual.cn,
-    useThemeColor: (...args: any[]) => {
+    useThemeColor: (...args: unknown[]) => {
       if (Array.isArray(args[0])) return args[0].map(() => '#000000');
       return '#000000';
     },

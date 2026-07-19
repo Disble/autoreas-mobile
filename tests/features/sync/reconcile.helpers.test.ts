@@ -5,8 +5,9 @@ import {
 } from '../../../src/features/sync/reconcile.helpers';
 import { ReconcileResponseSchema } from '../../../src/features/sync/reconcile.schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
-import * as dbClient from '../../../src/infrastructure/db/client';
-import * as mergeModule from '../../../src/features/sync/merge';
+import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
+import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
+import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 
@@ -14,14 +15,17 @@ jest.mock('../../../src/infrastructure/api', () => ({
   bridgeClient: { reconcile: jest.fn() },
 }));
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withExclusiveWrite: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/merge', () => ({
+jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
+}));
+
+jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
   loadGuardMap: jest.fn().mockResolvedValue(new Map()),
   loadPendingOutboxRecordIds: jest.fn().mockResolvedValue(new Set()),
 }));
@@ -198,10 +202,10 @@ describe('syncPendingOperations applyMode routing', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
-  const mockApplyRemoteChanges = mergeModule.applyRemoteChanges as jest.Mock;
-  const mockLoadGuardMap = mergeModule.loadGuardMap as jest.Mock;
+  const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
+  const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =
-    mergeModule.loadPendingOutboxRecordIds as jest.Mock;
+    mergeContextModule.loadPendingOutboxRecordIds as jest.Mock;
   const mockStagePendingRemoteChanges =
     pendingRemoteChangesModule.stagePendingRemoteChanges as jest.Mock;
 

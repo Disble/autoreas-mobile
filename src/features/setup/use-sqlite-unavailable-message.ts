@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from "../../infrastructure/db/native-runtime";
+import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from "../../infrastructure/db/native-runtime/native-runtime.constants";
 import type { UseSQLiteUnavailableMessageResult } from "./sqlite-unavailable-message.types";
 
 /** Coordinates sqlite unavailable message state and actions. */

@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { bridgeClient } from '../../../src/infrastructure/api';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as initialSyncHelpers from '../../../src/features/sync/initial-sync.helpers';
 import { usePairDevice } from '../../../src/features/setup/use-pair-device';
 
@@ -10,7 +10,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
   },
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalSQLiteContext: jest.fn(),
   getExpoSQLiteUnavailableError: jest.fn(() => new Error('sqlite unavailable')),
 }));

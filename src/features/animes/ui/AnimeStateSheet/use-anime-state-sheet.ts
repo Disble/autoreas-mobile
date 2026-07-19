@@ -1,30 +1,29 @@
-import BottomSheet, { BottomSheetBackdrop, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { createElement, useCallback, useEffect, useMemo, useRef } from 'react';
-import { buildAnimeStateSheetOptions } from './anime-state-sheet.helpers';
+import { useThemeColor } from 'heroui-native';
+import { useCallback, useMemo } from 'react';
+import {
+  TONE_RESOLUTION_ORDER,
+  TONE_THEME_COLOR,
+} from './anime-state-sheet.constants';
+import { buildAnimeStateSheetOptions, buildToneIconColorMap } from './anime-state-sheet.helpers';
 import type { AnimeStateSheetProps } from './anime-state-sheet.types';
 
 /** Coordinates anime state sheet state and actions. */
 export function useAnimeStateSheet(props: AnimeStateSheetProps) {
   // 1. Refs
-  const sheetRef = useRef<BottomSheet>(null);
   // 2. State
   // 3. Context/3rd Party Hooks
+  const resolvedToneColors = useThemeColor(
+    TONE_RESOLUTION_ORDER.map((tone) => TONE_THEME_COLOR[tone]),
+  );
+
   // 4. Queries/Mutations
 
   // 5. Derived State (useMemo)
-  const snapPoints = useMemo(() => ['45%'], []);
-  const renderBackdrop = useMemo(
-    () =>
-      function Backdrop(backdropProps: BottomSheetBackdropProps) {
-        return createElement(BottomSheetBackdrop, {
-          ...backdropProps,
-          appearsOnIndex: 0,
-          disappearsOnIndex: -1,
-          pressBehavior: 'close',
-        });
-      },
-    [],
+  const toneIconColors = useMemo(
+    () => buildToneIconColorMap(TONE_RESOLUTION_ORDER, resolvedToneColors),
+    [resolvedToneColors],
   );
+
   const options = useMemo(
     () => buildAnimeStateSheetOptions(props.currentEstado),
     [props.currentEstado],
@@ -44,20 +43,12 @@ export function useAnimeStateSheet(props: AnimeStateSheetProps) {
   }, [props]);
 
   // 7. Effects
-  useEffect(() => {
-    if (props.visible) {
-      sheetRef.current?.snapToIndex(0);
-    } else {
-      sheetRef.current?.close();
-    }
-  }, [props.visible]);
 
   return {
-    sheetRef,
-    snapPoints,
-    renderBackdrop,
-    visible: props.visible,
+    isOpen: props.visible,
     options,
+    toneIconColors,
+    selectedIconColor: toneIconColors.success,
     handleSelect,
     handleClose,
   };

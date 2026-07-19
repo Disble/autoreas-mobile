@@ -3,19 +3,18 @@ import { useBridgeConfig } from '../../../src/features/settings/use-bridge-confi
 import {
   clearBridgeConfig,
   createDrizzleDb,
-} from '../../../src/infrastructure/db/client';
+} from '../../../src/infrastructure/db/client/client.helpers';
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
-} from '../../../src/infrastructure/db/native-runtime';
+} from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
-jest.mock('../../../src/infrastructure/db/client', () => ({
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   clearBridgeConfig: jest.fn(),
   createDrizzleDb: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
-  getExpoSQLiteUnavailableError: () => new Error('SQLite no disponible'),
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalLiveQuery: jest.fn(),
   useOptionalSQLiteContext: jest.fn(),
 }));

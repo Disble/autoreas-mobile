@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { AppState } from 'react-native';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime';
+import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as resyncHelpers from '../../../src/features/sync/full-resync.helpers';
 import { useForegroundResync } from '../../../src/features/sync/use-foreground-resync';
 
@@ -24,7 +24,7 @@ jest.mock('react-native', () => ({
   },
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime', () => ({
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   useOptionalSQLiteContext: jest.fn(),
 }));
 

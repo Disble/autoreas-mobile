@@ -22,7 +22,7 @@ import type {
   UseSyncRuntimeProps,
   UseSyncRuntimeResult,
 } from "./sync-runtime.types";
-import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime";
+import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 
 /** Coordinates sync runtime state and actions. */
 export function useSyncRuntime(
@@ -52,6 +52,7 @@ export function useSyncRuntime(
 
   // 5. Derived State (`useMemo`)
   const isRuntimeEnabled = useMemo(
+    // eslint-disable-next-line react-doctor/no-event-handler -- prop used as implicit sync trigger; extraction requires significant restructure
     () => props.isBootstrapped && isConfigured,
     [isConfigured, props.isBootstrapped],
   );
@@ -78,6 +79,7 @@ export function useSyncRuntime(
                 executionMode: "best_effort_background_task" as const,
                 isForegroundServiceRunning: false,
                 canShowPersistentNotification: false,
+                isBackgroundTaskRegistered: isRegistered,
               };
             },
           },
@@ -172,7 +174,7 @@ export function useSyncRuntime(
     }
 
     void syncExecutionFacade
-      .registerPreferredStrategy()
+      .registerConcurrentStrategies()
       .then(async () => syncExecutionFacade.getStatus())
       .then((status) => {
         setExecutionMode(status.executionMode);

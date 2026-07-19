@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   openAppDatabaseSync,
   runMigrations,
-} from '../../infrastructure/db/client';
+} from '../../infrastructure/db/client/client.helpers';
 import { SYNC_SQLITE_OPEN_OPTIONS } from './sqlite-sync-runtime.constants';
 import type {
   CloseableSQLiteDatabase,

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Button, Card, Chip } from "heroui-native";
+import { Button, Card, Chip, cn } from "heroui-native";
 import { Pressable, View } from "react-native";
 import { AppText } from "../../../../components/app-text";
 import { CHIP_TONE_COLOR_MAP } from "./anime-card.constants";
@@ -46,7 +46,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           contentFit="cover"
         />
 
-        <View className="flex-1 flex-row items-start gap-2 p-3">
+        <View className="flex-1 flex-row items-start gap-2 p-0.5">
           <View className="flex-1">
             <AppText
               className="text-foreground text-sm font-semibold leading-tight"
@@ -120,6 +120,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
             onPress={handleOpenSeasonRatingSheet}
             size="sm"
             variant="secondary"
+            className="mr-4"
           >
             <Button.Label>Temporada</Button.Label>
           </Button>
@@ -139,14 +140,13 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
             <Button
               accessibilityLabel="Decrease chapter"
               variant="danger"
-              size="md"
               isIconOnly
               onPress={handleCapMinusPress}
               onLongPress={handleCapMinusLongPress}
               isDisabled={disableDecrease}
-              className={disableDecrease ? "opacity-40" : undefined}
+              className={cn('size-10', disableDecrease ? "opacity-40" : undefined)}
             >
-              <Ionicons name="remove" size={18} color="#ffffff" />
+              <Ionicons name="remove" size={22} color="#ffffff" />
             </Button>
             <AppText className="text-foreground min-w-9 text-center text-base font-semibold tabular-nums">
               {anime.nrocapvisto}
@@ -154,14 +154,13 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
             <Button
               accessibilityLabel="Increase chapter"
               variant="primary"
-              size="md"
               isIconOnly
               onPress={handleCapPlusPress}
               onLongPress={handleCapPlusLongPress}
               isDisabled={disableIncrease}
-              className={disableIncrease ? "opacity-40" : undefined}
+              className={cn('size-10', disableIncrease ? "opacity-40" : undefined)}
             >
-              <Ionicons name="add" size={18} color="#ffffff" />
+              <Ionicons name="add" size={22} color="#ffffff" />
             </Button>
           </>
         )}

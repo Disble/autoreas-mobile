@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react-native";
 import { AppState } from "react-native";
-import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime";
+import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 import * as backgroundSyncTaskModule from "../../../src/features/sync/background-sync.task";
 import * as bridgeConfigModule from "../../../src/features/settings/use-bridge-config";
 import * as syncExecutionFacadeModule from "../../../src/features/sync/sync-execution-facade";
@@ -68,7 +68,7 @@ jest.mock("../../../src/features/sync/sync-execution-facade", () => ({
   createSyncExecutionFacade: jest.fn(),
 }));
 
-jest.mock("../../../src/infrastructure/db/native-runtime", () => ({
+jest.mock("../../../src/infrastructure/db/native-runtime/native-runtime.helpers", () => ({
   useOptionalSQLiteContext: jest.fn(),
 }));
 
@@ -106,7 +106,7 @@ function emitNetworkState(isConnected: boolean | null | undefined) {
 
 describe("useSyncRuntime", () => {
   const mockRequestSync = jest.fn();
-  const mockRegisterPreferredStrategy = jest.fn();
+  const mockRegisterConcurrentStrategies = jest.fn();
   const mockHasCurrentStrategy = jest.fn();
   const mockUnregisterCurrentStrategy = jest.fn();
   const mockGetStatus = jest.fn();
@@ -145,7 +145,7 @@ describe("useSyncRuntime", () => {
     (
       backgroundSyncTaskModule.unregisterBackgroundSyncTask as jest.Mock
     ).mockResolvedValue(undefined);
-    mockRegisterPreferredStrategy.mockResolvedValue(undefined);
+    mockRegisterConcurrentStrategies.mockResolvedValue(undefined);
     mockHasCurrentStrategy.mockReturnValue(false);
     mockUnregisterCurrentStrategy.mockResolvedValue(undefined);
     mockGetStatus.mockResolvedValue({
@@ -153,11 +153,12 @@ describe("useSyncRuntime", () => {
       executionMode: "best_effort_background_task",
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: true,
     });
     (
       syncExecutionFacadeModule.createSyncExecutionFacade as jest.Mock
     ).mockReturnValue({
-      registerPreferredStrategy: mockRegisterPreferredStrategy,
+      registerConcurrentStrategies: mockRegisterConcurrentStrategies,
       hasCurrentStrategy: mockHasCurrentStrategy,
       unregisterCurrentStrategy: mockUnregisterCurrentStrategy,
       getStatus: mockGetStatus,
@@ -175,7 +176,7 @@ describe("useSyncRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(mockRegisterPreferredStrategy).toHaveBeenCalledTimes(1);
+    expect(mockRegisterConcurrentStrategies).toHaveBeenCalledTimes(1);
     expect(
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
     ).toHaveBeenCalledWith(
@@ -185,6 +186,7 @@ describe("useSyncRuntime", () => {
         executionMode: "best_effort_background_task",
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
+        isBackgroundTaskRegistered: true,
       },
     );
     expect(mockRequestSync).toHaveBeenCalledWith("bootstrap");
@@ -210,6 +212,7 @@ describe("useSyncRuntime", () => {
       executionMode: "best_effort_background_task",
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
+      isBackgroundTaskRegistered: false,
     });
 
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
@@ -228,6 +231,7 @@ describe("useSyncRuntime", () => {
         executionMode: "best_effort_background_task",
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
+        isBackgroundTaskRegistered: false,
       },
     );
     expect(
@@ -330,6 +334,7 @@ describe("useSyncRuntime", () => {
       executionMode: "android_foreground_service",
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
+      isBackgroundTaskRegistered: true,
     });
 
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
@@ -347,6 +352,7 @@ describe("useSyncRuntime", () => {
         executionMode: "android_foreground_service",
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
+        isBackgroundTaskRegistered: true,
       },
     );
   });
@@ -360,6 +366,6 @@ describe("useSyncRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(mockRegisterPreferredStrategy).not.toHaveBeenCalled();
+    expect(mockRegisterConcurrentStrategies).not.toHaveBeenCalled();
   });
 });
