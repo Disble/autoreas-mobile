@@ -53,3 +53,6 @@ deprecated/
 build-*.apk
 build-*.aab
 build-*/
+
+# Machine-local agent skill registry (embeds absolute paths from the developer's home directory)
+.atl/
