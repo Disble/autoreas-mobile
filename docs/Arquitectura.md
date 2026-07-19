@@ -28,7 +28,7 @@ Este documento define los cimientos arquitectónicos de Autoreas Mobile. Las dec
 | **Estado UI (Efímero)**| Zustand | Store ultraligero exclusivo para estado de interfaz (filtros, theme, red). |
 | **UI Library (Principal)** | HeroUI Native v3 | **Librería de UI principal del proyecto.** Todos los componentes de interfaz DEBEN usar primitivas de HeroUI Native. |
 | **Networking (REST)** | TanStack Query | Caching, retries automáticos, deduplicación de requests. |
-| **Networking (Realtime)**| Native WebSocket | Conexión persistente para eventos del Bridge. |
+| **Networking (Realtime)**| BridgeClient (`openWebSocket`) | Conexión persistente al `WS /ws` del Bridge desde un único seam de transporte. |
 | **Testing** | Jest + RNTL | Tests de integración rápidos con mock in-memory de SQLite. |
 
 ---
@@ -129,8 +129,8 @@ El mayor desafío de un sistema distribuido P2P offline-first es la condición d
 Se implementa el patrón **Optimistic Ignorance**:
 
 1. Toda mutación local se guarda inmediatamente en `animes` y deja un registro en `operation_log` con estado `pending`.
-2. Cuando el WebSocket recibe un evento (`anime:changed`), el Sync Engine consulta SQLite.
-3. Si existe una operación `pending` para ese anime específico, **se ignora silenciosamente** el evento del WebSocket.
+2. Cuando `BridgeClient` recibe un evento del `WS /ws` (`sync_required`, `anime_changed`, `anime_created`, `anime_deleted`, `preferences_changed`, `season_changed`), el Sync Engine consulta SQLite y decide si corresponde reconciliar.
+3. Si existe una operación `pending` para ese anime específico, **se ignora silenciosamente** el evento del WebSocket y la consistencia vuelve por `POST /api/sync/reconcile`.
 4. Una vez que el POST de reconciliación finaliza con éxito, los registros locales pasan a `synced` y se vuelven a aceptar eventos del WebSocket.
 
 ```mermaid
@@ -151,7 +151,7 @@ sequenceDiagram
     SYNC->>B: POST /api/sync/reconcile (Envía Cap 5)
     WS->>B: Conecta WebSocket
     
-    B-->>WS: Evento: anime:changed (nrocapvisto = 4)
+    B-->>WS: Evento: anime_changed (anime_id = X)
     WS->>SYNC: Procesa evento
     
     SYNC->>DB: ¿Hay pending para este anime?
@@ -162,7 +162,7 @@ sequenceDiagram
     SYNC->>DB: operation_log status = synced
     
     Note over SYNC,B: Sincronización normal restaurada
-    B-->>WS: Evento: anime:changed (nrocapvisto = 6, hecho en PC)
+    B-->>WS: Evento: anime_changed (anime_id = X, cambio hecho en PC)
     WS->>SYNC: Procesa evento
     SYNC->>DB: ¿Hay pending? -> NO
     SYNC->>DB: Actualiza animes (nrocapvisto = 6)

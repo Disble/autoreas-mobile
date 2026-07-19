@@ -3,6 +3,8 @@
 **Fecha:** 2026-04-05
 **Objetivo:** Plan maestro de especificaciones basado en el descubrimiento de "Gotchas" críticos (Lifecycle de Android en Background, Cleartext HTTP Local en Expo, Sync Asíncrono de SQLite vs WS). Estructurado para trabajo en paralelo por agentes.
 
+> Runtime truth note (SDD-52): la app móvil ya consume el Bridge vía `BridgeClient` con `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `GET /api/seasons/active`, `POST /api/seasons/active/ratings` y `WS /ws`. Los eventos activos son `sync_required`, `anime_changed`, `anime_created`, `anime_deleted`, `preferences_changed` y `season_changed`.
+
 **Orden estricto de inicio:** `SDD-00 -> SDD-01 -> SDD-02 -> (SDD-03 | SDD-04 | SDD-06 en paralelo) -> SDD-05 -> SDD-07`.
 
 ---
@@ -30,12 +32,12 @@
 
 ### SDD-03: Optimistic Ignorance y WebSocket Lifecycle
 
-- **Spec:** Implementar el listener de WS. **Crucial:** El evento `anime:changed` no debe escribirse a SQLite ciegamente. Debe usar una consulta asíncrona: `SELECT COUNT(*) FROM operation_log WHERE record_id = X AND status = 'pending'`. Solo si es `0`, ejecuta el `UPDATE` en `animes`. El `WebSocket` debe atarse al `AppState` de React Native: desconectar on `background`, reconectar on `active`.
+- **Spec:** Implementar el listener de `WS /ws` desde `BridgeClient`. **Crucial:** los eventos `anime_changed`, `anime_created` y `anime_deleted` no deben escribir a SQLite ciegamente. Deben disparar el flujo de reconciliación (`POST /api/sync/reconcile`) y solo aplicar datos remotos cuando el guard de `operation_log` permita actualizar `animes`. El `WebSocket` debe atarse al `AppState` de React Native: desconectar on `background`, reconectar on `active`.
 - **Criterio de Éxito:** Simulación donde un evento de WS con `nrocapvisto: 4` llega a un anime con un `pending` local de `Cap+`, y es silenciosamente droppeado.
 
 ### SDD-04: Reconciliador REST (El Catch-Up)
 
-- **Spec:** Un Worker en background que lee el `operation_log` (`pending`), lo formatea a JSON, y hace `POST /api/sync/reconcile` al Bridge usando Axios + React Query. Si la respuesta es `200 OK`, actualiza la base local a `synced` y guarda el `last_changelog_id`.
+- **Spec:** Un Worker en background que lee el `operation_log` (`pending`), lo formatea a JSON, y hace `POST /api/sync/reconcile` al Bridge usando `BridgeClient`. Si la respuesta es `200/202 OK`, actualiza la base local a `synced` y guarda el `last_changelog_id`.
 - **Criterio de Éxito:** Test integration: la conexión falla con `Network Error` -> `operation_log` sigue `pending`. Conexión exitosa -> `operation_log` limpio.
 
 ---

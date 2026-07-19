@@ -4,6 +4,8 @@
 **Fecha:** 2026-04-05
 **Estado:** En revisión
 
+> Historical reference only: this file preserves an early bridge narrative. Current mobile runtime truth is owned by bridge code/tests plus mobile `BridgeClient`. The active mobile surface today is `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `GET /api/seasons/active`, `POST /api/seasons/active/ratings`, and `WS /ws` with events `sync_required`, `anime_changed`, `anime_created`, `anime_deleted`, `preferences_changed`, and `season_changed`. Legacy wire keys such as `nrocapvisto`, `totalcap`, and `grade_source` stay unchanged on the wire.
+
 ---
 
 ## 1. Contexto y problema
@@ -269,6 +271,8 @@ flowchart TD
 
 ### 4.6 Protocolo de sincronización
 
+> Historical note: the sequence below captures an earlier peer narrative. The shipped mobile flow is reconcile-centered. WebSocket anime events trigger `POST /api/sync/reconcile`; mobile does not treat `GET /api/animes/:id`, `PATCH /api/animes/:id`, or `GET /api/animes/changes` as the active runtime path.
+
 #### Modelo: peer-to-peer oportunista
 
 Inspirado en Syncthing. Ambos dispositivos son peers. Cada uno mantiene su propia copia de datos y un changelog local. La sincronización ocurre cuando coinciden encendidos en la misma red, sin intervención del usuario.
@@ -398,6 +402,8 @@ sequenceDiagram
 ```
 
 ### 4.10 API REST
+
+> Runtime truth annotation: treat the following endpoint inventory as historical planning context. Current mobile consumption keeps `BridgeClient` as the only transport owner and actively uses `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `GET /api/seasons/active`, `POST /api/seasons/active/ratings`, and `WS /ws`. Mobile does not rely on `GET /api/animes/:id` as an active path in this slice.
 
 **Animes:**
 

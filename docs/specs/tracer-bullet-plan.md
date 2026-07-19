@@ -33,8 +33,8 @@ La única dependencia dura del proyecto. El objetivo es probar que React Native 
 *No sabe nada de HeroUI, Dropdowns o botones. Es un Worker silencioso que habla REST y WS.*
 
 - **Tracer 2.1 (HTTP Local Cleartext):** Instanciar Axios. **Riesgo Crítico Mitigado:** Modificar `app.json` de Expo para inyectar `android:usesCleartextTraffic="true"`, o de lo contrario Android bloqueará las peticiones `http://192.168.1.x` por no ser HTTPS.
-- **Tracer 2.2 (Reconciliación):** Hook `useReconciler`. Lee el `operation_log` -> Envía `POST /api/sync/reconcile` (harcodeado) -> Si 200 OK -> Hace un `UPDATE operation_log SET status = 'synced'`.
-- **Tracer 2.3 (Optimistic Ignorance via WS):** Conectar WebSocket. Al recibir mensaje `anime:changed`, el *listener asíncrono* hace un `SELECT COUNT` en el `operation_log` para ese `_id`. Solo hace el `UPDATE` a `animes` si el conteo es 0.
+- **Tracer 2.2 (Reconciliación):** Hook `useReconciler`. Lee el `operation_log` -> envía `POST /api/sync/reconcile` mediante `BridgeClient` -> si responde `202 Accepted` -> hace un `UPDATE operation_log SET status = 'synced'` y actualiza `last_changelog_id`.
+- **Tracer 2.3 (Optimistic Ignorance via WS):** Conectar `WS /ws` desde `BridgeClient`. Al recibir `anime_changed`, `anime_created` o `anime_deleted`, el *listener asíncrono* hace un `SELECT COUNT` en el `operation_log` para ese `_id` y usa reconciliación como flujo de consistencia principal. Solo aplica el `UPDATE` a `animes` si el conteo es 0.
 
 ---
 

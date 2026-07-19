@@ -77,6 +77,8 @@ El caso de uso concreto es: el usuario ve anime en la tablet en **split-screen**
 
 La app móvil es un **peer offline-first** que consume la API del Bridge. Mantiene una copia local de los datos en SQLite y un log de operaciones pendientes. La sincronización sigue el protocolo definido en el RFC del Bridge: reconciliación de changelogs al reconectar + notificaciones WebSocket en tiempo real mientras están conectados.
 
+> Runtime truth note (SDD-52): el seam de transporte actual es `BridgeClient`. La superficie activa consumida por móvil es `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `GET /api/seasons/active`, `POST /api/seasons/active/ratings` y `WS /ws`. Los eventos activos son `sync_required`, `anime_changed`, `anime_created`, `anime_deleted`, `preferences_changed` y `season_changed`. Los campos legacy del wire siguen intactos, incluyendo `nrocapvisto`, `totalcap` y `grade_source`.
+
 ```mermaid
 graph TB
     subgraph TABLET["Tablet Android (Split-screen)"]
@@ -437,10 +439,10 @@ sequenceDiagram
     rect rgb(240, 248, 240)
         Note right of AD: Cambio en PC
         AD->>B: Escribe en animes.dat
-        B->>APP: WS: anime:changed {_id}
-        APP->>B: GET /api/animes/:_id
-        B->>APP: {registro actualizado}
-        APP->>SQL: Actualizar registro local
+        B->>APP: WS: anime_changed {anime_id}
+        APP->>B: POST /api/sync/reconcile<br/>{last_changelog_id, pending_operations}
+        B->>APP: {bridge_changes, conflicts, last_changelog_id}
+        APP->>SQL: Actualizar registro local vía reconcile
         APP->>APP: Re-render UI
     end
 
@@ -448,9 +450,9 @@ sequenceDiagram
         Note right of APP: Cambio en tablet
         APP->>SQL: Actualizar registro local
         APP->>SQL: Insertar en operation_log
-        APP->>B: PATCH /api/animes/:_id<br/>{campos modificados}
-        B->>APP: 200 OK
-        APP->>SQL: Marcar operación como 'synced'
+        APP->>B: POST /api/sync/reconcile<br/>{last_changelog_id, pending_operations}
+        B->>APP: 202 Accepted
+        APP->>SQL: Marcar operación como 'synced' y avanzar `last_changelog_id`
     end
 ```
 
@@ -464,20 +466,26 @@ Si el Bridge no está disponible:
 4. Un background timer intenta reconectar cada 30 segundos.
 5. Al reconectar, se ejecuta el flujo de reconciliación (4.5.1).
 
-### 4.6 Expansión del contrato del Bridge
+### 4.6 Current bridge contract snapshot
 
-El MVP del Bridge (RFC original) solo permite `PATCH /api/animes/:id` con `nrocapvisto` y `fechaUltCapVisto`. La app móvil requiere ampliar los campos aceptados:
+La app móvil actual NO expande el transporte desde features. Todo HTTP y WebSocket pasa por `BridgeClient`, que conserva los paths y campos legacy ya publicados por el Bridge.
 
-| Campo | Tipo | Cuándo cambia |
-|---|---|---|
-| `nrocapvisto` | number | Cap+/Cap- |
-| `fechaUltCapVisto` | $$date (Unix ms) | Cap+/Cap- |
-| `estado` | number (0-3) | Cambio de estado desde menú ⋮ |
-| `dias` | array | Mover entre pseudo-días de Estrenos |
-| `fechaEstreno` | $$date (Unix ms) | Primer Cap+ en anime de Estrenos |
-| `primeravez` | boolean | Se pone en false tras primer Cap+ |
+| Surface | Runtime truth |
+|---|---|
+| Pairing | `POST /api/devices/pair` |
+| Snapshot list | `GET /api/animes` |
+| Reconcile | `POST /api/sync/reconcile` |
+| Status | `GET /api/status` |
+| Active season | `GET /api/seasons/active` |
+| Season ratings | `POST /api/seasons/active/ratings` |
+| Realtime | `WS /ws` |
 
-El Bridge debe validar los valores aceptados para cada campo y rechazar cambios fuera de rango (por ejemplo, `estado` fuera de 0-3).
+Campos del wire preservados por compatibilidad, separados por protocolo:
+
+- **Snapshot/lista de anime compat (`GET /api/animes`):** `_id`, `nombre`, `estado`, `nrocapvisto`, `totalcap`, `primeravez`.
+- **Reconcile + season protocol:** `season_mode`, `season_id`, `anime_id`, `grade`, `grade_source`, `rated_at`, `last_changelog_id`, `pending_operations`.
+
+El flujo realtime actual es reconcile-first: `anime_changed`, `anime_created`, `anime_deleted` y `sync_required` disparan reconciliación en lugar de introducir un contrato feature-owned de `GET /api/animes/{id}` o `PATCH /api/animes/{id}`.
 
 ### 4.7 Gestión de estado (Zustand)
 
