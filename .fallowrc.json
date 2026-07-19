@@ -13,7 +13,7 @@
     "expo-build-properties",
     "expo-web-browser",
     "@react-navigation/bottom-tabs",
-    "@react-native-masked-view/masked-view",
+    "@gorhom/bottom-sheet",
     "react-native-web",
     "expo-dev-client",
     "expo-system-ui",
