@@ -57,7 +57,7 @@ describe("anime season helpers", () => {
     expect(latest).toBeNull();
   });
 
-  it("builds projection only for bridge-declared candidates", () => {
+  it("builds a bridge candidate projection and omits unrelated animes", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
       activeSeasonSnapshot: {
@@ -77,7 +77,6 @@ describe("anime season helpers", () => {
           },
         },
       },
-      allowLocalActiveFallback: false,
       seasonRatingQueueRows: [buildQueueRow({ nota: 6 })],
     });
 
@@ -101,32 +100,24 @@ describe("anime season helpers", () => {
           candidates: [],
           candidatesByAnimeId: {},
         },
-        allowLocalActiveFallback: false,
-        seasonRatingQueueRows: [buildQueueRow({ animeId: "anime-2" })],
+        seasonRatingQueueRows: [],
       }),
     ).toBeNull();
   });
 
-  it("builds a local active fallback projection for Ver hoy without snapshot hydration", () => {
+  it("does not infer a season candidate when the bridge snapshot is unavailable", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
-      allowLocalActiveFallback: true,
       activeSeasonSnapshot: null,
       seasonRatingQueueRows: [],
     });
 
-    expect(projection).toEqual({
-      seasonId: LOCAL_ACTIVE_SEASON_ID,
-      bridgeRating: null,
-      bridgeRatingSource: null,
-      localIntent: null,
-    });
+    expect(projection).toBeNull();
   });
 
-  it("keeps the active season id for fallback projection when snapshot exists but candidate is missing", () => {
+  it("keeps a persisted local intent visible without an active bridge candidate", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
-      allowLocalActiveFallback: true,
       activeSeasonSnapshot: {
         seasonId: "season-2026-q3",
         candidates: [],

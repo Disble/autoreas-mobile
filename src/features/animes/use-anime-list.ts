@@ -12,11 +12,8 @@ import {
   type SeasonRatingQueueRow,
 } from "../../infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
-import { useSeasonModeStore } from "../../infrastructure/store/season-mode-store";
 import { buildAnimeSeasonProjection } from "./anime-season.helpers";
 import {
-  isAnimePseudoDayFilter,
-  matchesAnimeDayFilter,
   parseAnimeRow,
   sortAnimesBySelectedDay,
 } from "./anime.helpers";
@@ -30,7 +27,6 @@ export function useAnimeList(filter: AnimeDayFilter) {
   const activeSeasonSnapshot = useActiveSeasonStore(
     (state) => state.activeSeasonSnapshot,
   );
-  const seasonMode = useSeasonModeStore((state) => state.seasonMode);
 
   const animeQuery = useMemo(() => {
     if (!db) {
@@ -53,11 +49,6 @@ export function useAnimeList(filter: AnimeDayFilter) {
     seasonRatingQueueQuery,
     [],
   );
-  const allowLocalActiveFallback = useMemo(
-    () => seasonMode && isAnimePseudoDayFilter(filter),
-    [filter, seasonMode],
-  );
-
   const allActiveAnimes = useMemo<AnimeListItem[]>(() => {
     if (!data) return [];
     return data.map((row) => {
@@ -67,14 +58,12 @@ export function useAnimeList(filter: AnimeDayFilter) {
           ...anime,
           seasonProjection: buildAnimeSeasonProjection({
             animeId: anime._id,
-            allowLocalActiveFallback:
-              allowLocalActiveFallback && matchesAnimeDayFilter(anime, filter),
             activeSeasonSnapshot,
             seasonRatingQueueRows,
           }),
         };
       });
-  }, [activeSeasonSnapshot, allowLocalActiveFallback, data, filter, seasonRatingQueueRows]);
+  }, [activeSeasonSnapshot, data, seasonRatingQueueRows]);
 
   const parsedData = useMemo(
     () => sortAnimesBySelectedDay(allActiveAnimes, filter),

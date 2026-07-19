@@ -57,23 +57,18 @@ export function selectLatestSeasonRatingIntent(
 
 /**
  * Builds the season projection consumed by anime list and card surfaces.
- * Projection exists only for bridge-declared active candidates, which prevents mobile-owned candidacy inference.
+ * Projection exists for bridge-declared candidates or a durable local rating intent.
+ * This prevents offline mode from inventing rating eligibility for every visible anime.
  */
 export function buildAnimeSeasonProjection(
   input: BuildAnimeSeasonProjectionInput,
 ): AnimeSeasonProjection | null {
   const {
     activeSeasonSnapshot,
-    allowLocalActiveFallback,
     animeId,
     seasonRatingQueueRows,
   } = input;
   const candidate = activeSeasonSnapshot?.candidatesByAnimeId[animeId] ?? null;
-
-  if (!candidate && !allowLocalActiveFallback) {
-    return null;
-  }
-
   const seasonId = activeSeasonSnapshot?.seasonId ?? LOCAL_ACTIVE_SEASON_ID;
   const localIntent = selectLatestSeasonRatingIntent(
     animeId,
@@ -82,6 +77,10 @@ export function buildAnimeSeasonProjection(
   );
 
   if (!candidate) {
+    if (!localIntent) {
+      return null;
+    }
+
     return {
       seasonId,
       bridgeRating: null,

@@ -1,5 +1,4 @@
 import { renderHook } from "@testing-library/react-native";
-import { LOCAL_ACTIVE_SEASON_ID } from "../../../../src/features/animes/anime-season.constants";
 import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../../../src/infrastructure/store/active-season-store";
@@ -171,46 +170,21 @@ describe("useAnimeList", () => {
     ]);
   });
 
-  it("projects a local season fallback for Ver hoy while season mode is active and snapshot is missing", () => {
+  it.each(["Ver hoy", "Visto", "Sin ver"] as const)(
+    "does not infer a season projection for %s while offline snapshot data is unavailable",
+    (filter) => {
     useSeasonModeStore.setState({ seasonMode: true });
     mockLiveQueryData([
       buildRow({
-        _id: "anime-today",
-        nombre: "Today",
-        dias: JSON.stringify([{ dia: "Ver hoy", orden: 1 }]),
-      }),
-    ]);
-
-    const { result } = renderHook(() => useAnimeList("Ver hoy"));
-
-    expect(result.current.data[0]?.seasonProjection).toEqual({
-      seasonId: LOCAL_ACTIVE_SEASON_ID,
-      bridgeRating: null,
-      bridgeRatingSource: null,
-      localIntent: null,
-    });
-  });
-
-  it.each(["Visto", "Sin ver"] as const)(
-    "projects a local season fallback for %s while season mode is active and snapshot is missing",
-    (filter) => {
-      useSeasonModeStore.setState({ seasonMode: true });
-      mockLiveQueryData([
-        buildRow({
           _id: "anime-estrenos",
           nombre: "Estrenos",
           dias: JSON.stringify([{ dia: filter, orden: 1 }]),
-        }),
-      ]);
+      }),
+    ]);
 
       const { result } = renderHook(() => useAnimeList(filter));
 
-      expect(result.current.data[0]?.seasonProjection).toEqual({
-        seasonId: LOCAL_ACTIVE_SEASON_ID,
-        bridgeRating: null,
-        bridgeRatingSource: null,
-        localIntent: null,
-      });
+      expect(result.current.data[0]?.seasonProjection).toBeNull();
     },
   );
 

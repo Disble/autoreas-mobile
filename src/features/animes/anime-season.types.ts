@@ -31,7 +31,6 @@ export interface AnimeListItem extends Anime {
 /** Defines the data contract for build anime season projection input. */
 export interface BuildAnimeSeasonProjectionInput {
   readonly animeId: string;
-  readonly allowLocalActiveFallback: boolean;
   readonly activeSeasonSnapshot: ActiveSeasonSnapshot | null;
   readonly seasonRatingQueueRows: readonly SeasonRatingQueueRow[];
 }
