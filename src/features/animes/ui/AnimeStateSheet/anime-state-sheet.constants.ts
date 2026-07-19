@@ -1,3 +1,4 @@
+import type { ThemeColor } from 'heroui-native';
 import type { AnimeEstadoDefinition, AnimeStateSheetTone } from './anime-state-sheet.types';
 
 /** Provides the shared anime state sheet title value. */
@@ -13,14 +14,25 @@ export const TONE_LABEL_CLASS: Readonly<Record<AnimeStateSheetTone, string>> = {
   danger: 'text-danger',
 };
 
-/** Provides the shared tone icon color value. */
-
-export const TONE_ICON_COLOR: Readonly<Record<AnimeStateSheetTone, string>> = {
-  default: '#6B7280',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  danger: '#ef4444',
+/**
+ * Maps each tone to a HeroUI theme token instead of a literal hex value.
+ * Resolving through the theme keeps sheet icons aligned with light/dark mode,
+ * which hardcoded colors silently broke.
+ */
+export const TONE_THEME_COLOR: Readonly<Record<AnimeStateSheetTone, ThemeColor>> = {
+  default: 'muted',
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
 };
+
+/** Declares the tone order used to batch-resolve theme colors in the sheet hook. */
+export const TONE_RESOLUTION_ORDER: readonly AnimeStateSheetTone[] = [
+  'default',
+  'success',
+  'warning',
+  'danger',
+];
 
 /**
  * Legacy-aligned order used by the state sheet so Viendo is the primary action and
