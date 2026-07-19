@@ -15,6 +15,7 @@ import { useActiveSeasonStore } from "../../infrastructure/store/active-season-s
 import { useSeasonModeStore } from "../../infrastructure/store/season-mode-store";
 import { buildAnimeSeasonProjection } from "./anime-season.helpers";
 import {
+  isAnimePseudoDayFilter,
   matchesAnimeDayFilter,
   parseAnimeRow,
   sortAnimesBySelectedDay,
@@ -53,7 +54,7 @@ export function useAnimeList(filter: AnimeDayFilter) {
     [],
   );
   const allowLocalActiveFallback = useMemo(
-    () => seasonMode && filter === "Ver hoy",
+    () => seasonMode && isAnimePseudoDayFilter(filter),
     [filter, seasonMode],
   );
 

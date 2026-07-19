@@ -190,4 +190,42 @@ describe("useAnimeList", () => {
       localIntent: null,
     });
   });
+
+  it.each(["Visto", "Sin ver"] as const)(
+    "projects a local season fallback for %s while season mode is active and snapshot is missing",
+    (filter) => {
+      useSeasonModeStore.setState({ seasonMode: true });
+      mockLiveQueryData([
+        buildRow({
+          _id: "anime-estrenos",
+          nombre: "Estrenos",
+          dias: JSON.stringify([{ dia: filter, orden: 1 }]),
+        }),
+      ]);
+
+      const { result } = renderHook(() => useAnimeList(filter));
+
+      expect(result.current.data[0]?.seasonProjection).toEqual({
+        seasonId: LOCAL_ACTIVE_SEASON_ID,
+        bridgeRating: null,
+        bridgeRatingSource: null,
+        localIntent: null,
+      });
+    },
+  );
+
+  it("keeps weekday filters without a season fallback while season mode is active", () => {
+    useSeasonModeStore.setState({ seasonMode: true });
+    mockLiveQueryData([
+      buildRow({
+        _id: "anime-weekday",
+        nombre: "Weekday",
+        dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]),
+      }),
+    ]);
+
+    const { result } = renderHook(() => useAnimeList("Jueves"));
+
+    expect(result.current.data[0]?.seasonProjection).toBeNull();
+  });
 });

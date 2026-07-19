@@ -5,6 +5,7 @@ import type {
 } from "../../infrastructure/validation/anime-schema";
 import {
   ANIME_DAY_FILTER_OPTIONS,
+  ANIME_PSEUDO_DAY_FILTERS,
   WEEKDAY_INDEX_TO_FILTER,
 } from "./anime.constants";
 import type { AnimeDayFilter, AnimeDayFilterOption } from "./anime.types";
@@ -66,6 +67,14 @@ export function getAnimeOrderForFilter(
   filter: AnimeDayFilter,
 ): number | null {
   return getAnimeDayMatch(anime, filter)?.orden ?? null;
+}
+
+/**
+ * Checks whether a filter is one of the Estrenos pseudo-day tabs ('Sin ver', 'Ver hoy', 'Visto').
+ * Season-mode surfaces share the same candidate set across these tabs, so callers must not special-case a single one.
+ */
+export function isAnimePseudoDayFilter(filter: AnimeDayFilter): boolean {
+  return ANIME_PSEUDO_DAY_FILTERS.some((pseudoDay) => pseudoDay === filter);
 }
 
 /**

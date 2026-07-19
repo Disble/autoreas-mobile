@@ -46,7 +46,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           contentFit="cover"
         />
 
-        <View className="flex-1 flex-row items-start gap-2 p-3">
+        <View className="flex-1 flex-row items-start gap-2 p-0.5">
           <View className="flex-1">
             <AppText
               className="text-foreground text-sm font-semibold leading-tight"
