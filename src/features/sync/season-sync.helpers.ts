@@ -60,6 +60,64 @@ export async function fetchActiveSeasonFromBridge(
   return snapshot;
 }
 
+/**
+ * Restores the last bridge-confirmed season membership so offline startup can render season controls.
+ * Malformed cache rows are ignored because the bridge remains the source of eligibility truth.
+ */
+export async function readCachedActiveSeasonSnapshot(
+  rawDb: SQLiteDatabase,
+): Promise<ActiveSeasonSnapshot | null> {
+  const row = await rawDb.getFirstAsync<{
+    season_id: string;
+    candidates_json: string;
+  }>('SELECT season_id, candidates_json FROM active_season_cache WHERE id = 1');
+
+  if (!row) {
+    return null;
+  }
+
+  try {
+    const candidates: unknown = JSON.parse(row.candidates_json);
+
+    return extractActiveSeasonSnapshot({
+      season_id: row.season_id,
+      candidates,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persists bridge-confirmed candidate membership for a later offline launch.
+ * The single-row upsert keeps only the latest active season because prior seasons are never eligible.
+ */
+export async function writeCachedActiveSeasonSnapshot(
+  rawDb: SQLiteDatabase,
+  snapshot: ActiveSeasonSnapshot,
+): Promise<void> {
+  await rawDb.runAsync(
+    'INSERT INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?) ' +
+      'ON CONFLICT(id) DO UPDATE SET season_id = excluded.season_id, candidates_json = excluded.candidates_json',
+    snapshot.seasonId,
+    JSON.stringify(
+      snapshot.candidates.map((candidate) => ({
+        anime_id: candidate.animeId,
+        grade: candidate.bridgeRating,
+        grade_source: candidate.bridgeRatingSource,
+      })),
+    ),
+  );
+}
+
+/**
+ * Removes locally cached membership when the bridge explicitly confirms no season is active.
+ * This prevents a retired season from remaining available after the next offline launch.
+ */
+export async function clearCachedActiveSeasonSnapshot(rawDb: SQLiteDatabase): Promise<void> {
+  await rawDb.runAsync('DELETE FROM active_season_cache WHERE id = 1');
+}
+
 function isValidActiveSeasonPayload(data: unknown): boolean {
   if (typeof data !== 'object' || data === null) {
     return false;

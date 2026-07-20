@@ -235,7 +235,7 @@ describe("db client tracer helpers", () => {
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(5);
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(6);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );
@@ -267,6 +267,12 @@ describe("db client tracer helpers", () => {
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'CREATE TABLE IF NOT EXISTS active_season_cache (' +
+        'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
+        'season_id TEXT NOT NULL, ' +
+        'candidates_json TEXT NOT NULL)'
     );
   });
 

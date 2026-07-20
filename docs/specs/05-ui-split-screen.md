@@ -28,3 +28,19 @@ La lista de animes puede contener cientos de ítems. Un `ScrollView` o `FlatList
 - **Restricciones de Overflow (320dp):**
   - Los títulos de anime DEBEN usar `numberOfLines={2}` y `ellipsizeMode="tail"`.
   - Las imágenes DEBEN tener `aspectRatio` fijo y `flex-shrink: 0` para evitar que títulos muy largos empujen los botones de acción fuera de la pantalla.
+
+## 5. Visibilidad de calificación de temporada después de activación (Season-mode rating visibility after activation)
+
+El sistema DEBE mostrar la calificación existente del bridge o la acción de calificación en las tarjetas de anime en season mode una vez que los datos actualizados de proyección de temporada activa marcan al anime como candidato a calificación declarado por el bridge.
+
+### Escenario: Tarjeta de temporada refrescada muestra estado de calificación del bridge
+- DADO que season mode fue habilitado por las preferencias del bridge
+- Y la proyección de temporada activa refrescada marca a un anime como calificable o ya calificado
+- CUANDO la tarjeta se renderiza en season mode
+- ENTONCES DEBE mostrar la acción de calificación para animes elegibles sin calificar, o la calificación actual del bridge para animes ya calificados
+
+### Escenario: Tarjeta de temporada no candidata permanece sin cambios
+- DADO que season mode está habilitado
+- Y la proyección de temporada activa refrescada NO declara al anime como candidato a calificación
+- CUANDO la tarjeta se renderiza
+- ENTONCES la tarjeta DEBE preservar las reglas de presentación existentes sin calificación

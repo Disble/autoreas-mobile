@@ -24,12 +24,12 @@ jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: () => ({ layout: 'phone' }),
 }));
 
-jest.mock('../../../../src/infrastructure/store/season-mode-store', () => ({
-  useSeasonModeStore: Object.assign(
-    (selector: (state: { seasonMode: boolean }) => unknown) =>
-      selector({ seasonMode: true }),
+jest.mock('../../../../src/infrastructure/store/active-season-store', () => ({
+  useActiveSeasonStore: Object.assign(
+    (selector: (state: { activeSeasonSnapshot: object | null }) => unknown) =>
+      selector({ activeSeasonSnapshot: {} }),
     {
-      getState: () => ({ seasonMode: true }),
+      getState: () => ({ activeSeasonSnapshot: {} }),
     },
   ),
 }));

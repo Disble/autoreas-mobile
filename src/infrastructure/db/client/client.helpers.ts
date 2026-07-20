@@ -146,6 +146,15 @@ async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
   );
 }
 
+async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(
+    'CREATE TABLE IF NOT EXISTS active_season_cache (' +
+      'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
+      'season_id TEXT NOT NULL, ' +
+      'candidates_json TEXT NOT NULL)'
+  );
+}
+
 /** Executes the run migrations operation. */
 export async function runMigrations(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
@@ -158,6 +167,7 @@ export async function runMigrations(rawDb: SQLiteDatabase) {
     ensureAnimesGuardColumn(rawDb),
     ensurePendingRemoteChangesTable(rawDb),
     ensureSeasonRatingQueueTable(rawDb),
+    ensureActiveSeasonCacheTable(rawDb),
   ]);
   return db;
 }

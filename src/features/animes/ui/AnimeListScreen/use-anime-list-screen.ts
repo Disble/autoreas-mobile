@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { useThemeColor, useToast } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
-import { useSeasonModeStore } from "../../../../infrastructure/store/season-mode-store";
+import { useActiveSeasonStore } from "../../../../infrastructure/store/active-season-store";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
 import { useSyncFacade } from "../../../sync/use-sync-facade";
@@ -43,7 +43,10 @@ export function useAnimeListScreen(
 
   // 2. State
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
-    getDefaultAnimeDayFilter(new Date(), useSeasonModeStore.getState().seasonMode),
+    getDefaultAnimeDayFilter(
+      new Date(),
+      useActiveSeasonStore.getState().activeSeasonSnapshot !== null,
+    ),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
@@ -61,7 +64,9 @@ export function useAnimeListScreen(
   const [themeColorForeground] = useThemeColor(["foreground"]);
   const { layout: layoutMode } = useResponsiveLayout();
   const networkState = useNetworkState();
-  const seasonMode = useSeasonModeStore((state) => state.seasonMode);
+  const seasonMode = useActiveSeasonStore(
+    (state) => state.activeSeasonSnapshot !== null,
+  );
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);

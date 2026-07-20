@@ -99,3 +99,25 @@ Si `safeParse` falla, loguear el error y descartar el mensaje. Si los fallos sup
 3. El evento del WS dispara reconciliación, y la aplicación local del cambio remoto se droppea silenciosamente mientras exista ese `pending`.
 4. La UI mantiene `nrocapvisto = 5`.
 5. Minimizar la app cierra el WS. Volver a abrirla lo reconecta.
+
+## 6. Activación de Temporada por Preferencias (Preferences-driven season activation refresh)
+
+El sistema DEBE refrescar la proyección de temporada activa cuando un evento WebSocket `preferences_changed` cambia `season_mode` de deshabilitado a habilitado, y DEBE mantener este refresco dentro del flujo existente de sync runtime y BridgeClient.
+
+### Escenario: Season mode se habilita desde preferencias del bridge
+- DADO que la app está en modo normal de navegación y la proyección de temporada activa está desactualizada o vacía
+- CUANDO el sync runtime recibe `preferences_changed` con `season_mode = true`
+- ENTONCES el runtime DEBE solicitar el refresco de la temporada activa inmediatamente
+- Y el estado downstream de la lista DEBE recibir datos de proyección de temporada actualizados para la temporada del bridge
+
+### Escenario: Season mode deshabilitado preserva navegación normal
+- DADO que el usuario está en modo de navegación normal
+- CUANDO el sync runtime recibe `preferences_changed` que mantiene `season_mode = false`
+- ENTONCES el sistema DEBE preservar el comportamiento de navegación normal
+- Y NO DEBE requerir datos de proyección de temporada para renderizar el estado de calificación
+
+### Escenario: Límite del bridge permanece sin cambios
+- DADO que el refresco de season mode se dispara desde código de feature
+- CUANDO el runtime ejecuta el refresco
+- ENTONCES el flujo de feature DEBE permanecer detrás de las costuras existentes de BridgeClient y sync runtime
+- Y NO DEBE introducir `fetch` raw, `WebSocket` raw, o URLs de bridge de propiedad de feature

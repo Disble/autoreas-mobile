@@ -2,7 +2,6 @@ import { renderHook } from "@testing-library/react-native";
 import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../../../src/infrastructure/store/active-season-store";
-import { useSeasonModeStore } from "../../../../src/infrastructure/store/season-mode-store";
 
 const mockUseOptionalSQLiteContext = jest.fn();
 const mockUseOptionalLiveQuery = jest.fn();
@@ -68,7 +67,6 @@ describe("useAnimeList", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
-    useSeasonModeStore.setState({ seasonMode: false });
 
     mockUseOptionalSQLiteContext.mockReturnValue({ name: "raw-db" });
     mockWhere.mockReturnValue({ query: "active-animes" });
@@ -173,7 +171,6 @@ describe("useAnimeList", () => {
   it.each(["Ver hoy", "Visto", "Sin ver"] as const)(
     "does not infer a season projection for %s while offline snapshot data is unavailable",
     (filter) => {
-    useSeasonModeStore.setState({ seasonMode: true });
     mockLiveQueryData([
       buildRow({
           _id: "anime-estrenos",
@@ -189,7 +186,6 @@ describe("useAnimeList", () => {
   );
 
   it("keeps weekday filters without a season fallback while season mode is active", () => {
-    useSeasonModeStore.setState({ seasonMode: true });
     mockLiveQueryData([
       buildRow({
         _id: "anime-weekday",

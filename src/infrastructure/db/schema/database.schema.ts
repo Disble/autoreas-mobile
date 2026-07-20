@@ -77,6 +77,13 @@ export const seasonRatingQueue = sqliteTable(
   ],
 );
 
+/** Provides the durable bridge-owned active season snapshot for offline startup. */
+export const activeSeasonCache = sqliteTable('active_season_cache', {
+  id: integer('id').primaryKey().default(1),
+  seasonId: text('season_id').notNull(),
+  candidatesJson: text('candidates_json').notNull(),
+});
+
 /** Provides the shared bridge config value. */
 
 export const bridgeConfig = sqliteTable("bridge_config", {
@@ -147,6 +154,10 @@ export type InsertOperationLogRow = typeof operationLog.$inferInsert;
 export type SeasonRatingQueueRow = typeof seasonRatingQueue.$inferSelect;
 /** Defines the insert season rating queue row value shape. */
 export type InsertSeasonRatingQueueRow = typeof seasonRatingQueue.$inferInsert;
+/** Defines the active season cache row value shape. */
+export type ActiveSeasonCacheRow = typeof activeSeasonCache.$inferSelect;
+/** Defines the new active season cache row value shape. */
+export type NewActiveSeasonCacheRow = typeof activeSeasonCache.$inferInsert;
 /** Defines the pending remote change row value shape. */
 export type PendingRemoteChangeRow = typeof pendingRemoteChanges.$inferSelect;
 /** Defines the insert pending remote change row value shape. */

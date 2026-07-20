@@ -15,9 +15,7 @@ import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
 import { useSeasonSync } from "./use-season-sync";
-import { useSeasonModeSync } from "./use-season-mode-sync";
 import { useSyncFacade } from "./use-sync-facade";
-import { useSeasonModeStore } from "../../infrastructure/store/season-mode-store";
 import type {
   UseSyncRuntimeProps,
   UseSyncRuntimeResult,
@@ -43,8 +41,7 @@ export function useSyncRuntime(
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
   const { requestSync } = useSyncFacade();
-  const setSeasonMode = useSeasonModeStore((state) => state.setSeasonMode);
-  const { refreshActiveSeason } = useSeasonSync({
+  const { clearActiveSeason, refreshActiveSeason } = useSeasonSync({
     enabled: props.isBootstrapped && isConfigured && currentAppState === "active",
   });
 
@@ -108,9 +105,14 @@ export function useSyncRuntime(
 
   const handlePreferencesChanged = useCallback(
     (seasonMode: boolean) => {
-      setSeasonMode(seasonMode);
+      if (seasonMode) {
+        void refreshActiveSeason().catch(() => undefined);
+        return;
+      }
+
+      void clearActiveSeason().catch(() => undefined);
     },
-    [setSeasonMode],
+    [clearActiveSeason, refreshActiveSeason],
   );
 
   const handleSeasonChanged = useCallback(() => {
@@ -124,11 +126,6 @@ export function useSyncRuntime(
     onSyncRequired: handleWebSocketSyncRequired,
     onPreferencesChanged: handlePreferencesChanged,
   });
-
-  // Cold-hydrate the global season-mode store from GET /api/status whenever the realtime
-  // channel becomes available. The WS push keeps it live afterwards; this read covers the
-  // case where season mode was already toggled before the app/connection came up.
-  useSeasonModeSync({ enabled: isWebSocketEnabled });
 
   // Drains background-staged remote changes into `animes` on the foreground reactive
   // connection (mount + app-resume) so headless sync results become visible without an
