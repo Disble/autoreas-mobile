@@ -141,8 +141,8 @@ describe('useMutateAnime', () => {
       createdAt: now,
     });
     expect(JSON.parse(insertPayload.payload)).toEqual({
-      nrocapvisto: 4,
-      fechaUltCapVisto: now,
+      episodesWatched: 4,
+      lastWatchedAt: now,
     });
   });
 
@@ -228,9 +228,9 @@ describe('useMutateAnime', () => {
       animeId: 'anime-1',
       operation: 'update',
       payload: JSON.stringify({
-        nrocapvisto: 12,
-        fechaUltCapVisto: now,
-        estado: 1,
+        episodesWatched: 12,
+        lastWatchedAt: now,
+        status: 1,
       }),
       status: 'pending',
       createdAt: now,
@@ -278,8 +278,8 @@ describe('useMutateAnime', () => {
     expect(insertPayload.operation).toBe('update');
     expect(insertPayload.status).toBe('pending');
     expect(JSON.parse(insertPayload.payload)).toEqual({
-      nrocapvisto: 2,
-      fechaUltCapVisto: now,
+      episodesWatched: 2,
+      lastWatchedAt: now,
     });
   });
 
@@ -326,9 +326,9 @@ describe('useMutateAnime', () => {
 
     const insertPayload = txMocks.values.mock.calls[0][0];
     expect(JSON.parse(insertPayload.payload)).toEqual({
-      nrocapvisto: 3,
-      fechaUltCapVisto: now,
-      estado: 3,
+      episodesWatched: 3,
+      lastWatchedAt: now,
+      status: 3,
     });
   });
 

@@ -1,6 +1,6 @@
-import { z } from 'zod';
-import { AnimeSchema } from '../../infrastructure/validation/anime-schema';
+import { WireAnimeListSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
+import { mapWireAnimeListToLegacyAnimes } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
 
 /** Validates anime list schema payloads at runtime. */
 
-export const AnimeListSchema = z.array(AnimeSchema);
+export const AnimeListSchema = WireAnimeListSchema.transform(mapWireAnimeListToLegacyAnimes);

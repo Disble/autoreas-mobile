@@ -2,6 +2,10 @@ import { eq, inArray } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient } from '../../infrastructure/api';
 import {
+  mapWireAnimeToLegacyAnime,
+  normalizeWireAnimeChangedFields,
+} from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
+import {
   getBridgeConfigSnapshot,
   withDeferredWrite,
   withExclusiveWrite,
@@ -218,8 +222,8 @@ function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange 
   return {
     recordId: change.record_id,
     changeType: change.change_type,
-    changedFields: change.changed_fields,
-    snapshot: change.snapshot,
+    changedFields: normalizeWireAnimeChangedFields(change.changed_fields),
+    snapshot: change.snapshot ? mapWireAnimeToLegacyAnime(change.snapshot) : undefined,
     timestamp: change.timestamp,
   };
 }

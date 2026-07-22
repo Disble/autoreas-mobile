@@ -1,22 +1,22 @@
 import { z } from 'zod';
-import { AnimeSchema } from '../../infrastructure/validation/anime-schema';
+import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
 
 const ReconcileArrayFallback = <TSchema extends z.ZodTypeAny>(itemSchema: TSchema) =>
   z.array(itemSchema).nullish().transform((value) => value ?? []);
 
 /** Validates reconcile anime change schema payloads at runtime. */
 
-export const ReconcileAnimeChangeSchema = z.object({
+const ReconcileAnimeChangeSchema = z.object({
   record_id: z.string(),
   change_type: z.enum(['create', 'update', 'delete']),
   changed_fields: ReconcileArrayFallback(z.string()),
-  snapshot: AnimeSchema.optional(),
+  snapshot: WireAnimeSchema.optional(),
   timestamp: z.number(),
 });
 
 /** Validates reconcile applied operation schema payloads at runtime. */
 
-export const ReconcileAppliedOperationSchema = z.object({
+const ReconcileAppliedOperationSchema = z.object({
   anime_id: z.string(),
   operation: z.string(),
   applied: z.boolean(),
@@ -41,5 +41,3 @@ export const ReconcileResponseSchema = z.object({
 export type ReconcileAppliedOperation = z.infer<typeof ReconcileAppliedOperationSchema>;
 /** Defines the reconcile anime change value shape. */
 export type ReconcileAnimeChange = z.infer<typeof ReconcileAnimeChangeSchema>;
-/** Defines the reconcile response value shape. */
-export type ReconcileResponse = z.infer<typeof ReconcileResponseSchema>;

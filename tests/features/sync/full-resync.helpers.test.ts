@@ -38,13 +38,39 @@ const mockPendingIds = loadPendingOutboxRecordIds as jest.Mock;
 
 function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    id: 'anime-1',
+    name: 'Naruto',
+    status: 1,
+    episodesWatched: 12,
+    totalEpisodes: 220,
+    days: [],
+    genres: [],
+    kind: 1,
+    active: 1,
+    firstCycle: 0,
+    lastWatchedAt: null,
+    premieredAt: null,
+    createdAt: null,
+    deletedAt: null,
+    cover: null,
+    sourceUrl: null,
+    folder: null,
+    studios: null,
+    origin: null,
+    durationMinutes: null,
+    ...overrides,
+  };
+}
+
+function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
     _id: 'anime-1',
     nombre: 'Naruto',
     estado: 1,
     nrocapvisto: 12,
     totalcap: 220,
-    dias: [],
-    generos: [],
+    dias: JSON.stringify([]),
+    generos: JSON.stringify([]),
     tipo: 1,
     activo: 1,
     primeravez: 0,
@@ -58,15 +84,6 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
     estudios: null,
     origen: null,
     duracion: null,
-    ...overrides,
-  };
-}
-
-function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
-    ...makeSnapshot(),
-    dias: JSON.stringify([]),
-    generos: JSON.stringify([]),
     lastAppliedChangeMs: 500,
     ...overrides,
   };
@@ -127,7 +144,28 @@ describe('resyncFromBridgeSnapshot', () => {
 
     const result = await resyncFromBridgeSnapshot(rawDb);
 
-    expect(upsertAnime).toHaveBeenCalledWith(expect.anything(), snapshot);
+    expect(upsertAnime).toHaveBeenCalledWith(expect.anything(), {
+      _id: 'anime-1',
+      nombre: 'Naruto',
+      estado: 1,
+      nrocapvisto: 12,
+      totalcap: 220,
+      dias: [],
+      generos: [],
+      tipo: 1,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: null,
+      fechaEstreno: null,
+      fechaCreacion: null,
+      fechaEliminacion: null,
+      portada: null,
+      pagina: null,
+      carpeta: null,
+      estudios: null,
+      origen: null,
+      duracion: null,
+    });
     expect(result.healed).toBe(1);
   });
 
@@ -150,6 +188,15 @@ describe('resyncFromBridgeSnapshot', () => {
     expect(result.healed).toBe(0);
   });
 
+  it('propaga el error cuando el snapshot wire en inglés es inválido y no lo esconde como healed:0', async () => {
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 5 })]);
+    mockFetch.mockRejectedValue(new Error('Invalid anime list from bridge: bad payload'));
+
+    await expect(resyncFromBridgeSnapshot(rawDb)).rejects.toThrow(
+      'Invalid anime list from bridge: bad payload'
+    );
+  });
+
   it('reads pending outbox ids and local rows independently, regardless of resolve order', async () => {
     // loadPendingOutboxRecordIds resolves AFTER the local rows select to prove the two reads
     // are not sequenced through each other's result (parallelized via Promise.all).
@@ -169,7 +216,7 @@ describe('resyncFromBridgeSnapshot', () => {
       resolvePendingIds(new Set());
       return taskPromise;
     });
-    mockFetch.mockResolvedValue([makeSnapshot({ nrocapvisto: 12 })]);
+    mockFetch.mockResolvedValue([makeSnapshot({ episodesWatched: 12 })]);
 
     const result = await resyncFromBridgeSnapshot(rawDb);
 

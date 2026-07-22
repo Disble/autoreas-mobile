@@ -29,7 +29,6 @@ export async function upsertAnime(
     estudios: anime.estudios ?? null,
     origen: anime.origen ?? null,
     duracion: anime.duracion ?? null,
-    // Stamp the staleness guard on cold create so a later stale snapshot can't regress it.
     ...(guardMs !== undefined ? { lastAppliedChangeMs: guardMs } : {}),
   };
 

@@ -43,7 +43,7 @@ describe('reconcile helpers', () => {
     id: 1,
     animeId: 'anime-1',
     operation: 'update',
-    payload: JSON.stringify({ nrocapvisto: 5, fechaUltCapVisto: 1710000000000 }),
+    payload: JSON.stringify({ episodesWatched: 5, lastWatchedAt: 1710000000000 }),
     status: 'processing',
     createdAt: 1710000000000,
   };
@@ -76,7 +76,7 @@ describe('reconcile helpers', () => {
         {
           record_id: 'anime-1',
           change_type: 'update',
-          changed_fields: ['nrocapvisto', 'fechaUltCapVisto'],
+          changed_fields: ['episodesWatched', 'lastWatchedAt'],
           timestamp: 1710000001000,
         },
       ]),
@@ -114,7 +114,7 @@ describe('reconcile helpers', () => {
           {
             record_id: 'anime-1',
             change_type: 'update',
-            changed_fields: ['nrocapvisto', 'fechaUltCapVisto'],
+            changed_fields: ['episodesWatched', 'lastWatchedAt'],
             timestamp: 1710000001000,
           },
         ],
@@ -128,7 +128,7 @@ describe('reconcile helpers', () => {
         {
           record_id: 'otro-anime',
           change_type: 'update',
-          changed_fields: ['nrocapvisto'],
+          changed_fields: ['episodesWatched'],
           timestamp: 1710000001000,
         },
       ]),
@@ -237,8 +237,17 @@ describe('syncPendingOperations applyMode routing', () => {
           {
             record_id: 'anime-1',
             change_type: 'update',
-            changed_fields: ['estado'],
-            snapshot: { _id: 'anime-1', nombre: 'Test', estado: 2, nrocapvisto: 0, activo: 1, primeravez: 0 },
+            changed_fields: ['status'],
+            snapshot: {
+              id: 'anime-1',
+              name: 'Test',
+              status: 2,
+              episodesWatched: 0,
+              active: 1,
+              firstCycle: 0,
+              days: [],
+              genres: [],
+            },
             timestamp: 1710000001000,
           },
         ],
@@ -261,7 +270,12 @@ describe('syncPendingOperations applyMode routing', () => {
     expect(mockApplyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
-        expect.objectContaining({ recordId: 'anime-1', changeType: 'update' }),
+        expect.objectContaining({
+          recordId: 'anime-1',
+          changeType: 'update',
+          changedFields: ['estado'],
+          snapshot: expect.objectContaining({ _id: 'anime-1', estado: 2, nombre: 'Test' }),
+        }),
       ]),
       expect.objectContaining({
         guardByRecordId: expect.any(Map),
@@ -304,7 +318,12 @@ describe('syncPendingOperations applyMode routing', () => {
     expect(mockStagePendingRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
-        expect.objectContaining({ recordId: 'anime-1', changeType: 'update' }),
+        expect.objectContaining({
+          recordId: 'anime-1',
+          changeType: 'update',
+          changedFields: ['estado'],
+          snapshot: expect.objectContaining({ _id: 'anime-1', estado: 2, nombre: 'Test' }),
+        }),
       ]),
     );
     expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
@@ -359,7 +378,7 @@ describe('syncPendingOperations applyMode routing', () => {
           {
             record_id: 'anime-1',
             change_type: 'update',
-            changed_fields: ['estado'],
+            changed_fields: ['status'],
             timestamp: 1710000001000,
           },
         ],

@@ -37,8 +37,8 @@ describe('anime mutation helpers', () => {
 
   it('buildCapPlusPatch genera un patch absoluto compatible con bridge', () => {
     expect(buildCapPlusPatch(baseAnime, now)).toEqual({
-      nrocapvisto: 4,
-      fechaUltCapVisto: now,
+      episodesWatched: 4,
+      lastWatchedAt: now,
     });
   });
 
@@ -54,11 +54,11 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 12,
-      fechaUltCapVisto: now,
-      fechaEstreno: now,
-      primeravez: false,
-      estado: 1,
+      episodesWatched: 12,
+      lastWatchedAt: now,
+      premieredAt: now,
+      firstCycle: false,
+      status: 1,
     });
   });
 
@@ -72,8 +72,8 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 0,
-      fechaUltCapVisto: now,
+      episodesWatched: 0,
+      lastWatchedAt: now,
     });
   });
 
@@ -89,17 +89,17 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 11,
-      fechaUltCapVisto: now,
-      estado: 0,
+      episodesWatched: 11,
+      lastWatchedAt: now,
+      status: 0,
     });
   });
 
   it('buildSetEstadoPatch envía el nuevo estado sin tocar nrocapvisto cuando no es finalizado', () => {
     expect(buildSetEstadoPatch(baseAnime, 3, now)).toEqual({
-      nrocapvisto: 3,
-      fechaUltCapVisto: now,
-      estado: 3,
+      episodesWatched: 3,
+      lastWatchedAt: now,
+      status: 3,
     });
   });
 
@@ -115,9 +115,9 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 12,
-      fechaUltCapVisto: now,
-      estado: 1,
+      episodesWatched: 12,
+      lastWatchedAt: now,
+      status: 1,
     });
   });
 
@@ -133,16 +133,16 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 7,
-      fechaUltCapVisto: now,
-      estado: 1,
+      episodesWatched: 7,
+      lastWatchedAt: now,
+      status: 1,
     });
   });
 
   it('buildCapPlusHalfPatch suma medio capítulo desde un entero', () => {
     expect(buildCapPlusHalfPatch(baseAnime, now)).toEqual({
-      nrocapvisto: 3.5,
-      fechaUltCapVisto: now,
+      episodesWatched: 3.5,
+      lastWatchedAt: now,
     });
   });
 
@@ -156,8 +156,8 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 4,
-      fechaUltCapVisto: now,
+      episodesWatched: 4,
+      lastWatchedAt: now,
     });
   });
 
@@ -172,9 +172,9 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 12,
-      fechaUltCapVisto: now,
-      estado: 1,
+      episodesWatched: 12,
+      lastWatchedAt: now,
+      status: 1,
     });
   });
 
@@ -188,8 +188,8 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 0,
-      fechaUltCapVisto: now,
+      episodesWatched: 0,
+      lastWatchedAt: now,
     });
   });
 
@@ -205,23 +205,23 @@ describe('anime mutation helpers', () => {
         now,
       ),
     ).toEqual({
-      nrocapvisto: 11.5,
-      fechaUltCapVisto: now,
-      estado: 0,
+      episodesWatched: 11.5,
+      lastWatchedAt: now,
+      status: 0,
     });
   });
 
   it('serializeMutationOperation normaliza al contrato update', () => {
     expect(
       serializeMutationOperation({
-        nrocapvisto: 4,
-        fechaUltCapVisto: now,
+        episodesWatched: 4,
+        lastWatchedAt: now,
       }),
     ).toEqual({
       operation: 'update',
       payload: JSON.stringify({
-        nrocapvisto: 4,
-        fechaUltCapVisto: now,
+        episodesWatched: 4,
+        lastWatchedAt: now,
       }),
     });
   });
@@ -229,10 +229,10 @@ describe('anime mutation helpers', () => {
   it('toLocalAnimeUpdate incluye sólo campos opcionales presentes y normaliza primeravez', () => {
     expect(
       toLocalAnimeUpdate({
-        nrocapvisto: 4,
-        fechaUltCapVisto: now,
-        fechaEstreno: now,
-        primeravez: false,
+        episodesWatched: 4,
+        lastWatchedAt: now,
+        premieredAt: now,
+        firstCycle: false,
       }),
     ).toEqual({
       nrocapvisto: 4,

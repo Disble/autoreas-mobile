@@ -5,11 +5,11 @@ export type AnimeMutationPatchBuilder = (anime: Anime, now: number) => AnimeMuta
 
 /** Defines the fields that an anime mutation synchronizes with the bridge. */
 export interface AnimeMutationSyncPatch {
-  readonly nrocapvisto: number;
-  readonly fechaUltCapVisto: number;
-  readonly estado?: number;
-  readonly fechaEstreno?: number;
-  readonly primeravez?: boolean;
+  readonly episodesWatched: number;
+  readonly lastWatchedAt: number;
+  readonly status?: number;
+  readonly premieredAt?: number;
+  readonly firstCycle?: boolean;
 }
 
 /** Defines a serialized update operation ready for durable storage. */

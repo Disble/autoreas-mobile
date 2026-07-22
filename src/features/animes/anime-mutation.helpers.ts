@@ -1,6 +1,6 @@
 import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
-import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema';
+import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema/anime.schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type {
   AnimeMutationPatchBuilder,
@@ -52,10 +52,10 @@ export function buildCapPlusPatch(
     anime.totalcap != null && anime.totalcap > 0 && newCap === anime.totalcap;
 
   return {
-    nrocapvisto: newCap,
-    fechaUltCapVisto: now,
-    ...(anime.primeravez === 1 ? { fechaEstreno: now, primeravez: false } : {}),
-    ...(isFinished ? { estado: 1 } : {}),
+    episodesWatched: newCap,
+    lastWatchedAt: now,
+    ...(anime.primeravez === 1 ? { premieredAt: now, firstCycle: false } : {}),
+    ...(isFinished ? { status: 1 } : {}),
   };
 }
 
@@ -75,9 +75,9 @@ export function buildCapMinusPatch(
     anime.nrocapvisto === anime.totalcap;
 
   return {
-    nrocapvisto: nextCap,
-    fechaUltCapVisto: now,
-    ...(shouldReopenCompletedAnime ? { estado: 0 } : {}),
+    episodesWatched: nextCap,
+    lastWatchedAt: now,
+    ...(shouldReopenCompletedAnime ? { status: 0 } : {}),
   };
 }
 
@@ -95,9 +95,9 @@ export function buildSetEstadoPatch(
     estado === 1 && anime.totalcap != null && anime.totalcap > 0;
 
   return {
-    nrocapvisto: shouldSnapToTotal ? (anime.totalcap as number) : anime.nrocapvisto,
-    fechaUltCapVisto: now,
-    estado,
+    episodesWatched: shouldSnapToTotal ? (anime.totalcap as number) : anime.nrocapvisto,
+    lastWatchedAt: now,
+    status: estado,
   };
 }
 
@@ -115,9 +115,9 @@ export function buildCapPlusHalfPatch(
     anime.totalcap != null && anime.totalcap > 0 && newCap >= anime.totalcap;
 
   return {
-    nrocapvisto: isFinished ? (anime.totalcap as number) : newCap,
-    fechaUltCapVisto: now,
-    ...(isFinished ? { estado: 1 } : {}),
+    episodesWatched: isFinished ? (anime.totalcap as number) : newCap,
+    lastWatchedAt: now,
+    ...(isFinished ? { status: 1 } : {}),
   };
 }
 
@@ -138,9 +138,9 @@ export function buildCapMinusHalfPatch(
     anime.nrocapvisto === anime.totalcap;
 
   return {
-    nrocapvisto: nextCap,
-    fechaUltCapVisto: now,
-    ...(shouldReopenCompletedAnime ? { estado: 0 } : {}),
+    episodesWatched: nextCap,
+    lastWatchedAt: now,
+    ...(shouldReopenCompletedAnime ? { status: 0 } : {}),
   };
 }
 
@@ -156,20 +156,20 @@ export function toLocalAnimeUpdate(patch: AnimeMutationSyncPatch) {
     fechaEstreno?: number;
     primeravez?: 0 | 1;
   } = {
-    nrocapvisto: patch.nrocapvisto,
-    fechaUltCapVisto: patch.fechaUltCapVisto,
+    nrocapvisto: patch.episodesWatched,
+    fechaUltCapVisto: patch.lastWatchedAt,
   };
 
-  if (patch.estado !== undefined) {
-    localUpdate.estado = patch.estado;
+  if (patch.status !== undefined) {
+    localUpdate.estado = patch.status;
   }
 
-  if (patch.fechaEstreno !== undefined) {
-    localUpdate.fechaEstreno = patch.fechaEstreno;
+  if (patch.premieredAt !== undefined) {
+    localUpdate.fechaEstreno = patch.premieredAt;
   }
 
-  if (patch.primeravez !== undefined) {
-    localUpdate.primeravez = patch.primeravez ? 1 : 0;
+  if (patch.firstCycle !== undefined) {
+    localUpdate.primeravez = patch.firstCycle ? 1 : 0;
   }
 
   return localUpdate;

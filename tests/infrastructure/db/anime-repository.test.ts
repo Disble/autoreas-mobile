@@ -1,5 +1,8 @@
 import { eq } from "drizzle-orm";
-import { applyAnimePartial } from "../../../src/infrastructure/db/anime-repository";
+import {
+  applyAnimePartial,
+  upsertAnime,
+} from "../../../src/infrastructure/db/anime-repository";
 import { animes } from "../../../src/infrastructure/db/schema";
 
 jest.mock("drizzle-orm", () => ({
@@ -51,5 +54,49 @@ describe("applyAnimePartial", () => {
     await applyAnimePartial(db, "anime-1", {}, 800);
 
     expect(set).toHaveBeenCalledWith({ lastAppliedChangeMs: 800 });
+  });
+});
+
+describe("upsertAnime", () => {
+  it("persiste únicamente el modelo legacy normalizado en español", async () => {
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const insert = jest.fn().mockReturnValue({ values });
+    const db = { insert } as never;
+    const normalizedAnime = {
+      _id: "anime-1",
+      nombre: "Naruto",
+      estado: 1,
+      nrocapvisto: 12,
+      totalcap: 220,
+      dias: [{ dia: "lunes", orden: 1 }],
+      generos: ["accion"],
+      tipo: 1,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: 1710000000000,
+      fechaEstreno: 1710000001000,
+      fechaCreacion: 1710000002000,
+      fechaEliminacion: null,
+      portada: "cover.jpg",
+      pagina: "https://example.com/anime-1",
+      carpeta: "anime-1",
+      estudios: "Pierrot",
+      origen: "Manga",
+      duracion: 24,
+    };
+
+    await upsertAnime(db, normalizedAnime);
+
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({
+      _id: "anime-1",
+      nombre: "Naruto",
+      estado: 1,
+      nrocapvisto: 12,
+      dias: JSON.stringify([{ dia: "lunes", orden: 1 }]),
+      generos: JSON.stringify(["accion"]),
+      pagina: "https://example.com/anime-1",
+    }));
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ target: animes._id }));
   });
 });

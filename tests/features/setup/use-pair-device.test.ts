@@ -23,6 +23,30 @@ jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
 describe('usePairDevice', () => {
   const rawDb = { name: 'raw-db' };
   const pairDeviceMock = bridgeClient.pairDevice as jest.Mock;
+  const normalizedAnimeSnapshot = [
+    {
+      _id: 'anime-1',
+      nombre: 'One Piece',
+      estado: 0,
+      nrocapvisto: 12,
+      totalcap: null,
+      dias: [],
+      generos: [],
+      tipo: null,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: 1710000000000,
+      fechaEstreno: null,
+      fechaCreacion: null,
+      fechaEliminacion: null,
+      portada: null,
+      pagina: null,
+      carpeta: null,
+      estudios: null,
+      origen: null,
+      duracion: null,
+    },
+  ];
 
   function pairResponse(overrides: Record<string, unknown> = {}) {
     return {
@@ -34,7 +58,7 @@ describe('usePairDevice', () => {
         auth_token: 'auth-secret',
       },
       rawBody: '{}',
-      url: 'http://192.168.1.10:8080/api/devices/pair',
+      url: 'https://192.168.1.10:8080/api/devices/pair',
       ...overrides,
     };
   }
@@ -42,8 +66,8 @@ describe('usePairDevice', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
-    (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockResolvedValue([]);
-    (initialSyncHelpers.persistPairedBridgeConfiguration as jest.Mock).mockResolvedValue(0);
+    (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockResolvedValue(normalizedAnimeSnapshot);
+    (initialSyncHelpers.persistPairedBridgeConfiguration as jest.Mock).mockResolvedValue(1);
   });
 
   afterEach(() => {
@@ -55,7 +79,7 @@ describe('usePairDevice', () => {
 
     const { result } = renderHook(() => usePairDevice());
 
-    let pairResult: { success: boolean; data?: any; error?: string } | undefined = undefined;
+    let pairResult: { success: boolean; data?: unknown; error?: string } | undefined;
     await act(async () => {
       pairResult = await result.current.pair({ ip: '192.168.1.10', port: '8080', token: 'pairing123' });
     });
@@ -90,7 +114,7 @@ describe('usePairDevice', () => {
         deviceId: 'dev-123',
         deviceName: 'My Bridge',
       },
-      [],
+      normalizedAnimeSnapshot,
     );
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
@@ -103,7 +127,7 @@ describe('usePairDevice', () => {
 
     const { result } = renderHook(() => usePairDevice());
 
-    let pairResult: { success: boolean; data?: any; error?: string } | undefined = undefined;
+    let pairResult: { success: boolean; data?: unknown; error?: string } | undefined;
     await act(async () => {
       pairResult = await result.current.pair({ ip: '192.168.1.10', port: '8080', token: 'invalid' });
     });
@@ -128,7 +152,7 @@ describe('usePairDevice', () => {
 
     const { result } = renderHook(() => usePairDevice());
 
-    let pairResult: { success: boolean; data?: any; error?: string } | undefined = undefined;
+    let pairResult: { success: boolean; data?: unknown; error?: string } | undefined;
     await act(async () => {
       pairResult = await result.current.pair({ ip: '1.1.1.1', port: 80, token: 'xxx' });
     });

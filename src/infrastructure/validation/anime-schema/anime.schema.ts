@@ -12,6 +12,13 @@ const AnimeDaySchema = z.object({
 /** Defines the anime day value shape. */
 export type AnimeDay = z.infer<typeof AnimeDaySchema>;
 
+const WireAnimeDaySchema = z.object({
+  day: z.string(),
+  order: z.number().int(),
+});
+
+/** Defines the wire anime day value shape. */
+
 /** Provides the shared date like value. */
 
 const dateLike = z.preprocess((value) => {
@@ -28,6 +35,7 @@ const dateLike = z.preprocess((value) => {
   }
 
   if (
+    value &&
     typeof value === 'object' &&
     '$$date' in value &&
     typeof value.$$date === 'number'
@@ -47,6 +55,18 @@ const animeDayArrayOrEmpty = z.preprocess(
   (value) => (value === '' ? [] : value),
   z.array(AnimeDaySchema)
 );
+
+const wireStringArrayOrEmpty = z.preprocess(
+  (value) => (value === '' ? [] : value),
+  z.array(z.string())
+);
+
+const wireAnimeDayArrayOrEmpty = z.preprocess(
+  (value) => (value === '' ? [] : value),
+  z.array(WireAnimeDaySchema)
+);
+
+const numericDate = z.number().nullable().optional();
 
 /** Validates anime schema payloads at runtime. */
 
@@ -75,3 +95,33 @@ export const AnimeSchema = z.object({
 
 /** Defines the anime value shape. */
 export type Anime = z.infer<typeof AnimeSchema>;
+
+/** Validates English anime wire payloads at runtime. */
+export const WireAnimeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.number().int().min(0).max(3),
+  episodesWatched: z.number(),
+  totalEpisodes: z.number().int().nullable().optional(),
+  days: wireAnimeDayArrayOrEmpty.optional().default([]),
+  genres: wireStringArrayOrEmpty.optional().default([]),
+  kind: z.number().int().nullable().optional(),
+  active: z.number().int().min(0).max(1),
+  firstCycle: z.number().int().min(0).max(1),
+  lastWatchedAt: numericDate,
+  premieredAt: numericDate,
+  createdAt: numericDate,
+  deletedAt: numericDate,
+  cover: z.string().nullable().optional(),
+  sourceUrl: z.string().nullable().optional(),
+  folder: z.string().nullable().optional(),
+  studios: z.string().nullable().optional(),
+  origin: z.string().nullable().optional(),
+  durationMinutes: z.number().int().nullable().optional(),
+});
+
+/** Defines the wire anime value shape. */
+export type WireAnime = z.infer<typeof WireAnimeSchema>;
+
+/** Validates English anime wire list payloads at runtime. */
+export const WireAnimeListSchema = z.array(WireAnimeSchema);

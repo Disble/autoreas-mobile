@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { AnimeSchema } from '../../../src/infrastructure/validation/anime-schema';
+import {
+  AnimeSchema,
+  WireAnimeSchema,
+} from '../../../src/infrastructure/validation/anime-schema';
 
 const minimalAnime = {
   _id: 'anime-1',
@@ -19,13 +22,45 @@ describe('AnimeSchema', () => {
     expect(parsed.nrocapvisto).toBe(0.5);
   });
 
-  it('extrae fechas legacy con $$date', () => {
+  it('acepta fechas legacy locales como números', () => {
     const parsed = AnimeSchema.parse({
       ...minimalAnime,
-      fechaUltCapVisto: { $$date: 1710000000000 },
+      fechaUltCapVisto: 1710000000000,
     });
 
     expect(parsed.fechaUltCapVisto).toBe(1710000000000);
+  });
+
+  it('rechaza $$date en el contrato wire en inglés', () => {
+    expect(() =>
+      WireAnimeSchema.parse({
+        id: 'anime-1',
+        name: 'Fullmetal Alchemist',
+        status: 0,
+        episodesWatched: 3,
+        active: 1,
+        firstCycle: 0,
+        genres: ['accion'],
+        days: [{ day: 'Monday', order: 1 }],
+        lastWatchedAt: { $$date: 1710000000000 },
+      })
+    ).toThrow(z.ZodError);
+  });
+
+  it('acepta timestamps numéricos en el contrato wire en inglés', () => {
+    const parsed = WireAnimeSchema.parse({
+      id: 'anime-1',
+      name: 'Fullmetal Alchemist',
+      status: 0,
+      episodesWatched: 3,
+      active: 1,
+      firstCycle: 0,
+      genres: ['accion'],
+      days: [{ day: 'Monday', order: 1 }],
+      lastWatchedAt: 1710000000000,
+    });
+
+    expect(parsed.lastWatchedAt).toBe(1710000000000);
   });
 
   it('coerciona generos vacio a array vacio', () => {

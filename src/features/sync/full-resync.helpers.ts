@@ -2,11 +2,25 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes } from '../../infrastructure/db/schema';
+import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
+import { mapWireAnimeToLegacyAnime } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
 import { fetchInitialSyncSnapshot } from './initial-sync.helpers';
 import { buildPartialUpdate, deriveChangedFields } from './merge/field-merge.helpers';
 import { loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 
 import type { ResyncResult } from './full-resync.types';
+
+function normalizeFetchedAnime(
+  anime: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>[number],
+) {
+  const parsedWireAnime = WireAnimeSchema.safeParse(anime);
+
+  if (parsedWireAnime.success) {
+    return mapWireAnimeToLegacyAnime(parsedWireAnime.data);
+  }
+
+  return anime;
+}
 
 /**
  * Snapshot-authoritative heal: pulls the bridge's full current anime list and reconciles each
@@ -37,8 +51,9 @@ export async function resyncFromBridgeSnapshot(
     port: config.port,
     token: config.token,
   });
+  const normalizedRemote = remote.map(normalizeFetchedAnime);
 
-  if (remote.length === 0) {
+  if (normalizedRemote.length === 0) {
     return { healed: 0 };
   }
 
@@ -51,7 +66,7 @@ export async function resyncFromBridgeSnapshot(
     ]);
     const localById = new Map(localRows.map((row) => [row._id, row]));
 
-    for (const anime of remote) {
+    for (const anime of normalizedRemote) {
       if (pendingOutboxRecordIds.has(anime._id)) {
         continue;
       }

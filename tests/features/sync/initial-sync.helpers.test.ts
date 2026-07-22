@@ -27,6 +27,30 @@ describe('initial-sync helpers', () => {
   const rawDb = { id: 'raw-db' };
   const animeSnapshot = [
     {
+      id: 'anime-1',
+      name: 'One Piece',
+      status: 0,
+      episodesWatched: 12,
+      totalEpisodes: null,
+      days: [],
+      genres: [],
+      kind: null,
+      active: 1,
+      firstCycle: 0,
+      lastWatchedAt: 1710000000000,
+      premieredAt: null,
+      createdAt: null,
+      deletedAt: null,
+      cover: null,
+      sourceUrl: null,
+      folder: null,
+      studios: null,
+      origin: null,
+      durationMinutes: null,
+    },
+  ];
+  const normalizedAnimeSnapshot = [
+    {
       _id: 'anime-1',
       nombre: 'One Piece',
       estado: 0,
@@ -37,7 +61,7 @@ describe('initial-sync helpers', () => {
       tipo: null,
       activo: 1,
       primeravez: 0,
-      fechaUltCapVisto: null,
+      fechaUltCapVisto: 1710000000000,
       fechaEstreno: null,
       fechaCreacion: null,
       fechaEliminacion: null,
@@ -60,7 +84,7 @@ describe('initial-sync helpers', () => {
       status: 200,
       data: animeSnapshot,
       rawBody: JSON.stringify(animeSnapshot),
-      url: 'http://192.168.1.10:8080/api/animes',
+      url: 'https://192.168.1.10:8080/api/animes',
     });
 
     const result = await fetchInitialSyncSnapshot({
@@ -74,7 +98,25 @@ describe('initial-sync helpers', () => {
       port: 8080,
       token: 'auth-secret',
     });
-    expect(result).toEqual(animeSnapshot);
+    expect(result).toEqual(normalizedAnimeSnapshot);
+  });
+
+  it('falla fuerte cuando el bridge responde un snapshot inválido en inglés', async () => {
+    (bridgeClient.listAnimes as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [{ id: 'anime-1', name: 'One Piece', status: 0, episodesWatched: '12' }],
+      rawBody: '[]',
+      url: 'https://192.168.1.10:8080/api/animes',
+    });
+
+    await expect(
+      fetchInitialSyncSnapshot({
+        ip: '192.168.1.10',
+        port: 8080,
+        token: 'auth-secret',
+      })
+    ).rejects.toThrow('Invalid anime list from bridge');
   });
 
   it('persists fetched anime rows through the deferred write so live queries can observe it', async () => {
@@ -82,12 +124,12 @@ describe('initial-sync helpers', () => {
       await task({}, {});
     });
 
-    const count = await persistInitialSyncSnapshot(rawDb as never, animeSnapshot);
+    const count = await persistInitialSyncSnapshot(rawDb as never, normalizedAnimeSnapshot);
 
     expect(count).toBe(1);
     expect(withDeferredWrite).toHaveBeenCalledTimes(1);
     expect(withExclusiveWrite).not.toHaveBeenCalled();
-    expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, animeSnapshot[0]);
+    expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, normalizedAnimeSnapshot[0]);
   });
 
   it('commits bridge config and snapshot together in one deferred write so live queries can observe it', async () => {
@@ -114,7 +156,7 @@ describe('initial-sync helpers', () => {
         deviceId: 'device-1',
         deviceName: 'Bridge Casa',
       },
-      animeSnapshot,
+      normalizedAnimeSnapshot,
     );
 
     expect(count).toBe(1);
@@ -131,7 +173,7 @@ describe('initial-sync helpers', () => {
     });
     expect(animeRepository.upsertAnime).toHaveBeenCalledWith(
       expect.objectContaining({ delete: deleteMock, insert: insertMock }),
-      animeSnapshot[0],
+      normalizedAnimeSnapshot[0],
     );
   });
 });

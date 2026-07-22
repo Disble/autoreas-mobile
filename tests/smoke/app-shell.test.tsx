@@ -2,6 +2,10 @@ import { render } from "@testing-library/react-native";
 import React from "react";
 import HomeScreen from "../../src/app/(tabs)/index";
 
+const mockWhere = jest.fn(() => ({ orderBy: jest.fn(() => []) }));
+const mockFrom = jest.fn(() => ({ where: mockWhere }));
+const mockSelect = jest.fn(() => ({ from: mockFrom }));
+
 jest.mock("expo-sqlite", () => ({
   useSQLiteContext: () => ({
     withExclusiveTransactionAsync: jest.fn(),
@@ -15,15 +19,7 @@ jest.mock("drizzle-orm/expo-sqlite", () => ({
 }));
 
 jest.mock("../../src/infrastructure/db/client", () => ({
-  createDrizzleDb: () => ({
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          orderBy: () => [],
-        }),
-      }),
-    }),
-  }),
+  createDrizzleDb: () => ({ select: mockSelect }),
 }));
 
 jest.mock("../../src/contexts/app-theme-context", () => ({
@@ -57,6 +53,6 @@ jest.mock("../../src/features/animes/ui/AnimeListScreen", () => ({
 
 describe("app shell bootstrap", () => {
   it("renders the tracer shell with sqlite count and action", () => {
-    render(<HomeScreen />);
+    expect(() => render(<HomeScreen />)).not.toThrow();
   });
 });

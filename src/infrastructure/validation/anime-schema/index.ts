@@ -1,2 +1,11 @@
-export { AnimeSchema } from './anime.schema';
-export type { Anime, AnimeDay } from './anime.schema';
+export {
+  AnimeSchema,
+  WireAnimeListSchema,
+  WireAnimeSchema,
+} from './anime.schema';
+export {
+  mapWireAnimeListToLegacyAnimes,
+  mapWireAnimeToLegacyAnime,
+  normalizeWireAnimeChangedFields,
+} from './anime-wire.helpers';
+export type { Anime, AnimeDay, WireAnime } from './anime.schema';

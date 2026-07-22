@@ -60,6 +60,15 @@ describe("buildPartialUpdate", () => {
     expect(result.skippedFields).toEqual(["campoInexistente"]);
   });
 
+  it("omite claves wire en inglés cuando changed_fields ya debía venir normalizado", () => {
+    const snapshot = makeSnapshot({ estado: 3 });
+
+    const result = buildPartialUpdate(["status", "estado"], snapshot);
+
+    expect(result.columns).toEqual({ estado: 3 });
+    expect(result.skippedFields).toEqual(["status"]);
+  });
+
   it("serializa dias y generos como JSON string al construir el partial update", () => {
     const snapshot = makeSnapshot({
       dias: [{ dia: "lunes", orden: 1 }],
