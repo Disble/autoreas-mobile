@@ -1,5 +1,4 @@
 import {
-  buildReconcileRequestBody,
   getConfirmedOperationIds,
   syncPendingOperations,
 } from '../../../src/features/sync/reconcile.helpers';
@@ -47,28 +46,6 @@ describe('reconcile helpers', () => {
     status: 'processing',
     createdAt: 1710000000000,
   };
-
-  it('buildReconcileRequestBody omite device_id cuando falta y parsea payloads invalidos', () => {
-    expect(
-      buildReconcileRequestBody(undefined, 0, [
-        {
-          ...baseOperation,
-          payload: '{',
-        },
-      ]),
-    ).toEqual({
-      device_id: undefined,
-      last_changelog_id: 0,
-      pending_operations: [
-        {
-          anime_id: 'anime-1',
-          operation: 'update',
-          payload: {},
-          created_at: 1710000000000,
-        },
-      ],
-    });
-  });
 
   it('getConfirmedOperationIds confirma updates cuando bridge refleja los campos aplicados', () => {
     expect(

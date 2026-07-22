@@ -62,10 +62,27 @@ export function buildReconcileRequestBody(
     pending_operations: pendingOperations.map((operation) => ({
       anime_id: operation.animeId,
       operation: operation.operation,
-      payload: parseOperationPayload(operation.payload),
+      payload: normalizePendingOperationPayload(operation.operation, operation.payload),
       created_at: operation.createdAt,
     })),
   };
+}
+
+/**
+ * Parses one persisted outbox payload into the bridge-facing reconcile shape.
+ * This keeps legacy Spanish SQLite/domain names local while transport always emits English keys.
+ */
+function normalizePendingOperationPayload(
+  operation: string,
+  payload: string,
+): Record<string, unknown> {
+  const parsedPayload = parseOperationPayload(payload);
+
+  if (operation !== 'update') {
+    return parsedPayload;
+  }
+
+  return normalizeLegacyAnimeUpdatePayloadAliases(parsedPayload);
 }
 
 /**
@@ -103,7 +120,7 @@ function isOperationConfirmed(
     return appliedOperation.applied;
   }
 
-  const payload = parseOperationPayload(operation.payload);
+  const payload = normalizePendingOperationPayload(operation.operation, operation.payload);
   const payloadKeys = Object.keys(payload);
 
   if (payloadKeys.length === 0) {
@@ -137,6 +154,33 @@ function parseOperationPayload(payload: string): Record<string, unknown> {
   }
 
   return {};
+}
+
+function normalizeLegacyAnimeUpdatePayloadAliases(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalizedPayload = { ...payload };
+
+  const legacyAnimePayloadAliases = {
+    estado: 'status',
+    nrocapvisto: 'episodesWatched',
+    fechaUltCapVisto: 'lastWatchedAt',
+    dias: 'days',
+  } as const;
+
+  for (const legacyAlias of Object.keys(legacyAnimePayloadAliases) as Array<
+    keyof typeof legacyAnimePayloadAliases
+  >) {
+    const englishKey = legacyAnimePayloadAliases[legacyAlias];
+
+    if (!(englishKey in normalizedPayload) && legacyAlias in payload) {
+      normalizedPayload[englishKey] = payload[legacyAlias];
+    }
+
+    delete normalizedPayload[legacyAlias];
+  }
+
+  return normalizedPayload;
 }
 
 function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {

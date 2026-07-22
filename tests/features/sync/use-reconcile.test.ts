@@ -262,7 +262,7 @@ describe('syncPendingOperations', () => {
           {
             anime_id: 'anime1',
             operation: 'update',
-            payload: { nrocapvisto: 5 },
+            payload: { episodesWatched: 5 },
             created_at: 1710000000000,
           },
         ],
