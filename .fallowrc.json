@@ -4,6 +4,9 @@
     "src/app/**/*.{ts,tsx}",
     "app/**/*.{ts,tsx}"
   ],
+  "dynamicallyLoaded": [
+    "plugins/withAndroidGradleMemory.js"
+  ],
   "ignorePatterns": [
     "android/**",
     "ios/**",

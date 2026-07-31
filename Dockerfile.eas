@@ -7,8 +7,12 @@ FROM reactnativecommunity/react-native-android:latest
 # TLS handshake failures against Maven Central and other HTTPS hosts in Docker Desktop Windows
 RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates && update-ca-certificates
 
-# Install EAS CLI and Bun globally (cached in image layer).
-# EAS auto-selects Bun when bun.lock is present in the project.
-RUN npm install -g eas-cli@latest bun
+# Install Bun with its supported Linux installer. EAS CLI runs through Bunx so
+# project dependency installation and CLI resolution share Bun's cache.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends curl unzip \
+  && curl -fsSL https://bun.com/install | bash \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.bun/bin:${PATH}"
 
 WORKDIR /app

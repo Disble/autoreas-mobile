@@ -11,15 +11,15 @@ Autoreas mobile app built with Expo Router, React Native, Expo SQLite, Drizzle O
 - Drizzle ORM
 - React Query
 - Jest + Testing Library
-- Bun as the primary package manager
+- Bun as the sole project package manager
 
 ## Requirements
 
 - Bun
 - Node.js
-- EAS CLI (`npm i -g eas-cli` or `bunx eas --version`)
+- EAS CLI (`bunx eas-cli --version`)
 - Android Studio if you plan to run Android locally
-- Logged-in Expo account (`eas login`) for remote builds
+- Logged-in Expo account (`bunx eas-cli login`) for remote builds
 
 ## Important: SQLite and Android
 
@@ -146,14 +146,14 @@ If you want to test real SQLite, local cleartext HTTP, and native wiring, you ne
 ### Option 1: remote development build with EAS
 
 ```bash
-eas build --platform android --profile development
+bunx eas-cli build --platform android --profile development
 ```
 
 This is the command we needed documented for this repo.
 
 ### Option 2: local preview build with Docker
 
-If you want to generate the APK locally on Windows using Docker Desktop, this repo already includes the required setup in `Dockerfile.eas` and `docker-compose.eas.yml`.
+If you want to generate the APK locally on Windows using Docker Desktop, this repo already includes the required setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs project dependencies from `bun.lock` with `bun install --frozen-lockfile`.
 
 Minimum requirements:
 
@@ -186,17 +186,28 @@ Output:
 
 - the APK is written to the project root as `build-*.apk`
 - those local artifacts are ignored by Git
+- the managed prebuild sets Gradle JVM memory to `-Xmx2g` and a `1g` metaspace limit through `plugins/withAndroidGradleMemory.js`; no generated `android/` project is tracked
+
+Gradle 10 deprecation notice:
+
+- Expo SDK 55 / React Native generated build tooling can emit a Gradle 10 deprecation warning during the local build
+- this repository has no root Android Gradle project and no project-owned deprecated Gradle API to change; keep the toolchain-managed warning visible until Expo or React Native removes it
+
+Native dependency compatibility:
+
+- `@notifee/react-native` is pinned to its current npm release, `9.1.8`. React Native Directory reports Android and New Architecture metadata, and also marks the package unmaintained. Its native notification and foreground-service integration must be exercised in a preview APK before an Expo or React Native upgrade.
+- `foreground-sync-ticker` is a repository-owned Android-only Expo module, so it has no React Native Directory entry. It loads through `expo-modules-core`; Android preview builds remain the compatibility check for this local native boundary.
 
 ### Option 3: remote preview build
 
 ```bash
-eas build --platform android --profile preview
+bunx eas-cli build --platform android --profile preview
 ```
 
 ### Option 4: remote production build
 
 ```bash
-eas build --platform android --profile production
+bunx eas-cli build --platform android --profile production
 ```
 
 ## Install and open a development build
@@ -214,7 +225,7 @@ If the development client is already installed, you can open it against the loca
 ### Send a production build with EAS Submit
 
 ```bash
-eas submit --platform android --profile production
+bunx eas-cli submit --platform android --profile production
 ```
 
 Note:
@@ -226,19 +237,19 @@ Note:
 ### Verify resolved public config
 
 ```bash
-npx expo config --type public
+bunx expo config --type public
 ```
 
 ### Check dependencies and project health
 
 ```bash
-npx expo-doctor
+bunx expo-doctor
 ```
 
 ### Check Expo-recommended upgrades
 
 ```bash
-npx expo install --check
+bunx expo install --check
 ```
 
 ## Suggested development flow
@@ -255,7 +266,7 @@ bun run typecheck
 ### When native plugins or SQLite change
 
 ```bash
-eas build --platform android --profile development
+bunx eas-cli build --platform android --profile development
 ```
 
 ### Before closing a task
@@ -283,7 +294,7 @@ This typically happens when:
 Solution:
 
 ```bash
-eas build --platform android --profile development
+bunx eas-cli build --platform android --profile development
 ```
 
 Then install the new build on the device or emulator and start Metro:
@@ -308,7 +319,7 @@ In this repo, that is already declared in `app.json` through `expo-build-propert
 Solution:
 
 ```bash
-eas build --platform android --profile development
+bunx eas-cli build --platform android --profile development
 ```
 
 ### Reinstall the development client correctly
@@ -316,7 +327,7 @@ eas build --platform android --profile development
 When you change native plugins, SQLite, permissions, or Android configuration, use this flow:
 
 ```bash
-eas build --platform android --profile development
+bunx eas-cli build --platform android --profile development
 ```
 
 Then:
@@ -360,7 +371,7 @@ bun run typecheck
 3. Generate the preview build:
 
 ```bash
-eas build --platform android --profile preview
+bunx eas-cli build --platform android --profile preview
 ```
 
 4. Install the build on a device and validate:
@@ -390,13 +401,13 @@ bun run typecheck
 3. Generate the production build:
 
 ```bash
-eas build --platform android --profile production
+bunx eas-cli build --platform android --profile production
 ```
 
 4. Submit for distribution:
 
 ```bash
-eas submit --platform android --profile production
+bunx eas-cli submit --platform android --profile production
 ```
 
 ### Minimum checklist before any build

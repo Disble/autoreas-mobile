@@ -13,7 +13,7 @@ services:
       - .:/app
 
       # Isolate node_modules inside container (Linux binaries, not Windows)
-      # This volume persists — npm install is fast on subsequent runs
+      # This volume persists — Bun install is fast on subsequent runs
       - node_modules:/app/node_modules
 
       # Cache Gradle downloads and build outputs (~1-2GB, only downloaded once)
@@ -22,8 +22,8 @@ services:
       # Cache Android SDK extras (avoids re-downloading NDK components)
       - android_cache:/root/.android
 
-      # Cache npm global packages
-      - npm_cache:/root/.npm
+      # Cache Bun package downloads and Bunx CLI resolution
+      - bun_cache:/root/.bun/install/cache
 
     # Fix Java/Gradle DNS on Docker Desktop Windows:
     # Java tries IPv6 first by default — IPv6 is broken in Docker Desktop on Windows.
@@ -40,10 +40,10 @@ services:
     entrypoint: >
       bash -c "
         echo '--- Installing dependencies ---' &&
-        npm install &&
+        bun install --frozen-lockfile &&
         echo '--- Starting EAS local build ---' &&
         for attempt in 1 2 3; do
-          eas build --local --platform android --profile $${0:-preview} --non-interactive && break
+          bunx eas-cli@latest build --local --platform android --profile $${0:-preview} --non-interactive && break
           echo \"--- Attempt $$attempt failed, retrying in 5s... ---\" &&
           sleep 5
         done &&
@@ -56,10 +56,10 @@ volumes:
   # Docker Compose prefixes with folder name automatically — no conflicts across projects
   node_modules:
 
-  # gradle/android/npm caches are shared across all projects (saves re-downloading)
+  # Gradle/Android/Bun caches are shared across all projects (saves re-downloading)
   gradle_cache:
     name: eas_gradle_cache
   android_cache:
     name: eas_android_cache
-  npm_cache:
-    name: eas_npm_cache
+  bun_cache:
+    name: eas_bun_cache
