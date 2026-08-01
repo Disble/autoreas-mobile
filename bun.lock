@@ -59,7 +59,7 @@
         "@types/jest": "29.5.14",
         "@types/react": "~19.2.10",
         "babel-plugin-inline-import": "^3.0.0",
-        "dlinter-ts-react": "0.6.0",
+        "dlinter-ts-react": "^0.9.0",
         "drizzle-kit": "^0.31.10",
         "eslint": "^9.25.0",
         "eslint-plugin-jsdoc": "^62.9.0",
@@ -1023,7 +1023,7 @@
 
     "diff-sequences": ["diff-sequences@29.6.3", "", {}, "sha512-EjePK1srD3P08o2j4f0ExnylqRs5B9tJjcp9t1krH2qRi8CCdsYfwe9JgSLurFBWwq4uOlipzfk5fHNvwFKr8Q=="],
 
-    "dlinter-ts-react": ["dlinter-ts-react@0.6.0", "", { "dependencies": { "@eslint/js": "^10.0.1", "@typescript-eslint/eslint-plugin": "8.63.0", "@typescript-eslint/parser": "8.63.0", "eslint-import-resolver-typescript": "^4.4.5", "eslint-plugin-check-file": "^3.3.1", "eslint-plugin-import-x": "^4.17.1", "eslint-plugin-jsdoc": "^63.0.13", "eslint-plugin-react": "^7.37.5", "eslint-plugin-react-doctor": "0.7.4", "eslint-plugin-react-hooks": "^7.1.1", "eslint-plugin-sonarjs": "4.1.0", "yaml": "^2.9.0" }, "peerDependencies": { "eslint": ">=9", "typescript": ">=5.0.0 <6.1.0" }, "bin": { "dlinter": "dist/cli/index.mjs" } }, "sha512-bg6NPym9vGRsEkrZM5QewJh66EonJi5xnaH+ft8aV+HN02OMlswhwFHFbn9AZPYiT+JiLBwNxR1N5LTSGxReMg=="],
+    "dlinter-ts-react": ["dlinter-ts-react@0.9.0", "", { "dependencies": { "@eslint/js": "^10.0.1", "@typescript-eslint/eslint-plugin": "8.63.0", "@typescript-eslint/parser": "8.63.0", "eslint-import-resolver-typescript": "^4.4.5", "eslint-plugin-check-file": "^3.3.1", "eslint-plugin-import-x": "^4.17.1", "eslint-plugin-jsdoc": "^63.0.13", "eslint-plugin-react": "^7.37.5", "eslint-plugin-react-doctor": "0.7.4", "eslint-plugin-react-hooks": "^7.1.1", "eslint-plugin-sonarjs": "4.1.0", "yaml": "^2.9.0" }, "peerDependencies": { "eslint": ">=9", "typescript": ">=5.0.0 <6.1.0" }, "bin": { "dlinter": "dist/cli/index.mjs" } }, "sha512-svxPVKJWUEAaTD5eY4cuUpp1gkxOY+2c/PURZped+hqy4pZgtUG3FWq4kBn/3hBb7IBbwNRZfk/aLs2jqSx9iQ=="],
 
     "dnssd-advertise": ["dnssd-advertise@1.1.6", "", {}, "sha512-Ndrrf6BMPalkQPd/zubL+4YghH2J9NspapQ09uDXwYbvOPkP0oaqf5CkcwJ0b50kS2O3ul6yVu+jz+RY62Cejg=="],
 
