@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SQLiteUnavailableScreen } from '../../../../components/sqlite-unavailable-screen';
 import { AppThemeProvider } from '../../../../contexts/app-theme-context/app-theme-context';
 import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate/SyncRuntimeGate';
+import { AppRootLayoutStartupLoading } from './AppRootLayoutStartupLoading';
 import { AppRootLayoutStartupFallback } from './AppRootLayoutStartupFallback';
 import type {
   AppRootLayoutScreen,
@@ -141,30 +142,15 @@ export function resolveAppRootLayoutRootContent(
     readonly isBootstrapped: boolean;
   }>;
 
-  const providerShell = createElement(
-    AppThemeProvider,
-    null,
-    createElement(
-      HeroUINativeProviderComponent,
-      {
-        config: {
-          textProps: {
-            maxFontSizeMultiplier: 2,
-          },
-          toast: {
-            contentWrapper: renderKeyboardAvoidingWrapper,
-          },
-        },
-      },
-      createElement(
+  const bootstrappedContent = params.isBootstrapped
+    ? createElement(
         SyncRuntimeGateComponent,
         {
-          isBootstrapped: params.isBootstrapped,
+          isBootstrapped: true,
         },
         params.providerContent,
-      ),
-    ),
-  );
+      )
+    : params.providerContent;
 
   const SQLiteProviderComponent = params.SQLiteProvider as ComponentType<{
     readonly databaseName: string;
@@ -182,9 +168,32 @@ export function resolveAppRootLayoutRootContent(
           options: params.sqliteOptions,
           useSuspense: true,
         },
-        providerShell,
+        bootstrappedContent,
       )
-    : providerShell;
+    : bootstrappedContent;
+
+  const providerShell = createElement(
+    AppThemeProvider,
+    null,
+    createElement(
+      HeroUINativeProviderComponent,
+      {
+        config: {
+          textProps: {
+            maxFontSizeMultiplier: 2,
+          },
+          toast: {
+            contentWrapper: renderKeyboardAvoidingWrapper,
+          },
+        },
+      },
+      createElement(
+        Suspense,
+        { fallback: createElement(AppRootLayoutStartupLoading) },
+        sqliteContent,
+      ),
+    ),
+  );
 
   return createElement(
     GestureHandlerRootView,
@@ -198,7 +207,7 @@ export function resolveAppRootLayoutRootContent(
       createElement(
         KeyboardProvider,
         null,
-        createElement(Suspense, { fallback: null }, sqliteContent),
+        providerShell,
       ),
     ),
   );

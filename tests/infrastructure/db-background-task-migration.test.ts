@@ -71,6 +71,23 @@ const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
   { name: "last_pruned_operations_count" },
 ];
 
+interface DeferredPromise<T> {
+  readonly promise: Promise<T>;
+  readonly reject: (reason?: unknown) => void;
+  readonly resolve: (value: T | PromiseLike<T>) => void;
+}
+
+function createDeferredPromise<T>(): DeferredPromise<T> {
+  let resolve!: DeferredPromise<T>["resolve"];
+  let reject!: DeferredPromise<T>["reject"];
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
 function createRawDb(syncRuntimeStatusColumns: { name: string }[]) {
   return {
     getAllAsync: jest.fn().mockImplementation(async (query: string) => {
@@ -119,5 +136,48 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     expect(rawDbSecondRun.runAsync).not.toHaveBeenCalledWith(
       expect.stringContaining('is_background_task_registered')
     );
+  });
+
+  it("serializes overlapping migration preparation across separate connections", async () => {
+    const firstMigration = createDeferredPromise<void>();
+    const firstRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
+    const secondRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
+
+    (migrate as jest.Mock)
+      .mockReturnValueOnce(firstMigration.promise)
+      .mockResolvedValueOnce(undefined);
+
+    const firstRequest = runMigrations(firstRawDb as never);
+    const secondRequest = runMigrations(secondRawDb as never);
+
+    await Promise.resolve();
+
+    expect(migrate).toHaveBeenCalledTimes(1);
+
+    firstMigration.resolve(undefined);
+    await firstRequest;
+    await secondRequest;
+
+    expect(migrate).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows the next queued migration request to run after an earlier rejection", async () => {
+    const firstMigration = createDeferredPromise<void>();
+    const firstRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
+    const secondRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
+    const migrationError = new Error("SQLITE_ERROR: migration failed");
+
+    (migrate as jest.Mock)
+      .mockReturnValueOnce(firstMigration.promise)
+      .mockResolvedValueOnce(undefined);
+
+    const firstRequest = runMigrations(firstRawDb as never);
+    const secondRequest = runMigrations(secondRawDb as never);
+
+    firstMigration.reject(migrationError);
+
+    await expect(firstRequest).rejects.toBe(migrationError);
+    await expect(secondRequest).resolves.toBeDefined();
+    expect(migrate).toHaveBeenCalledTimes(2);
   });
 });

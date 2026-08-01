@@ -1,6 +1,13 @@
 /** Provides the shared app root layout default label value. */
 const _AppRootLayoutDefaultLabel = 'AppRootLayout';
 
+/** Provides the startup loading placeholder title. */
+export const APP_ROOT_LAYOUT_STARTUP_LOADING_TITLE = 'Preparando tu biblioteca';
+
+/** Provides the startup loading placeholder description. */
+export const APP_ROOT_LAYOUT_STARTUP_LOADING_DESCRIPTION =
+  'Estamos preparando tus datos locales.';
+
 /** Provides the startup failure fallback title. */
 export const APP_ROOT_LAYOUT_STARTUP_FAILURE_TITLE = 'No pudimos iniciar la app';
 

@@ -10,6 +10,7 @@ import * as schema from "../schema";
 
 import {
   DATABASE_NAME,
+  MIGRATION_QUEUE_STATE,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
@@ -155,8 +156,7 @@ async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   );
 }
 
-/** Executes the run migrations operation. */
-export async function runMigrations(rawDb: SQLiteDatabase) {
+async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
@@ -170,6 +170,16 @@ export async function runMigrations(rawDb: SQLiteDatabase) {
     ensureActiveSeasonCacheTable(rawDb),
   ]);
   return db;
+}
+
+/** Serializes schema preparation across SQLite connections in the current JavaScript runtime. */
+export function runMigrations(rawDb: SQLiteDatabase) {
+  const migrationRequest = MIGRATION_QUEUE_STATE.current.then(() => prepareDatabaseSchema(rawDb));
+  MIGRATION_QUEUE_STATE.current = migrationRequest.then(
+    () => undefined,
+    () => undefined,
+  );
+  return migrationRequest;
 }
 
 /** Executes the get bridge config snapshot operation. */

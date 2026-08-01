@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
@@ -44,6 +44,29 @@ function createMockSQLiteProvider(databases: readonly unknown[]) {
     return <>{props.children}</>;
   };
 }
+
+function createSuspendingSQLiteProvider(database: unknown) {
+  let initializationPromise: Promise<void> | null = null;
+  let initialized = false;
+
+  return function MockSuspendingSQLiteProvider(
+    props: Readonly<{ children: React.ReactNode; onInit?: (db: unknown) => Promise<void> }>,
+  ) {
+    if (!initializationPromise) {
+      initializationPromise = (props.onInit?.(database) ?? Promise.resolve()).then(() => {
+        initialized = true;
+      });
+    }
+
+    if (!initialized) {
+      throw initializationPromise;
+    }
+
+    return <>{props.children}</>;
+  };
+}
+
+const mockSyncRuntimeGateRender = jest.fn();
 
 jest.mock('@expo-google-fonts/inter', () => ({
   Inter_400Regular: {},
@@ -99,6 +122,11 @@ jest.mock('heroui-native', () => {
     Alert,
     Card,
     HeroUINativeProvider: ({ children }: { children: React.ReactNode }) => children,
+    Spinner: wrap(ReactNative.View),
+    Typography: Object.assign(wrap(ReactNative.Text), {
+      Heading: wrap(ReactNative.Text),
+      Paragraph: wrap(ReactNative.Text),
+    }),
     cn: (...classNames: string[]) => classNames.filter(Boolean).join(' '),
   };
 });
@@ -130,7 +158,10 @@ jest.mock('../../../src/contexts/app-theme-context/app-theme-context', () => ({
 }));
 
 jest.mock('../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', () => ({
-  SyncRuntimeGate: ({ children }: { children: React.ReactNode }) => children,
+  SyncRuntimeGate: ({ children }: { children: React.ReactNode }) => {
+    mockSyncRuntimeGateRender();
+    return children;
+  },
 }));
 
 describe('AppRootLayout startup integration', () => {
@@ -148,10 +179,59 @@ describe('AppRootLayout startup integration', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it('keeps a visible startup placeholder and all database consumers unmounted while SQLite initialization is pending', () => {
+    const migrations = createDeferredPromise<void>();
+    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
+
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
+      createSuspendingSQLiteProvider(rawDb),
+    );
+    (dbClientHelpers.runMigrations as jest.Mock).mockReturnValue(migrations.promise);
+
+    const view = render(<AppRootLayout />);
+
+    expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
+    expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
+    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
+  });
+
+  it('mounts database consumers and routes exactly once after suspended initialization succeeds', async () => {
+    const migrations = createDeferredPromise<void>();
+    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
+
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
+      createSuspendingSQLiteProvider(rawDb),
+    );
+    (dbClientHelpers.runMigrations as jest.Mock).mockReturnValue(migrations.promise);
+
+    const view = render(<AppRootLayout />);
+
+    expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
+
+    await act(async () => {
+      migrations.resolve(undefined);
+      await migrations.promise;
+    });
+
+    await waitFor(() => {
+      expect(view.getByText('mocked-slot')).toBeOnTheScreen();
+    });
+
+    expect(view.queryByText('Preparando tu biblioteca')).not.toBeOnTheScreen();
+    expect(mockSyncRuntimeGateRender).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/setup');
+    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the HeroUI fallback, hides splash, and skips navigation when migrations reject from SQLiteProvider.onInit', async () => {
     const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
 
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createMockSQLiteProvider([rawDb]));
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
+      createSuspendingSQLiteProvider(rawDb),
+    );
     (dbClientHelpers.runMigrations as jest.Mock).mockRejectedValue(
       new Error('SQLITE_ERROR: duplicate column name: device_name'),
     );
@@ -164,6 +244,7 @@ describe('AppRootLayout startup integration', () => {
 
     expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
+    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
 
