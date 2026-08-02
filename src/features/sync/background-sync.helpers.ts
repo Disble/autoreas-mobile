@@ -2,6 +2,7 @@ import { createSyncSQLiteRuntime } from './sqlite-sync-runtime.helpers';
 import { runHeadlessSyncCycle } from './headless-sync-cycle.helpers';
 import { withExclusiveSyncCycle } from './sync-cycle-lock.helpers';
 import type { HeadlessSyncCycleResult } from './headless-sync-cycle.types';
+import { SchemaNotReadyError } from '../../infrastructure/db/startup/startup.errors';
 
 /**
  * Runs one headless-safe background sync cycle using a dedicated SQLite runtime.
@@ -30,6 +31,12 @@ export async function runBackgroundSyncCycle(): Promise<HeadlessSyncCycleResult>
     });
 
     return result;
+  } catch (error) {
+    if (error instanceof SchemaNotReadyError) {
+      return { kind: 'no_op', syncedCount: 0 };
+    }
+
+    throw error;
   } finally {
     await runtime.close();
   }

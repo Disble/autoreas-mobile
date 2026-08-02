@@ -2,13 +2,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS,
   SYNC_CYCLE_LOCK_ROW_ID,
-  SYNC_CYCLE_LOCK_TABLE_SQL,
 } from './sync-cycle-lock.constants';
 import type { WithExclusiveSyncCycleParams } from './sync-cycle-lock.types';
-
-async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase): Promise<void> {
-  await rawDb.runAsync(SYNC_CYCLE_LOCK_TABLE_SQL);
-}
 
 /**
  * Atomically claims the singleton cycle-lock row for one owner via a single conditional UPSERT.
@@ -65,8 +60,6 @@ export async function withExclusiveSyncCycle(
     leaseMs = DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS,
     now = Date.now,
   } = params;
-
-  await ensureSyncCycleLockTable(rawDb);
 
   const claimed = await claimSyncCycleLock(rawDb, owner, leaseMs, now());
 

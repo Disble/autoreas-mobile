@@ -1,8 +1,8 @@
 import '../../global.css';
-import '../features/setup/ui/AppRootLayout/app-root-layout.startup';
-import { AppRootLayout } from '../features/setup/ui/AppRootLayout';
+import '../features/startup/ui/StartupBoundary/startup-boundary.startup';
+import { StartupBoundary } from '../features/startup';
 
 /** Renders the layout interface. */
 export default function Layout() {
-  return <AppRootLayout />;
+  return <StartupBoundary />;
 }

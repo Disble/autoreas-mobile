@@ -138,46 +138,38 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     );
   });
 
-  it("serializes overlapping migration preparation across separate connections", async () => {
-    const firstMigration = createDeferredPromise<void>();
-    const firstRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
-    const secondRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
+  it("runs legacy schema repairs in deterministic writer order", async () => {
+    const firstRepair = createDeferredPromise<{ changes: number }>();
+    const rawDb = createRawDb([
+      ...SYNC_RUNTIME_STATUS_BASE_COLUMNS,
+      { name: "is_background_task_registered" },
+    ]);
+    rawDb.runAsync.mockImplementation((statement: string) => {
+      if (statement.startsWith("UPDATE bridge_config")) {
+        return firstRepair.promise;
+      }
 
-    (migrate as jest.Mock)
-      .mockReturnValueOnce(firstMigration.promise)
-      .mockResolvedValueOnce(undefined);
+      return Promise.resolve({ changes: 0 });
+    });
 
-    const firstRequest = runMigrations(firstRawDb as never);
-    const secondRequest = runMigrations(secondRawDb as never);
-
+    const preparation = runMigrations(rawDb as never);
+    await Promise.resolve();
     await Promise.resolve();
 
-    expect(migrate).toHaveBeenCalledTimes(1);
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
 
-    firstMigration.resolve(undefined);
-    await firstRequest;
-    await secondRequest;
+    firstRepair.resolve({ changes: 0 });
+    await preparation;
 
-    expect(migrate).toHaveBeenCalledTimes(2);
+    expect(rawDb.runAsync.mock.calls.map(([statement]) => statement)).toEqual([
+      expect.stringMatching(/^UPDATE bridge_config/),
+      expect.stringMatching(/^CREATE INDEX IF NOT EXISTS operation_log/),
+      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS pending_remote_changes/),
+      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS season_rating_queue/),
+      expect.stringMatching(/^CREATE INDEX IF NOT EXISTS season_rating_queue/),
+      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS active_season_cache/),
+      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS sync_cycle_lock/),
+    ]);
   });
 
-  it("allows the next queued migration request to run after an earlier rejection", async () => {
-    const firstMigration = createDeferredPromise<void>();
-    const firstRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
-    const secondRawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
-    const migrationError = new Error("SQLITE_ERROR: migration failed");
-
-    (migrate as jest.Mock)
-      .mockReturnValueOnce(firstMigration.promise)
-      .mockResolvedValueOnce(undefined);
-
-    const firstRequest = runMigrations(firstRawDb as never);
-    const secondRequest = runMigrations(secondRawDb as never);
-
-    firstMigration.reject(migrationError);
-
-    await expect(firstRequest).rejects.toBe(migrationError);
-    await expect(secondRequest).resolves.toBeDefined();
-    expect(migrate).toHaveBeenCalledTimes(2);
-  });
 });

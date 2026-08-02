@@ -6,6 +6,7 @@ import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sy
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
 import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
+import { SchemaNotReadyError } from '../../../src/infrastructure/db/startup';
 
 const mockClose = jest.fn<Promise<void>, []>();
 
@@ -73,6 +74,20 @@ describe('background sync helpers', () => {
     await expect(runBackgroundSyncCycle()).resolves.toEqual({ kind: 'no_op', syncedCount: 0 });
     expect(headlessSyncCycleModule.runHeadlessSyncCycle).not.toHaveBeenCalled();
     expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('returns a handled no-op when foreground schema readiness is absent', async () => {
+    const runtime = buildRuntime();
+    (runtime.open as jest.Mock).mockRejectedValue(new SchemaNotReadyError('missing'));
+    (sqliteSyncRuntimeModule.createSyncSQLiteRuntime as jest.Mock).mockReturnValue(runtime);
+
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({
+      kind: 'no_op',
+      syncedCount: 0,
+    });
+    expect(syncCycleLockModule.withExclusiveSyncCycle).not.toHaveBeenCalled();
+    expect(headlessSyncCycleModule.runHeadlessSyncCycle).not.toHaveBeenCalled();
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
   it('returns the delegated no-op result unchanged', async () => {

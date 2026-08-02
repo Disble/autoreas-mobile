@@ -1,17 +1,17 @@
-import type { BootState, BootstrapFailure } from '../../db-bootstrap.types';
+import type { StartupFailure, StartupState } from '../../startup.types';
 import type { SQLiteProviderProps } from 'expo-sqlite';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
 
 /** Defines the app root layout props value shape. */
-export type AppRootLayoutProps = Record<never, never>;
+export type StartupBoundaryProps = Record<never, never>;
 
 /** Defines the render-only app root layout view props. */
-export interface AppRootLayoutViewProps {
+export interface StartupBoundaryViewProps {
   readonly rootContent: ReactElement;
 }
 
 /** Defines the app root layout render screen values. */
-export type AppRootLayoutScreen =
+export type StartupBoundaryScreen =
   | 'empty'
   | 'loading'
   | 'route-slot'
@@ -19,27 +19,27 @@ export type AppRootLayoutScreen =
   | 'startup-failure';
 
 /** Defines the input required to resolve the app root layout screen. */
-export interface ResolveAppRootLayoutScreenParams {
+export interface ResolveStartupBoundaryScreenParams {
   readonly fontsLoaded: boolean;
   readonly hasSQLiteProvider: boolean;
   readonly shouldRenderRouteSlot: boolean;
-  readonly startupFailure: BootstrapFailure | null;
+  readonly startupFailure: StartupFailure | null;
 }
 
 /** Defines the input required to resolve the app root layout rendered content. */
-export interface ResolveAppRootLayoutContentParams {
-  readonly screen: AppRootLayoutScreen;
-  readonly startupFailure: BootstrapFailure | null;
+export interface ResolveStartupBoundaryContentParams {
+  readonly screen: StartupBoundaryScreen;
+  readonly startupFailure: StartupFailure | null;
 }
 
 /** Defines the resolved app root layout rendered content. */
-export interface ResolvedAppRootLayoutContent {
+export interface ResolvedStartupBoundaryContent {
   readonly preProviderContent: ReactElement | null;
   readonly providerContent: ReactElement | null;
 }
 
 /** Defines the input required to resolve the full app root layout tree. */
-export interface ResolveAppRootLayoutRootContentParams {
+export interface ResolveStartupBoundaryRootContentParams {
   readonly SQLiteProvider: ComponentType<SQLiteProviderProps> | null;
   readonly databaseName: string;
   readonly handleDatabaseInit: SQLiteProviderProps['onInit'];
@@ -52,9 +52,8 @@ export interface ResolveAppRootLayoutRootContentParams {
 }
 
 /** Defines the data contract for app root layout view model. */
-export interface AppRootLayoutViewModel {
+export interface StartupBoundaryViewModel {
   readonly SQLiteProvider: ComponentType<SQLiteProviderProps> | null;
-  readonly bootState: BootState;
   readonly contentWrapper: (children: ReactNode) => ReactElement;
   readonly databaseName: string;
   readonly fontsLoaded: boolean;
@@ -63,10 +62,11 @@ export interface AppRootLayoutViewModel {
   readonly preProviderContent: ReactElement | null;
   readonly providerContent: ReactElement | null;
   readonly rootContent: ReactElement;
-  readonly screen: AppRootLayoutScreen;
+  readonly screen: StartupBoundaryScreen;
   readonly shouldRenderRouteSlot: boolean;
   readonly sqliteOptions: {
     readonly enableChangeListener: boolean;
   };
-  readonly startupFailure: BootstrapFailure | null;
+  readonly startupFailure: StartupFailure | null;
+  readonly startupState: StartupState;
 }

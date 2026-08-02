@@ -25,9 +25,9 @@ jest.mock('../../../../src/components/sqlite-unavailable-screen', () => ({
 }));
 
 jest.mock(
-  '../../../../src/features/setup/ui/AppRootLayout/AppRootLayoutStartupFallback',
+  '../../../../src/features/startup/ui/StartupBoundary/StartupBoundaryFallback',
   () => ({
-    AppRootLayoutStartupFallback: ({
+    StartupBoundaryFallback: ({
       failure,
     }: {
       failure: { diagnosticMessage: string; recoveryHint: string };
@@ -48,9 +48,9 @@ jest.mock(
 
 import { render } from '@testing-library/react-native';
 import {
-  resolveAppRootLayoutContent,
-  resolveAppRootLayoutScreen,
-} from '../../../../src/features/setup/ui/AppRootLayout/app-root-layout.helpers';
+  resolveStartupBoundaryContent,
+  resolveStartupBoundaryScreen,
+} from '../../../../src/features/startup/ui/StartupBoundary/startup-boundary.helpers';
 
 function expectElement<T>(value: T | null): T {
   expect(value).not.toBeNull();
@@ -62,14 +62,19 @@ function expectElement<T>(value: T | null): T {
   return value;
 }
 
-describe('resolveAppRootLayoutScreen', () => {
+describe('resolveStartupBoundaryScreen', () => {
   it('prioritizes the startup failure screen when bootstrap rejected', () => {
     expect(
-      resolveAppRootLayoutScreen({
+      resolveStartupBoundaryScreen({
         fontsLoaded: true,
         hasSQLiteProvider: true,
         shouldRenderRouteSlot: true,
         startupFailure: {
+          diagnostic: {
+            stage: 'database_preparation',
+            code: 'SQLITE_ERROR',
+            classification: 'sqlite',
+          },
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
           recoveryHint:
             'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
@@ -80,7 +85,7 @@ describe('resolveAppRootLayoutScreen', () => {
 
   it('returns the routed content screen only when startup succeeded cleanly', () => {
     expect(
-      resolveAppRootLayoutScreen({
+      resolveStartupBoundaryScreen({
         fontsLoaded: true,
         hasSQLiteProvider: true,
         shouldRenderRouteSlot: true,
@@ -90,9 +95,9 @@ describe('resolveAppRootLayoutScreen', () => {
   });
 });
 
-describe('resolveAppRootLayoutContent', () => {
+describe('resolveStartupBoundaryContent', () => {
   it('returns the sqlite unavailable screen before providers when SQLite is missing', () => {
-    const resolvedContent = resolveAppRootLayoutContent({
+    const resolvedContent = resolveStartupBoundaryContent({
       screen: 'sqlite-unavailable',
       startupFailure: null,
     });
@@ -105,9 +110,14 @@ describe('resolveAppRootLayoutContent', () => {
   });
 
   it('returns the startup fallback content inside providers when bootstrap fails', () => {
-    const resolvedContent = resolveAppRootLayoutContent({
+    const resolvedContent = resolveStartupBoundaryContent({
       screen: 'startup-failure',
       startupFailure: {
+        diagnostic: {
+          stage: 'database_preparation',
+          code: 'SQLITE_ERROR',
+          classification: 'sqlite',
+        },
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
           'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
@@ -126,7 +136,7 @@ describe('resolveAppRootLayoutContent', () => {
   });
 
   it('returns the routed slot content when startup succeeds cleanly', () => {
-    const resolvedContent = resolveAppRootLayoutContent({
+    const resolvedContent = resolveStartupBoundaryContent({
       screen: 'route-slot',
       startupFailure: null,
     });

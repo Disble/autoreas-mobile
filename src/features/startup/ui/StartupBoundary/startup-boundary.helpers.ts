@@ -9,20 +9,20 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SQLiteUnavailableScreen } from '../../../../components/sqlite-unavailable-screen';
 import { AppThemeProvider } from '../../../../contexts/app-theme-context/app-theme-context';
 import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate/SyncRuntimeGate';
-import { AppRootLayoutStartupLoading } from './AppRootLayoutStartupLoading';
-import { AppRootLayoutStartupFallback } from './AppRootLayoutStartupFallback';
+import { StartupBoundaryLoading } from './StartupBoundaryLoading';
+import { StartupBoundaryFallback } from './StartupBoundaryFallback';
 import type {
-  AppRootLayoutScreen,
-  ResolveAppRootLayoutContentParams,
-  ResolveAppRootLayoutRootContentParams,
-  ResolveAppRootLayoutScreenParams,
-  ResolvedAppRootLayoutContent,
-} from './app-root-layout.types';
+  StartupBoundaryScreen,
+  ResolveStartupBoundaryContentParams,
+  ResolveStartupBoundaryRootContentParams,
+  ResolveStartupBoundaryScreenParams,
+  ResolvedStartupBoundaryContent,
+} from './startup-boundary.types';
 
 /**
  * Prepares the native splash screen before the app root layout renders any React-controlled UI.
  */
-export function prepareAppRootLayoutSplashScreen() {
+export function prepareStartupBoundarySplashScreen() {
   SplashScreen.setOptions({
     duration: 300,
     fade: true,
@@ -52,9 +52,9 @@ export function renderKeyboardAvoidingWrapper(children: ReactNode) {
  * Resolves which root-layout screen should render from the current startup state.
  * Centralizing this decision keeps the `.tsx` file focused on view rendering while the hook owns startup state selection.
  */
-export function resolveAppRootLayoutScreen(
-  params: Readonly<ResolveAppRootLayoutScreenParams>,
-): AppRootLayoutScreen {
+export function resolveStartupBoundaryScreen(
+  params: Readonly<ResolveStartupBoundaryScreenParams>,
+): StartupBoundaryScreen {
   if (!params.fontsLoaded) {
     return 'loading';
   }
@@ -78,9 +78,9 @@ export function resolveAppRootLayoutScreen(
  * Resolves the concrete content that the root layout should present for the current startup state.
  * This keeps screen selection and fallback assembly out of the `.tsx` file so the view stays render-only.
  */
-export function resolveAppRootLayoutContent(
-  params: Readonly<ResolveAppRootLayoutContentParams>,
-): ResolvedAppRootLayoutContent {
+export function resolveStartupBoundaryContent(
+  params: Readonly<ResolveStartupBoundaryContentParams>,
+): ResolvedStartupBoundaryContent {
   if (params.screen === 'loading') {
     return {
       preProviderContent: createElement(Fragment),
@@ -98,7 +98,7 @@ export function resolveAppRootLayoutContent(
   if (params.screen === 'startup-failure' && params.startupFailure) {
     return {
       preProviderContent: null,
-      providerContent: createElement(AppRootLayoutStartupFallback, {
+      providerContent: createElement(StartupBoundaryFallback, {
         failure: params.startupFailure,
       }),
     };
@@ -121,8 +121,8 @@ export function resolveAppRootLayoutContent(
  * Resolves the full root-layout tree from the prepared view-model values.
  * This keeps provider selection and pre-provider fallback branching out of the `.tsx` file.
  */
-export function resolveAppRootLayoutRootContent(
-  params: Readonly<ResolveAppRootLayoutRootContentParams>,
+export function resolveStartupBoundaryRootContent(
+  params: Readonly<ResolveStartupBoundaryRootContentParams>,
 ) {
   if (params.preProviderContent) {
     return params.preProviderContent;
@@ -154,8 +154,8 @@ export function resolveAppRootLayoutRootContent(
 
   const SQLiteProviderComponent = params.SQLiteProvider as ComponentType<{
     readonly databaseName: string;
-    readonly onInit: ResolveAppRootLayoutRootContentParams['handleDatabaseInit'];
-    readonly options: ResolveAppRootLayoutRootContentParams['sqliteOptions'];
+    readonly onInit: ResolveStartupBoundaryRootContentParams['handleDatabaseInit'];
+    readonly options: ResolveStartupBoundaryRootContentParams['sqliteOptions'];
     readonly useSuspense: true;
   }>;
 
@@ -189,7 +189,7 @@ export function resolveAppRootLayoutRootContent(
       },
       createElement(
         Suspense,
-        { fallback: createElement(AppRootLayoutStartupLoading) },
+        { fallback: createElement(StartupBoundaryLoading) },
         sqliteContent,
       ),
     ),

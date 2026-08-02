@@ -20,7 +20,7 @@ export type CloseableSQLiteDatabase = SQLiteDatabase & {
 export interface OpenSyncSQLiteRuntimeParams {
   readonly owner: SyncSQLiteOwner;
   readonly openDatabase?: (options?: OpenAppDatabaseSyncParams) => SQLiteDatabase;
-  readonly runMigrations?: (rawDb: SQLiteDatabase) => Promise<unknown>;
+  readonly prepareHeadlessDatabase?: (rawDb: SQLiteDatabase) => Promise<void>;
 }
 
 /**

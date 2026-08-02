@@ -7,10 +7,10 @@ import {
   getOpenDatabaseSync,
 } from "../native-runtime/native-runtime.helpers";
 import * as schema from "../schema";
+import { SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
 
 import {
   DATABASE_NAME,
-  MIGRATION_QUEUE_STATE,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
@@ -156,30 +156,28 @@ async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   );
 }
 
+async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(SYNC_CYCLE_LOCK_TABLE_SQL);
+}
+
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
   await migrate(db, migrations);
-  await Promise.all([
-    ensureBridgeConfigLastChangelogId(rawDb),
-    ensureSyncRuntimeStatusExecutionColumns(rawDb),
-    ensureOperationLogRetentionIndex(rawDb),
-    ensureAnimesGuardColumn(rawDb),
-    ensurePendingRemoteChangesTable(rawDb),
-    ensureSeasonRatingQueueTable(rawDb),
-    ensureActiveSeasonCacheTable(rawDb),
-  ]);
+  await ensureBridgeConfigLastChangelogId(rawDb);
+  await ensureSyncRuntimeStatusExecutionColumns(rawDb);
+  await ensureOperationLogRetentionIndex(rawDb);
+  await ensureAnimesGuardColumn(rawDb);
+  await ensurePendingRemoteChangesTable(rawDb);
+  await ensureSeasonRatingQueueTable(rawDb);
+  await ensureActiveSeasonCacheTable(rawDb);
+  await ensureSyncCycleLockTable(rawDb);
   return db;
 }
 
-/** Serializes schema preparation across SQLite connections in the current JavaScript runtime. */
+/** Runs the foreground-owned migration and ordered legacy-repair pipeline. */
 export function runMigrations(rawDb: SQLiteDatabase) {
-  const migrationRequest = MIGRATION_QUEUE_STATE.current.then(() => prepareDatabaseSchema(rawDb));
-  MIGRATION_QUEUE_STATE.current = migrationRequest.then(
-    () => undefined,
-    () => undefined,
-  );
-  return migrationRequest;
+  return prepareDatabaseSchema(rawDb);
 }
 
 /** Executes the get bridge config snapshot operation. */

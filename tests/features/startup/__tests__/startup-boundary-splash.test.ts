@@ -1,8 +1,8 @@
 import { renderHook, waitFor } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useDbBootstrap } from '../../../../src/features/setup/use-db-bootstrap';
-import { useAppRootLayout } from '../../../../src/features/setup/ui/AppRootLayout/use-app-root-layout';
+import { useStartup } from '../../../../src/features/startup/use-startup';
+import { useStartupBoundary } from '../../../../src/features/startup/ui/StartupBoundary/use-startup-boundary';
 
 jest.mock('@expo-google-fonts/inter', () => ({
   Inter_400Regular: {},
@@ -26,48 +26,55 @@ jest.mock('expo-splash-screen', () => ({
   setOptions: jest.fn(),
 }));
 
-jest.mock('../../../../src/features/setup/use-db-bootstrap', () => ({
-  useDbBootstrap: jest.fn(),
+jest.mock('../../../../src/features/startup/use-startup', () => ({
+  useStartup: jest.fn(),
 }));
 
-describe('useAppRootLayout', () => {
+describe('useStartupBoundary splash lifecycle', () => {
   const replace = jest.fn();
   const mockSQLiteProvider = 'SQLiteProvider';
 
   beforeEach(() => {
     jest.clearAllMocks();
     (useRouter as jest.Mock).mockReturnValue({ replace });
-    (useDbBootstrap as jest.Mock).mockReturnValue({
-      bootState: {
+    (useStartup as jest.Mock).mockReturnValue({
+      startupState: {
         failure: null,
-        initialized: false,
+        phase: 'preparing_database',
         target: null,
       },
       databaseName: 'autoreas.db',
       handleDatabaseInit: jest.fn(),
       sqliteOptions: { enableChangeListener: true },
       sqliteProvider: mockSQLiteProvider,
+      isReady: false,
     });
   });
 
   it('hides the splash screen and skips navigation when bootstrap fails', async () => {
-    (useDbBootstrap as jest.Mock).mockReturnValue({
-      bootState: {
+    (useStartup as jest.Mock).mockReturnValue({
+      startupState: {
         failure: {
+          diagnostic: {
+            stage: 'database_preparation',
+            code: 'SQLITE_ERROR',
+            classification: 'sqlite',
+          },
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
           recoveryHint:
             'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
         },
-        initialized: false,
+        phase: 'fatal',
         target: null,
       },
       databaseName: 'autoreas.db',
       handleDatabaseInit: jest.fn(),
       sqliteOptions: { enableChangeListener: true },
       sqliteProvider: mockSQLiteProvider,
+      isReady: false,
     });
 
-    renderHook(() => useAppRootLayout({}));
+    renderHook(() => useStartupBoundary({}));
 
     await waitFor(() => {
       expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
@@ -77,19 +84,20 @@ describe('useAppRootLayout', () => {
   });
 
   it('keeps the success navigation flow unchanged when bootstrap finishes', async () => {
-    (useDbBootstrap as jest.Mock).mockReturnValue({
-      bootState: {
+    (useStartup as jest.Mock).mockReturnValue({
+      startupState: {
         failure: null,
-        initialized: true,
+        phase: 'ready',
         target: '/setup',
       },
       databaseName: 'autoreas.db',
       handleDatabaseInit: jest.fn(),
       sqliteOptions: { enableChangeListener: true },
       sqliteProvider: mockSQLiteProvider,
+      isReady: true,
     });
 
-    renderHook(() => useAppRootLayout({}));
+    renderHook(() => useStartupBoundary({}));
 
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith('/setup');
@@ -98,7 +106,7 @@ describe('useAppRootLayout', () => {
   });
 
   it('does not try to prevent splash auto-hide from a post-render effect anymore', () => {
-    renderHook(() => useAppRootLayout({}));
+    renderHook(() => useStartupBoundary({}));
 
     expect(SplashScreen.preventAutoHideAsync).not.toHaveBeenCalled();
   });

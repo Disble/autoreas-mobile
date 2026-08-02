@@ -4,29 +4,30 @@ import {
   createSyncSQLiteRuntime,
 } from '../../../../src/features/sync/sqlite-sync-runtime.helpers';
 import type { CloseableSQLiteDatabase } from '../../../../src/features/sync/sqlite-sync-runtime.types';
+import { SchemaNotReadyError } from '../../../../src/infrastructure/db/startup';
 
 describe('sqlite sync runtime helpers', () => {
-  it('opens an isolated non-reactive connection, runs migrations once, and reuses it until close', async () => {
-    const rawDb = buildRawDb();
+  it('closes an isolated connection when durable schema readiness is absent', async () => {
+    const rawDb = buildRawDb({
+      execAsync: jest.fn().mockResolvedValue(undefined),
+      getFirstAsync: jest.fn().mockResolvedValue({ user_version: 0 }),
+    });
     const openDatabase = jest.fn().mockReturnValue(rawDb);
-    const runMigrations = jest.fn().mockResolvedValue(undefined);
     const runtime = createSyncSQLiteRuntime({
       owner: 'headless_cycle',
       openDatabase,
-      runMigrations,
     });
 
-    const openedDb = await runtime.open();
-    const reusedDb = await runtime.withDatabase(async (currentDb) => currentDb);
+    await expect(runtime.open()).rejects.toBeInstanceOf(SchemaNotReadyError);
 
-    expect(openedDb).toBe(rawDb);
-    expect(reusedDb).toBe(rawDb);
     expect(openDatabase).toHaveBeenCalledWith({
       enableChangeListener: false,
       useNewConnection: true,
     });
-    expect(runMigrations).toHaveBeenCalledTimes(1);
-    expect(runtime.isOpen()).toBe(true);
+    expect(rawDb.execAsync).toHaveBeenCalledWith('PRAGMA busy_timeout = 5000;');
+    expect(rawDb.getFirstAsync).toHaveBeenCalledWith('PRAGMA user_version;');
+    expect(rawDb.closeAsync).toHaveBeenCalledTimes(1);
+    expect(runtime.isOpen()).toBe(false);
   });
 
   it('closes idempotently and allows reopening with a fresh connection', async () => {
@@ -39,7 +40,7 @@ describe('sqlite sync runtime helpers', () => {
     const runtime = createSyncSQLiteRuntime({
       owner: 'foreground_service',
       openDatabase,
-      runMigrations: jest.fn().mockResolvedValue(undefined),
+      prepareHeadlessDatabase: jest.fn().mockResolvedValue(undefined),
     });
 
     await runtime.open();
@@ -51,6 +52,22 @@ describe('sqlite sync runtime helpers', () => {
     expect(secondRawDb.closeAsync).not.toHaveBeenCalled();
     expect(reopenedDb).toBe(secondRawDb);
     expect(openDatabase).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry corruption failures while opening an isolated connection', async () => {
+    const corruption = new Error('SQLITE_CORRUPT: database disk image is malformed');
+    const rawDb = buildRawDb({
+      execAsync: jest.fn().mockResolvedValue(undefined),
+      getFirstAsync: jest.fn().mockRejectedValue(corruption),
+    });
+    const runtime = createSyncSQLiteRuntime({
+      owner: 'headless_cycle',
+      openDatabase: jest.fn().mockReturnValue(rawDb),
+    });
+
+    await expect(runtime.open()).rejects.toBe(corruption);
+    expect(rawDb.getFirstAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.closeAsync).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to closeSync when async close fails', async () => {

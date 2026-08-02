@@ -13,6 +13,7 @@ import { recordSyncAttemptFailed } from '../sync-runtime-status.helpers';
 import type { NotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter.types';
 import type { SyncExecutionStatus } from '../sync-execution-strategy.types';
 import type { SyncSQLiteRuntime } from '../sqlite-sync-runtime.types';
+import { SchemaNotReadyError } from '../../../infrastructure/db/startup/startup.errors';
 
 function createUnsupportedStatus(): SyncExecutionStatus {
   return {
@@ -69,9 +70,9 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
       }
 
-      const rawDb = await serviceRuntime.open();
-
       try {
+        const rawDb = await serviceRuntime.open();
+
         await withExclusiveSyncCycle({
           rawDb,
           owner: 'foreground_service',
@@ -84,6 +85,11 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         });
       } catch (error) {
         await closeServiceRuntime();
+
+        if (error instanceof SchemaNotReadyError) {
+          return;
+        }
+
         throw error;
       }
     },

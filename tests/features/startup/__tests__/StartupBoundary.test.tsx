@@ -2,8 +2,8 @@ import { render } from '@testing-library/react-native';
 import { Slot } from 'expo-router';
 import React from 'react';
 import { Text } from 'react-native';
-import { AppRootLayout } from '../../../src/features/setup/ui/AppRootLayout/AppRootLayout.component';
-import { useAppRootLayout } from '../../../src/features/setup/ui/AppRootLayout/use-app-root-layout';
+import { StartupBoundary } from '../../../../src/features/startup/ui/StartupBoundary/StartupBoundary.component';
+import { useStartupBoundary } from '../../../../src/features/startup/ui/StartupBoundary/use-startup-boundary';
 
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(async () => undefined),
@@ -65,24 +65,24 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../../../src/contexts/app-theme-context/app-theme-context', () => ({
+jest.mock('../../../../src/contexts/app-theme-context/app-theme-context', () => ({
   AppThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', () => ({
+jest.mock('../../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', () => ({
   SyncRuntimeGate: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../../../src/features/setup/ui/AppRootLayout/use-app-root-layout', () => ({
-  useAppRootLayout: jest.fn(),
+jest.mock('../../../../src/features/startup/ui/StartupBoundary/use-startup-boundary', () => ({
+  useStartupBoundary: jest.fn(),
 }));
 
-describe('AppRootLayout', () => {
+describe('StartupBoundary', () => {
   const MockSQLiteProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (useAppRootLayout as jest.Mock).mockReturnValue({
+    (useStartupBoundary as jest.Mock).mockReturnValue({
       bootState: {
         failure: null,
         initialized: true,
@@ -106,14 +106,14 @@ describe('AppRootLayout', () => {
   });
 
   it('renders the existing routed content after a successful bootstrap', () => {
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     expect(view.getByText('mocked-slot')).toBeOnTheScreen();
-    expect(useAppRootLayout).toHaveBeenCalledTimes(1);
+    expect(useStartupBoundary).toHaveBeenCalledTimes(1);
   });
 
   it('renders a visible startup fallback instead of blank content when bootstrap fails', () => {
-    (useAppRootLayout as jest.Mock).mockReturnValue({
+    (useStartupBoundary as jest.Mock).mockReturnValue({
       bootState: {
         failure: {
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
@@ -159,7 +159,7 @@ describe('AppRootLayout', () => {
       contentWrapper: jest.fn(),
     });
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
     expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
@@ -172,7 +172,7 @@ describe('AppRootLayout', () => {
   });
 
   it('renders the hook-provided pre-provider content without entering the provider shell', () => {
-    (useAppRootLayout as jest.Mock).mockReturnValue({
+    (useStartupBoundary as jest.Mock).mockReturnValue({
       bootState: {
         failure: null,
         initialized: false,
@@ -194,7 +194,7 @@ describe('AppRootLayout', () => {
       startupFailure: null,
     });
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     expect(view.getByText('sqlite-unavailable-screen')).toBeOnTheScreen();
     expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();

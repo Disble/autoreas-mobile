@@ -10,10 +10,12 @@ import { withExclusiveSyncCycle } from '../../../src/features/sync/sync-cycle-lo
  */
 function createSharedLockStore() {
   let row: { owner: string; expiresAt: number } | null = null;
+  const statements: string[] = [];
 
   function createConnection(): SQLiteDatabase {
     return {
       async runAsync(sql: string, ...params: unknown[]) {
+        statements.push(sql);
         if (sql.startsWith('CREATE TABLE')) {
           return { changes: 0, lastInsertRowId: 0 };
         }
@@ -45,10 +47,25 @@ function createSharedLockStore() {
     } as unknown as SQLiteDatabase;
   }
 
-  return { createConnection };
+  return { createConnection, statements };
 }
 
 describe('sync-cycle-lock', () => {
+  it('uses the foreground-prepared lock table without issuing headless DDL', async () => {
+    const store = createSharedLockStore();
+    const rawDb = store.createConnection();
+
+    await withExclusiveSyncCycle({
+      rawDb,
+      owner: 'headless_cycle',
+      run: jest.fn().mockResolvedValue(undefined),
+    });
+
+    expect(store.statements).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^CREATE TABLE/)]),
+    );
+  });
+
   it('runs the guarded work when the lock is free and releases it afterward', async () => {
     const store = createSharedLockStore();
     const rawDb = store.createConnection();

@@ -1,8 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import {
-  openAppDatabaseSync,
-  runMigrations,
-} from '../../infrastructure/db/client/client.helpers';
+import { openAppDatabaseSync } from '../../infrastructure/db/client/client.helpers';
+import { prepareHeadlessDatabase } from '../../infrastructure/db/startup/startup.helpers';
 import { SYNC_SQLITE_OPEN_OPTIONS } from './sqlite-sync-runtime.constants';
 import type {
   CloseableSQLiteDatabase,
@@ -39,7 +37,7 @@ export async function closeSyncRuntime(rawDb: SQLiteDatabase): Promise<void> {
 
 /**
  * Creates a dedicated SQLite runtime for sync owners that need explicit open and close control.
- * The runtime caches one connection per owner instance, runs migrations once per open, and supports idempotent teardown.
+ * The runtime caches one ready connection per owner instance and supports idempotent teardown.
  */
 export function createSyncSQLiteRuntime(
   params: OpenSyncSQLiteRuntimeParams,
@@ -57,7 +55,7 @@ export function createSyncSQLiteRuntime(
     }
 
     const openDatabase = params.openDatabase ?? openAppDatabaseSync;
-    const prepareDatabase = params.runMigrations ?? runMigrations;
+    const prepareDatabase = params.prepareHeadlessDatabase ?? prepareHeadlessDatabase;
 
     openingPromise = (async () => {
       const nextRawDb = openDatabase(SYNC_SQLITE_OPEN_OPTIONS);

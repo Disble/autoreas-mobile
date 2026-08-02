@@ -6,9 +6,6 @@ export const DATABASE_NAME = 'autoreas.db';
 /** Serializes write tasks independently for each SQLite connection. */
 export const WRITE_QUEUE_BY_DATABASE = new WeakMap<object, Promise<unknown>>();
 
-/** Tracks the current in-process schema-preparation queue tail. */
-export const MIGRATION_QUEUE_STATE = { current: Promise.resolve() };
-
 /** Lists legacy sync-runtime columns and their idempotent repair statements. */
 export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
   {

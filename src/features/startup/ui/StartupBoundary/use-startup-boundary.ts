@@ -9,22 +9,22 @@ import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { useDbBootstrap } from '../../use-db-bootstrap';
+import { useStartup } from '../../use-startup';
 import {
   renderKeyboardAvoidingWrapper,
-  resolveAppRootLayoutContent,
-  resolveAppRootLayoutRootContent,
-  resolveAppRootLayoutScreen,
-} from './app-root-layout.helpers';
+  resolveStartupBoundaryContent,
+  resolveStartupBoundaryRootContent,
+  resolveStartupBoundaryScreen,
+} from './startup-boundary.helpers';
 import type {
-  AppRootLayoutProps,
-  AppRootLayoutViewModel,
-} from './app-root-layout.types';
+  StartupBoundaryProps,
+  StartupBoundaryViewModel,
+} from './startup-boundary.types';
 
 /** Coordinates app root layout state and actions. */
-export function useAppRootLayout(
-  _props: AppRootLayoutProps,
-): AppRootLayoutViewModel {
+export function useStartupBoundary(
+  _props: StartupBoundaryProps,
+): StartupBoundaryViewModel {
   // 1. Refs
   const hasCompletedStartupRef = useRef(false);
 
@@ -40,17 +40,17 @@ export function useAppRootLayout(
   });
 
   // 4. Queries/Mutations
-  const { bootState, databaseName, handleDatabaseInit, sqliteOptions, sqliteProvider } =
-    useDbBootstrap();
+  const { databaseName, handleDatabaseInit, isReady, sqliteOptions, sqliteProvider, startupState } =
+    useStartup();
 
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
-  const isBootstrapped = bootState.initialized;
-  const shouldRenderRouteSlot = bootState.initialized && !bootState.failure;
-  const startupFailure = bootState.failure;
+  const isBootstrapped = isReady;
+  const shouldRenderRouteSlot = isReady && !startupState.failure;
+  const startupFailure = startupState.failure;
   const screen = useMemo(
     () =>
-      resolveAppRootLayoutScreen({
+      resolveStartupBoundaryScreen({
         fontsLoaded,
         hasSQLiteProvider: Boolean(SQLiteProvider),
         shouldRenderRouteSlot,
@@ -60,7 +60,7 @@ export function useAppRootLayout(
   );
   const resolvedContent = useMemo(
     () =>
-      resolveAppRootLayoutContent({
+      resolveStartupBoundaryContent({
         screen,
         startupFailure,
       }),
@@ -68,7 +68,7 @@ export function useAppRootLayout(
   );
   const rootContent = useMemo(
     () =>
-      resolveAppRootLayoutRootContent({
+      resolveStartupBoundaryRootContent({
         SQLiteProvider,
         databaseName,
         handleDatabaseInit,
@@ -116,8 +116,8 @@ export function useAppRootLayout(
   useEffect(() => {
     if (
       !fontsLoaded ||
-      !bootState.initialized ||
-      !bootState.target ||
+      !isReady ||
+      !startupState.target ||
       startupFailure ||
       hasCompletedStartupRef.current
     ) {
@@ -125,13 +125,12 @@ export function useAppRootLayout(
     }
 
     hasCompletedStartupRef.current = true;
-    router.replace(bootState.target);
+    router.replace(startupState.target);
     void SplashScreen.hideAsync();
-  }, [bootState.initialized, bootState.target, fontsLoaded, router, startupFailure]);
+  }, [fontsLoaded, isReady, router, startupFailure, startupState.target]);
 
   return {
     SQLiteProvider,
-    bootState,
     contentWrapper,
     databaseName,
     fontsLoaded,
@@ -144,5 +143,6 @@ export function useAppRootLayout(
     shouldRenderRouteSlot,
     sqliteOptions,
     startupFailure,
+    startupState,
   };
 }

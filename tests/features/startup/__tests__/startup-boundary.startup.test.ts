@@ -11,11 +11,11 @@ jest.mock('expo-splash-screen', () => ({
 
 jest.mock('../../../../global.css', () => ({}), { virtual: true });
 
-jest.mock('../../../../src/features/setup/ui/AppRootLayout', () => ({
-  AppRootLayout: jest.fn(() => null),
+jest.mock('../../../../src/features/startup', () => ({
+  StartupBoundary: jest.fn(() => null),
 }));
 
-describe('AppRootLayout startup splash preparation', () => {
+describe('StartupBoundary splash preparation', () => {
   beforeEach(() => {
     jest.resetModules();
   });

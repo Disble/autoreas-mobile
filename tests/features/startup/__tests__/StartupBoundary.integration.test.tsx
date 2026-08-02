@@ -2,9 +2,10 @@ import { act, render, waitFor } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import * as dbClientHelpers from '../../../src/infrastructure/db/client/client.helpers';
-import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
-import { AppRootLayout } from '../../../src/features/setup/ui/AppRootLayout';
+import * as dbClientHelpers from '../../../../src/infrastructure/db/client/client.helpers';
+import * as dbStartup from '../../../../src/infrastructure/db/startup/startup.helpers';
+import * as nativeRuntime from '../../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
+import { StartupBoundary } from '../../../../src/features/startup';
 
 interface DeferredPromise<T> {
   readonly promise: Promise<T>;
@@ -131,12 +132,15 @@ jest.mock('heroui-native', () => {
   };
 });
 
-jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
+jest.mock('../../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  runMigrations: jest.fn(),
 }));
 
-jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
+jest.mock('../../../../src/infrastructure/db/startup/startup.helpers', () => ({
+  prepareForegroundDatabase: jest.fn(),
+}));
+
+jest.mock('../../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   getSQLiteProvider: jest.fn(),
 }));
 
@@ -153,25 +157,25 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../../../src/contexts/app-theme-context/app-theme-context', () => ({
+jest.mock('../../../../src/contexts/app-theme-context/app-theme-context', () => ({
   AppThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', () => ({
+jest.mock('../../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', () => ({
   SyncRuntimeGate: ({ children }: { children: React.ReactNode }) => {
     mockSyncRuntimeGateRender();
     return children;
   },
 }));
 
-describe('AppRootLayout startup integration', () => {
+describe('StartupBoundary integration', () => {
   const replace = jest.fn();
   const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
   beforeEach(() => {
     jest.clearAllMocks();
     (useRouter as jest.Mock).mockReturnValue({ replace });
-    (dbClientHelpers.runMigrations as jest.Mock).mockResolvedValue(undefined);
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockResolvedValue(undefined);
     (dbClientHelpers.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue(null);
   });
 
@@ -186,9 +190,9 @@ describe('AppRootLayout startup integration', () => {
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
       createSuspendingSQLiteProvider(rawDb),
     );
-    (dbClientHelpers.runMigrations as jest.Mock).mockReturnValue(migrations.promise);
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockReturnValue(migrations.promise);
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
     expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
@@ -204,9 +208,9 @@ describe('AppRootLayout startup integration', () => {
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
       createSuspendingSQLiteProvider(rawDb),
     );
-    (dbClientHelpers.runMigrations as jest.Mock).mockReturnValue(migrations.promise);
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockReturnValue(migrations.promise);
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
 
@@ -232,11 +236,11 @@ describe('AppRootLayout startup integration', () => {
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
       createSuspendingSQLiteProvider(rawDb),
     );
-    (dbClientHelpers.runMigrations as jest.Mock).mockRejectedValue(
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(
       new Error('SQLITE_ERROR: duplicate column name: device_name'),
     );
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     await waitFor(() => {
       expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
@@ -248,20 +252,23 @@ describe('AppRootLayout startup integration', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('shows the same safe startup fallback when enabling WAL rejects', async () => {
+  it('shows the same safe startup fallback when connection policy rejects', async () => {
     const rawDb = {
       execAsync: jest.fn().mockRejectedValue(new Error('SQLITE_BUSY: WAL pragma rejected')),
     };
 
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createMockSQLiteProvider([rawDb]));
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(
+      new Error('SQLITE_BUSY: WAL pragma rejected'),
+    );
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     await waitFor(() => {
       expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
     });
 
-    expect(dbClientHelpers.runMigrations).not.toHaveBeenCalled();
+    expect(dbClientHelpers.getBridgeConfigSnapshot).not.toHaveBeenCalled();
     expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
     expect(replace).not.toHaveBeenCalled();
@@ -275,7 +282,7 @@ describe('AppRootLayout startup integration', () => {
       new Error('Missing bridge_config row'),
     );
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     await waitFor(() => {
       expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
@@ -294,7 +301,7 @@ describe('AppRootLayout startup integration', () => {
     (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
       createMockSQLiteProvider([slowerRawDb, failingRawDb]),
     );
-    (dbClientHelpers.runMigrations as jest.Mock).mockImplementation(async (database) => {
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockImplementation(async (database) => {
       if (database === failingRawDb) {
         throw new Error('SQLITE_ERROR: migration crash');
       }
@@ -309,7 +316,7 @@ describe('AppRootLayout startup integration', () => {
       return null;
     });
 
-    const view = render(<AppRootLayout />);
+    const view = render(<StartupBoundary />);
 
     await waitFor(() => {
       expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();

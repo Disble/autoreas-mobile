@@ -7,6 +7,7 @@ import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync
 import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
 import * as syncRuntimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
+import { SchemaNotReadyError } from '../../../src/infrastructure/db/startup';
 
 const mockStart = jest.fn<Promise<void>, []>();
 const mockStop = jest.fn<Promise<void>, []>();
@@ -233,6 +234,20 @@ describe('notifee-foreground-service-adapter', () => {
     expect(syncCycleLockModule.withExclusiveSyncCycle).toHaveBeenCalledWith(
       expect.objectContaining({ rawDb, owner: 'foreground_service' }),
     );
+  });
+
+  it('treats absent foreground schema readiness as a foreground-service no-op', async () => {
+    const runtime = buildRuntime();
+    (runtime.open as jest.Mock).mockRejectedValue(new SchemaNotReadyError('missing'));
+    (sqliteSyncRuntimeModule.createSyncSQLiteRuntime as jest.Mock).mockReturnValue(runtime);
+
+    createNotifeeForegroundServiceAdapter();
+
+    await expect(capturedRunCycle?.()).resolves.toBeUndefined();
+    expect(syncCycleLockModule.withExclusiveSyncCycle).not.toHaveBeenCalled();
+    expect(headlessSyncCycleModule.runHeadlessSyncCycle).not.toHaveBeenCalled();
+    expect(syncRuntimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
   });
 
   it('records a cycle error to the runtime status snapshot via onCycleError', async () => {
