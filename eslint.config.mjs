@@ -13,7 +13,7 @@ export default [
     },
   }),
   {
-    files: ['metro.config.js', 'scripts/generate-feature.js'],
+    files: ['jest.config.js', 'metro.config.js', 'scripts/generate-feature.js'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: {

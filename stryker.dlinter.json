@@ -1,0 +1,26 @@
+{
+  "testRunner": "vitest",
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 1,
+  "disableTypeChecks": false,
+  "ignoreStatic": true,
+  "cleanTempDir": "always",
+  "tempDirName": ".dlinter-mutation-tmp",
+  "reporters": [
+    "clear-text"
+  ],
+  "mutate": [
+    "src/features/sync/native-foreground-sync-ticker.helpers.ts"
+  ],
+  "thresholds": {
+    "high": 80,
+    "low": 80,
+    "break": 80
+  },
+  "vitest": {
+    "configFile": "vitest.dlinter-mutation.mts",
+    "related": false
+  }
+}

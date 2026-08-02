@@ -2,7 +2,21 @@
 
 ## Summary
 
-`dlinter-ts-react` 0.9.0 is installed, but its incremental mutation capability cannot be configured in this repository because the official CLI supports Vitest projects only. This repository uses Jest and does not declare `vitest`.
+`dlinter-ts-react` 0.9.0 requires Vitest for mutation testing while this Expo project keeps Jest and `jest-expo` for its primary suite. The repository now uses a narrow Vitest mutation surface for the pure native foreground-sync ticker helper. Jest remains the Expo integration test runner.
+
+## Current Workflow
+
+Run the bounded suite directly:
+
+```bash
+bunx vitest run --config vitest.dlinter-mutation.mts
+bunx stryker run stryker.dlinter.json
+```
+
+The pre-commit `test:mutation:staged` job runs only when
+`src/features/sync/native-foreground-sync-ticker.helpers.ts` is fully staged. It rejects partial staging and uses the generated incremental Stryker cache. Other production files are intentionally outside this initial mutation surface.
+
+The first bounded execution killed 30 of 37 mutants for an 81.08% score, satisfying the generated 80% breaking threshold.
 
 ## Observed Evidence
 
@@ -61,15 +75,21 @@ The CLI rejects this Jest project before writing or installing mutation-test art
 
 ## Impact
 
-The dlinter lint preset can be upgraded and validated. Incremental staged-line mutation testing cannot be configured or truthfully reported as passing under the package's official 0.9.0 contract.
+The dlinter lint preset and the bounded mutation guard are both configured. The official initializer still cannot create mutation artifacts in a Jest-only repository; Vitest remains a required development dependency for this compatible dual-runner setup.
 
-## Actionable Next Step
+## Remaining Mutation Gaps
 
-Decide whether this Expo React Native repository should adopt a supported Vitest test surface for mutation testing. If approved, add and validate Vitest compatibility for representative production helpers first, then rerun:
+- The default `expo-modules-core` lazy loader is intentionally not executed because the mutation tests inject the native-module lookup seam.
+- Removing the null return from the optional-module loader catch path is externally equivalent because the downstream ticker treats both `null` and `undefined` as unavailable.
+- Removing optional chaining from `subscription?.remove()` is equivalent while the declared native module contract always returns a subscription from `addListener`.
+
+## Expansion Path
+
+Add another isolated Vitest test file and an explicit Stryker `mutate` entry only after proving a pure helper can run without the Expo/Jest bootstrap. Then rerun:
 
 ```bash
-bunx dlinter init --test-mutator
-bun run test:mutation:staged
+bunx vitest run --config vitest.dlinter-mutation.mts
+bunx stryker run stryker.dlinter.json --dryRunOnly
 ```
 
-That follow-up must review the generated Vitest include pattern because this repository currently keeps tests under `tests/`, while the generated 0.9.0 configuration targets `src/**/*.{test,spec}.{ts,tsx}`.
+Do not broaden the mutation scope through the staged hook until its runtime cost is measured and the additional Vitest test surface is proven compatible.

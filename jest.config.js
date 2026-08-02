@@ -3,6 +3,7 @@ module.exports = {
   roots: ['<rootDir>/tests'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  testPathIgnorePatterns: ['<rootDir>/tests/mutation/'],
   transformIgnorePatterns: [
     'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo/.*|expo-router|@react-navigation/.*|react-native-svg|react-native-reanimated|react-native-gesture-handler|heroui-native|uniwind))',
   ],

@@ -20,3 +20,6 @@ pre-commit:
     # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
     - name: test
       run: bun run test
+    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+    - name: test:mutation:staged
+      run: bun run test:mutation:staged

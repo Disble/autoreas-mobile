@@ -56,3 +56,5 @@ build-*/
 
 # Machine-local agent skill registry (embeds absolute paths from the developer's home directory)
 .atl/
+# dlinter: mutation testing runtime artifacts
+.dlinter-mutation-tmp/

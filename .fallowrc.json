@@ -10,7 +10,8 @@
   "ignorePatterns": [
     "android/**",
     "ios/**",
-    ".expo/**"
+    ".expo/**",
+    "vitest.dlinter-mutation.mts"
   ],
   "ignoreDependencies": [
     "expo-build-properties",
@@ -20,7 +21,8 @@
     "react-native-web",
     "expo-dev-client",
     "expo-system-ui",
-    "expo-updates"
+    "expo-updates",
+    "@stryker-mutator/vitest-runner"
   ],
   "ignoreExports": [
     {
