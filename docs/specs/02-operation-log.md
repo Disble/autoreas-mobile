@@ -5,11 +5,11 @@
 ### Current State
 - El repo todavía no tiene implementación real de `expo-sqlite` ni `drizzle-orm`; hoy este tema existe a nivel de arquitectura y specs.
 - `docs/specs/01-foundation.md` ya fija dos restricciones NO negociables: `nrocapvisto` debe persistirse como `REAL` y las mutaciones críticas deben correr con `withExclusiveTransactionAsync()`.
-- `docs/Arquitectura.md` ya define el patrón **Optimistic Ignorance**: toda mutación local escribe `animes` + `operation_log`, y cualquier evento remoto se ignora si existe un `pending` para ese anime.
+- `ARCHITECTURE.md` define el patrón **Optimistic Ignorance**: toda mutación local escribe `animes` + `operation_log`, y cualquier evento remoto se ignora si existe un `pending` para ese anime.
 
 ### Affected Areas
 - `docs/specs/01-foundation.md` — base técnica de SQLite/Drizzle, coerción legacy y transacciones exclusivas.
-- `docs/Arquitectura.md` — contrato arquitectónico de SSOT + optimistic ignorance.
+- `ARCHITECTURE.md` — contrato arquitectónico de SSOT + optimistic ignorance.
 - `docs/Autoreas_mobile_design_doc.md` — modelo de datos local y comportamiento esperado de `Cap+`.
 - `src/infrastructure/db/schema.ts` — futuro schema Drizzle real.
 - `src/infrastructure/db/client.ts` — apertura `openDatabaseSync(..., { enableChangeListener: true })` y `drizzle(...)`.

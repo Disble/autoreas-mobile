@@ -58,3 +58,6 @@ build-*/
 .atl/
 # dlinter: mutation testing runtime artifacts
 .dlinter-mutation-tmp/
+
+#ignore
+.ignore/

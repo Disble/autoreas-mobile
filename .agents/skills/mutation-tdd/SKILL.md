@@ -28,7 +28,7 @@ if (staged.length === 0) { /* ...prints, and */ process.exit(0); }
 tick. The cause is structural: dlinter drives Stryker through **Vitest**, this
 project's suite is **Jest + `jest-expo`**, and the two cannot share a suite — so
 mutation lives on a tiny isolated Vitest island (`tests/mutation/`). See
-`docs/mutation-testing.md`.
+`ARCHITECTURE.md`'s **Incremental Mutation-Test Boundary**.
 
 Everything else — every hook, every helper touching React Native, `expo-sqlite`,
 or the bridge client — is covered by **you doing the check below**, or by nothing
@@ -131,9 +131,9 @@ is exactly what this skill exists for.
 ## Equivalent mutants: when survival is correct
 
 Some mutants survive because removing the code changes no observable behaviour.
-Killing them is impossible and writing a test that tries is waste. Three are
-documented in `docs/mutation-testing.md` for the sync ticker — optional chaining
-on a contract that always returns a value, a `null` return where the caller
+Killing them is impossible and writing a test that tries is waste. The documented
+sync-ticker examples include optional chaining on a contract that always returns
+a value and a `null` return where the caller
 treats `null` and `undefined` identically.
 
 If you cannot state the observable difference the guard makes, it may be
@@ -149,9 +149,9 @@ bunx stryker run stryker.dlinter.json
 bun run test:mutation:staged
 ```
 
-Read `docs/mutation-testing.md` before touching any of it — the surface is a
-single hardcoded path in three separate places, and widening it requires a pure
-helper that runs without `jest-expo`.
+Review `ARCHITECTURE.md`'s **Incremental Mutation-Test Boundary** before touching
+the automated surface. Widening it requires a pure helper that runs without
+`jest-expo`.
 
 ## Reporting
 

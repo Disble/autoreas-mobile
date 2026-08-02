@@ -128,7 +128,7 @@ If ANY file (`.ts` or `.tsx`) exceeds 500 lines, it violates the Single Responsi
 ## 10. LLM Enforcement Barriers
 
 To ensure these rules are respected by all agents and developers:
-* **Generators:** Complex features must be scaffolded using `npm run generate:feature`. Manual creation is forbidden.
+* **Generators:** Complex features must be scaffolded using `bun run generate:feature <featureName> <ComponentName>`. Manual creation is forbidden.
 * **ESLint:** Strict rules enforce `max-lines` (500), delivery-layer purity, strict colocation, Zod placement, readonly props, and helper documentation.
 * **Bridge Boundary:** ESLint (`no-restricted-syntax`, the "Bridge Boundary" rules in `eslint.config.js`) forbids `fetch()`, `new WebSocket()`, and raw `http(s)://`/`ws(s)://` URL building anywhere under `src/features/**`. The barrier is deterministic-first: it fails the build, then this doc explains why.
 * **AGENTS.md:** AI agents are strictly instructed to follow these rules under the "CRITICAL ARCHITECTURE CONSTRAINTS" section.
@@ -140,6 +140,124 @@ Talking to `autoreas-bridge` is an **adapter concern**, exactly like the databas
 * **One seam:** `BridgeClient` is the single place that resolves the base URL (`http://ip:port`), builds the websocket URL (`ws://ip:port/ws`), injects the `Authorization` header, normalizes responses to `{ ok, status, data, rawBody, url }`, distinguishes a transient `BridgeUnreachableError` (retry) from an HTTP error (e.g. `4xx` → permanent), and exposes a diagnostic logging seam.
 * **Semantic methods:** features call `bridgeClient.pairDevice / listAnimes / getAnime / reconcile / openWebSocket` — never a raw URL.
 * **Why this exists:** the connection logic was once duplicated across five feature files with five different error styles, which made a transport bug impossible to localize. Centralizing it — and enforcing the boundary in the linter — is what prevents that regression from returning.
+
+## 12. Startup Readiness Boundary
+
+The startup feature owns the application transition from native launch to locally ready. A ready application has a validated local schema, loaded local bridge configuration, and a safe route target. Sync services activate only after that transition completes.
+
+### Component diagram
+
+```mermaid
+flowchart TD
+  Layout["src/app/_layout.tsx\nExpo Router composition"] --> Splash["startup-boundary.startup\nretain native splash"]
+  Layout --> Boundary["StartupBoundary\nfeature entrypoint"]
+  Boundary --> BoundaryHook["useStartupBoundary\nfonts, terminal UI, navigation"]
+  BoundaryHook --> Startup["useStartup\nstartup state machine"]
+  BoundaryHook --> Provider["expo-sqlite SQLiteProvider"]
+  Provider --> Startup
+  Startup --> ForegroundDB["prepareForegroundDatabase\nstartup DB adapter"]
+  ForegroundDB --> Migrations["Drizzle migrations\nand ordered repairs"]
+  ForegroundDB --> Readiness["Schema validation\nPRAGMA user_version = 1"]
+  Startup --> Config["getBridgeConfigSnapshot"]
+  BoundaryHook --> ReadyUI["Route Slot + SyncRuntimeGate\nready only"]
+
+  Background["Expo background task /\nNotifee foreground service"] --> HeadlessDB["prepareHeadlessDatabase\nreadiness verification"]
+  HeadlessDB --> Readiness
+  HeadlessDB --> NoOp["SchemaNotReadyError\nsafe no-op"]
+```
+
+### Foreground success sequence
+
+```mermaid
+sequenceDiagram
+  participant L as Root layout
+  participant B as StartupBoundary
+  participant P as SQLiteProvider
+  participant S as useStartup
+  participant D as SQLite / Drizzle
+  participant R as Expo Router
+  participant N as Native splash
+
+  L->>N: prevent automatic hide
+  L->>B: render feature entrypoint
+  B->>P: render with onInit(handleDatabaseInit)
+  P->>S: handleDatabaseInit(rawDb)
+  S->>D: busy timeout, WAL, migrations, ordered repairs
+  S->>D: quick_check and required-table validation
+  S->>D: write user_version = 1
+  S->>D: read bridge configuration
+  S-->>B: ready + /(tabs) or /setup
+  B->>R: replace target once
+  B->>N: hide once
+  B-->>B: mount Slot and SyncRuntimeGate
+```
+
+### Failure and headless sequence
+
+```mermaid
+sequenceDiagram
+  participant H as Headless sync actor
+  participant D as SQLite database
+  participant S as useStartup
+  participant B as StartupBoundary
+  participant N as Native splash
+
+  H->>D: apply busy timeout and read user_version
+  alt version is exactly ready
+    D-->>H: allow application-table access
+  else missing or stale readiness
+    D-->>H: SchemaNotReadyError
+    H-->>H: close connection and return safe no-op
+  end
+
+  S->>D: foreground preparation or local config read
+  alt preparation/configuration fails
+    D-->>S: typed error
+    S-->>B: fatal state with redacted diagnostic
+    B->>N: hide once
+    B-->>B: render controlled failure; keep Slot and SyncRuntimeGate unmounted
+  end
+```
+
+### Startup invariants
+
+- Foreground startup is the only actor allowed to run migrations and schema repairs.
+- `PRAGMA user_version = 1` is written only after migrations and validation finish successfully.
+- Headless actors apply connection-local busy policy, verify exact durable readiness, then access application tables.
+- Headless actors close their dedicated connection and return a safe no-op while readiness is missing or stale.
+- The startup boundary exposes only allowlisted diagnostic fields. It never places raw SQLite errors, SQL, credentials, or bridge details in UI state.
+- Route replacement, splash hiding, `Slot`, and `SyncRuntimeGate` are terminal-ready behaviors. A fatal startup state renders its controlled fallback without mounting runtime consumers.
+
+## 13. Incremental Mutation-Test Boundary
+
+The primary Jest + `jest-expo` suite and the Vitest/Stryker mutation island have separate runner boundaries. The automated incremental gate currently protects one pure native-ticker seam. The manual mutation step in `AGENTS.md` remains mandatory for guards outside that narrow surface.
+
+```mermaid
+flowchart TD
+  Commit["git commit"] --> Hook["Lefthook pre-commit"]
+  Hook --> Script["bun run test:mutation:staged"]
+  Script --> Diff["Inspect git diff --cached"]
+  Diff --> Target{"Ticker helper\nstaged?"}
+  Target -- No --> Skip["Exit 0 with guard message"]
+  Target -- Yes --> Complete{"Fully staged?"}
+  Complete -- No --> Reject["Reject partial staging"]
+  Complete -- Yes --> Ranges["Extract added line ranges"]
+  Ranges --> Stryker["Stryker incremental run"]
+  Stryker --> Vitest["Isolated Vitest mutation suite"]
+  Vitest --> Score{"Score >= 80%?"}
+  Score -- Yes --> Allow["Allow commit"]
+  Score -- No --> Reject
+```
+
+| Boundary | Responsibility |
+| --- | --- |
+| `scripts/dlinter-mutation-staged.mjs` | Checks staged state, rejects partial staging, extracts added ranges, and invokes Stryker. |
+| `stryker.dlinter.json` | Limits mutation to `native-foreground-sync-ticker.helpers.ts` and enforces the 80% breaking threshold. |
+| `vitest.dlinter-mutation.mts` | Runs only `tests/mutation/**/*.mutation.test.ts`. |
+| `jest.config.js` | Excludes the Vitest-only mutation island from the Jest + `jest-expo` suite. |
+| `.agents/skills/mutation-tdd/SKILL.md` | Defines the required manual guard-deletion check for code outside the automated mutation surface. |
+
+The mutation temporary directory is `.dlinter-mutation-tmp`; its incremental cache lives under the Git directory at `dlinter/stryker-staged.json`. Both are tooling artifacts and must not affect application behavior.
 
 ---
 *If in doubt, refer to the `src/features/animes` directory as the Gold Standard for implementation.*
