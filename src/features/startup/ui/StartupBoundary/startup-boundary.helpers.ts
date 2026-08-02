@@ -17,7 +17,9 @@ import type {
   ResolveStartupBoundaryRootContentParams,
   ResolveStartupBoundaryScreenParams,
   ResolvedStartupBoundaryContent,
+  StartupRouteRouter,
 } from './startup-boundary.types';
+import type { Href } from 'expo-router';
 
 /**
  * Prepares the native splash screen before the app root layout renders any React-controlled UI.
@@ -29,6 +31,35 @@ export function prepareStartupBoundarySplashScreen() {
   });
 
   void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+}
+
+/**
+ * Starts one native splash release attempt after startup reaches a terminal state.
+ * Keeping this call centralized lets every terminal path preserve the same one-time ref policy in the hook.
+ */
+export function releaseStartupBoundarySplashScreen() {
+  void SplashScreen.hideAsync().catch(() => {
+    try {
+      SplashScreen.hide();
+    } catch {
+      // The final native release attempt has no further recovery path.
+    }
+  });
+}
+
+/**
+ * Replaces the startup route and releases the native splash exactly once, including synchronous navigation failures.
+ * Navigation exceptions are rethrown unchanged so React's existing error handling retains the original failure.
+ */
+export function navigateAndReleaseStartupSplash(router: StartupRouteRouter, target: Href) {
+  try {
+    router.replace(target);
+  } catch (error) {
+    releaseStartupBoundarySplashScreen();
+    throw error;
+  }
+
+  releaseStartupBoundarySplashScreen();
 }
 
 /**
@@ -55,16 +86,16 @@ export function renderKeyboardAvoidingWrapper(children: ReactNode) {
 export function resolveStartupBoundaryScreen(
   params: Readonly<ResolveStartupBoundaryScreenParams>,
 ): StartupBoundaryScreen {
+  if (params.startupFailure) {
+    return 'startup-failure';
+  }
+
   if (!params.fontsLoaded) {
     return 'loading';
   }
 
   if (!params.hasSQLiteProvider) {
     return 'sqlite-unavailable';
-  }
-
-  if (params.startupFailure) {
-    return 'startup-failure';
   }
 
   if (params.shouldRenderRouteSlot) {
@@ -97,10 +128,10 @@ export function resolveStartupBoundaryContent(
 
   if (params.screen === 'startup-failure' && params.startupFailure) {
     return {
-      preProviderContent: null,
-      providerContent: createElement(StartupBoundaryFallback, {
+      preProviderContent: createElement(StartupBoundaryFallback, {
         failure: params.startupFailure,
       }),
+      providerContent: null,
     };
   }
 
@@ -124,10 +155,6 @@ export function resolveStartupBoundaryContent(
 export function resolveStartupBoundaryRootContent(
   params: Readonly<ResolveStartupBoundaryRootContentParams>,
 ) {
-  if (params.preProviderContent) {
-    return params.preProviderContent;
-  }
-
   const HeroUINativeProviderComponent = HeroUINativeProvider as unknown as ComponentType<{
     readonly config: {
       readonly textProps: {
@@ -172,6 +199,9 @@ export function resolveStartupBoundaryRootContent(
       )
     : bootstrappedContent;
 
+  // Terminal startup content must stay outside SQLiteProvider because the provider can retain Suspense indefinitely.
+  const rootContent = params.preProviderContent ?? sqliteContent;
+
   const providerShell = createElement(
     AppThemeProvider,
     null,
@@ -190,7 +220,7 @@ export function resolveStartupBoundaryRootContent(
       createElement(
         Suspense,
         { fallback: createElement(StartupBoundaryLoading) },
-        sqliteContent,
+        rootContent,
       ),
     ),
   );

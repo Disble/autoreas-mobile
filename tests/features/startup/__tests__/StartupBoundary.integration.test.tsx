@@ -1,11 +1,13 @@
 import { act, render, waitFor } from '@testing-library/react-native';
+import { useFonts } from '@expo-google-fonts/inter';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import * as dbClientHelpers from '../../../../src/infrastructure/db/client/client.helpers';
 import * as dbStartup from '../../../../src/infrastructure/db/startup/startup.helpers';
 import * as nativeRuntime from '../../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
-import { StartupBoundary } from '../../../../src/features/startup';
+import { StartupBoundary } from '../../../../src/features/startup/ui/StartupBoundary/StartupBoundary.component';
+import { STARTUP_PROVIDER_READINESS_DEADLINE_MS } from '../../../../src/features/startup/startup.constants';
 
 interface DeferredPromise<T> {
   readonly promise: Promise<T>;
@@ -64,6 +66,27 @@ function createSuspendingSQLiteProvider(database: unknown) {
     }
 
     return <>{props.children}</>;
+  };
+}
+
+function createPermanentlySuspendingSQLiteProvider(database: unknown) {
+  let hasStartedInitialization = false;
+
+  return function MockPermanentlySuspendingSQLiteProvider(
+    props: Readonly<{ children: React.ReactNode; onInit?: (db: unknown) => Promise<void> }>,
+  ) {
+    if (!hasStartedInitialization) {
+      hasStartedInitialization = true;
+      props.onInit?.(database).catch(() => undefined);
+    }
+
+    throw new Promise<never>(() => undefined);
+  };
+}
+
+function createNeverInitializingSQLiteProvider() {
+  return function MockNeverInitializingSQLiteProvider() {
+    throw new Promise<never>(() => undefined);
   };
 }
 
@@ -174,9 +197,16 @@ describe('StartupBoundary integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
+    (useFonts as jest.Mock).mockReturnValue([true]);
     (useRouter as jest.Mock).mockReturnValue({ replace });
     (dbStartup.prepareForegroundDatabase as jest.Mock).mockResolvedValue(undefined);
     (dbClientHelpers.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
   });
 
   afterAll(() => {
@@ -184,6 +214,7 @@ describe('StartupBoundary integration', () => {
   });
 
   it('keeps a visible startup placeholder and all database consumers unmounted while SQLite initialization is pending', () => {
+    jest.useFakeTimers();
     const migrations = createDeferredPromise<void>();
     const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
 
@@ -199,6 +230,24 @@ describe('StartupBoundary integration', () => {
     expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
     expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
+  });
+
+  it('shows the controlled fallback and leaves sync unmounted when fonts do not settle before the deadline', async () => {
+    jest.useFakeTimers();
+    (useFonts as jest.Mock).mockReturnValue([false]);
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(null);
+
+    const view = render(<StartupBoundary />);
+
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
+    expect(view.getByText('No se pudieron cargar los recursos visuales durante el inicio.')).toBeOnTheScreen();
+    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
+    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('mounts database consumers and routes exactly once after suspended initialization succeeds', async () => {
@@ -250,6 +299,60 @@ describe('StartupBoundary integration', () => {
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
     expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('renders the controlled fallback outside a permanently suspended SQLiteProvider', async () => {
+    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
+
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
+      createPermanentlySuspendingSQLiteProvider(rawDb),
+    );
+    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(
+      new Error('SQLITE_ERROR: migration crash'),
+    );
+
+    const view = render(<StartupBoundary />);
+
+    await waitFor(() => {
+      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
+    });
+
+    expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
+    expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
+    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('releases startup through the provider-readiness watchdog when SQLiteProvider never initializes', async () => {
+    jest.useFakeTimers();
+    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(
+      createNeverInitializingSQLiteProvider(),
+    );
+
+    const view = render(<StartupBoundary />);
+
+    expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
+    expect(dbStartup.prepareForegroundDatabase).not.toHaveBeenCalled();
+    expect(dbClientHelpers.getBridgeConfigSnapshot).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(STARTUP_PROVIDER_READINESS_DEADLINE_MS - 1);
+    });
+
+    expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1);
+    });
+
+    expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
+    expect(view.getByText('No se pudo preparar la base local durante el inicio.')).toBeOnTheScreen();
+    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
+    expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
+    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(dbStartup.prepareForegroundDatabase).not.toHaveBeenCalled();
+    expect(dbClientHelpers.getBridgeConfigSnapshot).not.toHaveBeenCalled();
   });
 
   it('shows the same safe startup fallback when connection policy rejects', async () => {

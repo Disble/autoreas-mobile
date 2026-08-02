@@ -6,12 +6,20 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { useRouter } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  STARTUP_FAILURE_RECOVERY_HINT,
+  STARTUP_FONT_FAILURE_MESSAGE,
+  STARTUP_FONT_LOAD_DEADLINE_MS,
+  STARTUP_PROVIDER_READINESS_DEADLINE_MS,
+  STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
+} from '../../startup.constants';
+import { createStartupDiagnostic } from '../../startup.helpers';
 import { useStartup } from '../../use-startup';
 import {
   renderKeyboardAvoidingWrapper,
+  navigateAndReleaseStartupSplash,
+  releaseStartupBoundarySplashScreen,
   resolveStartupBoundaryContent,
   resolveStartupBoundaryRootContent,
   resolveStartupBoundaryScreen,
@@ -20,6 +28,7 @@ import type {
   StartupBoundaryProps,
   StartupBoundaryViewModel,
 } from './startup-boundary.types';
+import type { StartupFailure } from '../../startup.types';
 
 /** Coordinates app root layout state and actions. */
 export function useStartupBoundary(
@@ -29,10 +38,13 @@ export function useStartupBoundary(
   const hasCompletedStartupRef = useRef(false);
 
   // 2. State
+  const [hasFontLoadDeadlineElapsed, setHasFontLoadDeadlineElapsed] = useState(false);
+  const [hasProviderReadinessDeadlineElapsed, setHasProviderReadinessDeadlineElapsed] =
+    useState(false);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontLoadError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -45,73 +57,107 @@ export function useStartupBoundary(
 
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
-  const isBootstrapped = isReady;
   const shouldRenderRouteSlot = isReady && !startupState.failure;
-  const startupFailure = startupState.failure;
-  const screen = useMemo(
-    () =>
-      resolveStartupBoundaryScreen({
-        fontsLoaded,
-        hasSQLiteProvider: Boolean(SQLiteProvider),
-        shouldRenderRouteSlot,
-        startupFailure,
-      }),
-    [SQLiteProvider, fontsLoaded, shouldRenderRouteSlot, startupFailure],
-  );
-  const resolvedContent = useMemo(
-    () =>
-      resolveStartupBoundaryContent({
-        screen,
-        startupFailure,
-      }),
-    [screen, startupFailure],
-  );
-  const rootContent = useMemo(
-    () =>
-      resolveStartupBoundaryRootContent({
-        SQLiteProvider,
-        databaseName,
-        handleDatabaseInit,
-        isBootstrapped,
-        preProviderContent: resolvedContent.preProviderContent,
-        providerContent: resolvedContent.providerContent,
-        sqliteOptions,
-      }),
-    [
-      SQLiteProvider,
-      databaseName,
-      handleDatabaseInit,
-      isBootstrapped,
-      resolvedContent.preProviderContent,
-      resolvedContent.providerContent,
-      sqliteOptions,
-    ],
-  );
+  const fontStartupFailure = (() => {
+    if (!fontLoadError && !hasFontLoadDeadlineElapsed) {
+      return null;
+    }
+
+    return {
+      diagnostic: createStartupDiagnostic(
+        'font_loading',
+        fontLoadError ?? new Error('Font loading deadline exceeded'),
+      ),
+      diagnosticMessage: STARTUP_FONT_FAILURE_MESSAGE,
+      recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
+    };
+  })();
+  const existingStartupFailure = startupState.failure ?? fontStartupFailure;
+  const providerReadinessStartupFailure: StartupFailure | null = (() => {
+    if (!hasProviderReadinessDeadlineElapsed) {
+      return null;
+    }
+
+    return {
+      diagnostic: createStartupDiagnostic(
+        'provider_readiness',
+        new Error('SQLiteProvider readiness deadline exceeded'),
+      ),
+      diagnosticMessage: STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
+      recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
+    };
+  })();
+  const startupFailure = existingStartupFailure ?? providerReadinessStartupFailure;
+  const isBootstrapped = isReady && !startupFailure;
+  const screen = resolveStartupBoundaryScreen({
+    fontsLoaded,
+    hasSQLiteProvider: Boolean(SQLiteProvider),
+    shouldRenderRouteSlot,
+    startupFailure,
+  });
+  const resolvedContent = resolveStartupBoundaryContent({
+    screen,
+    startupFailure,
+  });
+  const rootContent = resolveStartupBoundaryRootContent({
+    SQLiteProvider,
+    databaseName,
+    handleDatabaseInit,
+    isBootstrapped,
+    preProviderContent: resolvedContent.preProviderContent,
+    providerContent: resolvedContent.providerContent,
+    sqliteOptions,
+  });
 
   // 6. Callbacks (useCallback calling pure helpers)
-  const contentWrapper = useCallback(
-    (children: ReactNode) => renderKeyboardAvoidingWrapper(children),
-    [],
-  );
+  const contentWrapper = renderKeyboardAvoidingWrapper;
 
   // 7. Effects
+  useEffect(() => {
+    if (fontsLoaded || fontLoadError) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setHasFontLoadDeadlineElapsed(true);
+    }, STARTUP_FONT_LOAD_DEADLINE_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [fontLoadError, fontsLoaded]);
+
+  useEffect(() => {
+    if (!fontsLoaded || !SQLiteProvider || isReady || existingStartupFailure) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setHasProviderReadinessDeadlineElapsed(true);
+    }, STARTUP_PROVIDER_READINESS_DEADLINE_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [SQLiteProvider, existingStartupFailure, fontsLoaded, isReady]);
+
   useEffect(() => {
     if (!fontsLoaded || SQLiteProvider || hasCompletedStartupRef.current) {
       return;
     }
 
     hasCompletedStartupRef.current = true;
-    void SplashScreen.hideAsync();
+    releaseStartupBoundarySplashScreen();
   }, [SQLiteProvider, fontsLoaded]);
 
   useEffect(() => {
-    if (!fontsLoaded || !startupFailure || hasCompletedStartupRef.current) {
+    if (!startupFailure || hasCompletedStartupRef.current) {
       return;
     }
 
     hasCompletedStartupRef.current = true;
-    void SplashScreen.hideAsync();
-  }, [fontsLoaded, startupFailure]);
+    releaseStartupBoundarySplashScreen();
+  }, [startupFailure]);
 
   useEffect(() => {
     if (
@@ -125,8 +171,7 @@ export function useStartupBoundary(
     }
 
     hasCompletedStartupRef.current = true;
-    router.replace(startupState.target);
-    void SplashScreen.hideAsync();
+    navigateAndReleaseStartupSplash(router, startupState.target);
   }, [fontsLoaded, isReady, router, startupFailure, startupState.target]);
 
   return {

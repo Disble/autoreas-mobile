@@ -1,4 +1,5 @@
 import type { StartupFailure, StartupState } from '../../startup.types';
+import type { Href } from 'expo-router';
 import type { SQLiteProviderProps } from 'expo-sqlite';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
 
@@ -17,6 +18,11 @@ export type StartupBoundaryScreen =
   | 'route-slot'
   | 'sqlite-unavailable'
   | 'startup-failure';
+
+/** Defines the navigation contract needed to complete startup routing. */
+export interface StartupRouteRouter {
+  readonly replace: (target: Href) => void;
+}
 
 /** Defines the input required to resolve the app root layout screen. */
 export interface ResolveStartupBoundaryScreenParams {

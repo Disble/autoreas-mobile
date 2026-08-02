@@ -109,7 +109,7 @@ describe('resolveStartupBoundaryContent', () => {
     expect(view.getByText('sqlite-unavailable-screen')).toBeOnTheScreen();
   });
 
-  it('returns the startup fallback content inside providers when bootstrap fails', () => {
+  it('returns the startup fallback content before SQLiteProvider when bootstrap fails', () => {
     const resolvedContent = resolveStartupBoundaryContent({
       screen: 'startup-failure',
       startupFailure: {
@@ -124,9 +124,9 @@ describe('resolveStartupBoundaryContent', () => {
       },
     });
 
-    expect(resolvedContent.preProviderContent).toBeNull();
+    expect(resolvedContent.providerContent).toBeNull();
 
-    const view = render(expectElement(resolvedContent.providerContent));
+    const view = render(expectElement(resolvedContent.preProviderContent));
 
     expect(
       view.getByText(

@@ -1,9 +1,13 @@
 import type { Href } from 'expo-router';
 import type { SQLiteDatabase, SQLiteProviderProps } from 'expo-sqlite';
-import type { ComponentType } from 'react';
+import type { ComponentType, Dispatch, SetStateAction } from 'react';
 
 /** Names the bounded local startup stages exposed by safe diagnostics. */
-export type StartupDiagnosticStage = 'database_preparation' | 'local_config';
+export type StartupDiagnosticStage =
+  | 'database_preparation'
+  | 'font_loading'
+  | 'local_config'
+  | 'provider_readiness';
 
 /** Names safe startup failure categories. */
 export type StartupFailureClassification =
@@ -36,6 +40,11 @@ export interface StartupState {
   readonly failure: StartupFailure | null;
   readonly phase: StartupPhase;
   readonly target: Href | null;
+}
+
+/** Defines the dependencies used to create the stable SQLiteProvider initialization callback. */
+export interface CreateStartupDatabaseInitializerParams {
+  readonly setStartupState: Dispatch<SetStateAction<StartupState>>;
 }
 
 /** Defines the startup application hook contract. */
