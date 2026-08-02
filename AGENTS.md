@@ -18,6 +18,7 @@
     - *Mandatory for*: async races and locks, defensive branches (`??` fallbacks, `if (!x) return`), `catch` blocks and timeout branches, bridge-boundary error taxonomy, and any test written to close a coverage gap.
     - *The pre-commit `test:mutation:staged` job does NOT cover this*. `scripts/dlinter-mutation-staged.mjs` protects only `src/features/sync/native-foreground-sync-ticker.helpers.ts`; outside that surface, the gate exits 0 without mutation coverage. The runner boundary is structural: dlinter drives Stryker through Vitest while the primary suite is Jest + `jest-expo`. See `ARCHITECTURE.md`'s **Incremental Mutation-Test Boundary**.
     - *Reporting*: name which guards you deleted and whether each mutant was killed. "Tests pass" is not the claim. Never report a test as covering a guard you did not break.
+13. **React Doctor**: After React changes, run `npx -y react-doctor@latest . --verbose --diff`, fix every finding, and rerun it until it reports 100/100.
 
 ## Spec-Driven Development (SDD) & Delegation Guardrails
 
