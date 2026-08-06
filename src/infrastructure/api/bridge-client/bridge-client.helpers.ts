@@ -1,7 +1,6 @@
 import { BRIDGE_API_PATHS, NOOP_BRIDGE_LOGGER } from './bridge-client.constants';
 import {
   buildPostActiveSeasonRatingBody,
-  buildBridgeBaseUrl,
   buildBridgeHeaders,
   buildBridgeUrl,
   buildBridgeWebSocketUrl,
@@ -101,9 +100,6 @@ export function createBridgeClient(
   }
 
   return {
-    resolveBaseUrl: (connection) => buildBridgeBaseUrl(connection),
-    resolveWebSocketUrl: (connection) => buildBridgeWebSocketUrl(connection),
-    request,
     pairDevice: (connection, pairRequest: BridgePairDeviceRequest) =>
       request(connection, {
         method: 'POST',
@@ -117,18 +113,6 @@ export function createBridgeClient(
       request(connection, {
         method: 'GET',
         path: BRIDGE_API_PATHS.animes,
-        token: connection.token,
-      }),
-    getAnime: (connection, animeId) =>
-      request(connection, {
-        method: 'GET',
-        path: `${BRIDGE_API_PATHS.animes}/${animeId}`,
-        token: connection.token,
-      }),
-    getStatus: (connection) =>
-      request(connection, {
-        method: 'GET',
-        path: BRIDGE_API_PATHS.status,
         token: connection.token,
       }),
     getActiveSeason: (connection) =>

@@ -19,13 +19,6 @@ function buildResponse(overrides: Partial<{
 describe('bridge-client', () => {
   const connection = { ip: '192.168.1.10', port: 8080, token: 'token123' };
 
-  it('resolves the http base url and the websocket url from a connection', () => {
-    const client = createBridgeClient();
-
-    expect(client.resolveBaseUrl(connection)).toBe('http://192.168.1.10:8080');
-    expect(client.resolveWebSocketUrl(connection)).toBe('ws://192.168.1.10:8080/ws');
-  });
-
   it('lists animes with a bearer token and no content-type on a bodyless GET', async () => {
     const fetchFn = jest.fn(async () =>
       buildResponse({ body: JSON.stringify([{ _id: 'anime-1' }]) }) as unknown as Response,
@@ -34,6 +27,7 @@ describe('bridge-client', () => {
 
     const result = await client.listAnimes(connection);
 
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:8080/api/animes', {
       method: 'GET',
       headers: { Authorization: 'Bearer token123' },
@@ -43,23 +37,9 @@ describe('bridge-client', () => {
       status: 200,
       data: [{ _id: 'anime-1' }],
       rawBody: JSON.stringify([{ _id: 'anime-1' }]),
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
       url: 'http://192.168.1.10:8080/api/animes',
     });
-  });
-
-  it('gets status with a bearer token on a bodyless GET', async () => {
-    const fetchFn = jest.fn(async () =>
-      buildResponse({ body: '{"status":"ok","season_mode":true}' }) as unknown as Response,
-    );
-    const client = createBridgeClient({ fetchFn });
-
-    const result = await client.getStatus(connection);
-
-    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:8080/api/status', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer token123' },
-    });
-    expect(result.data).toEqual({ status: 'ok', season_mode: true });
   });
 
   it('reconciles with content-type, bearer auth and a serialized body', async () => {
@@ -70,6 +50,7 @@ describe('bridge-client', () => {
 
     const result = await client.reconcile(connection, { last_changelog_id: 0 });
 
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:8080/api/sync/reconcile', {
       method: 'POST',
       headers: {
@@ -94,6 +75,7 @@ describe('bridge-client', () => {
       { pairingToken: 'pair-token', deviceName: 'AutoreasMobile' },
     );
 
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:8080/api/devices/pair', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -131,6 +113,7 @@ describe('bridge-client', () => {
 
     const result = client.openWebSocket(connection);
 
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses WS on the LAN.
     expect(createWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:8080/ws', 'token123');
     expect(result).toBe(socket);
   });

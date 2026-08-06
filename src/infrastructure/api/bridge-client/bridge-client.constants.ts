@@ -10,7 +10,6 @@ export const BRIDGE_API_PATHS = {
   pairDevice: '/api/devices/pair',
   animes: '/api/animes',
   reconcile: '/api/sync/reconcile',
-  status: '/api/status',
   activeSeason: '/api/seasons/active',
   activeSeasonRating: '/api/seasons/active/ratings',
   ws: '/ws',

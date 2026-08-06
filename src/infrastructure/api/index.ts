@@ -3,7 +3,6 @@ export {
   bridgeClient,
   createBridgeClient,
   extractActiveSeasonSnapshot,
-  extractSeasonMode,
 } from './bridge-client';
 export type {
   ActiveSeasonCandidateSnapshot,
@@ -16,6 +15,5 @@ export type {
   BridgeHttpMethod,
   BridgeHttpResult,
   BridgePairDeviceRequest,
-  BridgeRequestSpec,
   PostActiveSeasonRatingRequest,
 } from './bridge-client';

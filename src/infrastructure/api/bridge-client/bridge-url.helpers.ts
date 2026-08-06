@@ -14,7 +14,7 @@ import type {
  * Builds the `http://ip:port` origin for a bridge connection.
  * Centralizing origin construction keeps every feature on the same base URL contract.
  */
-export function buildBridgeBaseUrl(connection: BridgeConnection): string {
+function buildBridgeBaseUrl(connection: BridgeConnection): string {
   return `${BRIDGE_HTTP_SCHEME}://${connection.ip}:${connection.port}`;
 }
 
@@ -53,20 +53,6 @@ export function buildBridgeHeaders(options: {
   }
 
   return headers;
-}
-
-/**
- * Extracts the bridge-owned season-mode flag from a parsed GET /api/status body.
- * Defaults to false for any missing or malformed shape so a partial, legacy, or
- * error status payload can never flip the client into season mode by accident —
- * false is the canonical default (it mirrors the bridge's missing-row sentinel).
- */
-export function extractSeasonMode(data: unknown): boolean {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-
-  return (data as { season_mode?: unknown }).season_mode === true;
 }
 
 /**

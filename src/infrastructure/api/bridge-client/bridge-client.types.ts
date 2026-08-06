@@ -70,22 +70,11 @@ export interface BridgeClientDependencies {
 
 /** The single adapter every feature uses to talk to the bridge over HTTP/WS. */
 export interface BridgeClient {
-  readonly resolveBaseUrl: (connection: BridgeConnection) => string;
-  readonly resolveWebSocketUrl: (connection: BridgeConnection) => string;
-  readonly request: (
-    connection: BridgeConnection,
-    spec: BridgeRequestSpec,
-  ) => Promise<BridgeHttpResult>;
   readonly pairDevice: (
     connection: BridgeConnection,
     request: BridgePairDeviceRequest,
   ) => Promise<BridgeHttpResult>;
   readonly listAnimes: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
-  readonly getAnime: (
-    connection: BridgeConnection,
-    animeId: string,
-  ) => Promise<BridgeHttpResult>;
-  readonly getStatus: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly getActiveSeason: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
     connection: BridgeConnection,
