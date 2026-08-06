@@ -55,6 +55,7 @@ describe('native-foreground-sync-ticker', () => {
     ticker.onTick(onTick);
     ticker.start(15_000);
 
+    expect(module.addListener).toHaveBeenCalledWith('onTick', expect.any(Function));
     expect(module.start).toHaveBeenCalledWith(15_000);
     expect(ticker.isRunning()).toBe(true);
 
@@ -89,6 +90,18 @@ describe('native-foreground-sync-ticker', () => {
     ticker.stop();
 
     expect(module.stop).toHaveBeenCalledTimes(1);
+    expect(ticker.isRunning()).toBe(false);
+  });
+
+  it('does not stop the native module before starting', () => {
+    const { module } = buildNativeModule();
+    const ticker = createNativeForegroundSyncTicker({
+      requireOptionalNativeModule: () => module,
+    });
+
+    ticker.stop();
+
+    expect(module.stop).not.toHaveBeenCalled();
     expect(ticker.isRunning()).toBe(false);
   });
 

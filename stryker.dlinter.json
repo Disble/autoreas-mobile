@@ -1,7 +1,7 @@
 {
-  "testRunner": "vitest",
+  "testRunner": "jest",
   "plugins": [
-    "@stryker-mutator/vitest-runner"
+    "@stryker-mutator/jest-runner"
   ],
   "concurrency": 1,
   "disableTypeChecks": false,
@@ -14,13 +14,26 @@
   "mutate": [
     "src/features/sync/native-foreground-sync-ticker.helpers.ts"
   ],
+  "ignorePatterns": [
+    ".codegraph",
+    ".expo",
+    ".jest",
+    "coverage",
+    "android",
+    "ios",
+    "node_modules"
+  ],
   "thresholds": {
     "high": 80,
     "low": 80,
     "break": 80
   },
-  "vitest": {
-    "configFile": "vitest.dlinter-mutation.mts",
-    "related": false
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.config.js",
+    "enableFindRelatedTests": true,
+    "config": {
+      "maxWorkers": 2
+    }
   }
 }

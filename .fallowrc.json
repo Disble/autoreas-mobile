@@ -2,7 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
     "src/app/**/*.{ts,tsx}",
-    "app/**/*.{ts,tsx}"
+    "app/**/*.{ts,tsx}",
+    "scripts/log-lesson.mjs"
   ],
   "dynamicallyLoaded": [
     "plugins/withAndroidGradleMemory.js"
@@ -11,7 +12,7 @@
     "android/**",
     "ios/**",
     ".expo/**",
-    "vitest.dlinter-mutation.mts"
+    ".dlinter-mutation-tmp/**"
   ],
   "ignoreDependencies": [
     "expo-build-properties",
@@ -22,7 +23,7 @@
     "expo-dev-client",
     "expo-system-ui",
     "expo-updates",
-    "@stryker-mutator/vitest-runner"
+    "@stryker-mutator/jest-runner"
   ],
   "ignoreExports": [
     {

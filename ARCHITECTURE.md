@@ -230,7 +230,9 @@ sequenceDiagram
 
 ## 13. Incremental Mutation-Test Boundary
 
-The primary Jest + `jest-expo` suite and the Vitest/Stryker mutation island have separate runner boundaries. The automated incremental gate currently protects one pure native-ticker seam. The manual mutation step in `AGENTS.md` remains mandatory for guards outside that narrow surface.
+Stryker drives the project's own Jest + `jest-expo` suite through `@stryker-mutator/jest-runner`. There is no separate mutation suite: mutants are judged by the same tests that guard the code in every other run, so a test that is deleted or weakened is immediately visible to the gate. The automated incremental gate still protects only one pure native-ticker seam, so the manual mutation step in `AGENTS.md` remains mandatory for guards outside that narrow surface.
+
+Until 2026-08-05 this ran through a parallel Vitest island (`tests/mutation/**`) that held a hand-maintained *copy* of the ticker's Jest tests. The copy had already drifted — it carried two scenarios the real Jest suite did not — which is precisely the failure mode a duplicated suite invites: the mutation score measured the copy, not the tests that actually run.
 
 ```mermaid
 flowchart TD
@@ -243,8 +245,8 @@ flowchart TD
   Complete -- No --> Reject["Reject partial staging"]
   Complete -- Yes --> Ranges["Extract added line ranges"]
   Ranges --> Stryker["Stryker incremental run"]
-  Stryker --> Vitest["Isolated Vitest mutation suite"]
-  Vitest --> Score{"Score >= 80%?"}
+  Stryker --> Jest["Project Jest + jest-expo suite<br/>(findRelatedTests)"]
+  Jest --> Score{"Score >= 80%?"}
   Score -- Yes --> Allow["Allow commit"]
   Score -- No --> Reject
 ```
@@ -252,10 +254,9 @@ flowchart TD
 | Boundary | Responsibility |
 | --- | --- |
 | `scripts/dlinter-mutation-staged.mjs` | Checks staged state, rejects partial staging, extracts added ranges, and invokes Stryker. |
-| `stryker.dlinter.json` | Limits mutation to `native-foreground-sync-ticker.helpers.ts` and enforces the 80% breaking threshold. |
-| `vitest.dlinter-mutation.mts` | Runs only `tests/mutation/**/*.mutation.test.ts`. |
-| `jest.config.js` | Excludes the Vitest-only mutation island from the Jest + `jest-expo` suite. |
-| `.agents/skills/mutation-tdd/SKILL.md` | Defines the required manual guard-deletion check for code outside the automated mutation surface. |
+| `stryker.dlinter.json` | Selects the Jest runner, limits mutation to `native-foreground-sync-ticker.helpers.ts`, enforces the 80% breaking threshold, and caps the sandbox copy via `ignorePatterns`. |
+| `jest.config.js` | The single suite definition, used unchanged by both `bun run test` and Stryker. |
+| `mutation-tdd` skill (installed globally) | Defines the required manual guard-deletion check for code outside the automated mutation surface. |
 
 The mutation temporary directory is `.dlinter-mutation-tmp`; its incremental cache lives under the Git directory at `dlinter/stryker-staged.json`. Both are tooling artifacts and must not affect application behavior.
 

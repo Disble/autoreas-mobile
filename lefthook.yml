@@ -1,25 +1,54 @@
+# Pre-commit gate.
+#
+# CONCURRENCY BUDGET (20 logical CPUs on the reference machine).
+# Every tool below defaults to claiming ALL cores. Job count is not thread count:
+# running N jobs in parallel multiplies each tool's own internal parallelism by N.
+# The caps here (`--maxWorkers`, Stryker `concurrency`) are what keep peak load at
+# roughly 10 of 20 threads instead of 60+. DELETING A CAP IS A ONE-LINE CHANGE THAT
+# SILENTLY MAKES `git commit` FREEZE THE DESKTOP, and no test will object.
+#
+# SHAPE: one parallel `quick` group for the sub-30s checks, plus one piped `heavy`
+# lane for the two jobs that both spawn Jest workers. Do NOT serialize the quick
+# checks behind the heavy lane -- that adds their full cost to the critical path
+# and buys nothing. Wall time is max(quick, heavy), so only the longest lane matters.
 pre-commit:
-  commands:
-    lint:
-      glob: "*.{js,jsx,ts,tsx,mjs,cjs}"
-      run: bunx eslint {staged_files}
-    typecheck:
-      run: bunx tsc --noEmit
-    test:
-      run: bun run test
+  parallel: true
   jobs:
-    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
-    - name: fallow
-      run: bun run audit
-    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
-    - name: lint
-      run: bun run lint
-    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
-    - name: typecheck
-      run: bun run typecheck
-    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
-    - name: test
-      run: bun run test
-    # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
-    - name: test:mutation:staged
-      run: bun run test:mutation:staged
+    - name: quick
+      group:
+        parallel: true
+        jobs:
+          # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+          - name: fallow
+            run: bun run audit
+          # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+          #
+          # Scoped to staged files on purpose: an unchanged file cannot change its own
+          # lint verdict, so this loses no coverage. Note `expo lint` is NOT used here --
+          # it lints `src/` ONLY, so it silently skipped tests/, scripts/ and plugins/.
+          - name: lint
+            glob: "*.{js,jsx,ts,tsx,mjs,cjs}"
+            run: bunx eslint --max-warnings=0 {staged_files}
+          # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+          #
+          # Whole-project by design: unlike lint, a type error propagates across files,
+          # so a staged-file subset cannot decide the typecheck verdict.
+          - name: typecheck
+            run: bun run typecheck
+    - name: heavy
+      group:
+        piped: true
+        jobs:
+          # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+          #
+          # No CI runs this suite anywhere else, so it stays whole-suite: narrowing it
+          # locally would mean these tests never run in full, anywhere. `--maxWorkers=4`
+          # is the cap, not `--runInBand` (measured: 122s serial vs 10s at 4 workers).
+          - name: test
+            run: bunx jest --maxWorkers=4
+          # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
+          #
+          # Piped after `test` because Stryker drives the same Jest runner; running both
+          # at once doubles the worker pool for no gain.
+          - name: test:mutation:staged
+            run: bun run test:mutation:staged

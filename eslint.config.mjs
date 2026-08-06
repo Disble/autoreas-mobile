@@ -5,7 +5,17 @@ import { createRecommendedConfig } from 'dlinter-ts-react';
 
 export default [
   {
-    ignores: ['uniwind-types.d.ts', 'uniwind.d.ts'],
+    // `.agents/` and `.claude/` hold vendored agent-skill scripts that ship with their own
+    // runtime assumptions; linting them produced 175 `no-undef` errors about code this repo
+    // does not own or execute. `coverage/` and the Stryker sandbox are generated output.
+    ignores: [
+      'uniwind-types.d.ts',
+      'uniwind.d.ts',
+      '.agents/**',
+      '.claude/**',
+      'coverage/**',
+      '.dlinter-mutation-tmp/**',
+    ],
   },
   ...createRecommendedConfig({
     infrastructure: {
