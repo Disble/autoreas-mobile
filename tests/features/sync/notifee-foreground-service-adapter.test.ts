@@ -1,4 +1,4 @@
-import notifee, { AuthorizationStatus } from '@notifee/react-native';
+import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
 import { Platform } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createNotifeeForegroundServiceAdapter } from '../../../src/features/sync/notifee-foreground-service-adapter';

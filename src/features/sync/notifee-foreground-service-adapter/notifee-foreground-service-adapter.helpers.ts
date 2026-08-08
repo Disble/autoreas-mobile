@@ -1,7 +1,7 @@
 import notifee, {
   AndroidForegroundServiceType,
   AuthorizationStatus,
-} from '@notifee/react-native';
+} from 'react-native-notify-kit';
 import { Platform } from 'react-native';
 import { runHeadlessSyncCycle } from '../headless-sync-cycle.helpers';
 import { FOREGROUND_SYNC_INTERVAL_MS, NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID } from './notifee-foreground-service-adapter.constants';

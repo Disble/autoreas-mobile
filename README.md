@@ -195,7 +195,7 @@ Gradle 10 deprecation notice:
 
 Native dependency compatibility:
 
-- `@notifee/react-native` is pinned to its current npm release, `9.1.8`. React Native Directory reports Android and New Architecture metadata, and also marks the package unmaintained. Its native notification and foreground-service integration must be exercised in a preview APK before an Expo or React Native upgrade.
+- `react-native-notify-kit` replaces `@notifee/react-native`, whose repository was archived on 2026-04-07 and whose native module depends on the legacy Bridge that React Native 0.84 removes. The fork keeps the public API and the `app.notifee.core.ForegroundService` class name, but is New Architecture only and no longer hardcodes `android:foregroundServiceType` — `plugins/withAndroidForegroundSync.js` supplies it. Its native notification and foreground-service integration must still be exercised in a preview APK before an Expo or React Native upgrade.
 - `foreground-sync-ticker` is a repository-owned Android-only Expo module, so it has no React Native Directory entry. It loads through `expo-modules-core`; Android preview builds remain the compatibility check for this local native boundary.
 
 ### Option 3: remote preview build

@@ -23,7 +23,15 @@ export default [
     },
   }),
   {
-    files: ['jest.config.js', 'metro.config.js', 'scripts/generate-feature.js'],
+    // Expo config plugins are CommonJS by contract: `expo/config-plugins` loads them through
+    // require(), so they cannot be ESM. They were missing here only because lint runs on staged
+    // files and nothing had staged plugins/ since this block was written.
+    files: [
+      'jest.config.js',
+      'metro.config.js',
+      'scripts/generate-feature.js',
+      'plugins/*.js',
+    ],
     languageOptions: {
       sourceType: 'commonjs',
       globals: {
