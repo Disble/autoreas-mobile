@@ -6,11 +6,14 @@ export interface ForegroundSyncTicker {
   readonly isRunning: () => boolean;
 }
 
-/** Defines the raw native module surface exposed by the `ForegroundSyncTicker` local Expo module. */
+/**
+ * Defines the raw native module surface exposed by the `ForegroundSyncTicker` local Expo module.
+ * There is deliberately no per-tick acknowledgement: the wake lock is held for the whole ticking
+ * lifetime, so no JS-side call may release it between ticks.
+ */
 export interface NativeForegroundSyncTickerModule {
   readonly start: (intervalMs: number) => void;
   readonly stop: () => void;
-  readonly acknowledgeTick: () => void;
   readonly isRunning: () => boolean;
   readonly addListener: (
     eventName: 'onTick',

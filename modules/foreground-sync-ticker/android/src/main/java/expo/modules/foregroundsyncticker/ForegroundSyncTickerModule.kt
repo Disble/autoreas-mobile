@@ -8,20 +8,24 @@ import android.os.SystemClock
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-private const val WAKE_LOCK_TAG = "ForegroundSyncTicker:tick"
-
-// Bounded per-tick hold: long enough to cover one reconcile cycle, short enough that a stuck
-// cycle cannot pin the CPU awake indefinitely (the system force-releases at this timeout).
-private const val WAKE_LOCK_TIMEOUT_MS = 20_000L
+private const val WAKE_LOCK_TAG = "ForegroundSyncTicker:ticking"
 
 private const val THREAD_NAME = "ForegroundSyncTickerThread"
 
 /**
  * Minimal native ticker: drives the FGS reconcile cadence from a HandlerThread that is not tied
  * to the host Activity lifecycle, so ticks keep firing while the app is backgrounded or the
- * screen is off. Each tick briefly holds a PARTIAL_WAKE_LOCK so the JS-side reconcile cycle can
- * complete before Doze/App-Standby suspends CPU execution; the lock is released either explicitly
- * via `acknowledgeTick` (JS finished the cycle) or by the timeout above, whichever comes first.
+ * screen is off.
+ *
+ * The PARTIAL_WAKE_LOCK is held for the entire ticking lifetime -- acquired in `startTicking`,
+ * released in `stopTicking` -- and deliberately NOT per tick. `Handler.postDelayed` schedules
+ * against `SystemClock.uptimeMillis()`, which stops advancing while the CPU is suspended, and a
+ * foreground service grants process priority but no exemption from Doze CPU suspension. A per-tick
+ * lock therefore left the remainder of every interval unprotected: the device slept, uptimeMillis
+ * froze, and the next tick never fired with the screen off.
+ *
+ * The cost is explicit: continuous sync keeps the CPU awake for as long as it runs. That is what
+ * the feature opts into, and the user can end it from the foreground-service notification.
  * Notifee remains the owner of the foreground service and its notification -- this module only
  * supplies the tick source.
  */
@@ -38,25 +42,26 @@ class ForegroundSyncTickerModule : Module() {
         return
       }
 
-      acquireTickWakeLock()
       sendEvent("onTick", mapOf("firedAt" to SystemClock.elapsedRealtime()))
 
       handler?.postDelayed(this, intervalMs)
     }
   }
 
-  private fun acquireTickWakeLock() {
+  private fun acquireTickingWakeLock() {
     val context = appContext.reactContext ?: return
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
 
-    releaseTickWakeLock()
+    releaseTickingWakeLock()
 
     val lock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-    lock.acquire(WAKE_LOCK_TIMEOUT_MS)
+    // No timeout: the hold is bounded by stopTicking (and OnDestroy), not by a timer. A timeout
+    // here would silently reintroduce the suspend gap this module exists to close.
+    lock.acquire()
     wakeLock = lock
   }
 
-  private fun releaseTickWakeLock() {
+  private fun releaseTickingWakeLock() {
     val heldLock = wakeLock
     if (heldLock != null && heldLock.isHeld) {
       heldLock.release()
@@ -76,6 +81,8 @@ class ForegroundSyncTickerModule : Module() {
     handler = Handler(thread.looper)
     isTicking = true
 
+    acquireTickingWakeLock()
+
     handler?.postDelayed(tickRunnable, intervalMs)
   }
 
@@ -85,7 +92,7 @@ class ForegroundSyncTickerModule : Module() {
     handlerThread?.quitSafely()
     handlerThread = null
     handler = null
-    releaseTickWakeLock()
+    releaseTickingWakeLock()
   }
 
   override fun definition() = ModuleDefinition {
@@ -99,10 +106,6 @@ class ForegroundSyncTickerModule : Module() {
 
     Function("stop") {
       stopTicking()
-    }
-
-    Function("acknowledgeTick") {
-      releaseTickWakeLock()
     }
 
     Function("isRunning") {

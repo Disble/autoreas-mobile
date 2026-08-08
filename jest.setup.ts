@@ -180,7 +180,7 @@ jest.mock('uniwind', () => {
   };
 });
 
-jest.mock('@notifee/react-native', () => {
+jest.mock('react-native-notify-kit', () => {
   const AndroidForegroundServiceType = {
     FOREGROUND_SERVICE_TYPE_DATA_SYNC: 1,
   };

@@ -68,9 +68,11 @@ export function createNativeForegroundSyncTicker(
         return;
       }
 
+      // Responding to a tick must make no native call: the wake lock is acquired by the native
+      // module for the whole ticking lifetime. Releasing it here once the cycle resolved left the
+      // remainder of the interval unprotected, the CPU suspended, and the next tick never fired.
       subscription = nativeModule.addListener('onTick', () => {
         notifyListeners();
-        nativeModule.acknowledgeTick();
       });
 
       nativeModule.start(intervalMs);

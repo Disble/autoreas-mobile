@@ -1,11 +1,20 @@
 import { createNativeForegroundSyncTicker } from '../../../src/features/sync/native-foreground-sync-ticker.helpers';
 import type { NativeForegroundSyncTickerModule } from '../../../src/features/sync/native-foreground-sync-ticker.types';
 
+/**
+ * The production contract has no per-tick acknowledgement. The mock still exposes one so the suite
+ * can assert the helper never reaches for it: a future change that reintroduces a per-tick wake-lock
+ * release would compile against this shape and must fail here instead.
+ */
+type NativeForegroundSyncTickerModuleMock = NativeForegroundSyncTickerModule & {
+  readonly acknowledgeTick: jest.Mock;
+};
+
 describe('native-foreground-sync-ticker', () => {
   function buildNativeModule() {
     const listeners: Array<() => void> = [];
 
-    const module: NativeForegroundSyncTickerModule = {
+    const module: NativeForegroundSyncTickerModuleMock = {
       start: jest.fn(),
       stop: jest.fn(),
       acknowledgeTick: jest.fn(),
@@ -62,7 +71,25 @@ describe('native-foreground-sync-ticker', () => {
     fireTick();
 
     expect(onTick).toHaveBeenCalledTimes(1);
-    expect(module.acknowledgeTick).toHaveBeenCalledTimes(1);
+  });
+
+  it('never releases the wake lock between ticks, so the CPU cannot suspend mid-cadence', () => {
+    const { module, fireTick } = buildNativeModule();
+    const ticker = createNativeForegroundSyncTicker({
+      requireOptionalNativeModule: () => module,
+    });
+
+    ticker.onTick(jest.fn());
+    ticker.start(15_000);
+    fireTick();
+    fireTick();
+
+    // The wake lock is owned by the service lifetime (acquired on start, released on
+    // stop), never by an individual tick. Releasing it per tick left the ~13s gap
+    // between ticks unprotected: with the screen off the CPU suspended,
+    // SystemClock.uptimeMillis() stopped advancing, and the Handler.postDelayed that
+    // schedules the next tick never fired again. That is the screen-off sync stall.
+    expect(module.acknowledgeTick).not.toHaveBeenCalled();
   });
 
   it('unsubscribe stops delivering ticks to that listener', () => {

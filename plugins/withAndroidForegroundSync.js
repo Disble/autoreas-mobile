@@ -3,6 +3,11 @@ const {
   withAndroidManifest,
 } = require('expo/config-plugins');
 
+// react-native-notify-kit keeps the original Notifee service class name but, unlike Notifee 9.x,
+// no longer hardcodes android:foregroundServiceType in its own manifest. This plugin is therefore
+// the only source of that attribute, and Android 14+ refuses to start a foreground service without
+// it. `tools:replace` is retained deliberately: it is a no-op while nothing else declares the
+// attribute, and it keeps the app manifest authoritative if a future dependency does.
 const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
 const FOREGROUND_SERVICE_TYPE = 'dataSync';
 const REQUIRED_PERMISSIONS = [
