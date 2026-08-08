@@ -22,6 +22,14 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   }),
 }));
 
+jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+  recordSyncAttemptFailed: jest.fn().mockResolvedValue(undefined),
+}));
+
+const { recordSyncAttemptFailed: mockRecordSyncAttemptFailed } = jest.requireMock(
+  '../../../src/features/sync/sync-runtime-status.helpers'
+) as { recordSyncAttemptFailed: jest.Mock };
+
 const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite') as {
   useSQLiteContext: jest.Mock;
 };
@@ -181,6 +189,56 @@ describe('useMutateAnime', () => {
     await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
+  });
+
+  it('persiste el fallo de escritura como local_mutation_write antes de propagarlo', async () => {
+    const insertError = new Error('database is locked');
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks({ insertError });
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockAnimeDeferredWrite(txMocks.txDb);
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
+
+    expect(mockRecordSyncAttemptFailed).toHaveBeenCalledWith(
+      rawDb,
+      'local_mutation_write',
+      now,
+      'capPlus: database is locked'
+    );
+  });
+
+  it('nunca enmascara el fallo original si la telemetria tambien falla', async () => {
+    const insertError = new Error('database is locked');
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks({ insertError });
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockAnimeDeferredWrite(txMocks.txDb);
+    mockRecordSyncAttemptFailed.mockRejectedValueOnce(new Error('telemetry write failed'));
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await expect(result.current.capMinus('anime-1')).rejects.toThrow(insertError);
+  });
+
+  it('no registra telemetria de fallo cuando la mutacion funciona', async () => {
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks();
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockAnimeDeferredWrite(txMocks.txDb);
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlus('anime-1');
+    });
+
+    expect(mockRecordSyncAttemptFailed).not.toHaveBeenCalled();
   });
 
   it('capPlus agrega fechaEstreno cuando primeravez es 1', async () => {

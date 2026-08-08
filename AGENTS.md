@@ -19,6 +19,11 @@
     - *The pre-commit `test:mutation:staged` job does NOT cover this*. `scripts/dlinter-mutation-staged.mjs` protects only `src/features/sync/native-foreground-sync-ticker.helpers.ts`; outside that surface, the gate exits 0 without mutation coverage. Stryker drives this same Jest + `jest-expo` suite, so the limit is the `mutate` list in `stryker.dlinter.json`, not a runner boundary. See `ARCHITECTURE.md`'s **Incremental Mutation-Test Boundary**.
     - *Reporting*: name which guards you deleted and whether each mutant was killed. "Tests pass" is not the claim. Never report a test as covering a guard you did not break.
 13. **React Doctor**: After React changes, run `npx -y react-doctor@latest . --verbose --diff`, fix every finding, and rerun it until it reports 100/100.
+14. **Hook installation is a three-part invariant — do not "simplify" any part**: `package.json` must contain `trustedDependencies: ["lefthook"]` and must NOT contain `"prepare": "lefthook install"`; `docker-compose.eas.yml` must set `CI=true`.
+    - *Why no `prepare`*: lefthook's npm `postinstall` is the ONLY thing that honours `CI`; the `lefthook install` command ignores it. A `prepare` script calls the binary directly and bypasses the guard, letting the EAS Linux container rewrite the host's `.git/hooks/` (the `- .:/app` bind mount always includes `.git`; `.dockerignore` does NOT apply to runtime mounts).
+    - *Why `trustedDependencies`*: Bun blocks dependency lifecycle scripts by default. Drop `prepare` without it and lefthook's postinstall never runs — **no hooks at all**. These two are a pair; changing one without the other breaks the gate in one direction or the other.
+    - *Why it matters*: a clobbered hook fails **open**. Its last fallback branch echoes "Can't find lefthook in PATH" and exits 0, so every gate stops running while still reporting success. Neither Jest nor CI will tell you.
+    - *Repair*: `npx lefthook install` on the host (`bun install` will not restore a deleted hook on an already-current tree). Verify with `npx lefthook version`. See `ARCHITECTURE.md`'s **Hook installation is host-owned**.
 
 ## Spec-Driven Development (SDD) & Delegation Guardrails
 

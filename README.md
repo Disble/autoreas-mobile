@@ -113,10 +113,35 @@ bun run verify:precommit-fail-path
 
 ## Git hooks
 
-Install local hooks:
+Hooks install themselves on a fresh `bun install`, via lefthook's own `postinstall`. Two settings
+make that work, and both are load-bearing:
+
+| Setting | File | Why |
+| --- | --- | --- |
+| `trustedDependencies: ["lefthook"]` | `package.json` | Bun blocks dependency lifecycle scripts by default. Without this entry lefthook's `postinstall` never runs and **no hooks are installed at all**. |
+| no `prepare` script | `package.json` | A `prepare: lefthook install` calls the binary directly, and the binary ignores `CI`. Only lefthook's `postinstall` honours `CI`, so an explicit `prepare` re-opens the Docker bug below. |
+
+`bun install` only installs hooks when it actually (re)installs packages. If hooks go missing on an
+already-installed tree, repair them explicitly:
 
 ```bash
-bun run prepare
+npx lefthook install
+```
+
+### Hooks look wrong after a Docker build
+
+Symptom: `git commit` behaves oddly, or `.git/hooks/pre-commit` references a Linux path such as
+`/tmp/root/eas-build-local-nodejs/.../lefthook-linux-x64/bin/lefthook` on a Windows machine.
+
+Cause: the EAS container bind-mounts the project at `- .:/app`, and a bind mount always includes
+`.git`. Listing `.git` in `.dockerignore` does **not** help — that file only filters the
+`docker build` context, never a runtime mount. `docker-compose.eas.yml` therefore sets `CI=true`
+so lefthook's postinstall skips hook installation inside the container.
+
+Repair an already-clobbered checkout with `npx lefthook install`. Verify with:
+
+```bash
+npx lefthook version   # should match the version in package.json
 ```
 
 ## Database and Drizzle
@@ -154,6 +179,11 @@ This is the command we needed documented for this repo.
 ### Option 2: local preview build with Docker
 
 If you want to generate the APK locally on Windows using Docker Desktop, this repo already includes the required setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs project dependencies from `bun.lock` with `bun install --frozen-lockfile`.
+
+> **The container shares your `.git`.** The `- .:/app` mount is not filtered by `.dockerignore`,
+> so anything the container writes under `.git/` lands in your real repository. That is why
+> `CI=true` is set in `docker-compose.eas.yml` — without it, `bun install` regenerates your
+> Windows Git hooks with Linux paths. See [Git hooks](#git-hooks).
 
 Minimum requirements:
 

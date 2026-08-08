@@ -1,0 +1,79 @@
+import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../../infrastructure/db/native-runtime/native-runtime.constants';
+import {
+  ANIME_MUTATION_FAILURE_LABEL,
+  ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH,
+  ANIME_MUTATION_FAILURE_UNKNOWN_REASON,
+  ANIME_MUTATION_STORAGE_UNAVAILABLE_DESCRIPTION,
+  ANIME_MUTATION_STORAGE_UNAVAILABLE_LABEL,
+} from './anime-mutation-failure.constants';
+import type { AnimeMutationFailureFeedback } from './anime-mutation.types';
+
+/**
+ * Reduces any thrown value to a single trimmed reason string.
+ * Mutations reject with plain Errors, rejected strings, and (rarely) undefined, so the
+ * normalization has to happen before either the toast or the persisted tile reads it.
+ */
+function toReasonOrUnknown(rawReason: string): string {
+  const trimmedReason = rawReason.trim();
+
+  return trimmedReason.length > 0 ? trimmedReason : ANIME_MUTATION_FAILURE_UNKNOWN_REASON;
+}
+
+function normalizeFailureReason(error: unknown): string {
+  // Only Errors and thrown strings carry a reason a user can act on. Everything else (nullish
+  // rejections, plain objects) would stringify to noise like "undefined" or "[object Object]",
+  // which is worse than admitting the reason is unknown.
+  if (error instanceof Error) {
+    return toReasonOrUnknown(error.message);
+  }
+
+  if (typeof error === 'string') {
+    return toReasonOrUnknown(error);
+  }
+
+  return ANIME_MUTATION_FAILURE_UNKNOWN_REASON;
+}
+
+/**
+ * Builds the message persisted into the sync runtime status so Configuracion can show it.
+ * The action label is prefixed because every chapter button funnels into the same channel and
+ * the failing action is the first thing needed to tell a write failure from a sync failure.
+ */
+export function getAnimeMutationFailureMessage(label: string, error: unknown): string {
+  const message = `${label}: ${normalizeFailureReason(error)}`;
+
+  if (message.length <= ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH) {
+    return message;
+  }
+
+  return `${message.slice(0, ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH - 1)}…`;
+}
+
+/**
+ * Detects the "expo-sqlite is not available" rejection thrown when no database context exists.
+ * That failure is not a write error and needs different user-facing copy.
+ */
+function isStorageUnavailableFailure(error: unknown): boolean {
+  return normalizeFailureReason(error) === EXPO_SQLITE_UNAVAILABLE_MESSAGE;
+}
+
+/**
+ * Builds the toast copy for a chapter mutation that never landed.
+ * Surfacing the raw reason is deliberate: this failure used to be swallowed entirely, so the
+ * button looked broken with no explanation anywhere in the app.
+ */
+export function buildAnimeMutationFailureFeedback(
+  error: unknown,
+): AnimeMutationFailureFeedback {
+  if (isStorageUnavailableFailure(error)) {
+    return {
+      label: ANIME_MUTATION_STORAGE_UNAVAILABLE_LABEL,
+      description: ANIME_MUTATION_STORAGE_UNAVAILABLE_DESCRIPTION,
+    };
+  }
+
+  return {
+    label: ANIME_MUTATION_FAILURE_LABEL,
+    description: normalizeFailureReason(error),
+  };
+}

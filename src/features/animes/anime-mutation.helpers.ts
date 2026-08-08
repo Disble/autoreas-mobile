@@ -16,6 +16,7 @@ import {
   publishSyncConnectionAttempt,
 } from '../sync/sync-connection-store/sync-connection-store.helpers';
 import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
+import { getAnimeMutationFailureMessage } from './anime-mutation-failure.helpers';
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
@@ -186,6 +187,34 @@ export function serializeMutationOperation(
     operation: 'update',
     payload: JSON.stringify(patch),
   };
+}
+
+/**
+ * Persists a failed local mutation into the shared runtime status so Configuracion can show it.
+ *
+ * This exists because a rejected chapter mutation used to vanish: the list screen fires the
+ * mutation through `void handleCapPlus(...)`, so the rejection became an unhandled promise and
+ * the button simply appeared dead with nothing recorded anywhere.
+ *
+ * Telemetry failures are swallowed on purpose. The most likely cause of a mutation failure is the
+ * database being unwritable, in which case this write fails too — and it must never replace the
+ * original error the caller is about to see.
+ */
+export async function recordAnimeMutationFailure(
+  rawDb: SQLiteDatabase,
+  label: string,
+  error: unknown,
+): Promise<void> {
+  try {
+    await recordSyncAttemptFailed(
+      rawDb,
+      'local_mutation_write',
+      Date.now(),
+      getAnimeMutationFailureMessage(label, error),
+    );
+  } catch (telemetryError) {
+    console.warn(`[${label}] Failed to persist mutation failure telemetry`, telemetryError);
+  }
 }
 
 /**

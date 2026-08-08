@@ -12,6 +12,12 @@ export interface AnimeMutationSyncPatch {
   readonly firstCycle?: boolean;
 }
 
+/** Defines the user-facing copy shown when a local anime mutation fails. */
+export interface AnimeMutationFailureFeedback {
+  readonly label: string;
+  readonly description: string;
+}
+
 /** Defines a serialized update operation ready for durable storage. */
 export interface SerializedMutationOperation {
   readonly operation: 'update';

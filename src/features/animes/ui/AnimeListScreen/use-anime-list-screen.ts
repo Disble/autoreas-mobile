@@ -14,6 +14,7 @@ import {
   getDefaultAnimeDayFilter,
 } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
+import { buildAnimeMutationFailureFeedback } from "../../anime-mutation-failure.helpers";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { useSeasonRatingIntent } from "../../use-season-rating-intent";
@@ -204,6 +205,18 @@ export function useAnimeListScreen(
 
       try {
         await action(animeId);
+      } catch (error) {
+        // Callers fire this through `void handleCapPlus(...)`, so an escaping rejection would
+        // become an unhandled promise and the button would just look dead. Surface it instead.
+        console.warn("[AnimeListScreen] Anime mutation failed:", error);
+        const feedback = buildAnimeMutationFailureFeedback(error);
+
+        toast.show({
+          variant: "danger",
+          label: feedback.label,
+          description: feedback.description,
+          duration: 4000,
+        });
       } finally {
         const nextMutatingState = { ...mutatingAnimeByIdRef.current };
         delete nextMutatingState[animeId];
@@ -211,7 +224,7 @@ export function useAnimeListScreen(
         setIsMutatingAnimeById(nextMutatingState);
       }
     },
-    [],
+    [toast],
   );
 
   const handleCapPlus = useCallback(

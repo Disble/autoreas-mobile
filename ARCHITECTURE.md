@@ -260,5 +260,38 @@ flowchart TD
 
 The mutation temporary directory is `.dlinter-mutation-tmp`; its incremental cache lives under the Git directory at `dlinter/stryker-staged.json`. Both are tooling artifacts and must not affect application behavior.
 
+### Hook installation is host-owned
+
+Every gate above depends on `.git/hooks/` being generated **for the machine that runs `git commit`**. That file is not tracked by Git and is therefore not protected by review.
+
+The EAS build container bind-mounts the project at `- .:/app` (`docker-compose.eas.yml`). A bind mount includes `.git`, and `.dockerignore` cannot prevent it — `.dockerignore` filters the `docker build` context, never a runtime mount. A `bun install` inside that Linux container therefore rewrites the **host's** hooks with container-local binary paths.
+
+The generated hook then resolves lefthook through a long fallback chain, and its final branch is:
+
+```sh
+echo "Can't find lefthook in PATH"
+```
+
+which **exits 0**. That is the dangerous shape: a clobbered hook does not fail loudly, it stops gating and reports success. Every check in this document silently becomes optional.
+
+Two invariants keep that from happening:
+
+Three invariants keep that from happening. They are interlocking — removing any one breaks the gate in a different direction, so none of them can be "cleaned up" in isolation:
+
+| Invariant | Where | Remove it and… |
+| --- | --- | --- |
+| `CI=true` in the container environment | `docker-compose.eas.yml` | The container rewrites the host's hooks with Linux paths. Lefthook's `postinstall.js` is what reads `CI`. |
+| No `prepare: lefthook install` script | `package.json` | `CI` is honoured **only** by lefthook's postinstall, never by the `lefthook install` command. An explicit `prepare` calls the binary directly and bypasses the guard entirely. |
+| `trustedDependencies: ["lefthook"]` | `package.json` | Bun blocks dependency lifecycle scripts by default, so lefthook's postinstall never runs and **no hooks are installed at all** — the failure the `prepare` script was originally papering over. |
+
+The second and third invariants exist as a pair. Dropping `prepare` without adding
+`trustedDependencies` silently disables hook installation under Bun; adding `prepare` back
+"fixes" that while re-opening the container bug. Verified on Bun 1.3.14: `bun install` installs
+hooks, `CI=true bun install` does not.
+
+`bun install` only installs hooks when it actually (re)installs packages, so a deleted hook on an
+otherwise-current tree is not restored by `bun install`. Repair with `npx lefthook install` on the
+host.
+
 ---
 *If in doubt, refer to the `src/features/animes` directory as the Gold Standard for implementation.*

@@ -10,6 +10,10 @@ export type SyncRuntimeTriggerSource =
   | 'app_active'
   | 'network_regained'
   | 'local_mutation'
+  // Distinct from 'local_mutation': that one reports a *sync* failure after a mutation landed
+  // locally, while this reports the local SQLite write itself never landing. Diagnosing a dead
+  // +/- button depends entirely on telling those two apart.
+  | 'local_mutation_write'
   | 'ws_sync_required'
   | 'foreground_service'
   | 'background_task';

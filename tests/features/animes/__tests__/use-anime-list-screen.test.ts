@@ -274,11 +274,9 @@ describe("useAnimeListScreen", () => {
       isInternetReachable: false,
     });
 
+    // `tick` exists only to give `rerender` a changing prop; the hook itself takes none.
     const { result, rerender } = renderHook(
-      ({ tick }: { tick: number }) => {
-        void tick;
-        return useAnimeListScreen({});
-      },
+      () => useAnimeListScreen({}),
       {
         initialProps: { tick: 0 },
       },
@@ -484,16 +482,17 @@ describe("useAnimeListScreen", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     let firstCall: Promise<void>;
+    let ignoredSecondCall: Promise<void>;
     await act(async () => {
       firstCall = result.current.handleCapPlus("thu-1");
-      void result.current.handleCapPlus("thu-1");
+      ignoredSecondCall = result.current.handleCapPlus("thu-1");
     });
 
     expect(mockCapPlus).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveCapPlus?.();
-      await firstCall;
+      await Promise.all([firstCall, ignoredSecondCall]);
     });
   });
 
@@ -545,5 +544,52 @@ describe("useAnimeListScreen", () => {
     });
 
     expect(mockCapMinusHalf).toHaveBeenCalledWith("thu-1");
+  });
+
+  it("avisa con un toast cuando la mutación falla en vez de tragarse el error", async () => {
+    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    expect(mockToastShow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: "danger",
+        label: "No se pudo guardar el capitulo",
+        description: "database is locked",
+      }),
+    );
+  });
+
+  it("libera el candado de mutación después de un fallo para no dejar la card muerta", async () => {
+    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
+
+    mockCapPlus.mockResolvedValueOnce(undefined);
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    expect(mockCapPlus).toHaveBeenCalledTimes(2);
+  });
+
+  it("no resuelve la mutación fallida como rechazo hacia el llamador de la lista", async () => {
+    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await expect(result.current.handleCapPlus("thu-1")).resolves.toBeUndefined();
+    });
   });
 });

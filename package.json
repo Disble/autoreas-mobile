@@ -15,7 +15,6 @@
     "verify:architecture-boundary": "bun run lint && bun run typecheck",
     "validate": "bun run lint && bun run typecheck && bun run test",
     "doctor:react": "bunx react-doctor@0.5.1 . --verbose -y",
-    "prepare": "lefthook install",
     "generate:feature": "node ./scripts/generate-feature.js",
     "verify:precommit-fail-path": "node ./scripts/verify-precommit-fail-path.mjs",
     "audit": "fallow audit --quiet",
@@ -89,5 +88,8 @@
     "react-test-renderer": "19.2.0",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "trustedDependencies": [
+    "lefthook"
+  ]
 }

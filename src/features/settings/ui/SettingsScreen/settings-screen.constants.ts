@@ -32,6 +32,7 @@ export const BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS: Record<
   app_active: 'Volvió al foreground',
   network_regained: 'Reconexión de red',
   local_mutation: 'Cambio local',
+  local_mutation_write: 'Escritura local fallida',
   ws_sync_required: 'WebSocket pidió sync',
   foreground_service: 'Servicio foreground',
   background_task: 'Task en segundo plano',
