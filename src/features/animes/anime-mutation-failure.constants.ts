@@ -1,5 +1,5 @@
 /**
- * Caps the persisted failure message so the Settings "Ultimo fallo" tile stays readable.
+ * Caps the persisted failure message so the Settings last-failure tile stays readable.
  * The full stack never reaches this channel on purpose: the tile is a diagnosis pointer, not a log.
  */
 export const ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH = 300;

@@ -274,8 +274,6 @@ echo "Can't find lefthook in PATH"
 
 which **exits 0**. That is the dangerous shape: a clobbered hook does not fail loudly, it stops gating and reports success. Every check in this document silently becomes optional.
 
-Two invariants keep that from happening:
-
 Three invariants keep that from happening. They are interlocking — removing any one breaks the gate in a different direction, so none of them can be "cleaned up" in isolation:
 
 | Invariant | Where | Remove it and… |

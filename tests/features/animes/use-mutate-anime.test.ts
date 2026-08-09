@@ -191,7 +191,7 @@ describe('useMutateAnime', () => {
     expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
   });
 
-  it('persiste el fallo de escritura como local_mutation_write antes de propagarlo', async () => {
+  it('persists the write failure as local_mutation_write', async () => {
     const insertError = new Error('database is locked');
     const selectMock = buildSelectMock(baseAnimeRow);
     const txMocks = createTxDbMocks({ insertError });
@@ -211,7 +211,43 @@ describe('useMutateAnime', () => {
     );
   });
 
-  it('nunca enmascara el fallo original si la telemetria tambien falla', async () => {
+  // Guards the `await` in runTrackedMutation's catch. Two weaker forms of this test do NOT work:
+  // asserting the mock was called (it is invoked synchronously either way), and comparing
+  // completion order against an async mock (jest's `rejects` drains enough microtasks to hide
+  // the difference). Both still pass with the `await` deleted. Only gating the telemetry promise
+  // on a manual resolver discriminates: while it is unresolved, an awaited call cannot settle.
+  it('waits for the telemetry write to settle before rethrowing', async () => {
+    const insertError = new Error('database is locked');
+    const selectMock = buildSelectMock(baseAnimeRow);
+    const txMocks = createTxDbMocks({ insertError });
+
+    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockAnimeDeferredWrite(txMocks.txDb);
+
+    let releaseTelemetry!: () => void;
+    mockRecordSyncAttemptFailed.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseTelemetry = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    const pendingMutation = result.current.capPlus('anime-1');
+    let hasSettled = false;
+    pendingMutation.catch(() => {
+      hasSettled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hasSettled).toBe(false);
+
+    releaseTelemetry();
+    await expect(pendingMutation).rejects.toThrow(insertError);
+  });
+
+  it('never masks the original failure when telemetry also fails', async () => {
     const insertError = new Error('database is locked');
     const selectMock = buildSelectMock(baseAnimeRow);
     const txMocks = createTxDbMocks({ insertError });
@@ -225,7 +261,7 @@ describe('useMutateAnime', () => {
     await expect(result.current.capMinus('anime-1')).rejects.toThrow(insertError);
   });
 
-  it('no registra telemetria de fallo cuando la mutacion funciona', async () => {
+  it('records no failure telemetry when the mutation succeeds', async () => {
     const selectMock = buildSelectMock(baseAnimeRow);
     const txMocks = createTxDbMocks();
 

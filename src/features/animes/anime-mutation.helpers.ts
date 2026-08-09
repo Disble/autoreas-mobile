@@ -190,7 +190,7 @@ export function serializeMutationOperation(
 }
 
 /**
- * Persists a failed local mutation into the shared runtime status so Configuracion can show it.
+ * Persists a failed local mutation into the shared runtime status so Settings can show it.
  *
  * This exists because a rejected chapter mutation used to vanish: the list screen fires the
  * mutation through `void handleCapPlus(...)`, so the rejection became an unhandled promise and

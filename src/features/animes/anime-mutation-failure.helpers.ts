@@ -35,18 +35,25 @@ function normalizeFailureReason(error: unknown): string {
 }
 
 /**
- * Builds the message persisted into the sync runtime status so Configuracion can show it.
+ * Clamps a failure string to the shared display bound, marking elision with an ellipsis.
+ * Shared by the persisted message and the toast description so a long native payload cannot
+ * overflow one surface while the other stays bounded.
+ */
+function truncateToMaxLength(value: string): string {
+  if (value.length <= ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH) {
+    return value;
+  }
+
+  return `${value.slice(0, ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH - 1)}…`;
+}
+
+/**
+ * Builds the message persisted into the sync runtime status so Settings can show it.
  * The action label is prefixed because every chapter button funnels into the same channel and
  * the failing action is the first thing needed to tell a write failure from a sync failure.
  */
 export function getAnimeMutationFailureMessage(label: string, error: unknown): string {
-  const message = `${label}: ${normalizeFailureReason(error)}`;
-
-  if (message.length <= ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH) {
-    return message;
-  }
-
-  return `${message.slice(0, ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH - 1)}…`;
+  return truncateToMaxLength(`${label}: ${normalizeFailureReason(error)}`);
 }
 
 /**
@@ -74,6 +81,8 @@ export function buildAnimeMutationFailureFeedback(
 
   return {
     label: ANIME_MUTATION_FAILURE_LABEL,
-    description: normalizeFailureReason(error),
+    // Capped like the persisted message: a native error can carry a very long payload, and an
+    // unbounded description would push the toast off screen.
+    description: truncateToMaxLength(normalizeFailureReason(error)),
   };
 }

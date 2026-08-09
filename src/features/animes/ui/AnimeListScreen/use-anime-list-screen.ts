@@ -211,12 +211,18 @@ export function useAnimeListScreen(
         console.warn("[AnimeListScreen] Anime mutation failed:", error);
         const feedback = buildAnimeMutationFailureFeedback(error);
 
-        toast.show({
-          variant: "danger",
-          label: feedback.label,
-          description: feedback.description,
-          duration: 4000,
-        });
+        try {
+          toast.show({
+            variant: "danger",
+            label: feedback.label,
+            description: feedback.description,
+            duration: 4000,
+          });
+        } catch (toastError) {
+          // A throwing toast would escape past `finally` into the caller's `void handleCapPlus(id)`
+          // and become an unhandled rejection -- the exact failure this catch block removes.
+          console.warn("[AnimeListScreen] Failed to show mutation failure toast:", toastError);
+        }
       } finally {
         const nextMutatingState = { ...mutatingAnimeByIdRef.current };
         delete nextMutatingState[animeId];

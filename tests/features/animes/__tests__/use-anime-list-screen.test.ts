@@ -546,7 +546,7 @@ describe("useAnimeListScreen", () => {
     expect(mockCapMinusHalf).toHaveBeenCalledWith("thu-1");
   });
 
-  it("avisa con un toast cuando la mutación falla en vez de tragarse el error", async () => {
+  it("shows a toast when the mutation fails instead of swallowing the error", async () => {
     mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -564,7 +564,25 @@ describe("useAnimeListScreen", () => {
     );
   });
 
-  it("libera el candado de mutación después de un fallo para no dejar la card muerta", async () => {
+  // Callers invoke this through `void handleCapPlus(id)`, so anything escaping runMutation
+  // becomes an unhandled rejection -- the exact failure this whole path exists to remove.
+  // A throwing toast must not reintroduce it.
+  it("stays resolved and releases the lock when the toast itself throws", async () => {
+    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
+    mockToastShow.mockImplementationOnce(() => {
+      throw new Error("toast renderer exploded");
+    });
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await expect(result.current.handleCapPlus("thu-1")).resolves.toBeUndefined();
+    });
+
+    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
+  });
+
+  it("releases the mutation lock after a failure so the card is not left dead", async () => {
     mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -583,7 +601,7 @@ describe("useAnimeListScreen", () => {
     expect(mockCapPlus).toHaveBeenCalledTimes(2);
   });
 
-  it("no resuelve la mutación fallida como rechazo hacia el llamador de la lista", async () => {
+  it("does not surface the failed mutation as a rejection to the list caller", async () => {
     mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
 
     const { result } = renderHook(() => useAnimeListScreen({}));
