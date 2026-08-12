@@ -130,7 +130,8 @@ If ANY file (`.ts` or `.tsx`) exceeds 500 lines, it violates the Single Responsi
 To ensure these rules are respected by all agents and developers:
 * **Generators:** Complex features must be scaffolded using `bun run generate:feature <featureName> <ComponentName>`. Manual creation is forbidden.
 * **ESLint:** Strict rules enforce `max-lines` (500), delivery-layer purity, strict colocation, Zod placement, readonly props, and helper documentation.
-* **Bridge Boundary:** ESLint (`no-restricted-syntax`, the "Bridge Boundary" rules in `eslint.config.js`) forbids `fetch()`, `new WebSocket()`, and raw `http(s)://`/`ws(s)://` URL building anywhere under `src/features/**`. The barrier is deterministic-first: it fails the build, then this doc explains why.
+* **Bridge Boundary:** the hand-rolled `no-restricted-syntax` selectors this used to be were replaced by `dlinter-ts-react`'s `infrastructure` edge (`eslint.config.mjs`, via `createRecommendedConfig`), which governs import specifiers and runtime globals under `src/features/**` and forbids importing `fetch`/`WebSocket` directly outside `src/infrastructure/api`. The barrier is deterministic-first: it fails the build, then this doc explains why.
+* **Write Door Boundary:** dlinter's `infrastructure` edge governs *imports*, not *method calls*, so it cannot express "route every SQLite write through the shared door." A dedicated `no-restricted-syntax` rule in `eslint.config.mjs` fills that gap: it forbids calling `runAsync`/`runSync`/`execAsync`/`execSync`/`with*TransactionAsync` directly on `src/features/**`, exempting only a callee literally named `tx` (the write door's own transaction handle). See `src/infrastructure/db/client`'s `withLocalWrite`.
 * **AGENTS.md:** AI agents are strictly instructed to follow these rules under the "CRITICAL ARCHITECTURE CONSTRAINTS" section.
 
 ## 11. The Bridge Boundary (Single Transport Adapter)
