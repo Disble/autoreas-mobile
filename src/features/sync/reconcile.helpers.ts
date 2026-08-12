@@ -8,7 +8,6 @@ import {
 import {
   getBridgeConfigSnapshot,
   withDeferredWrite,
-  withExclusiveWrite,
 } from '../../infrastructure/db/client/client.helpers';
 import {
   bridgeConfig,
@@ -294,7 +293,7 @@ async function performSyncPendingOperations(
   });
 
   if (pendingOps.length > 0) {
-    await withExclusiveWrite(rawDb, async (writeDb) => {
+    await withDeferredWrite(rawDb, async (writeDb) => {
       await writeDb
         .update(operationLog)
         .set({ status: 'processing' })
@@ -349,19 +348,17 @@ async function performSyncPendingOperations(
     const normalizedChanges = bridge_changes.map(normalizeBridgeChange);
 
     // Route every pulled bridge change through the single merge boundary instead of the old
-    // full-row clobber. `applyMode` selects the write sink:
-    // - 'deferred' (foreground): writes `animes` on the shared reactive connection inside
-    //   `withDeferredWrite`, so local `useLiveQuery` consumers observe the new data
-    //   immediately.
+    // full-row clobber, on the one shared write door regardless of mode. `applyMode` selects
+    // WHICH TABLE is written, not the transaction mechanism:
+    // - 'deferred' (foreground): writes `animes` directly, so local `useLiveQuery` consumers
+    //   observe the new data immediately.
     // - 'staged' (background/headless): never touches `animes`; stages into
-    //   `pending_remote_changes` on the isolated non-reactive connection instead, deferring
-    //   the real apply to the foreground drain hook. This is what makes the background
-    //   runtime safe to run on a connection that cannot fire change notifications.
+    //   `pending_remote_changes` instead, deferring the real apply to the foreground drain
+    //   hook. Non-reactivity comes from the caller's own connection (`enableChangeListener:
+    //   false`), not from a different transaction path here (design.md Decision 4).
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
-    const applyChangesInTransaction = applyMode === 'staged' ? withExclusiveWrite : withDeferredWrite;
-
-    await applyChangesInTransaction(rawDb, async (writeDb) => {
+    await withDeferredWrite(rawDb, async (writeDb) => {
       if (applyMode === 'staged') {
         await stagePendingRemoteChanges(writeDb, normalizedChanges);
       } else {
@@ -410,7 +407,7 @@ async function performSyncPendingOperations(
     };
   } catch (error) {
     if (pendingOps.length > 0) {
-      await withExclusiveWrite(rawDb, async (writeDb) => {
+      await withDeferredWrite(rawDb, async (writeDb) => {
         await writeDb
           .update(operationLog)
           .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })

@@ -8,7 +8,6 @@ export {
   runMigrations,
   toLocalWriteError,
   withDeferredWrite,
-  withExclusiveWrite,
 } from './client.helpers';
 export type {
   AppDatabase,

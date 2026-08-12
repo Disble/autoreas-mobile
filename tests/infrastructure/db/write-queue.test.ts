@@ -66,8 +66,6 @@ describe('sqlite write queue', () => {
 function buildRawDb(databasePath: string): SQLiteDatabase {
   return {
     databasePath,
-    withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
-      await task();
-    }),
+    execAsync: jest.fn().mockResolvedValue(undefined),
   } as unknown as SQLiteDatabase;
 }

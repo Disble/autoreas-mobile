@@ -96,11 +96,79 @@ describe('toLocalWriteError', () => {
   });
 });
 
+/**
+ * `BEGIN` sits OUTSIDE the rollback guard by design (design.md Statement Order): expo's own
+ * `withTransactionAsync` rolls back a transaction that never began and masks the real error, so
+ * `withDeferredWrite` issues its own `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` via `execAsync` instead
+ * of delegating to it. The busy wait must land on expo's native thread before any synchronous
+ * drizzle statement runs (H2).
+ */
+describe('withDeferredWrite transaction order', () => {
+  it('issues BEGIN IMMEDIATE, then the task, then COMMIT, in that order', async () => {
+    const order: string[] = [];
+    const rawDb = {
+      execAsync: jest.fn(async (sql: string) => {
+        order.push(sql);
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await withDeferredWrite(rawDb, async () => {
+      order.push('task');
+    });
+
+    expect(order).toStrictEqual(['BEGIN IMMEDIATE', 'task', 'COMMIT']);
+  });
+
+  it('issues exactly one ROLLBACK when the task throws', async () => {
+    const rawDb = {
+      execAsync: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SQLiteDatabase;
+
+    await expect(
+      withDeferredWrite(rawDb, async () => {
+        throw new Error('database is locked');
+      }),
+    ).rejects.toThrow('database is locked');
+
+    expect(rawDb.execAsync).toHaveBeenCalledTimes(2);
+    expect(rawDb.execAsync).toHaveBeenNthCalledWith(1, 'BEGIN IMMEDIATE');
+    expect(rawDb.execAsync).toHaveBeenNthCalledWith(2, 'ROLLBACK');
+  });
+
+  it('issues no ROLLBACK when BEGIN itself fails', async () => {
+    const rawDb = {
+      execAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+    } as unknown as SQLiteDatabase;
+    const task = jest.fn();
+
+    await expect(withDeferredWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
+
+    expect(task).not.toHaveBeenCalled();
+    expect(rawDb.execAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.execAsync).toHaveBeenCalledWith('BEGIN IMMEDIATE');
+  });
+
+  it('does not let a failing ROLLBACK mask the original task error', async () => {
+    const rawDb = {
+      execAsync: jest.fn((sql: string) => {
+        if (sql === 'ROLLBACK') return Promise.reject(new Error('rollback exploded'));
+        return Promise.resolve(undefined);
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(
+      withDeferredWrite(rawDb, async () => {
+        throw new Error('original task failure');
+      }),
+    ).rejects.toMatchObject({ message: 'original task failure' });
+  });
+});
+
 describe('withDeferredWrite failure diagnostics', () => {
   it('reports stage "begin" when the failure happens before the task ever starts', async () => {
     const task = jest.fn();
     const rawDb = {
-      withTransactionAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+      execAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
     } as unknown as SQLiteDatabase;
 
     await expect(withDeferredWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
@@ -109,9 +177,7 @@ describe('withDeferredWrite failure diagnostics', () => {
 
   it('reports stage "task" when the failure happens inside the task callback', async () => {
     const rawDb = {
-      withTransactionAsync: jest.fn(async (run: () => Promise<void>) => {
-        await run();
-      }),
+      execAsync: jest.fn().mockResolvedValue(undefined),
     } as unknown as SQLiteDatabase;
 
     await expect(
@@ -121,11 +187,11 @@ describe('withDeferredWrite failure diagnostics', () => {
     ).rejects.toMatchObject({ stage: 'task' });
   });
 
-  it('reports stage "commit" when the task resolves but the transaction still rejects', async () => {
+  it('reports stage "commit" when the task resolves but COMMIT still rejects', async () => {
     const rawDb = {
-      withTransactionAsync: jest.fn(async (run: () => Promise<void>) => {
-        await run();
-        throw new Error('database is locked');
+      execAsync: jest.fn((sql: string) => {
+        if (sql === 'COMMIT') return Promise.reject(new Error('database is locked'));
+        return Promise.resolve(undefined);
       }),
     } as unknown as SQLiteDatabase;
 
@@ -136,7 +202,7 @@ describe('withDeferredWrite failure diagnostics', () => {
 
   it('wraps the failure as a LocalWriteError so diagnostics travel with the rejection', async () => {
     const rawDb = {
-      withTransactionAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+      execAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
     } as unknown as SQLiteDatabase;
 
     await expect(withDeferredWrite(rawDb, jest.fn())).rejects.toBeInstanceOf(LocalWriteError);

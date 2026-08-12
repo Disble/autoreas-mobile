@@ -1,6 +1,6 @@
 import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
-import { withDeferredWrite, withExclusiveWrite } from '../../infrastructure/db/client/client.helpers';
+import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../infrastructure/db/schema';
 import { AnimeListSchema } from './initial-sync.schema';
 import type {
@@ -63,7 +63,7 @@ export async function persistInitialSyncSnapshot(
  * rolling back the whole pairing write if any insert/upsert fails.
  */
 export async function persistPairedBridgeConfiguration(
-  rawDb: Parameters<typeof withExclusiveWrite>[0],
+  rawDb: Parameters<typeof withDeferredWrite>[0],
   config: BridgeConnectionConfig,
   remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>,
 ): Promise<number> {

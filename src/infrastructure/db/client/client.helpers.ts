@@ -78,22 +78,6 @@ export function toLocalWriteError(
 }
 
 /**
- * Classifies which phase of `withTransactionAsync` a failure landed in from JS-observable
- * markers. `withTransactionAsync` runs BEGIN, the task, then COMMIT internally
- * (`SQLiteDatabase.js:120-130`), so the task never starting means BEGIN failed, the task starting
- * but not resolving means the task itself failed, and the task resolving means the implicit
- * COMMIT failed afterward.
- */
-function classifyDeferredWriteFailureStage(
-  taskStarted: boolean,
-  taskCompleted: boolean,
-): LocalWriteFailureStage {
-  if (!taskStarted) return 'begin';
-  if (!taskCompleted) return 'task';
-  return 'commit';
-}
-
-/**
  * Applies the connection-local write-lock waiting policy synchronously, before any statement can
  * run on the connection. `busy_timeout` takes no lock and is purely connection-local, so applying
  * it via `execSync` is always safe -- including from a synchronous open path that cannot await.
@@ -305,29 +289,13 @@ async function withQueuedWrite<T>(
   return nextWrite;
 }
 
-/** Executes the with exclusive write operation. */
-export async function withExclusiveWrite<T>(
-  rawDb: SQLiteDatabase,
-  task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
-) {
-  return withQueuedWrite(rawDb, async () => {
-    let result!: T;
-
-    await rawDb.withExclusiveTransactionAsync(async (tx) => {
-      result = await task(
-        createDrizzleDb(tx),
-        tx,
-      );
-    });
-
-    return result;
-  });
-}
-
 /**
- * Queues UI-facing writes on the shared connection while avoiding Expo's exclusive transaction path.
- * This keeps local `useLiveQuery` consumers responsive after anime mutations without sacrificing
- * per-database write ordering.
+ * Queues writes on the shared connection, one write door per database file (Design Decision 1/2).
+ * The write lock is acquired UPFRONT via `BEGIN IMMEDIATE`, invoked through the async API, before
+ * any synchronous drizzle statement runs -- so the busy wait lands on expo's native thread instead
+ * of freezing JS (H2). `BEGIN` sits OUTSIDE the rollback guard: expo's own `withTransactionAsync`
+ * rolls back a transaction that never began and masks the real error (design.md Statement Order).
+ * A failing `ROLLBACK` never masks the original failure either.
  */
 export async function withDeferredWrite<T>(
   rawDb: SQLiteDatabase,
@@ -335,24 +303,27 @@ export async function withDeferredWrite<T>(
 ) {
   return withQueuedWrite(rawDb, async () => {
     const startedAt = Date.now();
-    let taskStarted = false;
-    let taskCompleted = false;
-    let result!: T;
 
     try {
-      await rawDb.withTransactionAsync(async () => {
-        taskStarted = true;
-        result = await task(createDrizzleDb(rawDb), rawDb);
-        taskCompleted = true;
-      });
+      await rawDb.execAsync('BEGIN IMMEDIATE');
     } catch (error) {
-      throw toLocalWriteError(
-        error,
-        startedAt,
-        classifyDeferredWriteFailureStage(taskStarted, taskCompleted),
-      );
+      throw toLocalWriteError(error, startedAt, 'begin');
     }
 
-    return result;
+    let taskCompleted = false;
+
+    try {
+      const result = await task(createDrizzleDb(rawDb), rawDb);
+      taskCompleted = true;
+      await rawDb.execAsync('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await rawDb.execAsync('ROLLBACK');
+      } catch {
+        // Never mask the original failure with a rollback failure.
+      }
+      throw toLocalWriteError(error, startedAt, taskCompleted ? 'commit' : 'task');
+    }
   });
 }

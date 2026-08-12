@@ -11,7 +11,6 @@ jest.mock('expo-sqlite', () => ({
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   withDeferredWrite: jest.fn(),
-  withExclusiveWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
@@ -37,11 +36,9 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
 const {
   createDrizzleDb: mockCreateDrizzleDb,
   withDeferredWrite: mockWithDeferredWrite,
-  withExclusiveWrite: mockWithExclusiveWrite,
 } = jest.requireMock('../../../src/infrastructure/db/client/client.helpers') as {
   createDrizzleDb: jest.Mock;
   withDeferredWrite: jest.Mock;
-  withExclusiveWrite: jest.Mock;
 };
 
 type MockTxDb = {
@@ -133,7 +130,6 @@ describe('useMutateAnime', () => {
     expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
     expect(selectMock.select).toHaveBeenCalled();
     expect(mockWithDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(mockWithExclusiveWrite).not.toHaveBeenCalled();
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.set).toHaveBeenCalledWith({
       nrocapvisto: 4,

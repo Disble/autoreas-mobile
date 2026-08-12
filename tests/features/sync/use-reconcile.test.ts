@@ -16,7 +16,6 @@ jest.mock('../../../src/infrastructure/api', () => ({
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
-  withExclusiveWrite: jest.fn(),
   withDeferredWrite: jest.fn(),
 }));
 
@@ -45,7 +44,6 @@ describe('syncPendingOperations', () => {
   };
   let mockUpdateSet: jest.Mock;
   let mockUpdateWhere: jest.Mock;
-  let withExclusiveWriteCall: number;
 
   const reconcileMock = bridgeClient.reconcile as jest.Mock;
 
@@ -83,7 +81,6 @@ describe('syncPendingOperations', () => {
     rawDb = {
       getAllAsync: jest.fn().mockResolvedValue([]),
     };
-    withExclusiveWriteCall = 0;
 
     mockUpdateWhere = jest.fn();
     mockUpdateSet = jest.fn().mockReturnValue({ where: mockUpdateWhere });
@@ -94,24 +91,10 @@ describe('syncPendingOperations', () => {
 
     (dbClient.createDrizzleDb as jest.Mock).mockReturnValue(mockDb);
 
-    (dbClient.withExclusiveWrite as jest.Mock).mockImplementation(async (db, task) => {
-      withExclusiveWriteCall += 1;
-
-      if (withExclusiveWriteCall === 1) {
-        return task(
-          {
-            ...mockDb,
-            update: jest.fn().mockReturnValue({ set: mockUpdateSet }),
-          },
-          db,
-        );
-      }
-
-      return task(mockDb, db);
-    });
-
-    // The reconcile apply block now runs on the shared reactive connection (deferred write)
-    // so local useLiveQuery consumers refresh immediately after pulling bridge changes.
+    // Every write site in the reconcile cycle -- marking rows 'processing', applying pulled
+    // bridge changes, and reverting/advancing op-log status on error -- now routes through the
+    // single shared write door (design.md Decision 2/4), so the reactive connection sees them
+    // all and local useLiveQuery consumers refresh immediately.
     (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (db, task) =>
       task(mockDb, db),
     );
@@ -175,7 +158,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Network Error',
     );
-    expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
@@ -195,7 +178,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 500',
     );
-    expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
@@ -221,7 +204,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 400',
     );
-    expect(dbClient.withExclusiveWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter' });
     expect(warnSpy).toHaveBeenCalledWith(
       '[syncPendingOperations] Reconcile request failed',
@@ -336,7 +319,7 @@ describe('syncPendingOperations', () => {
       { ip: '192.168.1.10', port: 8080, token: 'token123' },
       expect.objectContaining({ device_id: 'device-abc' }),
     );
-    expect(dbClient.withExclusiveWrite).toHaveBeenCalled();
+    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
   });

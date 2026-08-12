@@ -5,7 +5,6 @@ import {
   openAppDatabaseSync,
   runMigrations,
   withDeferredWrite,
-  withExclusiveWrite,
 } from "../../src/infrastructure/db/client";
 import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
 import { bridgeConfig } from "../../src/infrastructure/db/schema";
@@ -395,80 +394,16 @@ describe("db client tracer helpers", () => {
     );
   });
 
-  it("devuelve el resultado del callback exclusivo", async () => {
-    const rawDb = {
-      __state: { animes: [] as Record<string, unknown>[] },
-      withExclusiveTransactionAsync: jest.fn(
-        async (task: (tx: unknown) => Promise<void>) => {
-          await task(rawDb);
-        },
-      ),
-    };
-
-    const result = await withExclusiveWrite(rawDb as never, async () => "ok");
-
-    expect(result).toBe("ok");
-    expect(rawDb.withExclusiveTransactionAsync).toHaveBeenCalledTimes(1);
-  });
-
-  it("serializa writes concurrentes sobre la misma db", async () => {
-    const executionOrder: string[] = [];
-    let releaseFirst!: () => void;
-    const firstDone = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    const rawDb = {
-      withExclusiveTransactionAsync: jest.fn(
-        async (task: (tx: unknown) => Promise<void>) => {
-          executionOrder.push("start");
-          await task(rawDb);
-          executionOrder.push("end");
-        },
-      ),
-    };
-
-    const firstWrite = withExclusiveWrite(rawDb as never, async () => {
-      executionOrder.push("task-1");
-      await firstDone;
-      executionOrder.push("task-1-done");
-      return "first";
-    });
-
-    const secondWrite = withExclusiveWrite(rawDb as never, async () => {
-      executionOrder.push("task-2");
-      return "second";
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(executionOrder).toEqual(["start", "task-1"]);
-
-    releaseFirst();
-
-    await expect(firstWrite).resolves.toBe("first");
-    await expect(secondWrite).resolves.toBe("second");
-    expect(executionOrder).toEqual([
-      "start",
-      "task-1",
-      "task-1-done",
-      "end",
-      "start",
-      "task-2",
-      "end",
-    ]);
-  });
-
   it("devuelve el resultado del callback diferido", async () => {
     const rawDb = {
-      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
-        await task();
-      }),
+      execAsync: jest.fn().mockResolvedValue(undefined),
     };
 
     const result = await withDeferredWrite(rawDb as never, async () => "ok");
 
     expect(result).toBe("ok");
-    expect(rawDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
+    expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
   });
 
   it("clearBridgeConfig usa el write diferido y borra bridge_config sin runAsync directo", async () => {
@@ -478,14 +413,13 @@ describe("db client tracer helpers", () => {
         deletes: [] as unknown[],
       },
       runAsync: jest.fn(),
-      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
-        await task();
-      }),
+      execAsync: jest.fn().mockResolvedValue(undefined),
     };
 
     await clearBridgeConfig(rawDb as never);
 
-    expect(rawDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
+    expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
     expect(rawDb.__state.deletes).toEqual([bridgeConfig]);
     expect(rawDb.runAsync).not.toHaveBeenCalled();
   });
@@ -498,10 +432,9 @@ describe("db client tracer helpers", () => {
     });
 
     const rawDb = {
-      withTransactionAsync: jest.fn(async (task: () => Promise<void>) => {
-        executionOrder.push("start");
-        await task();
-        executionOrder.push("end");
+      execAsync: jest.fn(async (sql: string) => {
+        if (sql === "BEGIN IMMEDIATE") executionOrder.push("start");
+        if (sql === "COMMIT") executionOrder.push("end");
       }),
     };
 

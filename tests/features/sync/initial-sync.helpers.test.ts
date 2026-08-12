@@ -1,5 +1,5 @@
 import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
-import { withDeferredWrite, withExclusiveWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import { withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../../src/infrastructure/db/schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
@@ -20,7 +20,6 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withDeferredWrite: jest.fn(),
-  withExclusiveWrite: jest.fn(),
 }));
 
 describe('initial-sync helpers', () => {
@@ -128,7 +127,6 @@ describe('initial-sync helpers', () => {
 
     expect(count).toBe(1);
     expect(withDeferredWrite).toHaveBeenCalledTimes(1);
-    expect(withExclusiveWrite).not.toHaveBeenCalled();
     expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, normalizedAnimeSnapshot[0]);
   });
 
@@ -160,7 +158,6 @@ describe('initial-sync helpers', () => {
     );
 
     expect(count).toBe(1);
-    expect(withExclusiveWrite).not.toHaveBeenCalled();
     expect(withDeferredWrite).toHaveBeenCalledTimes(1);
     expect(deleteMock).toHaveBeenCalledWith(bridgeConfig);
     expect(insertMock).toHaveBeenCalledWith(bridgeConfig);

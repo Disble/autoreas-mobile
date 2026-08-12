@@ -2,7 +2,6 @@ import { syncPendingOperations } from '../../../src/features/sync/reconcile.help
 import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
-import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 
 jest.mock('../../../src/infrastructure/api', () => ({
@@ -15,7 +14,6 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withExclusiveWrite: jest.fn().mockResolvedValue(undefined),
   withDeferredWrite: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -64,6 +62,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
       url: 'http://192.168.1.10:8080/api/sync/reconcile',
       rawBody: '{}',
       data: {
@@ -86,7 +85,6 @@ describe('reconcile applies remote bridge changes reactively', () => {
     await syncPendingOperations(rawDb as never);
 
     expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(dbClient.withExclusiveWrite).not.toHaveBeenCalled();
     expect(mergeApplyChangesModule.applyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
