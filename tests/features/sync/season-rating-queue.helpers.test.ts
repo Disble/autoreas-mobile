@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { BridgeUnreachableError, bridgeClient } from '../../../src/infrastructure/api';
 import {
   getBridgeConfigSnapshot,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../../src/infrastructure/db/client/client.helpers';
 import {
   drainSeasonRatingQueue,
@@ -29,7 +29,7 @@ jest.mock('../../../src/infrastructure/api', () => {
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 describe('drainSeasonRatingQueue', () => {
@@ -46,7 +46,7 @@ describe('drainSeasonRatingQueue', () => {
       port: 8080,
       token: 'bridge-token',
     });
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         _database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
@@ -71,7 +71,7 @@ describe('drainSeasonRatingQueue', () => {
   it('invalidates prior online truth as soon as durable season work is enqueued', async () => {
     const attempt = beginSyncConnectionAttempt();
     markSyncConnectionSucceeded(attempt, 1_000);
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         _database: SQLiteDatabase,
         task: (db: { insert: jest.Mock }, tx: SQLiteDatabase) => Promise<unknown>,

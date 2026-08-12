@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import {
   DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS,
   SYNC_CYCLE_LOCK_ROW_ID,
@@ -25,7 +25,7 @@ async function claimSyncCycleLock(
 ): Promise<boolean> {
   const expiresAt = now + leaseMs;
 
-  const result = await withDeferredWrite(rawDb, async (_db, tx) =>
+  const result = await withLocalWrite(rawDb, async (_db, tx) =>
     tx.runAsync(
       [
         'INSERT INTO sync_cycle_lock (id, owner, expires_at)',
@@ -45,7 +45,7 @@ async function claimSyncCycleLock(
 
 /** Routed through the write door -- the eighth door. See `claimSyncCycleLock` above. */
 async function releaseSyncCycleLock(rawDb: SQLiteDatabase, owner: string): Promise<void> {
-  await withDeferredWrite(rawDb, async (_db, tx) =>
+  await withLocalWrite(rawDb, async (_db, tx) =>
     tx.runAsync(
       'DELETE FROM sync_cycle_lock WHERE id = ? AND owner = ?',
       SYNC_CYCLE_LOCK_ROW_ID,

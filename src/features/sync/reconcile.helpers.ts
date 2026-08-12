@@ -7,7 +7,7 @@ import {
 } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
 import {
   getBridgeConfigSnapshot,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
 import {
   bridgeConfig,
@@ -293,7 +293,7 @@ async function performSyncPendingOperations(
   });
 
   if (pendingOps.length > 0) {
-    await withDeferredWrite(rawDb, async (writeDb) => {
+    await withLocalWrite(rawDb, async (writeDb) => {
       await writeDb
         .update(operationLog)
         .set({ status: 'processing' })
@@ -358,7 +358,7 @@ async function performSyncPendingOperations(
     //   false`), not from a different transaction path here (design.md Decision 4).
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
-    await withDeferredWrite(rawDb, async (writeDb) => {
+    await withLocalWrite(rawDb, async (writeDb) => {
       if (applyMode === 'staged') {
         await stagePendingRemoteChanges(writeDb, normalizedChanges);
       } else {
@@ -407,7 +407,7 @@ async function performSyncPendingOperations(
     };
   } catch (error) {
     if (pendingOps.length > 0) {
-      await withDeferredWrite(rawDb, async (writeDb) => {
+      await withLocalWrite(rawDb, async (writeDb) => {
         await writeDb
           .update(operationLog)
           .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })

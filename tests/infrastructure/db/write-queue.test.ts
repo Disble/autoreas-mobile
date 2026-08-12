@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
 
 jest.mock('drizzle-orm', () => ({
   desc: jest.fn((value: unknown) => value),
@@ -43,7 +43,7 @@ describe('sqlite write queue', () => {
     const order: string[] = [];
     let releaseForeground: (() => void) | undefined;
 
-    const foregroundWrite = withDeferredWrite(foregroundDb, async () => {
+    const foregroundWrite = withLocalWrite(foregroundDb, async () => {
       order.push('foreground:start');
       await new Promise<void>((resolve) => {
         releaseForeground = resolve;
@@ -51,7 +51,7 @@ describe('sqlite write queue', () => {
       order.push('foreground:end');
     });
 
-    const syncWrite = withDeferredWrite(syncDb, async () => {
+    const syncWrite = withLocalWrite(syncDb, async () => {
       order.push('sync:start');
     });
 

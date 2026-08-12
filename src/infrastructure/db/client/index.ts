@@ -7,7 +7,7 @@ export {
   openAppDatabaseSync,
   runMigrations,
   toLocalWriteError,
-  withDeferredWrite,
+  withLocalWrite,
 } from './client.helpers';
 export type {
   AppDatabase,

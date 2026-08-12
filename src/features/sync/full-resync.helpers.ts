@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes } from '../../infrastructure/db/schema';
 import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
 import { mapWireAnimeToLegacyAnime } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
@@ -24,7 +24,7 @@ function normalizeFetchedAnime(
 
 /**
  * Snapshot-authoritative heal: pulls the bridge's full current anime list and reconciles each
- * row against local SQLite by diffing, on the foreground reactive connection (`withDeferredWrite`)
+ * row against local SQLite by diffing, on the foreground reactive connection (`withLocalWrite`)
  * so `useLiveQuery` refreshes immediately.
  *
  * This is the canonical recovery path for two situations the incremental changelog reconcile
@@ -59,7 +59,7 @@ export async function resyncFromBridgeSnapshot(
 
   let healed = 0;
 
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     const [pendingOutboxRecordIds, localRows] = await Promise.all([
       loadPendingOutboxRecordIds(db),
       db.select().from(animes),

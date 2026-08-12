@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 import {
@@ -10,7 +10,7 @@ import type { DrainPendingRemoteChangesResult } from './remote-change-drain.type
 
 /**
  * Applies every currently staged `pending_remote_changes` row to `animes` via the shared
- * merge boundary, on the shared REACTIVE connection (`withDeferredWrite`), so foreground
+ * merge boundary, on the shared REACTIVE connection (`withLocalWrite`), so foreground
  * `useLiveQuery` consumers observe the result immediately. This is the only place background
  * sync's writes ever reach `animes` -- the headless cycle itself never writes `animes`
  * directly (see `headless-sync-cycle.helpers.ts` / `syncPendingOperations` staged mode).
@@ -34,7 +34,7 @@ export async function drainPendingRemoteChanges(
   const changes = staged.map((entry) => entry.change);
   const stagingIds = staged.map((entry) => entry.stagingId);
 
-  const result = await withDeferredWrite(rawDb, async (writeDb) => {
+  const result = await withLocalWrite(rawDb, async (writeDb) => {
     const recordIds = changes.map((change) => change.recordId);
     const [guardByRecordId, pendingOutboxRecordIds] = await Promise.all([
       loadGuardMap(writeDb, recordIds),

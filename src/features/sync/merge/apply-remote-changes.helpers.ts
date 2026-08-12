@@ -53,7 +53,7 @@ async function applyAcceptedChange(
  * `applyMode` is accepted so callers can express where this coordinator runs (foreground
  * deferred-write vs background staged-write) but it is NOT used to change behavior here:
  * the caller is responsible for choosing whether to invoke this against a reactive
- * connection (`withDeferredWrite`) or to stage the change instead of calling this at all.
+ * connection (`withLocalWrite`) or to stage the change instead of calling this at all.
  * Reconcile/WS/drain wiring is out of scope for this coordinator (later phase).
  */
 export async function applyRemoteChanges(

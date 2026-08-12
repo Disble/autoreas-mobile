@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { syncRuntimeStatus } from '../../infrastructure/db/schema';
 import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
@@ -161,7 +161,7 @@ async function persistSyncRuntimeStatusPatch(
       patch.isBackgroundTaskRegistered ?? current.isBackgroundTaskRegistered,
   };
 
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     await db
       .insert(syncRuntimeStatus)
       .values({

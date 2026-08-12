@@ -51,7 +51,7 @@ function truncateToMaxLength(value: string): string {
 /**
  * Recognizes a `LocalWriteError` by shape rather than `instanceof`. A type-only check keeps this
  * file decoupled from `client.helpers`'s concrete export at runtime, so a test that mocks that
- * module without re-exporting the class (most callers of `withDeferredWrite` do) still degrades
+ * module without re-exporting the class (most callers of `withLocalWrite` do) still degrades
  * safely here instead of throwing on a missing constructor.
  */
 function readLocalWriteFailureDiagnostics(error: unknown): LocalWriteFailureDiagnostics | null {

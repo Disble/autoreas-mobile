@@ -1,4 +1,4 @@
-import { createDrizzleDb, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema/anime.schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -231,7 +231,7 @@ export async function applyAnimeMutationPatch(
   const now = Date.now();
   let didMutate = false;
 
-  await withDeferredWrite(rawDb, async (txDb, tx) => {
+  await withLocalWrite(rawDb, async (txDb, tx) => {
     const anime = await fetchParsedAnime(tx, animeId);
     if (!anime) return;
 

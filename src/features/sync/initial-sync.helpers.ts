@@ -1,6 +1,6 @@
 import { bridgeClient } from '../../infrastructure/api';
 import { upsertAnime } from '../../infrastructure/db/anime-repository';
-import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../infrastructure/db/schema';
 import { AnimeListSchema } from './initial-sync.schema';
 import type {
@@ -40,14 +40,14 @@ export async function fetchInitialSyncSnapshot(
  * hydrates immediately, while the write queue still preserves per-database ordering.
  */
 export async function persistInitialSyncSnapshot(
-  rawDb: Parameters<typeof withDeferredWrite>[0],
+  rawDb: Parameters<typeof withLocalWrite>[0],
   remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>,
 ): Promise<number> {
   if (remoteAnimes.length === 0) {
     return 0;
   }
 
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     for (const anime of remoteAnimes) {
       // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
       await upsertAnime(db, anime);
@@ -63,11 +63,11 @@ export async function persistInitialSyncSnapshot(
  * rolling back the whole pairing write if any insert/upsert fails.
  */
 export async function persistPairedBridgeConfiguration(
-  rawDb: Parameters<typeof withDeferredWrite>[0],
+  rawDb: Parameters<typeof withLocalWrite>[0],
   config: BridgeConnectionConfig,
   remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>,
 ): Promise<number> {
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     await db.delete(bridgeConfig);
     await db.insert(bridgeConfig).values({
       ip: config.ip,

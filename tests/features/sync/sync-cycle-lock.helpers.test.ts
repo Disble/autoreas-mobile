@@ -1,9 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { withExclusiveSyncCycle } from '../../../src/features/sync/sync-cycle-lock.helpers';
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 /**
@@ -58,10 +58,10 @@ function createSharedLockStore() {
 describe('sync-cycle-lock', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default passthrough matches the real (pre-E1) `withDeferredWrite`: the task's `tx` is the
+    // Default passthrough matches the real (pre-E1) `withLocalWrite`: the task's `tx` is the
     // same connection the door was opened on, so the fake lock store's statement shapes below
     // stay valid without needing to mock the whole client.helpers/drizzle/migrations chain.
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
@@ -196,7 +196,7 @@ describe('sync-cycle-lock', () => {
     const rawDb = store.createConnection();
     const order: string[] = [];
 
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
@@ -217,7 +217,7 @@ describe('sync-cycle-lock', () => {
     // claimSyncCycleLock:22 and releaseSyncCycleLock:39 are the seventh and eighth write doors
     // (design.md Cycle-lock routing). Sequential, not nested: the claim's door fully closes
     // before `run()` starts, and the release's door opens only after `run()` settles.
-    expect(withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(withLocalWrite).toHaveBeenCalledTimes(2);
     expect(order).toStrictEqual([
       'door:open',
       'door:close',
@@ -234,7 +234,7 @@ describe('sync-cycle-lock', () => {
     const run = jest.fn().mockRejectedValue(new Error('cycle failed'));
     let doorCallCount = 0;
 
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,

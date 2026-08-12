@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
 import type { BridgeConnection } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { seasonRatingQueue } from '../../infrastructure/db/schema';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
@@ -50,7 +50,7 @@ export async function enqueueSeasonRatingIntent(
 ): Promise<SeasonRatingQueueEntry> {
   const entry = createSeasonRatingQueueEntry(input, clock);
 
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     await db.insert(seasonRatingQueue).values(entry);
   });
 
@@ -195,7 +195,7 @@ async function readSeasonRatingQueueBacklog(
 }
 
 // `tx` (not `rawDb`) because these two are only ever called from inside an already-open
-// `withDeferredWrite` door in `drainSeasonRatingQueue` -- never call the door again here, an
+// `withLocalWrite` door in `drainSeasonRatingQueue` -- never call the door again here, an
 // already-open door is exactly the no-nested-doors case (design.md Regression Guard).
 async function updateSeasonRatingQueueEntry(
   tx: SQLiteDatabase,
@@ -286,7 +286,7 @@ export async function drainSeasonRatingQueue(
     const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
 
     // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (mark syncing -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
-    await withDeferredWrite(rawDb, async (_db, tx) => {
+    await withLocalWrite(rawDb, async (_db, tx) => {
       await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry);
     });
 
@@ -297,13 +297,13 @@ export async function drainSeasonRatingQueue(
       );
 
     if (!deliveryResolution.shouldKeepEntry) {
-      await withDeferredWrite(rawDb, async (_db, tx) => {
+      await withLocalWrite(rawDb, async (_db, tx) => {
         await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!);
       });
     } else if (deliveryResolution.nextQueueStatus) {
       const nextQueueStatus = deliveryResolution.nextQueueStatus;
 
-      await withDeferredWrite(rawDb, async (_db, tx) => {
+      await withLocalWrite(rawDb, async (_db, tx) => {
         await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, {
           ...syncingEntry,
           status: nextQueueStatus,

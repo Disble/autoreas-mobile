@@ -268,7 +268,7 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
 
 /** Executes the clear bridge config operation. */
 export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
-  await withDeferredWrite(rawDb, async (db) => {
+  await withLocalWrite(rawDb, async (db) => {
     await db.delete(schema.bridgeConfig);
   });
 }
@@ -297,7 +297,7 @@ async function withQueuedWrite<T>(
  * rolls back a transaction that never began and masks the real error (design.md Statement Order).
  * A failing `ROLLBACK` never masks the original failure either.
  */
-export async function withDeferredWrite<T>(
+export async function withLocalWrite<T>(
   rawDb: SQLiteDatabase,
   task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
 ) {

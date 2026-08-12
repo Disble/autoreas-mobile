@@ -6,7 +6,7 @@ import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -25,7 +25,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 
 describe('drainPendingRemoteChanges', () => {
   const mockCreateDrizzleDb = dbClient.createDrizzleDb as jest.Mock;
-  const mockWithDeferredWrite = dbClient.withDeferredWrite as jest.Mock;
+  const mockWithDeferredWrite = dbClient.withLocalWrite as jest.Mock;
   const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
   const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =
@@ -66,7 +66,7 @@ describe('drainPendingRemoteChanges', () => {
     expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
   });
 
-  it('applies staged rows via withDeferredWrite + applyRemoteChanges(deferred), then deletes drained rows in the same transaction', async () => {
+  it('applies staged rows via withLocalWrite + applyRemoteChanges(deferred), then deletes drained rows in the same transaction', async () => {
     const stagedEntries = [
       {
         stagingId: 1,

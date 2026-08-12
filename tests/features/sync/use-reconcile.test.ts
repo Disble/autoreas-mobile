@@ -16,7 +16,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -95,7 +95,7 @@ describe('syncPendingOperations', () => {
     // bridge changes, and reverting/advancing op-log status on error -- now routes through the
     // single shared write door (design.md Decision 2/4), so the reactive connection sees them
     // all and local useLiveQuery consumers refresh immediately.
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (db, task) =>
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (db, task) =>
       task(mockDb, db),
     );
   });
@@ -158,7 +158,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Network Error',
     );
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
@@ -178,7 +178,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 500',
     );
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
   });
 
@@ -204,7 +204,7 @@ describe('syncPendingOperations', () => {
     await expect(syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0])).rejects.toThrow(
       'Reconcile failed: 400',
     );
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter' });
     expect(warnSpy).toHaveBeenCalledWith(
       '[syncPendingOperations] Reconcile request failed',
@@ -319,7 +319,7 @@ describe('syncPendingOperations', () => {
       { ip: '192.168.1.10', port: 8080, token: 'token123' },
       expect.objectContaining({ device_id: 'device-abc' }),
     );
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
   });

@@ -1,12 +1,12 @@
 import { resyncFromBridgeSnapshot } from '../../../src/features/sync/full-resync.helpers';
 import { applyAnimePartial, upsertAnime } from '../../../src/infrastructure/db/anime-repository';
-import { getBridgeConfigSnapshot, withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import { getBridgeConfigSnapshot, withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { fetchInitialSyncSnapshot } from '../../../src/features/sync/initial-sync.helpers';
 import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge/merge-context.helpers';
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
@@ -33,7 +33,7 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => {
 
 const mockGetConfig = getBridgeConfigSnapshot as jest.Mock;
 const mockFetch = fetchInitialSyncSnapshot as jest.Mock;
-const mockDeferredWrite = withDeferredWrite as jest.Mock;
+const mockDeferredWrite = withLocalWrite as jest.Mock;
 const mockPendingIds = loadPendingOutboxRecordIds as jest.Mock;
 
 function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {

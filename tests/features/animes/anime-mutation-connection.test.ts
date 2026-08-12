@@ -1,7 +1,7 @@
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import {
   createDrizzleDb,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../../src/infrastructure/db/client/client.helpers';
 import {
   applyAnimeMutationPatch,
@@ -24,7 +24,7 @@ import {
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
@@ -95,7 +95,7 @@ function createTxDbMocks() {
 function configureMutationWrite(): { readonly values: jest.Mock } {
   const txMocks = createTxDbMocks();
   (createDrizzleDb as jest.Mock).mockReturnValue(buildSelectMock());
-  (withDeferredWrite as jest.Mock).mockImplementation(
+  (withLocalWrite as jest.Mock).mockImplementation(
     async (_database, task) => task(txMocks.txDb, rawDb),
   );
   return txMocks;

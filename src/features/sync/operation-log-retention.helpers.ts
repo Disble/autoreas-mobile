@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import {
   DEFAULT_OPERATION_LOG_RETENTION_POLICY,
   OPERATION_LOG_RETENTION_DAY_IN_MS,
@@ -129,7 +129,7 @@ export async function pruneOperationLog(
   const syncedCutoff = buildRetentionCutoffTimestamp(now, policy.synced.ttlDays);
   const deadLetterCutoff = buildRetentionCutoffTimestamp(now, policy.deadLetter.ttlDays);
 
-  return withDeferredWrite(rawDb, async (_db, tx) => {
+  return withLocalWrite(rawDb, async (_db, tx) => {
     const [deletedSyncedByTtl, deletedDeadLetterByTtl] = await Promise.all([
       pruneRowsByTtl(tx, policy.synced.status, syncedCutoff),
       pruneRowsByTtl(tx, policy.deadLetter.status, deadLetterCutoff),

@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
   getBridgeConfigSnapshot,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../../src/infrastructure/db/client/client.helpers';
 import {
   clearCachedActiveSeasonSnapshot,
@@ -22,7 +22,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 describe('fetchActiveSeasonFromBridge', () => {
@@ -115,7 +115,7 @@ describe('active season cache', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
@@ -159,7 +159,7 @@ describe('active season cache', () => {
     );
     // Must route through the file-keyed write door, not call `rawDb.runAsync` directly -- a
     // write bypassing the door is a defect (local-write-serialization spec).
-    expect(withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
   });
 
   it('removes cached membership through the write door when the bridge retires the season', async () => {
@@ -170,6 +170,6 @@ describe('active season cache', () => {
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'DELETE FROM active_season_cache WHERE id = 1',
     );
-    expect(withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
   });
 });

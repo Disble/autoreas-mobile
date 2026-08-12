@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, extractActiveSeasonSnapshot } from '../../infrastructure/api';
 import {
   getBridgeConfigSnapshot,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 
@@ -99,7 +99,7 @@ export async function writeCachedActiveSeasonSnapshot(
   rawDb: SQLiteDatabase,
   snapshot: ActiveSeasonSnapshot,
 ): Promise<void> {
-  await withDeferredWrite(rawDb, async (_db, tx) => {
+  await withLocalWrite(rawDb, async (_db, tx) => {
     await tx.runAsync(
       'INSERT INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?) ' +
         'ON CONFLICT(id) DO UPDATE SET season_id = excluded.season_id, candidates_json = excluded.candidates_json',
@@ -120,7 +120,7 @@ export async function writeCachedActiveSeasonSnapshot(
  * This prevents a retired season from remaining available after the next offline launch.
  */
 export async function clearCachedActiveSeasonSnapshot(rawDb: SQLiteDatabase): Promise<void> {
-  await withDeferredWrite(rawDb, async (_db, tx) => {
+  await withLocalWrite(rawDb, async (_db, tx) => {
     await tx.runAsync('DELETE FROM active_season_cache WHERE id = 1');
   });
 }

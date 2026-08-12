@@ -14,7 +14,7 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn().mockResolvedValue(undefined),
+  withLocalWrite: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -55,7 +55,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
   it('writes pulled changes through the shared reactive connection so useLiveQuery refreshes immediately', async () => {
     const writeDb = {};
 
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 
@@ -84,7 +84,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     const rawDb = { name: 'reactive-reconcile-db' };
     await syncPendingOperations(rawDb as never);
 
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(mergeApplyChangesModule.applyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([

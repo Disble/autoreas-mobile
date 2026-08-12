@@ -4,7 +4,7 @@ import {
   clearBridgeConfig,
   openAppDatabaseSync,
   runMigrations,
-  withDeferredWrite,
+  withLocalWrite,
 } from "../../src/infrastructure/db/client";
 import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
 import { bridgeConfig } from "../../src/infrastructure/db/schema";
@@ -399,7 +399,7 @@ describe("db client tracer helpers", () => {
       execAsync: jest.fn().mockResolvedValue(undefined),
     };
 
-    const result = await withDeferredWrite(rawDb as never, async () => "ok");
+    const result = await withLocalWrite(rawDb as never, async () => "ok");
 
     expect(result).toBe("ok");
     expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
@@ -438,14 +438,14 @@ describe("db client tracer helpers", () => {
       }),
     };
 
-    const firstWrite = withDeferredWrite(rawDb as never, async () => {
+    const firstWrite = withLocalWrite(rawDb as never, async () => {
       executionOrder.push("task-1");
       await firstDone;
       executionOrder.push("task-1-done");
       return "first";
     });
 
-    const secondWrite = withDeferredWrite(rawDb as never, async () => {
+    const secondWrite = withLocalWrite(rawDb as never, async () => {
       executionOrder.push("task-2");
       return "second";
     });

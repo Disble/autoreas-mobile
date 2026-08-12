@@ -1,5 +1,5 @@
 import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
-import { withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import { withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { bridgeConfig } from '../../../src/infrastructure/db/schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
@@ -19,7 +19,7 @@ jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 describe('initial-sync helpers', () => {
@@ -119,14 +119,14 @@ describe('initial-sync helpers', () => {
   });
 
   it('persists fetched anime rows through the deferred write so live queries can observe it', async () => {
-    (withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task({}, {});
     });
 
     const count = await persistInitialSyncSnapshot(rawDb as never, normalizedAnimeSnapshot);
 
     expect(count).toBe(1);
-    expect(withDeferredWrite).toHaveBeenCalledTimes(1);
+    expect(withLocalWrite).toHaveBeenCalledTimes(1);
     expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, normalizedAnimeSnapshot[0]);
   });
 
@@ -135,7 +135,7 @@ describe('initial-sync helpers', () => {
     const valuesMock = jest.fn().mockResolvedValue(undefined);
     const insertMock = jest.fn().mockReturnValue({ values: valuesMock });
 
-    (withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(
         {
           delete: deleteMock,
@@ -158,7 +158,7 @@ describe('initial-sync helpers', () => {
     );
 
     expect(count).toBe(1);
-    expect(withDeferredWrite).toHaveBeenCalledTimes(1);
+    expect(withLocalWrite).toHaveBeenCalledTimes(1);
     expect(deleteMock).toHaveBeenCalledWith(bridgeConfig);
     expect(insertMock).toHaveBeenCalledWith(bridgeConfig);
     expect(valuesMock).toHaveBeenCalledWith({

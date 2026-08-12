@@ -10,7 +10,7 @@ jest.mock('expo-sqlite', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
@@ -35,10 +35,10 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
 
 const {
   createDrizzleDb: mockCreateDrizzleDb,
-  withDeferredWrite: mockWithDeferredWrite,
+  withLocalWrite: mockWithDeferredWrite,
 } = jest.requireMock('../../../src/infrastructure/db/client/client.helpers') as {
   createDrizzleDb: jest.Mock;
-  withDeferredWrite: jest.Mock;
+  withLocalWrite: jest.Mock;
 };
 
 type MockTxDb = {

@@ -16,7 +16,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -232,16 +232,16 @@ describe('syncPendingOperations applyMode routing', () => {
     });
   });
 
-  it('foreground default mode applies via withDeferredWrite + applyRemoteChanges(deferred), never stages', async () => {
+  it('foreground default mode applies via withLocalWrite + applyRemoteChanges(deferred), never stages', async () => {
     const writeDb = {};
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 
     const rawDb = { name: 'deferred-reconcile-db' };
     await syncPendingOperations(rawDb as never);
 
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(mockApplyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
@@ -263,14 +263,14 @@ describe('syncPendingOperations applyMode routing', () => {
 
   it('explicit deferred mode behaves the same as the default', async () => {
     const writeDb = {};
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 
     const rawDb = { name: 'deferred-reconcile-db-explicit' };
     await syncPendingOperations(rawDb as never, 'deferred');
 
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(mockApplyRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.anything(),
@@ -281,14 +281,14 @@ describe('syncPendingOperations applyMode routing', () => {
 
   it('staged mode stages into pending_remote_changes via the shared write door and never calls applyRemoteChanges', async () => {
     const writeDb = {};
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 
     const rawDb = { name: 'staged-reconcile-db' };
     await syncPendingOperations(rawDb as never, 'staged');
 
-    expect(dbClient.withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
+    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
     expect(mockStagePendingRemoteChanges).toHaveBeenCalledWith(
       writeDb,
       expect.arrayContaining([
@@ -306,7 +306,7 @@ describe('syncPendingOperations applyMode routing', () => {
   it('staged mode never writes to animes directly (no upsert/delete calls outside the merge boundary)', async () => {
     const updateMock = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
     const writeDb = { update: updateMock };
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 
@@ -336,7 +336,7 @@ describe('syncPendingOperations applyMode routing', () => {
       where: jest.fn().mockResolvedValue(undefined),
     });
     const writeDb = { update: updateMock };
-    (dbClient.withDeferredWrite as jest.Mock).mockImplementation(async (_db, task) => {
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task(writeDb, {});
     });
 

@@ -1,7 +1,7 @@
 /**
  * Selects where a reconcile pass writes its pulled `bridge_changes`:
  * - `deferred` -> applies directly to `animes` via the merge boundary inside
- *   `withDeferredWrite` on the shared reactive connection (foreground callers: the manual
+ *   `withLocalWrite` on the shared reactive connection (foreground callers: the manual
  *   reconcile mutation, bootstrap reconcile, WS-triggered sync).
  * - `staged` -> never touches `animes`; inserts into `pending_remote_changes` instead, for
  *   callers running on the isolated, non-reactive background connection (the headless sync

@@ -4,7 +4,7 @@ import { useSeasonSync } from '../../../src/features/sync/use-season-sync';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
   getBridgeConfigSnapshot,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../../src/infrastructure/db/client/client.helpers';
 import { useOptionalSQLiteContext } from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
@@ -20,7 +20,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
-  withDeferredWrite: jest.fn(),
+  withLocalWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
@@ -46,7 +46,7 @@ describe('useSeasonSync', () => {
       port: 8080,
       token: 'bridge-token',
     });
-    (withDeferredWrite as jest.Mock).mockImplementation(
+    (withLocalWrite as jest.Mock).mockImplementation(
       async (
         database: SQLiteDatabase,
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,

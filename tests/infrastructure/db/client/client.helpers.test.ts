@@ -4,7 +4,7 @@ import {
   LocalWriteError,
   openAppDatabaseSync,
   toLocalWriteError,
-  withDeferredWrite,
+  withLocalWrite,
 } from '../../../../src/infrastructure/db/client/client.helpers';
 import { getOpenDatabaseSync } from '../../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
@@ -99,11 +99,11 @@ describe('toLocalWriteError', () => {
 /**
  * `BEGIN` sits OUTSIDE the rollback guard by design (design.md Statement Order): expo's own
  * `withTransactionAsync` rolls back a transaction that never began and masks the real error, so
- * `withDeferredWrite` issues its own `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` via `execAsync` instead
+ * `withLocalWrite` issues its own `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` via `execAsync` instead
  * of delegating to it. The busy wait must land on expo's native thread before any synchronous
  * drizzle statement runs (H2).
  */
-describe('withDeferredWrite transaction order', () => {
+describe('withLocalWrite transaction order', () => {
   it('issues BEGIN IMMEDIATE, then the task, then COMMIT, in that order', async () => {
     const order: string[] = [];
     const rawDb = {
@@ -112,7 +112,7 @@ describe('withDeferredWrite transaction order', () => {
       }),
     } as unknown as SQLiteDatabase;
 
-    await withDeferredWrite(rawDb, async () => {
+    await withLocalWrite(rawDb, async () => {
       order.push('task');
     });
 
@@ -125,7 +125,7 @@ describe('withDeferredWrite transaction order', () => {
     } as unknown as SQLiteDatabase;
 
     await expect(
-      withDeferredWrite(rawDb, async () => {
+      withLocalWrite(rawDb, async () => {
         throw new Error('database is locked');
       }),
     ).rejects.toThrow('database is locked');
@@ -141,7 +141,7 @@ describe('withDeferredWrite transaction order', () => {
     } as unknown as SQLiteDatabase;
     const task = jest.fn();
 
-    await expect(withDeferredWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
+    await expect(withLocalWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
 
     expect(task).not.toHaveBeenCalled();
     expect(rawDb.execAsync).toHaveBeenCalledTimes(1);
@@ -157,21 +157,21 @@ describe('withDeferredWrite transaction order', () => {
     } as unknown as SQLiteDatabase;
 
     await expect(
-      withDeferredWrite(rawDb, async () => {
+      withLocalWrite(rawDb, async () => {
         throw new Error('original task failure');
       }),
     ).rejects.toMatchObject({ message: 'original task failure' });
   });
 });
 
-describe('withDeferredWrite failure diagnostics', () => {
+describe('withLocalWrite failure diagnostics', () => {
   it('reports stage "begin" when the failure happens before the task ever starts', async () => {
     const task = jest.fn();
     const rawDb = {
       execAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
     } as unknown as SQLiteDatabase;
 
-    await expect(withDeferredWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
+    await expect(withLocalWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
     expect(task).not.toHaveBeenCalled();
   });
 
@@ -181,7 +181,7 @@ describe('withDeferredWrite failure diagnostics', () => {
     } as unknown as SQLiteDatabase;
 
     await expect(
-      withDeferredWrite(rawDb, async () => {
+      withLocalWrite(rawDb, async () => {
         throw new Error('database is locked');
       }),
     ).rejects.toMatchObject({ stage: 'task' });
@@ -195,7 +195,7 @@ describe('withDeferredWrite failure diagnostics', () => {
       }),
     } as unknown as SQLiteDatabase;
 
-    await expect(withDeferredWrite(rawDb, async () => undefined)).rejects.toMatchObject({
+    await expect(withLocalWrite(rawDb, async () => undefined)).rejects.toMatchObject({
       stage: 'commit',
     });
   });
@@ -205,7 +205,7 @@ describe('withDeferredWrite failure diagnostics', () => {
       execAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
     } as unknown as SQLiteDatabase;
 
-    await expect(withDeferredWrite(rawDb, jest.fn())).rejects.toBeInstanceOf(LocalWriteError);
+    await expect(withLocalWrite(rawDb, jest.fn())).rejects.toBeInstanceOf(LocalWriteError);
   });
 });
 
