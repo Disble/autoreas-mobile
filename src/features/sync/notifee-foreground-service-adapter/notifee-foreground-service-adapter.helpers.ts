@@ -37,9 +37,18 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
   let serviceRuntime: SyncSQLiteRuntime | null = null;
 
   async function closeServiceRuntime() {
-    if (serviceRuntime) {
+    if (!serviceRuntime) {
+      return;
+    }
+
+    try {
       await serviceRuntime.close();
       serviceRuntime = null;
+    } catch {
+      // Never throw from teardown: unregister() and the stop-sync background event both call
+      // this as their last step, so a rejection here must not replace or mask everything that
+      // already succeeded. The handle is kept (Decision 6) rather than nulled on a failed close,
+      // so a later attempt can still retry the close and release the lock.
     }
   }
 

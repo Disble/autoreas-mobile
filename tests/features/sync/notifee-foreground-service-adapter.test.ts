@@ -333,6 +333,59 @@ describe('notifee-foreground-service-adapter', () => {
     expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
   });
 
+  it('completes unregister even when the runtime close rejects, keeping the handle for a later retry', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+    mockRuntimeClose.mockRejectedValue(new Error('database is locked'));
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
+
+    // closeServiceRuntime must never throw: unregister() is its last statement, and a rejected
+    // close must not replace or mask everything that already succeeded (stop, ticker stop,
+    // stopForegroundService).
+    await expect(adapter.unregister()).resolves.toBeUndefined();
+
+    expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(mockTickerStop).toHaveBeenCalledTimes(1);
+    expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('completes the stop-sync background event even when the runtime close rejects', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+    mockRuntimeClose.mockRejectedValue(new Error('database is locked'));
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
+
+    await foregroundServiceTask();
+
+    const backgroundEventHandler = (notifee.onBackgroundEvent as jest.Mock).mock.calls[0]?.[0];
+
+    await expect(
+      backgroundEventHandler({ detail: { pressAction: { id: 'stop-sync' } } }),
+    ).resolves.toBeUndefined();
+
+    expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(mockTickerStop).toHaveBeenCalledTimes(1);
+    expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
+    expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
+  });
+
   it('does not mark the service as running when notification permission is denied', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'android' });
     (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({

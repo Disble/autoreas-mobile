@@ -70,6 +70,49 @@ describe('sqlite sync runtime helpers', () => {
     expect(rawDb.closeAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a connection reachable when every close strategy fails', async () => {
+    // A connection stuck mid-write-transaction is exactly the one SQLite refuses to close.
+    // Dropping the handle here strands it: nothing can ever close it or roll it back, so it
+    // holds the write lock until the process dies -- the reported "only a restart fixes it".
+    const rawDb = buildRawDb({
+      closeAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+      closeSync: jest.fn(() => {
+        throw new Error('database is locked');
+      }),
+    });
+    const runtime = createSyncSQLiteRuntime({
+      owner: 'foreground_service',
+      openDatabase: jest.fn().mockReturnValue(rawDb),
+      prepareHeadlessDatabase: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await runtime.open();
+    await expect(runtime.close()).rejects.toThrow();
+
+    expect(runtime.rawDb).toBe(rawDb);
+  });
+
+  it('does not open a replacement connection while the previous one is still open', async () => {
+    const rawDb = buildRawDb({
+      closeAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+      closeSync: jest.fn(() => {
+        throw new Error('database is locked');
+      }),
+    });
+    const openDatabase = jest.fn().mockReturnValue(rawDb);
+    const runtime = createSyncSQLiteRuntime({
+      owner: 'foreground_service',
+      openDatabase,
+      prepareHeadlessDatabase: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await runtime.open();
+    await expect(runtime.close()).rejects.toThrow();
+    await runtime.open();
+
+    expect(openDatabase).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to closeSync when async close fails', async () => {
     const rawDb = buildRawDb({
       closeAsync: jest.fn().mockRejectedValue(new Error('close failed')),

@@ -80,9 +80,13 @@ export function createSyncSQLiteRuntime(
       return;
     }
 
+    // The handle is nulled only AFTER a proven close. A connection stuck mid-write-transaction
+    // is exactly the one `closeSyncRuntime` can fail to close -- dropping the reference first
+    // would strand it: nothing could ever close it or roll it back again, so it holds the write
+    // lock until the process dies (the reported "only a restart fixes it").
     const currentDb = rawDb;
-    rawDb = null;
     await closeSyncRuntime(currentDb);
+    rawDb = null;
   }
 
   return {

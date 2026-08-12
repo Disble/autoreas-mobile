@@ -31,36 +31,36 @@ Chain strategy: feature-branch-chain
 
 ## Phase 0: Chain Setup (prerequisite — not its own PR)
 
-- [ ] 0.1 Delete `tests/infrastructure/db/write-queue.test.ts:34-48` and `:50-60` (watchdog tests, H11-invalidated) permanently — never resurrected.
-- [ ] 0.2 `git stash` the remaining working-tree diffs that belong to later slices: the cross-connection test in `write-queue.test.ts` (D1) and the two new tests in `sqlite-sync-runtime.helpers.test.ts` (B) — so PR 1 starts from a fully green suite. Re-apply each stash only when its own slice begins.
-- [ ] 0.3 **DECISION NEEDED (flag to user, do not resolve here)**: commit `openspec/changes/sqlite-write-lock-contention/**` (untracked since inception)? Recommend bundling with PR 1 so the tracker branch carries SDD provenance from the first commit.
-- [ ] 0.4 Commit `tests/sqlite-lab/`, `package.json`'s `sqlite:lab` script, and `eslint.config.mjs`'s `tests/sqlite-lab/**` ignore together with PR 1 — no RED tests of their own, and every slice's lab arm depends on them.
+- [x] 0.1 Delete `tests/infrastructure/db/write-queue.test.ts:34-48` and `:50-60` (watchdog tests, H11-invalidated) permanently — never resurrected.
+- [x] 0.2 `git stash` the remaining working-tree diffs that belong to later slices: the cross-connection test in `write-queue.test.ts` (D1) and the two new tests in `sqlite-sync-runtime.helpers.test.ts` (B) — so PR 1 starts from a fully green suite. Re-apply each stash only when its own slice begins.
+- [x] 0.3 **DECISION NEEDED (flag to user, do not resolve here)**: commit `openspec/changes/sqlite-write-lock-contention/**` (untracked since inception)? Recommend bundling with PR 1 so the tracker branch carries SDD provenance from the first commit. — Resolved per orchestrator: bundled with PR1 (commit `1aaa455`).
+- [x] 0.4 Commit `tests/sqlite-lab/`, `package.json`'s `sqlite:lab` script, and `eslint.config.mjs`'s `tests/sqlite-lab/**` ignore together with PR 1 — no RED tests of their own, and every slice's lab arm depends on them.
 
 ## Phase 1 (PR 1 — Slice A: errcode telemetry)
 
 Branch `fix/sqlite-write-lock-contention-a-errcode-telemetry`, base tracker. Satisfies `write-failure-diagnostics` (both requirements).
 
-- [ ] 1.1 RED `tests/infrastructure/db/client/client.helpers.test.ts` (new): control-byte string → primary errcode `5`; unparseable → `null`; `elapsedMs`/`stage` captured independent of errcode; `message` copied verbatim.
-- [ ] 1.2 RED same file: `stage` is `begin`/`task`/`commit`/`rollback` per failure point.
-- [ ] 1.3 RED `tests/features/animes/__tests__/anime-mutation-failure.helpers.test.ts`: toast copy byte-identical once diagnostics are read.
-- [ ] 1.4 GREEN add `LocalWriteFailureDiagnostics` to `client.types.ts`.
-- [ ] 1.5 GREEN implement the errcode parser/`toLocalWriteError` in `client.helpers.ts`. **Apply-time risk (b)**: degrade to `null` on iOS's `convertSqlLiteErrorToString` shape, never assume the Android control-byte format — unread at design time, verify before merge.
-- [ ] 1.6 GREEN wire diagnostics into `anime-mutation-failure.helpers.ts` without changing toast text.
-- [ ] 1.7 Runtime harness: add h13 arm to `tests/sqlite-lab/` measuring the `5`/`517` + elapsed split.
-- [ ] 1.8 MUTATE: delete the errcode-parse guard, run only its test, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`.
-- [ ] 1.9 Commit `fix(db): capture sqlite errcode diagnostics on write failure`.
+- [x] 1.1 RED `tests/infrastructure/db/client/client.helpers.test.ts` (new): control-byte string → primary errcode `5`; unparseable → `null`; `elapsedMs`/`stage` captured independent of errcode; `message` copied verbatim.
+- [x] 1.2 RED same file: `stage` is `begin`/`task`/`commit`/`rollback` per failure point. — `begin`/`task`/`commit` proven via `withDeferredWrite` integration tests; all four stage values proven via `toLocalWriteError`'s direct pass-through (`rollback` is not reachable until Slice E1 replaces the transaction mechanism).
+- [x] 1.3 RED `tests/features/animes/__tests__/anime-mutation-failure.helpers.test.ts`: toast copy byte-identical once diagnostics are read. — actual file is `tests/features/animes/anime-mutation-failure.helpers.test.ts` (no `__tests__` segment; pre-existing drift from the documented convention).
+- [x] 1.4 GREEN add `LocalWriteFailureDiagnostics` to `client.types.ts`.
+- [x] 1.5 GREEN implement the errcode parser/`toLocalWriteError` in `client.helpers.ts`. **Apply-time risk (b)**: degrade to `null` on iOS's `convertSqlLiteErrorToString` shape, never assume the Android control-byte format — unread at design time, verify before merge. — Verified: iOS's format (`SQLiteModule.swift:479`) is `"Error code \(code): \(message)"`, a DECIMAL string, not a raw byte. Any digit-shaped capture now degrades to `null`.
+- [x] 1.6 GREEN wire diagnostics into `anime-mutation-failure.helpers.ts` without changing toast text. — Implemented via shape-based duck-typing (`errcode`/`elapsedMs`/`stage` fields), not `instanceof LocalWriteError`: 23 test files `jest.mock` the whole `client.helpers` module without re-exporting the class, which made `instanceof` throw `TypeError: Right-hand side of 'instanceof' is not an object`. Caught via the full suite, fixed, verified green.
+- [x] 1.7 Runtime harness: add h13 arm to `tests/sqlite-lab/` measuring the `5`/`517` + elapsed split.
+- [x] 1.8 MUTATE: delete the errcode-parse guard, run only its test, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`. — Guard genuinely failed (received `53` instead of `null`) confirming it's load-bearing. Note: since the feature was still uncommitted at this point, `git checkout HEAD` wiped the whole file, not just the mutation — recovered by re-applying the same edits.
+- [x] 1.9 Commit `fix(db): capture sqlite errcode diagnostics on write failure`. — commit `1aaa455`.
 
 ## Phase 2 (PR 2 — Slice B: leak fixes)
 
 Branch `-b-connection-leak-fixes`, base PR1. Satisfies `local-write-serialization` — Reachable, Closable Connections.
 
-- [ ] 2.1 Re-apply stashed hunk (0.2): the two already-RED `sqlite-sync-runtime.helpers.test.ts` tests.
-- [ ] 2.2 GREEN `sqlite-sync-runtime.helpers.ts:78-86` (`close()`): null `rawDb` only after `closeSyncRuntime` resolves, never before (Decision 6).
-- [ ] 2.3 RED `notifee-foreground-service-adapter.helpers.test.ts`: `closeServiceRuntime` never throws even when `close()` rejects.
-- [ ] 2.4 GREEN `notifee-foreground-service-adapter.helpers.ts:41-45`: swallow close failure, keep the handle.
-- [ ] 2.5 MUTATE: delete the "null only after proven close" guard, run only its test, confirm FAIL, `git checkout HEAD -- src/features/sync/sqlite-sync-runtime.helpers.ts`.
-- [ ] 2.6 Runtime harness: h14 arm — failed close, retry, lock released (extends H6).
-- [ ] 2.7 Commit `fix(sync): keep a connection reachable after a failed close`.
+- [x] 2.1 Re-apply stashed hunk (0.2): the two already-RED `sqlite-sync-runtime.helpers.test.ts` tests. — the combined Phase-0 stash was popped, then re-split: the D1 `write-queue.test.ts` content was re-stashed alone (own entry) so only the 2 slice-B RED tests stayed in the tree.
+- [x] 2.2 GREEN `sqlite-sync-runtime.helpers.ts:78-86` (`close()`): null `rawDb` only after `closeSyncRuntime` resolves, never before (Decision 6).
+- [x] 2.3 RED `notifee-foreground-service-adapter.helpers.test.ts`: `closeServiceRuntime` never throws even when `close()` rejects. — actual file is `tests/features/sync/notifee-foreground-service-adapter.test.ts` (no `__tests__` segment; same pre-existing drift as 1.3). Added 2 tests: `unregister()` and the `stop-sync` background event both complete even when the runtime close rejects.
+- [x] 2.4 GREEN `notifee-foreground-service-adapter.helpers.ts:41-45`: swallow close failure, keep the handle.
+- [x] 2.5 MUTATE: delete the "null only after proven close" guard, run only its test, confirm FAIL, `git checkout HEAD -- src/features/sync/sqlite-sync-runtime.helpers.ts`. — Guard genuinely failed (received `null` instead of the original `rawDb`). Restored via Edit, not `git checkout HEAD` (file still uncommitted on this branch — see the git-checkout-HEAD lesson from Slice A). Also mutation-checked the `closeServiceRuntime` try/catch guard (not separately itemized here but covered by the blanket mutation mandate for defensive/error-path branches): both new tests genuinely failed without it.
+- [x] 2.6 Runtime harness: h14 arm — failed close, retry, lock released (extends H6). — CONFIRMED. `node:sqlite`'s own close() essentially never fails (H7), so the arm simulates exactly one JS-level close rejection (mirroring expo's `closeAsync`/`closeSync` failing independently of the connection) before delegating to the real close, then proves against a REAL SQLite lock that the retry against the same still-open handle releases it.
+- [x] 2.7 Commit `fix(sync): keep a connection reachable after a failed close`. — commit pending (see below).
 
 ## Phase 3 (PR 3 — Slice C: open-time policy)
 
