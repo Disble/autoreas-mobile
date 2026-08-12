@@ -9,6 +9,7 @@ import {
   buildAnimeMutationFailureFeedback,
   getAnimeMutationFailureMessage,
 } from '../../../src/features/animes/anime-mutation-failure.helpers';
+import { toLocalWriteError } from '../../../src/infrastructure/db/client/client.helpers';
 import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../../../src/infrastructure/db/native-runtime/native-runtime.constants';
 
 describe('getAnimeMutationFailureMessage', () => {
@@ -66,5 +67,37 @@ describe('buildAnimeMutationFailureFeedback', () => {
 
     expect(feedback.description).toHaveLength(ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH);
     expect(feedback.description.endsWith('…')).toBe(true);
+  });
+});
+
+describe('getAnimeMutationFailureMessage — write-failure diagnostics', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('renders byte-identical copy whether the cause is a LocalWriteError or a plain Error', () => {
+    const plainMessage = getAnimeMutationFailureMessage('capPlus', new Error('database is locked'));
+    const diagnosedError = toLocalWriteError(new Error('database is locked'), Date.now(), 'task');
+
+    const diagnosedMessage = getAnimeMutationFailureMessage('capPlus', diagnosedError);
+
+    expect(diagnosedMessage).toBe(plainMessage);
+  });
+
+  it('logs the captured diagnostics through telemetry without leaking them into the persisted message', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const diagnosedError = toLocalWriteError(
+      new Error('database is locked'),
+      Date.now() - 500,
+      'commit',
+    );
+
+    const message = getAnimeMutationFailureMessage('capPlus', diagnosedError);
+
+    expect(message).toBe('capPlus: database is locked');
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[capPlus] Local write failure diagnostics',
+      expect.objectContaining({ stage: 'commit' }),
+    );
   });
 });

@@ -1,0 +1,141 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+import {
+  LocalWriteError,
+  toLocalWriteError,
+  withDeferredWrite,
+} from '../../../../src/infrastructure/db/client/client.helpers';
+
+jest.mock('drizzle-orm', () => ({
+  desc: jest.fn((value: unknown) => value),
+}));
+
+jest.mock('../../../../src/infrastructure/db/migrations/migrations', () => ({
+  __esModule: true,
+  default: { journal: { entries: [] }, migrations: {} },
+}));
+
+jest.mock('../../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
+  getDrizzleFactory: jest.fn(() => () => ({})),
+  getDrizzleMigrator: jest.fn(),
+  getOpenDatabaseSync: jest.fn(),
+}));
+
+/**
+ * These tests characterise the write-failure diagnostics the field report needs: the toast has
+ * always read byte-identical text regardless of root cause, so distinct SQLite failures were
+ * indistinguishable without a real device. `toLocalWriteError` is the instrument that makes them
+ * distinguishable through telemetry without touching that copy.
+ */
+describe('toLocalWriteError', () => {
+  it('parses the primary errcode from the Android control-byte error shape', () => {
+    const controlByte = String.fromCharCode(5);
+    const cause = new Error(
+      `Call to function 'NativeStatement.runSync' has been rejected.\n-> Caused by: Error code ${controlByte}: database is locked`,
+    );
+
+    const error = toLocalWriteError(cause, Date.now(), 'task');
+
+    expect(error.errcode).toBe(5);
+  });
+
+  it('degrades to a null errcode when the message shape is unparseable', () => {
+    const cause = new Error('database is locked');
+
+    const error = toLocalWriteError(cause, Date.now(), 'task');
+
+    expect(error.errcode).toBeNull();
+  });
+
+  it('degrades to a null errcode on the iOS decimal error shape instead of misreading a digit as a control byte', () => {
+    // iOS's `convertSqlLiteErrorToString` (SQLiteModule.swift:479) renders the code as a decimal
+    // string ("Error code 5: ..."), not a raw byte the way Android's binding does
+    // (NativeDatabaseBinding.cpp:194-202). A digit-shaped capture is deliberately treated as
+    // unparseable so a single-digit iOS code is never misread as an Android control byte.
+    const cause = new Error('Error code 5: database is locked');
+
+    const error = toLocalWriteError(cause, Date.now(), 'task');
+
+    expect(error.errcode).toBeNull();
+  });
+
+  it('captures elapsedMs and stage independently of whether the errcode was determined', () => {
+    const startedAt = Date.now() - 250;
+
+    const error = toLocalWriteError(new Error('database is locked'), startedAt, 'commit');
+
+    expect(error.errcode).toBeNull();
+    expect(error.elapsedMs).toBeGreaterThanOrEqual(250);
+    expect(error.stage).toBe('commit');
+  });
+
+  it('copies the message verbatim from the cause', () => {
+    const controlByte = String.fromCharCode(5);
+    const cause = new Error(`Error code ${controlByte}: database is locked`);
+
+    const error = toLocalWriteError(cause, Date.now(), 'begin');
+
+    expect(error.message).toBe(cause.message);
+  });
+
+  it.each(['begin', 'task', 'commit', 'rollback'] as const)(
+    'accepts %s as a stage value',
+    (stage) => {
+      const error = toLocalWriteError(new Error('boom'), Date.now(), stage);
+
+      expect(error.stage).toBe(stage);
+    },
+  );
+
+  it('produces a LocalWriteError instance', () => {
+    const error = toLocalWriteError(new Error('boom'), Date.now(), 'begin');
+
+    expect(error).toBeInstanceOf(LocalWriteError);
+  });
+});
+
+describe('withDeferredWrite failure diagnostics', () => {
+  it('reports stage "begin" when the failure happens before the task ever starts', async () => {
+    const task = jest.fn();
+    const rawDb = {
+      withTransactionAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+    } as unknown as SQLiteDatabase;
+
+    await expect(withDeferredWrite(rawDb, task)).rejects.toMatchObject({ stage: 'begin' });
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it('reports stage "task" when the failure happens inside the task callback', async () => {
+    const rawDb = {
+      withTransactionAsync: jest.fn(async (run: () => Promise<void>) => {
+        await run();
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(
+      withDeferredWrite(rawDb, async () => {
+        throw new Error('database is locked');
+      }),
+    ).rejects.toMatchObject({ stage: 'task' });
+  });
+
+  it('reports stage "commit" when the task resolves but the transaction still rejects', async () => {
+    const rawDb = {
+      withTransactionAsync: jest.fn(async (run: () => Promise<void>) => {
+        await run();
+        throw new Error('database is locked');
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(withDeferredWrite(rawDb, async () => undefined)).rejects.toMatchObject({
+      stage: 'commit',
+    });
+  });
+
+  it('wraps the failure as a LocalWriteError so diagnostics travel with the rejection', async () => {
+    const rawDb = {
+      withTransactionAsync: jest.fn().mockRejectedValue(new Error('database is locked')),
+    } as unknown as SQLiteDatabase;
+
+    await expect(withDeferredWrite(rawDb, jest.fn())).rejects.toBeInstanceOf(LocalWriteError);
+  });
+});

@@ -3,9 +3,16 @@ export {
   clearBridgeConfig,
   createDrizzleDb,
   getBridgeConfigSnapshot,
+  LocalWriteError,
   openAppDatabaseSync,
   runMigrations,
+  toLocalWriteError,
   withDeferredWrite,
   withExclusiveWrite,
 } from './client.helpers';
-export type { AppDatabase, OpenAppDatabaseSyncParams } from './client.types';
+export type {
+  AppDatabase,
+  LocalWriteFailureDiagnostics,
+  LocalWriteFailureStage,
+  OpenAppDatabaseSyncParams,
+} from './client.types';

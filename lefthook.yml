@@ -26,9 +26,14 @@ pre-commit:
           # Scoped to staged files on purpose: an unchanged file cannot change its own
           # lint verdict, so this loses no coverage. Note `expo lint` is NOT used here --
           # it lints `src/` ONLY, so it silently skipped tests/, scripts/ and plugins/.
+          #
+          # `--no-warn-ignored`: `eslint.config.mjs` deliberately ignores `tests/sqlite-lab/**`
+          # (a plain-Node harness that never runs under jest/Metro). Without this flag, staging
+          # any `.mjs` file in that tree turns ESLint's own "file ignored" notice into a warning
+          # that `--max-warnings=0` then fails the commit on -- the ignore rule blocking itself.
           - name: lint
             glob: "*.{js,jsx,ts,tsx,mjs,cjs}"
-            run: bunx eslint --max-warnings=0 {staged_files}
+            run: bunx eslint --max-warnings=0 --no-warn-ignored {staged_files}
           # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
           #
           # Whole-project by design: unlike lint, a type error propagates across files,

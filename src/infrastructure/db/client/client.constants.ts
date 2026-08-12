@@ -3,6 +3,14 @@ import type { MissingColumnDefinition } from './client.types';
 /** Names the SQLite database opened by the application. */
 export const DATABASE_NAME = 'autoreas.db';
 
+/**
+ * Matches the "Error code <X>: " prefix both platforms' native bindings produce ahead of the
+ * SQLite message. Android renders `<X>` as a single raw control byte (`int` -> `char` narrowing,
+ * `NativeDatabaseBinding.cpp:194-202`); iOS renders it as a decimal string
+ * (`SQLiteModule.swift:479`). Only the raw-byte shape is parsed -- see `parseSqliteErrcode`.
+ */
+export const ERRCODE_PREFIX_PATTERN = /Error code (.+?): /;
+
 /** Serializes write tasks independently for each SQLite connection. */
 export const WRITE_QUEUE_BY_DATABASE = new WeakMap<object, Promise<unknown>>();
 

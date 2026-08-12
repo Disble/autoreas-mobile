@@ -12,7 +12,8 @@
     "android/**",
     "ios/**",
     ".expo/**",
-    ".dlinter-mutation-tmp/**"
+    ".dlinter-mutation-tmp/**",
+    "tests/sqlite-lab/**"
   ],
   "ignoreDependencies": [
     "expo-build-properties",

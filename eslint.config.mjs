@@ -15,6 +15,10 @@ export default [
       '.claude/**',
       'coverage/**',
       '.dlinter-mutation-tmp/**',
+      // Plain-Node investigation harness (node:sqlite + worker_threads). It never
+      // ships and never runs under jest or Metro, so the React Native lint profile
+      // — which provides no Node globals — does not apply to it.
+      'tests/sqlite-lab/**',
     ],
   },
   ...createRecommendedConfig({

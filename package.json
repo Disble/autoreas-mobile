@@ -18,7 +18,8 @@
     "generate:feature": "node ./scripts/generate-feature.js",
     "verify:precommit-fail-path": "node ./scripts/verify-precommit-fail-path.mjs",
     "audit": "fallow audit --quiet",
-    "test:mutation:staged": "node ./scripts/dlinter-mutation-staged.mjs"
+    "test:mutation:staged": "node ./scripts/dlinter-mutation-staged.mjs",
+    "sqlite:lab": "node --no-warnings ./tests/sqlite-lab/run.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.1",

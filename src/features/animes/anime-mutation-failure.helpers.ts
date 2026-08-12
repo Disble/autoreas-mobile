@@ -1,3 +1,4 @@
+import type { LocalWriteFailureDiagnostics } from '../../infrastructure/db/client/client.types';
 import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../../infrastructure/db/native-runtime/native-runtime.constants';
 import {
   ANIME_MUTATION_FAILURE_LABEL,
@@ -48,11 +49,38 @@ function truncateToMaxLength(value: string): string {
 }
 
 /**
+ * Recognizes a `LocalWriteError` by shape rather than `instanceof`. A type-only check keeps this
+ * file decoupled from `client.helpers`'s concrete export at runtime, so a test that mocks that
+ * module without re-exporting the class (most callers of `withDeferredWrite` do) still degrades
+ * safely here instead of throwing on a missing constructor.
+ */
+function readLocalWriteFailureDiagnostics(error: unknown): LocalWriteFailureDiagnostics | null {
+  if (typeof error !== 'object' || error === null) return null;
+  if (!('errcode' in error) || !('elapsedMs' in error) || !('stage' in error)) return null;
+
+  return error as LocalWriteFailureDiagnostics;
+}
+
+/**
+ * Surfaces write-failure diagnostics (errcode/elapsedMs/stage) through console telemetry only.
+ * This is deliberately separate from the returned copy: the persisted Settings message and the
+ * toast must stay byte-identical to their pre-diagnostics rendering
+ * (write-failure-diagnostics spec, "User-Facing Failure Copy Remains Unchanged").
+ */
+function logLocalWriteFailureDiagnostics(label: string, error: unknown): void {
+  const diagnostics = readLocalWriteFailureDiagnostics(error);
+  if (!diagnostics) return;
+
+  console.warn(`[${label}] Local write failure diagnostics`, diagnostics);
+}
+
+/**
  * Builds the message persisted into the sync runtime status so Settings can show it.
  * The action label is prefixed because every chapter button funnels into the same channel and
  * the failing action is the first thing needed to tell a write failure from a sync failure.
  */
 export function getAnimeMutationFailureMessage(label: string, error: unknown): string {
+  logLocalWriteFailureDiagnostics(label, error);
   return truncateToMaxLength(`${label}: ${normalizeFailureReason(error)}`);
 }
 

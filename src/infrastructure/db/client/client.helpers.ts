@@ -11,14 +11,87 @@ import { SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
 
 import {
   DATABASE_NAME,
+  ERRCODE_PREFIX_PATTERN,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
 import type {
   AppDatabase,
+  LocalWriteFailureDiagnostics,
+  LocalWriteFailureStage,
   MissingColumnDefinition,
   OpenAppDatabaseSyncParams,
 } from './client.types';
+
+/**
+ * Extracts the SQLite primary errcode from a native write-failure message, or `null` when it
+ * cannot be determined. A digit-shaped capture is treated as unparseable rather than assumed to
+ * be Android's control byte: iOS's decimal rendering of the same field would collide with it for
+ * any single-digit code, and silently reporting the wrong number is worse than admitting the
+ * errcode is unknown.
+ */
+function parseSqliteErrcode(message: string): number | null {
+  const match = ERRCODE_PREFIX_PATTERN.exec(message);
+  if (!match) return null;
+
+  const capturedCode = match[1];
+  if (capturedCode.length !== 1 || /\d/.test(capturedCode)) {
+    return null;
+  }
+
+  return capturedCode.charCodeAt(0);
+}
+
+/** A local SQLite write failure carrying observable diagnostics alongside the original message. */
+export class LocalWriteError extends Error implements LocalWriteFailureDiagnostics {
+  readonly errcode: number | null;
+  readonly elapsedMs: number;
+  readonly stage: LocalWriteFailureStage;
+
+  constructor(message: string, diagnostics: LocalWriteFailureDiagnostics) {
+    super(message);
+    this.name = 'LocalWriteError';
+    this.errcode = diagnostics.errcode;
+    this.elapsedMs = diagnostics.elapsedMs;
+    this.stage = diagnostics.stage;
+  }
+}
+
+/**
+ * Wraps a write-transaction failure into a `LocalWriteError`, copying `message` verbatim from the
+ * cause so downstream copy (toast, persisted Settings tile) stays byte-identical. Diagnostics are
+ * additive: `errcode`/`elapsedMs`/`stage` are observable only through the error's own fields, never
+ * through the message text.
+ */
+export function toLocalWriteError(
+  cause: unknown,
+  startedAt: number,
+  stage: LocalWriteFailureStage,
+): LocalWriteError {
+  const message = cause instanceof Error ? cause.message : String(cause);
+
+  return new LocalWriteError(message, {
+    errcode: parseSqliteErrcode(message),
+    elapsedMs: Date.now() - startedAt,
+    stage,
+  });
+}
+
+/**
+ * Classifies which phase of `withTransactionAsync` a failure landed in from JS-observable
+ * markers. `withTransactionAsync` runs BEGIN, the task, then COMMIT internally
+ * (`SQLiteDatabase.js:120-130`), so the task never starting means BEGIN failed, the task starting
+ * but not resolving means the task itself failed, and the task resolving means the implicit
+ * COMMIT failed afterward.
+ */
+function classifyDeferredWriteFailureStage(
+  taskStarted: boolean,
+  taskCompleted: boolean,
+): LocalWriteFailureStage {
+  if (!taskStarted) return 'begin';
+  if (!taskCompleted) return 'task';
+  return 'commit';
+}
 
 /** Executes the open app database sync operation. */
 export function openAppDatabaseSync(options: OpenAppDatabaseSyncParams = {}) {
@@ -242,11 +315,24 @@ export async function withDeferredWrite<T>(
   task: (db: AppDatabase, tx: SQLiteDatabase) => Promise<T>,
 ) {
   return withQueuedWrite(rawDb, async () => {
+    const startedAt = Date.now();
+    let taskStarted = false;
+    let taskCompleted = false;
     let result!: T;
 
-    await rawDb.withTransactionAsync(async () => {
-      result = await task(createDrizzleDb(rawDb), rawDb);
-    });
+    try {
+      await rawDb.withTransactionAsync(async () => {
+        taskStarted = true;
+        result = await task(createDrizzleDb(rawDb), rawDb);
+        taskCompleted = true;
+      });
+    } catch (error) {
+      throw toLocalWriteError(
+        error,
+        startedAt,
+        classifyDeferredWriteFailureStage(taskStarted, taskCompleted),
+      );
+    }
 
     return result;
   });
