@@ -1,6 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient, extractActiveSeasonSnapshot } from '../../infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
+import {
+  getBridgeConfigSnapshot,
+  withDeferredWrite,
+} from '../../infrastructure/db/client/client.helpers';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 
 /** Identifies a reachable bridge response that cannot produce trustworthy active-season truth. */
@@ -96,18 +99,20 @@ export async function writeCachedActiveSeasonSnapshot(
   rawDb: SQLiteDatabase,
   snapshot: ActiveSeasonSnapshot,
 ): Promise<void> {
-  await rawDb.runAsync(
-    'INSERT INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?) ' +
-      'ON CONFLICT(id) DO UPDATE SET season_id = excluded.season_id, candidates_json = excluded.candidates_json',
-    snapshot.seasonId,
-    JSON.stringify(
-      snapshot.candidates.map((candidate) => ({
-        anime_id: candidate.animeId,
-        grade: candidate.bridgeRating,
-        grade_source: candidate.bridgeRatingSource,
-      })),
-    ),
-  );
+  await withDeferredWrite(rawDb, async (_db, tx) => {
+    await tx.runAsync(
+      'INSERT INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?) ' +
+        'ON CONFLICT(id) DO UPDATE SET season_id = excluded.season_id, candidates_json = excluded.candidates_json',
+      snapshot.seasonId,
+      JSON.stringify(
+        snapshot.candidates.map((candidate) => ({
+          anime_id: candidate.animeId,
+          grade: candidate.bridgeRating,
+          grade_source: candidate.bridgeRatingSource,
+        })),
+      ),
+    );
+  });
 }
 
 /**
@@ -115,7 +120,9 @@ export async function writeCachedActiveSeasonSnapshot(
  * This prevents a retired season from remaining available after the next offline launch.
  */
 export async function clearCachedActiveSeasonSnapshot(rawDb: SQLiteDatabase): Promise<void> {
-  await rawDb.runAsync('DELETE FROM active_season_cache WHERE id = 1');
+  await withDeferredWrite(rawDb, async (_db, tx) => {
+    await tx.runAsync('DELETE FROM active_season_cache WHERE id = 1');
+  });
 }
 
 function isValidActiveSeasonPayload(data: unknown): boolean {

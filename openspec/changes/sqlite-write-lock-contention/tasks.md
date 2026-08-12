@@ -76,23 +76,23 @@ Branch `-c-open-time-policy`, base PR2. Satisfies `local-write-serialization` �
 
 Branch `-d1-file-keyed-serializer`, base PR3. Satisfies `local-write-serialization` — File-Keyed Write Serializer (key only; routing is D2).
 
-- [ ] 4.1 Re-apply stashed hunk (0.2): `write-queue.test.ts` test 3. Edit it to give both `buildRawDb()` mocks the **same** `databasePath`. **Apply-time risk (c)**: without this the test passes vacuously via the `DATABASE_NAME` fallback, not the real path key.
-- [ ] 4.2 GREEN `client.constants.ts`: `WRITE_QUEUE_BY_DATABASE` → `Map<string, Promise<unknown>>`.
-- [ ] 4.3 GREEN `client.helpers.ts` `withQueuedWrite`: key by `rawDb.databasePath ?? DATABASE_NAME` (Decision 1).
-- [ ] 4.4 MUTATE: delete the path-key line, run only test 3, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`.
-- [ ] 4.5 Commit `fix(db): key the write serializer by database file, not connection`.
+- [x] 4.1 Re-apply stashed hunk (0.2): `write-queue.test.ts` test 3. Edit it to give both `buildRawDb()` mocks the **same** `databasePath`. **Apply-time risk (c)**: without this the test passes vacuously via the `DATABASE_NAME` fallback, not the real path key. — `buildRawDb()` now takes an explicit `databasePath` param; both mocks pass the same non-default path string, avoiding the fallback trap.
+- [x] 4.2 GREEN `client.constants.ts`: `WRITE_QUEUE_BY_DATABASE` → `Map<string, Promise<unknown>>`.
+- [x] 4.3 GREEN `client.helpers.ts` `withQueuedWrite`: key by `rawDb.databasePath ?? DATABASE_NAME` (Decision 1).
+- [x] 4.4 MUTATE: delete the path-key line, run only test 3, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`. — Guard genuinely failed (order came back unserialized). Restored via Edit, not `git checkout HEAD` (still uncommitted at mutation time — same lesson as batch 1).
+- [x] 4.5 Commit `fix(db): key the write serializer by database file, not connection`. — commit `ce335f5`.
 
 ## Phase 5 (PR 5 — Slice D2: route all eight write doors)
 
 Branch `-d2-route-write-doors`, base PR4. Satisfies `local-write-serialization` — routing + "a write bypassing the serializer is a defect".
 
-- [ ] 5.1 RED call-shape tests confirming each site now calls the door instead of raw `rawDb.runAsync`: `season-rating-queue.helpers.ts:202,217`; `operation-log-retention.helpers.ts:36,64`; `season-sync.helpers.ts:99,118`.
-- [ ] 5.2 GREEN route those six sites; rename their raw callback params to `tx` (F's lint convention).
-- [ ] 5.3 GREEN `sync-cycle-lock.helpers.ts`: route `claimSyncCycleLock:22` and `releaseSyncCycleLock:39` through the door; guard the release so its failure never replaces `run()`'s error.
-- [ ] 5.4 RED a claim/release pair nests no doors; a throwing release does not replace `run()`'s error.
-- [ ] 5.5 MUTATE: delete the release-error guard, run only its test, confirm FAIL, `git checkout HEAD -- src/features/sync/sync-cycle-lock.helpers.ts`.
-- [ ] 5.6 Runtime harness: lab h9 re-run 0/1000; h10 with the bypasser closed stays 0/1000; contended `claimSyncCycleLock` waits and acquires instead of throwing.
-- [ ] 5.7 Commit `fix(sync): route all eight write sites through the file-keyed door`.
+- [x] 5.1 RED call-shape tests confirming each site now calls the door instead of raw `rawDb.runAsync`: `season-rating-queue.helpers.ts:202,217`; `operation-log-retention.helpers.ts:36,64`; `season-sync.helpers.ts:99,118`. — **Deviation, verified empirically**: `season-rating-queue.helpers.ts:202,217` (`updateSeasonRatingQueueEntry`/`deleteSeasonRatingQueueEntry`) are only ever called from *inside* `drainSeasonRatingQueue`'s already-open `withDeferredWrite` door (lines 286/297/303) — never with a bare `rawDb`. Opening a second door there would nest and deadlock (design.md Regression Guard). No new RED test needed for those two; only their param renamed `rawDb`→`tx` (mechanical, existing tests already cover the call shape via the door-provided `tx`). `operation-log-retention.helpers.ts` and `season-sync.helpers.ts` were genuine bypasses (called with a bare `rawDb` from `headless-sync-cycle.helpers.ts` / `use-season-sync.ts`) — RED tests added for both, plus a new direct test for `clearCachedActiveSeasonSnapshot` (previously untested directly). Also had to add `withDeferredWrite: jest.fn()` to `use-season-sync.test.ts`'s `client.helpers` mock factory, which previously only exported `getBridgeConfigSnapshot` and would have thrown `TypeError` once `season-sync.helpers.ts` started importing `withDeferredWrite`.
+- [x] 5.2 GREEN route those six sites; rename their raw callback params to `tx` (F's lint convention). — `operation-log-retention.helpers.ts`'s `pruneOperationLog` wraps its full write section (both TTL and max-count deletes) in one door call; `season-sync.helpers.ts`'s `writeCachedActiveSeasonSnapshot`/`clearCachedActiveSeasonSnapshot` each wrap their own single write.
+- [x] 5.3 GREEN `sync-cycle-lock.helpers.ts`: route `claimSyncCycleLock:22` and `releaseSyncCycleLock:39` through the door; guard the release so its failure never replaces `run()`'s error.
+- [x] 5.4 RED a claim/release pair nests no doors; a throwing release does not replace `run()`'s error. — Second test initially passed *vacuously* (release wasn't routed yet, so the mock's throw branch never fired); caught by adding a `doorCallCount === 2` assertion, which genuinely failed until routing landed — same vacuous-pass class as D1's task 4.1 trap.
+- [x] 5.5 MUTATE: delete the release-error guard, run only its test, confirm FAIL, `git checkout HEAD -- src/features/sync/sync-cycle-lock.helpers.ts`. — Guard genuinely failed (`run()`'s "cycle failed" was replaced by "release exploded"). Restored via Edit, not `git checkout HEAD` (still uncommitted at mutation time).
+- [x] 5.6 Runtime harness: lab h9 re-run 0/1000; h10 with the bypasser closed stays 0/1000; contended `claimSyncCycleLock` waits and acquires instead of throwing. — H9's existing SERIALIZED arm already runs 4 workers × 250 iterations = 1000 attempts, 0 failed — satisfies "h9 re-run 0/1000" as-is (no scenario edit needed). "H10 bypasser closed" is exactly that same all-queued configuration (H9's serialized arm), also 0/1000. **Gap, disclosed rather than fabricated**: no dedicated lab arm exists for "contended `claimSyncCycleLock` waits and acquires instead of throwing" — h9/h10 exercise a generic `UPDATE` under `node:sqlite`, not `claimSyncCycleLock`'s specific conditional-UPSERT SQL shape. That claim is proven at the Jest unit level (RED/GREEN + mutation check above) but not separately lab-verified. Left for a follow-up lab arm.
+- [x] 5.7 Commit `fix(sync): route all eight write sites through the file-keyed door`.
 
 ## Phase 6 (PR 6 — Slice E1: BEGIN IMMEDIATE, delete withExclusiveWrite)
 

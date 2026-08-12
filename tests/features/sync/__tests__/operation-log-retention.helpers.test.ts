@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { withDeferredWrite } from '../../../../src/infrastructure/db/client/client.helpers';
 import {
   DEFAULT_OPERATION_LOG_RETENTION_POLICY,
   OPERATION_LOG_RETENTION_DAY_IN_MS,
@@ -10,7 +11,21 @@ import {
 } from '../../../../src/features/sync/operation-log-retention.helpers';
 import type { OperationLogCountRow } from '../../../../src/features/sync/operation-log-retention.types';
 
+jest.mock('../../../../src/infrastructure/db/client/client.helpers', () => ({
+  withDeferredWrite: jest.fn(),
+}));
+
 describe('operation log retention helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        rawDb: SQLiteDatabase,
+        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => task({}, rawDb),
+    );
+  });
+
   it('reads a bounded backlog ordered from oldest to newest', async () => {
     const rows = [
       {
@@ -83,6 +98,10 @@ describe('operation log retention helpers', () => {
       ...DEFAULT_OPERATION_LOG_RETENTION_POLICY,
       now: () => now,
     });
+
+    // All four deletes must route through the file-keyed write door, not raw `rawDb.runAsync`
+    // called outside it -- a write bypassing the door is a defect (local-write-serialization spec).
+    expect(withDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
 
     expect(result).toEqual({
       prunedCount: 6,

@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import {
   DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS,
   SYNC_CYCLE_LOCK_ROW_ID,
@@ -10,6 +11,11 @@ import type { WithExclusiveSyncCycleParams } from './sync-cycle-lock.types';
  * The `WHERE` clause on `DO UPDATE` only lets the claim succeed when the existing lease already
  * expired or it is already held by the same owner (reentrant); any other case leaves the row
  * untouched and reports zero changes, so two different owners can never both claim it at once.
+ *
+ * Routed through the write door -- the seventh door (design.md Cycle-lock routing). This
+ * primitive serialises cycles across separate connections *and across JS runtimes*, exactly
+ * where the JS-level write queue alone cannot reach; unrouted, a contended claim throws
+ * `SQLITE_BUSY` instead of waiting.
  */
 async function claimSyncCycleLock(
   rawDb: SQLiteDatabase,
@@ -19,27 +25,32 @@ async function claimSyncCycleLock(
 ): Promise<boolean> {
   const expiresAt = now + leaseMs;
 
-  const result = await rawDb.runAsync(
-    [
-      'INSERT INTO sync_cycle_lock (id, owner, expires_at)',
-      'VALUES (?, ?, ?)',
-      'ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at',
-      'WHERE sync_cycle_lock.expires_at <= ? OR sync_cycle_lock.owner = excluded.owner',
-    ].join(' '),
-    SYNC_CYCLE_LOCK_ROW_ID,
-    owner,
-    expiresAt,
-    now,
+  const result = await withDeferredWrite(rawDb, async (_db, tx) =>
+    tx.runAsync(
+      [
+        'INSERT INTO sync_cycle_lock (id, owner, expires_at)',
+        'VALUES (?, ?, ?)',
+        'ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at',
+        'WHERE sync_cycle_lock.expires_at <= ? OR sync_cycle_lock.owner = excluded.owner',
+      ].join(' '),
+      SYNC_CYCLE_LOCK_ROW_ID,
+      owner,
+      expiresAt,
+      now,
+    ),
   );
 
   return result.changes === 1;
 }
 
+/** Routed through the write door -- the eighth door. See `claimSyncCycleLock` above. */
 async function releaseSyncCycleLock(rawDb: SQLiteDatabase, owner: string): Promise<void> {
-  await rawDb.runAsync(
-    'DELETE FROM sync_cycle_lock WHERE id = ? AND owner = ?',
-    SYNC_CYCLE_LOCK_ROW_ID,
-    owner,
+  await withDeferredWrite(rawDb, async (_db, tx) =>
+    tx.runAsync(
+      'DELETE FROM sync_cycle_lock WHERE id = ? AND owner = ?',
+      SYNC_CYCLE_LOCK_ROW_ID,
+      owner,
+    ),
   );
 }
 
@@ -70,6 +81,12 @@ export async function withExclusiveSyncCycle(
   try {
     await run();
   } finally {
-    await releaseSyncCycleLock(rawDb, owner);
+    try {
+      await releaseSyncCycleLock(rawDb, owner);
+    } catch {
+      // A release failure must never replace `run()`'s outcome -- a bare `finally` throw would
+      // otherwise mask it (same masking rule as decisions 2 and 6). The lease's own expiry is
+      // already the designed backstop when release itself cannot complete.
+    }
   }
 }

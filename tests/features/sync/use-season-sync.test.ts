@@ -1,7 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import { useSeasonSync } from '../../../src/features/sync/use-season-sync';
 import { bridgeClient } from '../../../src/infrastructure/api';
-import { getBridgeConfigSnapshot } from '../../../src/infrastructure/db/client/client.helpers';
+import {
+  getBridgeConfigSnapshot,
+  withDeferredWrite,
+} from '../../../src/infrastructure/db/client/client.helpers';
 import { useOptionalSQLiteContext } from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
 
@@ -16,6 +20,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
+  withDeferredWrite: jest.fn(),
 }));
 
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
@@ -41,6 +46,12 @@ describe('useSeasonSync', () => {
       port: 8080,
       token: 'bridge-token',
     });
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        database: SQLiteDatabase,
+        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => task({}, database),
+    );
   });
 
   it('hydrates the active-season store for the returned anime identifier', async () => {

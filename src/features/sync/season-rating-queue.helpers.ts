@@ -194,12 +194,15 @@ async function readSeasonRatingQueueBacklog(
   return rows.map(mapQueueRow);
 }
 
+// `tx` (not `rawDb`) because these two are only ever called from inside an already-open
+// `withDeferredWrite` door in `drainSeasonRatingQueue` -- never call the door again here, an
+// already-open door is exactly the no-nested-doors case (design.md Regression Guard).
 async function updateSeasonRatingQueueEntry(
-  rawDb: SQLiteDatabase,
+  tx: SQLiteDatabase,
   entryId: number,
   entry: SeasonRatingQueueEntry,
 ) {
-  await rawDb.runAsync(
+  await tx.runAsync(
     [
       'UPDATE season_rating_queue',
       'SET status = ?, updated_at = ?, last_attempt_at = ?, last_failure_kind = ?',
@@ -213,8 +216,8 @@ async function updateSeasonRatingQueueEntry(
   );
 }
 
-async function deleteSeasonRatingQueueEntry(rawDb: SQLiteDatabase, entryId: number) {
-  await rawDb.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
+async function deleteSeasonRatingQueueEntry(tx: SQLiteDatabase, entryId: number) {
+  await tx.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
 }
 
 async function deliverQueuedSeasonRating(

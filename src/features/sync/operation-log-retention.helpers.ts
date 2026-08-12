@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { withDeferredWrite } from '../../infrastructure/db/client/client.helpers';
 import {
   DEFAULT_OPERATION_LOG_RETENTION_POLICY,
   OPERATION_LOG_RETENTION_DAY_IN_MS,
@@ -29,11 +30,11 @@ async function countRowsForStatus(rawDb: SQLiteDatabase, status: string) {
 }
 
 async function pruneRowsByTtl(
-  rawDb: SQLiteDatabase,
+  tx: SQLiteDatabase,
   status: string,
   cutoffTimestamp: number,
 ) {
-  const result = await rawDb.runAsync(
+  const result = await tx.runAsync(
     [
       'DELETE FROM operation_log',
       'WHERE id IN (',
@@ -50,18 +51,18 @@ async function pruneRowsByTtl(
 }
 
 async function pruneRowsByMaxCount(
-  rawDb: SQLiteDatabase,
+  tx: SQLiteDatabase,
   status: string,
   maxCount: number,
 ) {
-  const currentCount = await countRowsForStatus(rawDb, status);
+  const currentCount = await countRowsForStatus(tx, status);
   const overflowCount = Math.max(0, currentCount - maxCount);
 
   if (overflowCount === 0) {
     return 0;
   }
 
-  const result = await rawDb.runAsync(
+  const result = await tx.runAsync(
     [
       'DELETE FROM operation_log',
       'WHERE id IN (',
@@ -128,26 +129,28 @@ export async function pruneOperationLog(
   const syncedCutoff = buildRetentionCutoffTimestamp(now, policy.synced.ttlDays);
   const deadLetterCutoff = buildRetentionCutoffTimestamp(now, policy.deadLetter.ttlDays);
 
-  const [deletedSyncedByTtl, deletedDeadLetterByTtl] = await Promise.all([
-    pruneRowsByTtl(rawDb, policy.synced.status, syncedCutoff),
-    pruneRowsByTtl(rawDb, policy.deadLetter.status, deadLetterCutoff),
-  ]);
-  // eslint-disable-next-line react-doctor/server-sequential-independent-await -- sequential by design: pruneRowsByMaxCount re-counts rows per status, so it must run after the TTL prune above completes or it would compute overflow against a stale (pre-TTL-deletion) count.
-  const [deletedSyncedByOverflow, deletedDeadLetterByOverflow] = await Promise.all([
-    pruneRowsByMaxCount(rawDb, policy.synced.status, policy.synced.maxCount),
-    pruneRowsByMaxCount(
-      rawDb,
-      policy.deadLetter.status,
-      policy.deadLetter.maxCount,
-    ),
-  ]);
+  return withDeferredWrite(rawDb, async (_db, tx) => {
+    const [deletedSyncedByTtl, deletedDeadLetterByTtl] = await Promise.all([
+      pruneRowsByTtl(tx, policy.synced.status, syncedCutoff),
+      pruneRowsByTtl(tx, policy.deadLetter.status, deadLetterCutoff),
+    ]);
+    // eslint-disable-next-line react-doctor/server-sequential-independent-await -- sequential by design: pruneRowsByMaxCount re-counts rows per status, so it must run after the TTL prune above completes or it would compute overflow against a stale (pre-TTL-deletion) count.
+    const [deletedSyncedByOverflow, deletedDeadLetterByOverflow] = await Promise.all([
+      pruneRowsByMaxCount(tx, policy.synced.status, policy.synced.maxCount),
+      pruneRowsByMaxCount(
+        tx,
+        policy.deadLetter.status,
+        policy.deadLetter.maxCount,
+      ),
+    ]);
 
-  const deletedSyncedCount = deletedSyncedByTtl + deletedSyncedByOverflow;
-  const deletedDeadLetterCount = deletedDeadLetterByTtl + deletedDeadLetterByOverflow;
+    const deletedSyncedCount = deletedSyncedByTtl + deletedSyncedByOverflow;
+    const deletedDeadLetterCount = deletedDeadLetterByTtl + deletedDeadLetterByOverflow;
 
-  return {
-    prunedCount: deletedSyncedCount + deletedDeadLetterCount,
-    deletedSyncedCount,
-    deletedDeadLetterCount,
-  };
+    return {
+      prunedCount: deletedSyncedCount + deletedDeadLetterCount,
+      deletedSyncedCount,
+      deletedDeadLetterCount,
+    };
+  });
 }

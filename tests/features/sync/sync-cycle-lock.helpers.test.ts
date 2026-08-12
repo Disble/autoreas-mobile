@@ -1,5 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { withDeferredWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { withExclusiveSyncCycle } from '../../../src/features/sync/sync-cycle-lock.helpers';
+
+jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
+  withDeferredWrite: jest.fn(),
+}));
 
 /**
  * Minimal in-memory double of the `sync_cycle_lock` table shared by two independent connection
@@ -51,6 +56,19 @@ function createSharedLockStore() {
 }
 
 describe('sync-cycle-lock', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Default passthrough matches the real (pre-E1) `withDeferredWrite`: the task's `tx` is the
+    // same connection the door was opened on, so the fake lock store's statement shapes below
+    // stay valid without needing to mock the whole client.helpers/drizzle/migrations chain.
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        database: SQLiteDatabase,
+        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => task({}, database),
+    );
+  });
+
   it('uses the foreground-prepared lock table without issuing headless DDL', async () => {
     const store = createSharedLockStore();
     const rawDb = store.createConnection();
@@ -171,5 +189,71 @@ describe('sync-cycle-lock', () => {
     await withExclusiveSyncCycle({ rawDb, owner: 'headless_cycle', run: nextRun, now: () => 1_001 });
 
     expect(nextRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes claim and release through the write door, sequentially and never nested', async () => {
+    const store = createSharedLockStore();
+    const rawDb = store.createConnection();
+    const order: string[] = [];
+
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        database: SQLiteDatabase,
+        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => {
+        order.push('door:open');
+        const result = await task({}, database);
+        order.push('door:close');
+        return result;
+      },
+    );
+    const run = jest.fn(async () => {
+      order.push('run:start');
+      order.push('run:end');
+    });
+
+    await withExclusiveSyncCycle({ rawDb, owner: 'foreground_service', run, now: () => 1_000 });
+
+    // claimSyncCycleLock:22 and releaseSyncCycleLock:39 are the seventh and eighth write doors
+    // (design.md Cycle-lock routing). Sequential, not nested: the claim's door fully closes
+    // before `run()` starts, and the release's door opens only after `run()` settles.
+    expect(withDeferredWrite).toHaveBeenCalledTimes(2);
+    expect(order).toStrictEqual([
+      'door:open',
+      'door:close',
+      'run:start',
+      'run:end',
+      'door:open',
+      'door:close',
+    ]);
+  });
+
+  it('does not let a throwing release replace `run()`\'s error', async () => {
+    const store = createSharedLockStore();
+    const rawDb = store.createConnection();
+    const run = jest.fn().mockRejectedValue(new Error('cycle failed'));
+    let doorCallCount = 0;
+
+    (withDeferredWrite as jest.Mock).mockImplementation(
+      async (
+        database: SQLiteDatabase,
+        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
+      ) => {
+        doorCallCount += 1;
+        if (doorCallCount === 2) {
+          // Simulates the release's own door failing (e.g. still SQLITE_BUSY after busy_timeout).
+          throw new Error('release exploded');
+        }
+        return task({}, database);
+      },
+    );
+
+    await expect(
+      withExclusiveSyncCycle({ rawDb, owner: 'foreground_service', run, now: () => 1_000 }),
+    ).rejects.toThrow('cycle failed');
+
+    // Proves the assertion above actually exercised the release's door (and its throw), rather
+    // than passing vacuously because release never routed through the door at all.
+    expect(doorCallCount).toBe(2);
   });
 });
