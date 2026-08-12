@@ -88,20 +88,22 @@ describe("db client tracer helpers", () => {
   });
 
   it("openAppDatabaseSync mantiene el comportamiento por defecto para UI", () => {
-    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db" });
+    const execSync = jest.fn();
+    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db", execSync });
     (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(openDatabaseSync);
 
     const rawDb = openAppDatabaseSync();
 
-    expect(rawDb).toEqual({ id: "raw-db" });
+    expect(rawDb).toEqual({ id: "raw-db", execSync });
     expect(openDatabaseSync).toHaveBeenCalledWith("autoreas.db", {
       enableChangeListener: true,
       useNewConnection: false,
     });
+    expect(execSync).toHaveBeenCalledWith("PRAGMA busy_timeout = 5000;");
   });
 
   it("openAppDatabaseSync acepta overrides opcionales para runtimes dedicados", () => {
-    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db" });
+    const openDatabaseSync = jest.fn().mockReturnValue({ id: "raw-db", execSync: jest.fn() });
     (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(openDatabaseSync);
 
     openAppDatabaseSync({

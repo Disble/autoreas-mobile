@@ -7,7 +7,7 @@ import {
   getOpenDatabaseSync,
 } from "../native-runtime/native-runtime.helpers";
 import * as schema from "../schema";
-import { SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
+import { SQLITE_BUSY_TIMEOUT_MS, SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
 
 import {
   DATABASE_NAME,
@@ -93,6 +93,19 @@ function classifyDeferredWriteFailureStage(
   return 'commit';
 }
 
+/**
+ * Applies the connection-local write-lock waiting policy synchronously, before any statement can
+ * run on the connection. `busy_timeout` takes no lock and is purely connection-local, so applying
+ * it via `execSync` is always safe -- including from a synchronous open path that cannot await.
+ * `openAppDatabaseSync` is the implicit third open path H2 found running with no timeout at all;
+ * `prepareForegroundDatabase`/`prepareHeadlessDatabase` (startup.helpers.ts) apply the same
+ * pragma independently through the async API, which is idempotent against a connection already
+ * covered here.
+ */
+export function applyConnectionPolicy(rawDb: SQLiteDatabase): void {
+  rawDb.execSync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+}
+
 /** Executes the open app database sync operation. */
 export function openAppDatabaseSync(options: OpenAppDatabaseSyncParams = {}) {
   const openDatabaseSync = getOpenDatabaseSync();
@@ -101,10 +114,14 @@ export function openAppDatabaseSync(options: OpenAppDatabaseSyncParams = {}) {
     useNewConnection = false,
   } = options;
 
-  return openDatabaseSync(DATABASE_NAME, {
+  const rawDb = openDatabaseSync(DATABASE_NAME, {
     enableChangeListener,
     useNewConnection,
   });
+
+  applyConnectionPolicy(rawDb);
+
+  return rawDb;
 }
 
 /** Executes the create drizzle db operation. */

@@ -66,11 +66,11 @@ Branch `-b-connection-leak-fixes`, base PR1. Satisfies `local-write-serializatio
 
 Branch `-c-open-time-policy`, base PR2. Satisfies `local-write-serialization` — Open-Time Connection Policy.
 
-- [ ] 3.1 RED `tests/infrastructure/db/startup.helpers.test.ts`: `openAppDatabaseSync` issues `PRAGMA busy_timeout` before returning the handle.
-- [ ] 3.2 GREEN extract shared `applyConnectionPolicy` in `startup.helpers.ts`; call it from `openAppDatabaseSync` (`client.helpers.ts`) via `execSync` (Decision 5).
-- [ ] 3.3 MUTATE: delete the pragma-at-open call, run only its test, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`.
-- [ ] 3.4 Runtime harness: lab h2 arm — policy-opened connection waits ~5000ms, not 0.10ms.
-- [ ] 3.5 Commit `fix(db): apply busy_timeout at connection open time`.
+- [x] 3.1 RED `tests/infrastructure/db/startup.helpers.test.ts`: `openAppDatabaseSync` issues `PRAGMA busy_timeout` before returning the handle. — split across two files by mocking reality: `startup.helpers.test.ts` already mocks the whole `client.helpers` module for its own `runMigrations` tests, so it cannot exercise the real `openAppDatabaseSync`. That RED test lives in `tests/infrastructure/db/client/client.helpers.test.ts` instead; `applyConnectionPolicy`'s own unit test lives there too (see 3.2 deviation).
+- [x] 3.2 GREEN extract shared `applyConnectionPolicy` in `startup.helpers.ts`; call it from `openAppDatabaseSync` (`client.helpers.ts`) via `execSync` (Decision 5). — **Deviation, verified empirically**: placing it in `startup.helpers.ts` and importing it from `client.helpers.ts` creates a circular dependency (`startup.helpers.ts` already imports `runMigrations` FROM `client.helpers.ts`); `fallow audit`'s `circular-dependencies: error` rule confirmed this would block every future commit. `applyConnectionPolicy` instead lives in `client.helpers.ts` itself (its only real caller — `prepare{Foreground,Headless}Database` keep their own separate, already-idempotent pragma calls per Decision 5, unchanged), importing only the `SQLITE_BUSY_TIMEOUT_MS` constant from `startup.constants.ts` (a leaf file with no imports of its own — no cycle).
+- [x] 3.3 MUTATE: delete the pragma-at-open call, run only its test, confirm FAIL, `git checkout HEAD -- src/infrastructure/db/client/client.helpers.ts`. — Guard genuinely failed (missing `'PRAGMA busy_timeout = 5000;'` from the observed call sequence). Restored via Edit, not `git checkout HEAD` (still uncommitted on this branch).
+- [x] 3.4 Runtime harness: lab h2 arm — policy-opened connection waits ~5000ms, not 0.10ms. — Re-confirmed unchanged: 0.10ms vs 5542.41ms.
+- [x] 3.5 Commit `fix(db): apply busy_timeout at connection open time`. — commit pending (see below). Also fixed 2 pre-existing `tests/infrastructure/db.test.ts` mocks that broke once `openAppDatabaseSync` started calling `rawDb.execSync` (their mock `rawDb` objects had no `execSync`).
 
 ## Phase 4 (PR 4 — Slice D1: file-keyed serializer)
 

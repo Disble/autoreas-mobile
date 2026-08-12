@@ -1,9 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
+  applyConnectionPolicy,
   LocalWriteError,
+  openAppDatabaseSync,
   toLocalWriteError,
   withDeferredWrite,
 } from '../../../../src/infrastructure/db/client/client.helpers';
+import { getOpenDatabaseSync } from '../../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
 jest.mock('drizzle-orm', () => ({
   desc: jest.fn((value: unknown) => value),
@@ -137,5 +140,37 @@ describe('withDeferredWrite failure diagnostics', () => {
     } as unknown as SQLiteDatabase;
 
     await expect(withDeferredWrite(rawDb, jest.fn())).rejects.toBeInstanceOf(LocalWriteError);
+  });
+});
+
+describe('applyConnectionPolicy', () => {
+  it('issues PRAGMA busy_timeout synchronously so no connection can skip it', () => {
+    const rawDb = { execSync: jest.fn() } as unknown as SQLiteDatabase;
+
+    applyConnectionPolicy(rawDb);
+
+    expect(rawDb.execSync).toHaveBeenCalledWith('PRAGMA busy_timeout = 5000;');
+  });
+});
+
+describe('openAppDatabaseSync connection policy', () => {
+  it('issues PRAGMA busy_timeout before returning the handle', () => {
+    const events: string[] = [];
+    const rawDb = {
+      execSync: jest.fn((statement: string) => {
+        events.push(statement);
+      }),
+    } as unknown as SQLiteDatabase;
+    (getOpenDatabaseSync as jest.Mock).mockReturnValue(
+      jest.fn(() => {
+        events.push('opened');
+        return rawDb;
+      }),
+    );
+
+    const returnedDb = openAppDatabaseSync();
+
+    expect(events).toEqual(['opened', 'PRAGMA busy_timeout = 5000;']);
+    expect(returnedDb).toBe(rawDb);
   });
 });
