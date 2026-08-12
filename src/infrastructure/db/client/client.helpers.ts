@@ -293,7 +293,9 @@ async function withQueuedWrite<T>(
   rawDb: SQLiteDatabase,
   runWrite: () => Promise<T>,
 ) {
-  const queueKey = rawDb as object;
+  // Keyed by the database FILE, not the connection object, so every connection opened against
+  // the same file queues behind the same door (Design Decision 1).
+  const queueKey = rawDb.databasePath ?? DATABASE_NAME;
   const previousWrite = WRITE_QUEUE_BY_DATABASE.get(queueKey) ?? Promise.resolve();
 
   const nextWrite = previousWrite.catch(() => undefined).then(runWrite);

@@ -11,8 +11,12 @@ export const DATABASE_NAME = 'autoreas.db';
  */
 export const ERRCODE_PREFIX_PATTERN = /Error code (.+?): /;
 
-/** Serializes write tasks independently for each SQLite connection. */
-export const WRITE_QUEUE_BY_DATABASE = new WeakMap<object, Promise<unknown>>();
+/**
+ * Serializes write tasks by database FILE identity, not connection object identity, so every
+ * connection opened against the same file (foreground, sync, headless) queues behind the same
+ * door instead of racing each other into `SQLITE_BUSY` / `SQLITE_BUSY_SNAPSHOT`.
+ */
+export const WRITE_QUEUE_BY_DATABASE = new Map<string, Promise<unknown>>();
 
 /** Lists legacy sync-runtime columns and their idempotent repair statements. */
 export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
