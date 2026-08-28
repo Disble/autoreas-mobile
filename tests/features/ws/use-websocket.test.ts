@@ -24,7 +24,7 @@ function buildWsMock() {
 
 describe('useWebSocket', () => {
   const rawDb = { name: 'raw-db' };
-  const mockConfig = { ip: '192.168.1.10', port: 8080, token: 'token123' };
+  const mockConfig = { ip: '192.168.1.10', port: 9876, token: 'token123' };
   let mockWs: ReturnType<typeof buildWsMock>;
 
   beforeEach(() => {
@@ -65,7 +65,11 @@ describe('useWebSocket', () => {
     });
 
     expect(global.WebSocket).toHaveBeenCalledWith(
-      'ws://192.168.1.10:8080/ws',
+      // The bridge speaks plain ws over the LAN behind a bearer token. This string
+      // is what the hook builds, so asserting wss would assert behaviour that does
+      // not exist; the transport choice is not made here.
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols
+      'ws://192.168.1.10:9876/ws',
       null,
       expect.objectContaining({ headers: { Authorization: 'Bearer token123' } }),
     );

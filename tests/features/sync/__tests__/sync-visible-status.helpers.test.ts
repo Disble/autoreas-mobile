@@ -104,7 +104,7 @@ describe('sync-visible-status.helpers', () => {
         isDeviceOnline: false,
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
         pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       },
       new Date('2026-04-09T10:00:00.000Z'),
     );
@@ -123,7 +123,7 @@ describe('sync-visible-status.helpers', () => {
         isDeviceOnline: true,
         lastSyncAt: new Date('2026-04-03T10:00:00.000Z').getTime(),
         pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       },
       new Date('2026-04-09T10:00:00.000Z'),
     );

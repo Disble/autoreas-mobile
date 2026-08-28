@@ -5,7 +5,7 @@ export const SETUP_DEEP_LINK_HOST = 'pair';
 /** Provides the shared setup deep link supported version value. */
 export const SETUP_DEEP_LINK_SUPPORTED_VERSION = '1';
 /** Provides the shared setup screen default port value. */
-export const SETUP_SCREEN_DEFAULT_PORT = '8080';
+export const SETUP_SCREEN_DEFAULT_PORT = '9876';
 /** Provides the shared setup qr scan button label value. */
 export const SETUP_QR_SCAN_BUTTON_LABEL = 'Escanear QR del Bridge';
 /** Provides the shared setup pair button label value. */

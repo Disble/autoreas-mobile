@@ -309,7 +309,7 @@ Se muestra solo en la primera ejecución (no existe `bridge_config` en SQLite).
 │ │ IP: 192.168.1.___       │ │
 │ └─────────────────────────┘ │
 │ ┌─────────────────────────┐ │
-│ │ Puerto: 8080            │ │
+│ │ Puerto: 9876            │ │
 │ └─────────────────────────┘ │
 │ ┌─────────────────────────┐ │
 │ │ Token: ________________ │ │
@@ -354,7 +354,7 @@ sequenceDiagram
 **Formato del QR (generado por el Bridge):**
 
 ```
-autoreas-mobile://pair?v=1&ip=192.168.1.5&port=8080&token=abc123def456
+autoreas-mobile://pair?v=1&ip=192.168.1.5&port=9876&token=abc123def456
 ```
 
 > Nota: el scanner QR usa `expo-camera`, así que cualquier verificación manual requiere rebuild del dev client para incorporar el plugin nativo.
@@ -366,7 +366,7 @@ autoreas-mobile://pair?v=1&ip=192.168.1.5&port=8080&token=abc123def456
 │ ← Configuración             │
 │                             │
 │ CONEXIÓN                    │
-│ Bridge: 192.168.1.5:8080   │
+│ Bridge: 192.168.1.5:9876   │
 │ Estado: 🟢 Conectado        │
 │ Último sync: hace 2 min     │
 │                             │

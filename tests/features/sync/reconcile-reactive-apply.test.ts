@@ -45,7 +45,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     mockGetBridgeConfigSnapshot.mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
       deviceId: 'device-1',
       lastChangelogId: 0,
@@ -63,7 +63,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
       ok: true,
       status: 202,
       // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
-      url: 'http://192.168.1.10:8080/api/sync/reconcile',
+      url: 'http://192.168.1.10:9876/api/sync/reconcile',
       rawBody: '{}',
       data: {
         status: 'accepted',

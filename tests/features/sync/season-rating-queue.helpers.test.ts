@@ -43,7 +43,7 @@ describe('drainSeasonRatingQueue', () => {
     resetSyncConnectionStore();
     (getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '127.0.0.1',
-      port: 8080,
+      port: 9876,
       token: 'bridge-token',
     });
     (withLocalWrite as jest.Mock).mockImplementation(
@@ -93,7 +93,7 @@ describe('drainSeasonRatingQueue', () => {
 
   it('exposes the unreachable failure while keeping the rating queued', async () => {
     const unreachableError = new BridgeUnreachableError(
-      'http://127.0.0.1:8080/api/seasons/active/rating',
+      'http://127.0.0.1:9876/api/seasons/active/rating',
       'offline',
     );
     (bridgeClient.postActiveSeasonRating as jest.Mock).mockRejectedValue(unreachableError);
@@ -122,7 +122,7 @@ describe('drainSeasonRatingQueue', () => {
       status: 401,
       data: null,
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active/rating',
+      url: 'http://127.0.0.1:9876/api/seasons/active/rating',
     });
 
     const result = await drainSeasonRatingQueue(rawDb, {
@@ -145,7 +145,7 @@ describe('drainSeasonRatingQueue', () => {
 
   it('preserves the first delivery failure while resolving later queue entries', async () => {
     const firstFailure = new BridgeUnreachableError(
-      'http://127.0.0.1:8080/api/seasons/active/rating',
+      'http://127.0.0.1:9876/api/seasons/active/rating',
       'offline',
     );
     (rawDb.getAllAsync as jest.Mock).mockResolvedValue([
@@ -181,7 +181,7 @@ describe('drainSeasonRatingQueue', () => {
         status: 409,
         data: null,
         rawBody: null,
-        url: 'http://127.0.0.1:8080/api/seasons/active/rating',
+        url: 'http://127.0.0.1:9876/api/seasons/active/rating',
       });
 
     const result = await drainSeasonRatingQueue(rawDb, {
@@ -211,7 +211,7 @@ describe('drainSeasonRatingQueue', () => {
         status,
         data: null,
         rawBody: null,
-        url: 'http://127.0.0.1:8080/api/seasons/active/rating',
+        url: 'http://127.0.0.1:9876/api/seasons/active/rating',
       });
 
       const result = await drainSeasonRatingQueue(rawDb, {

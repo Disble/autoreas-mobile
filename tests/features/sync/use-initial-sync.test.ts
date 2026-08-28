@@ -29,7 +29,7 @@ describe('initialSync', () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
     });
     (initialSyncHelpers.fetchInitialSyncSnapshot as jest.Mock).mockResolvedValue([
@@ -41,7 +41,7 @@ describe('initialSync', () => {
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).toHaveBeenCalledWith({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
     });
     expect(initialSyncHelpers.persistInitialSyncSnapshot).toHaveBeenCalledWith(rawDb, [

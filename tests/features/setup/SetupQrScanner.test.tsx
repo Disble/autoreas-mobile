@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ViewProps } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { SetupQrScanner } from '../../../src/features/setup/ui/SetupQrScanner/SetupQrScanner';
@@ -12,7 +13,9 @@ jest.mock('react-native-safe-area-context', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require('react-native');
   return {
-    SafeAreaView: ({ children, ...props }: any) => <View {...props}>{children}</View>,
+    SafeAreaView: ({ children, ...props }: React.PropsWithChildren<ViewProps>) => (
+      <View {...props}>{children}</View>
+    ),
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
 });
@@ -62,10 +65,10 @@ describe('SetupQrScanner', () => {
     const cameraView = screen.getByTestId('setup-qr-camera');
 
     fireEvent(cameraView, 'onBarcodeScanned', {
-      data: 'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc',
+      data: 'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc',
     });
     fireEvent(cameraView, 'onBarcodeScanned', {
-      data: 'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc',
+      data: 'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc',
     });
 
     expect(onScan).toHaveBeenCalledTimes(1);

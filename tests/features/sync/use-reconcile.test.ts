@@ -33,7 +33,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 }));
 
 // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
-const RECONCILE_URL = 'http://192.168.1.10:8080/api/sync/reconcile';
+const RECONCILE_URL = 'http://192.168.1.10:9876/api/sync/reconcile';
 
 describe('syncPendingOperations', () => {
   let rawDb: {
@@ -116,7 +116,7 @@ describe('syncPendingOperations', () => {
   it('still posts to /api/sync/reconcile when the backlog is empty', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
     });
@@ -135,7 +135,7 @@ describe('syncPendingOperations', () => {
       200,
     );
     expect(reconcileMock).toHaveBeenCalledWith(
-      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({
         device_id: 'device-abc',
         last_changelog_id: 0,
@@ -147,7 +147,7 @@ describe('syncPendingOperations', () => {
   it('reverts processing rows to pending on network error and propagates the error', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
     });
 
@@ -165,7 +165,7 @@ describe('syncPendingOperations', () => {
   it('reverts processing rows to pending on server HTTP error and propagates the error', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
     });
 
@@ -188,7 +188,7 @@ describe('syncPendingOperations', () => {
 
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
     });
@@ -222,7 +222,7 @@ describe('syncPendingOperations', () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
       lastChangelogId: 'last_changelog_id',
@@ -237,7 +237,7 @@ describe('syncPendingOperations', () => {
     await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(reconcileMock).toHaveBeenCalledWith(
-      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      { ip: '192.168.1.10', port: 9876, token: 'token123' },
       {
         device_id: 'device-abc',
         last_changelog_id: 0,
@@ -257,7 +257,7 @@ describe('syncPendingOperations', () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
       lastChangelogId: 1_710_000_001_000,
@@ -272,7 +272,7 @@ describe('syncPendingOperations', () => {
     await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(reconcileMock).toHaveBeenCalledWith(
-      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({ last_changelog_id: 0 }),
     );
   });
@@ -280,7 +280,7 @@ describe('syncPendingOperations', () => {
   it('marks rows as synced when applied_operations confirms them', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
     });
@@ -316,7 +316,7 @@ describe('syncPendingOperations', () => {
 
     expect(result).toEqual({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
     expect(reconcileMock).toHaveBeenCalledWith(
-      { ip: '192.168.1.10', port: 8080, token: 'token123' },
+      { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({ device_id: 'device-abc' }),
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
@@ -327,7 +327,7 @@ describe('syncPendingOperations', () => {
   it('advances lastChangelogId from the response cursor, not from bridge change timestamps', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
       lastChangelogId: 5,
@@ -372,7 +372,7 @@ describe('syncPendingOperations', () => {
   it('does not mark synced when applied_operations rejects the operation even if bridge_changes exist', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
     });
@@ -414,7 +414,7 @@ describe('syncPendingOperations', () => {
   it('does not mark synced when the bridge returns no application evidence', async () => {
     (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'token123',
       deviceId: 'device-abc',
     });

@@ -58,7 +58,7 @@ describe('usePairDevice', () => {
         auth_token: 'auth-secret',
       },
       rawBody: '{}',
-      url: 'https://192.168.1.10:8080/api/devices/pair',
+      url: 'https://192.168.1.10:9876/api/devices/pair',
       ...overrides,
     };
   }
@@ -81,7 +81,7 @@ describe('usePairDevice', () => {
 
     let pairResult: { success: boolean; data?: unknown; error?: string } | undefined;
     await act(async () => {
-      pairResult = await result.current.pair({ ip: '192.168.1.10', port: '8080', token: 'pairing123' });
+      pairResult = await result.current.pair({ ip: '192.168.1.10', port: '9876', token: 'pairing123' });
     });
 
     expect(pairResult).toEqual({
@@ -94,13 +94,13 @@ describe('usePairDevice', () => {
     });
 
     expect(pairDeviceMock).toHaveBeenCalledWith(
-      { ip: '192.168.1.10', port: 8080 },
+      { ip: '192.168.1.10', port: 9876 },
       { pairingToken: 'pairing123', deviceName: 'AutoreasMobile' },
     );
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).toHaveBeenCalledWith({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
       deviceId: 'dev-123',
       deviceName: 'My Bridge',
@@ -109,7 +109,7 @@ describe('usePairDevice', () => {
       rawDb,
       {
         ip: '192.168.1.10',
-        port: 8080,
+        port: 9876,
         token: 'auth-secret',
         deviceId: 'dev-123',
         deviceName: 'My Bridge',
@@ -129,7 +129,7 @@ describe('usePairDevice', () => {
 
     let pairResult: { success: boolean; data?: unknown; error?: string } | undefined;
     await act(async () => {
-      pairResult = await result.current.pair({ ip: '192.168.1.10', port: '8080', token: 'invalid' });
+      pairResult = await result.current.pair({ ip: '192.168.1.10', port: '9876', token: 'invalid' });
     });
 
     expect(pairResult).toEqual({
@@ -185,7 +185,7 @@ describe('usePairDevice', () => {
     await act(async () => {
       pairResult = await result.current.pair({
         ip: '192.168.1.10',
-        port: '8080',
+        port: '9876',
         token: 'pairing123',
       });
     });
@@ -212,7 +212,7 @@ describe('usePairDevice', () => {
     await act(async () => {
       pairResult = await result.current.pair({
         ip: '192.168.1.10',
-        port: '8080',
+        port: '9876',
         token: 'pairing123',
       });
     });

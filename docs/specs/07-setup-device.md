@@ -29,7 +29,7 @@ Si guardamos la IP y Token en `SecureStore`, la lectura es asíncrona y la UI de
 ## 4. Deep Linking y Fallback Seguro
 
 Para evitar escribir la IP y Token a mano (tedioso en celulares), la app admitirá Deep Links y QR canónicos a través de `expo-linking` + `expo-camera`:
-- Formato: `autoreas-mobile://pair?v=1&ip=192.168.0.100&port=8080&token=ABC123XYZ`
+- Formato: `autoreas-mobile://pair?v=1&ip=192.168.0.100&port=9876&token=ABC123XYZ`
 - La app interceptará esta URI en `setup` y auto-rellenará el formulario, disparando automáticamente el mismo pipeline de pairing usado por el ingreso manual.
 - El escáner QR debe convivir con el formulario manual; si la cámara falla o se deniega el permiso, el fallback manual sigue visible y editable.
 - **Fallback:** Si el request disparado por el Deep Link falla (ej. el PC cerró el puerto o la IP cambió), el usuario NO DEBE quedar atrapado. El formulario debe quedar visible, con los datos auto-rellenados y permitiendo su edición manual para reintentar.

@@ -191,7 +191,7 @@ describe('syncPendingOperations applyMode routing', () => {
     mockGetBridgeConfigSnapshot.mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
       deviceId: 'device-1',
       lastChangelogId: 0,
@@ -204,7 +204,7 @@ describe('syncPendingOperations applyMode routing', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
-      url: 'https://192.168.1.10:8080/api/sync/reconcile',
+      url: 'https://192.168.1.10:9876/api/sync/reconcile',
       rawBody: '{}',
       data: {
         status: 'accepted',
@@ -343,7 +343,7 @@ describe('syncPendingOperations applyMode routing', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
-      url: 'https://192.168.1.10:8080/api/sync/reconcile',
+      url: 'https://192.168.1.10:9876/api/sync/reconcile',
       rawBody: '{}',
       data: {
         status: 'accepted',

@@ -50,7 +50,7 @@ describe('useSettingsScreen', () => {
       config: {
         id: 1,
         ip: '192.168.1.77',
-        port: 8080,
+        port: 9876,
         deviceId: 'bridge-abc',
         deviceName: 'Bridge Living',
       },
@@ -80,7 +80,7 @@ describe('useSettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       manualSync: jest.fn(),
     });
     (useResponsiveLayout as jest.Mock).mockReturnValue({

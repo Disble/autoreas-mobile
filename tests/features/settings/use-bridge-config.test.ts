@@ -44,7 +44,7 @@ describe('useBridgeConfig', () => {
         {
           id: 1,
           ip: '192.168.0.10',
-          port: 8080,
+          port: 9876,
           token: 'secret',
           deviceId: 'bridge-123',
           deviceName: 'Bridge Casa',
@@ -57,7 +57,7 @@ describe('useBridgeConfig', () => {
     expect(result.current.config).toEqual({
       id: 1,
       ip: '192.168.0.10',
-      port: 8080,
+      port: 9876,
       token: 'secret',
       deviceId: 'bridge-123',
       deviceName: 'Bridge Casa',
@@ -71,7 +71,7 @@ describe('useBridgeConfig', () => {
         {
           id: 1,
           ip: '192.168.0.10',
-          port: 8080,
+          port: 9876,
           token: 'secret',
           deviceId: null,
           deviceName: 'Bridge Casa',

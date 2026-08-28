@@ -47,7 +47,7 @@ describe('foreground sync failure precedence', () => {
   it('keeps a terminal rating rejection authoritative when refresh would be unreachable', async () => {
     const ratingFailure = new Error('Season rating delivery incomplete: conflict');
     const refreshFailure = new BridgeUnreachableError(
-      'http://127.0.0.1:8080/api/seasons/active',
+      'http://127.0.0.1:9876/api/seasons/active',
       'offline',
     );
 

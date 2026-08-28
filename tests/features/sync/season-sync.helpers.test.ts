@@ -33,7 +33,7 @@ describe('fetchActiveSeasonFromBridge', () => {
     jest.clearAllMocks();
     (getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '127.0.0.1',
-      port: 8080,
+      port: 9876,
       token: 'bridge-token',
     });
   });
@@ -44,7 +44,7 @@ describe('fetchActiveSeasonFromBridge', () => {
       status: 404,
       data: null,
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     await expect(fetchActiveSeasonFromBridge(rawDb)).resolves.toBeNull();
@@ -56,7 +56,7 @@ describe('fetchActiveSeasonFromBridge', () => {
       status,
       data: { error: 'request failed' },
       rawBody: '{"error":"request failed"}',
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     await expect(fetchActiveSeasonFromBridge(rawDb)).rejects.toMatchObject({
@@ -78,7 +78,7 @@ describe('fetchActiveSeasonFromBridge', () => {
         ],
       },
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     await expect(fetchActiveSeasonFromBridge(rawDb)).resolves.toMatchObject({
@@ -96,7 +96,7 @@ describe('fetchActiveSeasonFromBridge', () => {
       status: 200,
       data: { season_id: 123, candidates: 'not-an-array' },
       rawBody: '{"season_id":123,"candidates":"not-an-array"}',
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     await expect(fetchActiveSeasonFromBridge(rawDb)).rejects.toMatchObject({

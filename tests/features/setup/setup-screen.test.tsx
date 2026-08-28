@@ -43,12 +43,12 @@ jest.mock('../../../src/features/setup/ui/SetupQrScanner', () => {
           <Text>Mock QR Scanner</Text>
           <Pressable
             onPress={() =>
-              onScan('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc')
+              onScan('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc')
             }
             testID="mock-scan-valid"
           />
           <Pressable
-            onPress={() => onScan('autoreas://pair?ip=192.168.1.10&port=8080&token=abc')}
+            onPress={() => onScan('autoreas://pair?ip=192.168.1.10&port=9876&token=abc')}
             testID="mock-scan-invalid"
           />
         </View>
@@ -82,7 +82,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen />);
 
     const ipInput = screen.getByPlaceholderText('Ej: 192.168.1.10');
-    const portInput = screen.getByPlaceholderText('8080');
+    const portInput = screen.getByPlaceholderText('9876');
     const tokenInput = screen.getByPlaceholderText('Token mostrado en el Bridge');
 
     fireEvent.changeText(ipInput, '10.0.0.1');
@@ -112,7 +112,7 @@ describe('SetupScreen', () => {
     });
 
     expect(screen.getByPlaceholderText('Ej: 192.168.1.10').props.value).toBe('192.168.1.50');
-    expect(screen.getByPlaceholderText('8080').props.value).toBe('3000');
+    expect(screen.getByPlaceholderText('9876').props.value).toBe('3000');
     expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('linktoken');
   });
 
@@ -129,7 +129,7 @@ describe('SetupScreen', () => {
     });
 
     expect(screen.getByPlaceholderText('Ej: 192.168.1.10').props.value).toBe('');
-    expect(screen.getByPlaceholderText('8080').props.value).toBe('8080');
+    expect(screen.getByPlaceholderText('9876').props.value).toBe('9876');
     expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('');
   });
 
@@ -165,7 +165,7 @@ describe('SetupScreen', () => {
     await waitFor(() => {
       expect(mockPair).toHaveBeenCalledWith({
         ip: '192.168.1.10',
-        port: 8080,
+        port: 9876,
         token: 'abc',
       });
     });
@@ -186,7 +186,7 @@ describe('SetupScreen', () => {
     });
 
     expect(screen.getByPlaceholderText('Ej: 192.168.1.10').props.value).toBe('192.168.1.10');
-    expect(screen.getByPlaceholderText('8080').props.value).toBe('8080');
+    expect(screen.getByPlaceholderText('9876').props.value).toBe('9876');
     expect(screen.getByPlaceholderText('Token mostrado en el Bridge').props.value).toBe('abc');
     expect(mockReplace).not.toHaveBeenCalled();
     expect(mockToastShow).toHaveBeenCalledWith(

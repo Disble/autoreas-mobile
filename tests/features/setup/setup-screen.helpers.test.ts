@@ -46,12 +46,12 @@ describe('setup-screen helpers', () => {
     it('accepts the canonical autoreas-mobile pairing contract', () => {
       expect(
         parseSetupDeepLink(
-          'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc',
+          'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc',
         ),
       ).toEqual({
         version: '1',
         ip: '192.168.1.10',
-        port: '8080',
+        port: '9876',
         token: 'abc',
       });
     });
@@ -59,26 +59,26 @@ describe('setup-screen helpers', () => {
     it('accepts a trailing slash before the query string', () => {
       expect(
         parseSetupDeepLink(
-          'autoreas-mobile://pair/?v=1&ip=192.168.1.10&port=8080&token=abc',
+          'autoreas-mobile://pair/?v=1&ip=192.168.1.10&port=9876&token=abc',
         ),
       ).toEqual({
         version: '1',
         ip: '192.168.1.10',
-        port: '8080',
+        port: '9876',
         token: 'abc',
       });
     });
 
     it('rejects a non-canonical scheme', () => {
       expect(
-        parseSetupDeepLink('autoreas://pair?v=1&ip=192.168.1.10&port=8080&token=abc'),
+        parseSetupDeepLink('autoreas://pair?v=1&ip=192.168.1.10&port=9876&token=abc'),
       ).toBeNull();
     });
 
     it('rejects a host that only prefixes the canonical one', () => {
       expect(
         parseSetupDeepLink(
-          'autoreas-mobile://pairs?v=1&ip=192.168.1.10&port=8080&token=abc',
+          'autoreas-mobile://pairs?v=1&ip=192.168.1.10&port=9876&token=abc',
         ),
       ).toBeNull();
     });
@@ -86,7 +86,7 @@ describe('setup-screen helpers', () => {
     it('rejects extra path segments after the pair host', () => {
       expect(
         parseSetupDeepLink(
-          'autoreas-mobile://pair/extra?v=1&ip=192.168.1.10&port=8080&token=abc',
+          'autoreas-mobile://pair/extra?v=1&ip=192.168.1.10&port=9876&token=abc',
         ),
       ).toBeNull();
     });
@@ -94,14 +94,14 @@ describe('setup-screen helpers', () => {
     it('rejects an unsupported contract version', () => {
       expect(
         parseSetupDeepLink(
-          'autoreas-mobile://pair?v=2&ip=192.168.1.10&port=8080&token=abc',
+          'autoreas-mobile://pair?v=2&ip=192.168.1.10&port=9876&token=abc',
         ),
       ).toBeNull();
     });
 
     it('rejects payloads with missing required fields', () => {
       expect(
-        parseSetupDeepLink('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080'),
+        parseSetupDeepLink('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876'),
       ).toBeNull();
     });
 
@@ -121,12 +121,12 @@ describe('setup-screen helpers', () => {
       try {
         expect(
           parseSetupDeepLink(
-            'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=8080&token=abc',
+            'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc',
           ),
         ).toEqual({
           version: '1',
           ip: '192.168.1.10',
-          port: '8080',
+          port: '9876',
           token: 'abc',
         });
       } finally {
@@ -139,25 +139,25 @@ describe('setup-screen helpers', () => {
     const formState = getSetupFormStateFromPayload({
       version: '1',
       ip: '192.168.1.10',
-      port: '8080',
+      port: '9876',
       token: 'abc',
     });
 
     expect(formState).toEqual({
       ip: '192.168.1.10',
-      port: '8080',
+      port: '9876',
       token: 'abc',
     });
     expect(buildSetupPairParams(formState)).toEqual({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'abc',
     });
   });
 
   it('validates missing fields and invalid ports for manual fallback editing', () => {
     expect(
-      getSetupValidationMessage({ ip: '', port: '8080', token: 'abc' }),
+      getSetupValidationMessage({ ip: '', port: '9876', token: 'abc' }),
     ).toBe('Todos los campos son obligatorios.');
     expect(
       getSetupValidationMessage({ ip: '192.168.1.10', port: 'port', token: 'abc' }),

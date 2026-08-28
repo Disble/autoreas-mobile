@@ -94,7 +94,7 @@ const rawDb = { name: 'raw-db' } as never;
 describe('resyncFromBridgeSnapshot', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetConfig.mockResolvedValue({ ip: '1.2.3.4', port: 8080, token: 'tok' });
+    mockGetConfig.mockResolvedValue({ ip: '1.2.3.4', port: 9876, token: 'tok' });
     mockPendingIds.mockResolvedValue(new Set());
   });
 

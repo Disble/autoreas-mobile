@@ -323,7 +323,7 @@ describe('settings-screen.helpers', () => {
         connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
         pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       },
     });
 
@@ -345,7 +345,7 @@ describe('settings-screen.helpers', () => {
         connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
         pendingOpsCount: 3,
-        syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       },
     });
 
@@ -366,7 +366,7 @@ describe('settings-screen.helpers', () => {
         connectionStatus: 'unreachable',
         lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
         pendingOpsCount: 0,
-        syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       },
     });
 

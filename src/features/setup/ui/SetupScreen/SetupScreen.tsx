@@ -75,7 +75,7 @@ export function SetupScreen(props: Readonly<SetupScreenProps>) {
             <Input
               keyboardType="number-pad"
               onChangeText={setPort}
-              placeholder="8080"
+              placeholder="9876"
               value={port}
             />
           </TextField>

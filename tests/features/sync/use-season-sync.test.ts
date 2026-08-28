@@ -43,7 +43,7 @@ describe('useSeasonSync', () => {
     (rawDb.runAsync as jest.Mock).mockResolvedValue(undefined);
     (getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
       ip: '127.0.0.1',
-      port: 8080,
+      port: 9876,
       token: 'bridge-token',
     });
     (withLocalWrite as jest.Mock).mockImplementation(
@@ -63,7 +63,7 @@ describe('useSeasonSync', () => {
         candidates: [{ anime_id: 'anime-1', grade: 5, grade_source: 'bridge' }],
       },
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     const { result } = renderHook(() => useSeasonSync({ enabled: true }));
@@ -84,7 +84,7 @@ describe('useSeasonSync', () => {
     expect(result.current.isRefreshing).toBe(false);
     expect(getActiveSeasonMock).toHaveBeenCalledWith({
       ip: '127.0.0.1',
-      port: 8080,
+      port: 9876,
       token: 'bridge-token',
     });
   });
@@ -98,7 +98,7 @@ describe('useSeasonSync', () => {
         candidates: [],
       },
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     renderHook(() => useSeasonSync({ enabled: true }));
@@ -123,7 +123,7 @@ describe('useSeasonSync', () => {
       status: 404,
       data: null,
       rawBody: null,
-      url: 'http://127.0.0.1:8080/api/seasons/active',
+      url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
     renderHook(() => useSeasonSync({ enabled: true }));
@@ -203,7 +203,7 @@ describe('useSeasonSync', () => {
           candidates: [{ anime_id: 'anime-1' }],
         },
         rawBody: null,
-        url: 'http://127.0.0.1:8080/api/seasons/active',
+        url: 'http://127.0.0.1:9876/api/seasons/active',
       });
       await activeSeasonRequest;
     });

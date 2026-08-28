@@ -83,18 +83,18 @@ describe('initial-sync helpers', () => {
       status: 200,
       data: animeSnapshot,
       rawBody: JSON.stringify(animeSnapshot),
-      url: 'https://192.168.1.10:8080/api/animes',
+      url: 'https://192.168.1.10:9876/api/animes',
     });
 
     const result = await fetchInitialSyncSnapshot({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
     });
 
     expect(bridgeClient.listAnimes).toHaveBeenCalledWith({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
     });
     expect(result).toEqual(normalizedAnimeSnapshot);
@@ -106,13 +106,13 @@ describe('initial-sync helpers', () => {
       status: 200,
       data: [{ id: 'anime-1', name: 'One Piece', status: 0, episodesWatched: '12' }],
       rawBody: '[]',
-      url: 'https://192.168.1.10:8080/api/animes',
+      url: 'https://192.168.1.10:9876/api/animes',
     });
 
     await expect(
       fetchInitialSyncSnapshot({
         ip: '192.168.1.10',
-        port: 8080,
+        port: 9876,
         token: 'auth-secret',
       })
     ).rejects.toThrow('Invalid anime list from bridge');
@@ -149,7 +149,7 @@ describe('initial-sync helpers', () => {
       rawDb as never,
       {
         ip: '192.168.1.10',
-        port: 8080,
+        port: 9876,
         token: 'auth-secret',
         deviceId: 'device-1',
         deviceName: 'Bridge Casa',
@@ -163,7 +163,7 @@ describe('initial-sync helpers', () => {
     expect(insertMock).toHaveBeenCalledWith(bridgeConfig);
     expect(valuesMock).toHaveBeenCalledWith({
       ip: '192.168.1.10',
-      port: 8080,
+      port: 9876,
       token: 'auth-secret',
       deviceId: 'device-1',
       deviceName: 'Bridge Casa',

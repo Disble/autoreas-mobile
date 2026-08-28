@@ -58,7 +58,7 @@ describe('SettingsScreen', () => {
       config: {
         id: 1,
         ip: '192.168.1.77',
-        port: 8080,
+        port: 9876,
         deviceId: 'bridge-abc',
         deviceName: 'Bridge Living',
       },
@@ -90,7 +90,7 @@ describe('SettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       manualSync: jest.fn(),
     });
 
@@ -109,7 +109,7 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText('Bridge Living')).toBeTruthy();
-    expect(screen.getByText('192.168.1.77:8080')).toBeTruthy();
+    expect(screen.getByText('192.168.1.77:9876')).toBeTruthy();
     expect(screen.getByText('bridge-abc')).toBeTruthy();
   });
 
@@ -137,7 +137,7 @@ describe('SettingsScreen', () => {
       lastSyncAt: Date.now() - 60 * 60 * 1000,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:8080',
+      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       manualSync: jest.fn(),
     });
 

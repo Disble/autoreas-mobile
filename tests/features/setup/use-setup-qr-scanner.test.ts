@@ -61,15 +61,15 @@ describe('useSetupQrScanner', () => {
     );
 
     act(() => {
-      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=8080&token=abc' });
-      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=8080&token=abc' });
+      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=9876&token=abc' });
+      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=9876&token=abc' });
     });
 
     rerender({ isOpen: false });
     rerender({ isOpen: true });
 
     act(() => {
-      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=8080&token=abc' });
+      result.current.handleBarcodeScanned({ data: 'autoreas-mobile://pair?v=1&ip=1.1.1.1&port=9876&token=abc' });
     });
 
     expect(onScan).toHaveBeenCalledTimes(2);
