@@ -105,12 +105,6 @@ bun run test:watch
 bun run test:coverage
 ```
 
-### Verify failed pre-commit path
-
-```bash
-bun run verify:precommit-fail-path
-```
-
 ## Git hooks
 
 Hooks install themselves on a fresh `bun install`, via lefthook's own `postinstall`. Two settings

@@ -315,8 +315,10 @@ follows the principle as written.
 - `deviates: P06 — there is no cloud verdict to match.` `.github/workflows/` does
   not exist. The entire gate is local, so nothing independently re-checks a
   commit and the "local green equals cloud green" clause has no counterpart.
-- **Satisfies P07, alone among these repos.**
-  `scripts/verify-precommit-fail-path.mjs` stages a deliberately broken file,
-  runs the hook, asserts it fails, and cleans up — wired as
-  `bun run verify:precommit-fail-path`. The ladder calls L5 the rung most often
-  missing; it is present here and absent in the other three.
+- `deviates: P07 — the gate's failure path is no longer proven.`
+  `scripts/verify-precommit-fail-path.mjs` satisfied this rung and was removed on
+  2026-08-28, a deliberate call that asserting the hook's own failure was not
+  worth its upkeep. Together with the P06 deviation above, nothing now detects a
+  gate that stopped enforcing: a clobbered lefthook hook exits 0 (CLAUDE.md
+  invariant 11), so `git commit` reports success with no jobs run. The script is
+  recoverable from git history if the rung is ever wanted back.
