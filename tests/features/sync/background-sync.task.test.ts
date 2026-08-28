@@ -17,20 +17,20 @@ jest.mock("../../../src/features/sync/background-sync.helpers", () => ({
 }));
 
 function getBackgroundTaskModule() {
-  return require("expo-background-task") as typeof import("expo-background-task");
+  return jest.requireMock("expo-background-task") as typeof import("expo-background-task");
 }
 
 function getTaskManagerModule() {
-  return require("expo-task-manager") as typeof import("expo-task-manager");
+  return jest.requireMock("expo-task-manager") as typeof import("expo-task-manager");
 }
 
 function getBackgroundSyncModule() {
-  return require("../../../src/features/sync/background-sync.helpers") as typeof import("../../../src/features/sync/background-sync.helpers");
+  return jest.requireMock("../../../src/features/sync/background-sync.helpers") as typeof import("../../../src/features/sync/background-sync.helpers");
 }
 
 function loadDefinedTask() {
   jest.isolateModules(() => {
-    require("../../../src/features/sync/background-sync.task");
+    jest.requireActual("../../../src/features/sync/background-sync.task");
   });
 
   const taskManagerModule = getTaskManagerModule();

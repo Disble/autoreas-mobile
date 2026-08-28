@@ -28,7 +28,7 @@ describe("loadGuardMap", () => {
     });
     expect(from).toHaveBeenCalledWith(animes);
     expect(result.get("anime-1")).toBe(100);
-    expect(result.get("anime-2")).toBe(null);
+    expect(result.get("anime-2")).toBeNull();
   });
 
   it("recordIds vacío retorna un mapa vacío sin consultar la base", async () => {

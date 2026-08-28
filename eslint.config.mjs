@@ -53,6 +53,7 @@ export default [
     // require(), so they cannot be ESM. They were missing here only because lint runs on staged
     // files and nothing had staged plugins/ since this block was written.
     files: [
+      'babel.config.js',
       'jest.config.js',
       'metro.config.js',
       'scripts/generate-feature.js',

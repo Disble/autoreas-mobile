@@ -5,7 +5,7 @@ import { AnimeFilterRail } from "../../../../src/features/animes/ui/AnimeFilterR
 import type { AnimeFilterRailProps } from "../../../../src/features/animes/ui/AnimeFilterRail/anime-filter-rail.types";
 
 jest.mock("heroui-native", () => {
-  const { Text, Pressable } = require("react-native");
+  const { Text, Pressable } = jest.requireActual("react-native");
 
   function Chip({
     children,
