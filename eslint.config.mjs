@@ -2,8 +2,16 @@
 // The Bridge Boundary that previously lived as hand-rolled no-restricted-syntax
 // selectors is now expressed as dlinter's infrastructure edge.
 import { createRecommendedConfig } from 'dlinter-ts-react';
+// dharness:eslint-import begin — rewritten by `dharness sync`; edits here are lost.
+import dharnessPlugin from "dharness-eslint-plugin";
+import dharnessExpo from "eslint-config-expo/flat.js";
+import dharnessLayer from "./.dharness/eslint.config.mjs";
+// dharness:eslint-import end
 
 export default [
+  // dharness:eslint-layer begin — rewritten by `dharness sync`; edits here are lost.
+  ...dharnessLayer({ plugin: dharnessPlugin, dharnessExpo }),
+  // dharness:eslint-layer end
   {
     // `.agents/` and `.claude/` hold vendored agent-skill scripts that ship with their own
     // runtime assumptions; linting them produced 175 `no-undef` errors about code this repo
