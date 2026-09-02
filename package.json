@@ -1,6 +1,7 @@
 {
   "name": "autoreas-mobile",
   "version": "v1.0.0",
+  "license": "Apache-2.0",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start -c",
