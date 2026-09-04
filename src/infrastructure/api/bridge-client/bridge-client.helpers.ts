@@ -1,4 +1,12 @@
-import { BRIDGE_API_PATHS, NOOP_BRIDGE_LOGGER } from './bridge-client.constants';
+import {
+  BridgeTimeoutError,
+  BridgeUnreachableError,
+} from './bridge-client.errors';
+import {
+  BRIDGE_API_PATHS,
+  BRIDGE_REQUEST_TIMEOUT_MS,
+  NOOP_BRIDGE_LOGGER,
+} from './bridge-client.constants';
 import {
   buildPostActiveSeasonRatingBody,
   buildBridgeHeaders,
@@ -13,26 +21,15 @@ import type {
   BridgeHttpResult,
   BridgePairDeviceRequest,
   PostActiveSeasonRatingRequest,
+  BridgeRequestOptions,
   BridgeRequestSpec,
 } from './bridge-client.types';
 
+
 /**
- * Raised when the bridge cannot be reached at all (DNS/connection/timeout), as opposed to an
- * HTTP error response. Callers use this to treat the failure as transient (retry) rather than
- * a permanent contract rejection.
+ * Opens the default bridge WebSocket. React Native accepts a 3-argument constructor form that
+ * carries auth headers, which the browser API does not expose, so the cast is deliberate.
  */
-export class BridgeUnreachableError extends Error {
-  readonly url: string;
-  readonly reason: unknown;
-
-  constructor(url: string, reason: unknown) {
-    super(`Bridge unreachable at ${url}`);
-    this.name = 'BridgeUnreachableError';
-    this.url = url;
-    this.reason = reason;
-  }
-}
-
 function defaultCreateWebSocket(url: string, token?: string): WebSocket {
   const options = token ? { headers: { Authorization: `Bearer ${token}` } } : undefined;
   // React Native supports a 3-arg WebSocket(url, protocols, options) form for auth headers.
@@ -70,15 +67,39 @@ export function createBridgeClient(
       init.body = JSON.stringify(spec.body);
     }
 
+    // A request with no bound is the first half of H06h: nothing below it can report, and the
+    // host job is killed at its runtime limit rather than completing. The controller and the
+    // timer are owned here (not `AbortSignal.timeout()`) so fake timers can drive them in a test.
+    const timeoutMs = spec.timeoutMs ?? BRIDGE_REQUEST_TIMEOUT_MS;
+    const controller = new AbortController();
+    let didTimeout = false;
+    const timer = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    init.signal = controller.signal;
+
     let response: Response;
     try {
       response = await resolveFetch()(url, init);
     } catch (reason) {
+      if (didTimeout) {
+        logger.warn('[BridgeClient] request exceeded its budget', {
+          url,
+          method: spec.method,
+          timeoutMs,
+        });
+        throw new BridgeTimeoutError(url, timeoutMs);
+      }
+
       logger.warn('[BridgeClient] request did not reach the bridge', {
         url,
         method: spec.method,
       });
       throw new BridgeUnreachableError(url, reason);
+    } finally {
+      clearTimeout(timer);
     }
 
     const rawBody = typeof response.text === 'function' ? await response.text() : null;
@@ -131,17 +152,15 @@ export function createBridgeClient(
         token: connection.token,
         body: buildPostActiveSeasonRatingBody(seasonRatingRequest),
       }),
-    reconcile: (connection, body) =>
+    reconcile: (connection, body, options?: BridgeRequestOptions) =>
       request(connection, {
         method: 'POST',
         path: BRIDGE_API_PATHS.reconcile,
         token: connection.token,
         body,
+        timeoutMs: options?.timeoutMs,
       }),
     openWebSocket: (connection) =>
       createWebSocket(buildBridgeWebSocketUrl(connection), connection.token),
   };
 }
-
-/** Shared bridge client instance used across the app; backed by the global `fetch`/`WebSocket`. */
-export const bridgeClient: BridgeClient = createBridgeClient();

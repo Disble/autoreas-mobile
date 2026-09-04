@@ -1,4 +1,5 @@
 export {
+  BridgeTimeoutError,
   BridgeUnreachableError,
   bridgeClient,
   createBridgeClient,
@@ -15,5 +16,6 @@ export type {
   BridgeHttpMethod,
   BridgeHttpResult,
   BridgePairDeviceRequest,
+  BridgeRequestOptions,
   PostActiveSeasonRatingRequest,
 } from './bridge-client';

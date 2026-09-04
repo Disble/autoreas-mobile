@@ -21,3 +21,10 @@ export const NOOP_BRIDGE_LOGGER: BridgeClientLogger = {
   debug: () => undefined,
   warn: () => undefined,
 };
+
+/**
+ * Default budget for one bridge HTTP request. Roughly 450x the `duration_ms` the bridge records
+ * for a reconcile (19-22 ms on the LAN), so it never trips on a slow-but-working link; its job
+ * is to convert a request that will never answer into a typed failure the cycle can report.
+ */
+export const BRIDGE_REQUEST_TIMEOUT_MS = 10_000;

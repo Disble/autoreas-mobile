@@ -3,6 +3,10 @@ import {
   createBridgeClient,
 } from '../../../src/infrastructure/api/bridge-client';
 
+/**
+ * Builds a minimal fetch Response double carrying only the three members the bridge client
+ * reads: ok, status and text(). Defaults describe a successful empty-JSON reply.
+ */
 function buildResponse(overrides: Partial<{
   ok: boolean;
   status: number;
@@ -31,6 +35,9 @@ describe('bridge-client', () => {
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/animes', {
       method: 'GET',
       headers: { Authorization: 'Bearer token123' },
+      // Every request now carries a timeout signal (R8): an unbounded fetch is the first half
+      // of the suspended-job failure, so the client refuses to issue one without a budget.
+      signal: expect.any(AbortSignal),
     });
     expect(result).toEqual({
       ok: true,
@@ -58,6 +65,7 @@ describe('bridge-client', () => {
         Authorization: 'Bearer token123',
       },
       body: JSON.stringify({ last_changelog_id: 0 }),
+      signal: expect.any(AbortSignal),
     });
     expect(result.ok).toBe(true);
     expect(result.status).toBe(202);
@@ -80,6 +88,7 @@ describe('bridge-client', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pairing_token: 'pair-token', device_name: 'AutoreasMobile' }),
+      signal: expect.any(AbortSignal),
     });
   });
 

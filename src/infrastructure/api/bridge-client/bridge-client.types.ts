@@ -44,6 +44,13 @@ export interface BridgeRequestSpec {
   readonly path: string;
   readonly token?: string;
   readonly body?: unknown;
+  /** Overrides the default request budget. Omitted means BRIDGE_REQUEST_TIMEOUT_MS. */
+  readonly timeoutMs?: number;
+}
+
+/** Per-call overrides a caller may apply to one bridge request. */
+export interface BridgeRequestOptions {
+  readonly timeoutMs?: number;
 }
 
 /** Normalized result of a bridge HTTP request, body read exactly once. */
@@ -83,6 +90,7 @@ export interface BridgeClient {
   readonly reconcile: (
     connection: BridgeConnection,
     body: unknown,
+    options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly openWebSocket: (connection: BridgeConnection) => WebSocket;
 }

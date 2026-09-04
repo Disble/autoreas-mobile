@@ -117,6 +117,10 @@ export function parseBridgeResponseBody(rawBody: string | null): unknown {
   }
 }
 
+/**
+ * Normalizes one wire season candidate into the snapshot shape features consume, returning null
+ * for anything that is not a usable object so a malformed entry is skipped rather than fatal.
+ */
 function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnapshot | null {
   if (typeof candidate !== 'object' || candidate === null) {
     return null;
