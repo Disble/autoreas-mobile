@@ -16,3 +16,25 @@ export const BACKGROUND_SYNC_MINIMUM_INTERVAL_MINUTES = 15;
 export const BACKGROUND_SYNC_TASK_OPTIONS = {
   minimumInterval: BACKGROUND_SYNC_MINIMUM_INTERVAL_MINUTES,
 } as const;
+
+/**
+ * Budget for one whole background reconcile cycle. Deliberately below
+ * `DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS`: a stalled cycle must terminate and release its own lock
+ * before the lease expires, or a second owner reclaims an expired lease while the first is
+ * still running and two cycles touch one database.
+ */
+export const BACKGROUND_SYNC_CYCLE_DEADLINE_MS = 45_000;
+
+/**
+ * Last-resort budget for the whole `defineTask` callback, including runtime open and close.
+ * The cycle's own deadline should always win; this exists only so the host is signalled even
+ * when the stall is outside the cycle.
+ */
+export const BACKGROUND_SYNC_TASK_SIGNAL_DEADLINE_MS = 90_000;
+
+/**
+ * Documents the platform's own guarantee, not a value this app chooses. WorkManager gives a
+ * worker roughly ten minutes before it is stopped; reaching that limit is what makes the host
+ * kill and re-enqueue the job, which is the loop H06h describes. Every bound above sits under it.
+ */
+export const BACKGROUND_SYNC_HOST_RUNTIME_LIMIT_MS = 600_000;

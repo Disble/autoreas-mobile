@@ -14,20 +14,38 @@ jest.mock("expo-task-manager", () => ({
 
 jest.mock("../../../src/features/sync/background-sync.helpers", () => ({
   runBackgroundSyncCycle: jest.fn(),
+  // Mirrors the real contract rather than stubbing a fixed answer, so these cases keep asserting
+  // what they always asserted: a cycle that resolves maps to Success, one that throws maps to
+  // Failed. `resolveBackgroundTaskOutcome`'s own guarantees (it never hangs, never rejects) are
+  // covered directly in background-sync-outcome.test.ts.
+  resolveBackgroundTaskOutcome: jest.fn(
+    async ({ runCycle }: { runCycle: () => Promise<unknown> }) => {
+      try {
+        await runCycle();
+        return "success";
+      } catch {
+        return "failed";
+      }
+    },
+  ),
 }));
 
+/** Returns the mocked `expo-background-task` module, whose enum values the task maps onto. */
 function getBackgroundTaskModule() {
   return jest.requireMock("expo-background-task") as typeof import("expo-background-task");
 }
 
+/** Returns the mocked `expo-task-manager` module, used to capture the registered task. */
 function getTaskManagerModule() {
   return jest.requireMock("expo-task-manager") as typeof import("expo-task-manager");
 }
 
+/** Returns the mocked background-sync helpers so a case can steer the cycle outcome. */
 function getBackgroundSyncModule() {
   return jest.requireMock("../../../src/features/sync/background-sync.helpers") as typeof import("../../../src/features/sync/background-sync.helpers");
 }
 
+/** Loads the task module in isolation and returns the callback it registered with the host. */
 function loadDefinedTask() {
   jest.isolateModules(() => {
     jest.requireActual("../../../src/features/sync/background-sync.task");

@@ -4,17 +4,25 @@ import {
   BACKGROUND_SYNC_TASK_NAME,
   BACKGROUND_SYNC_TASK_OPTIONS,
 } from "./background-sync.constants";
-import { runBackgroundSyncCycle } from "./background-sync.helpers";
+import {
+  resolveBackgroundTaskOutcome,
+  runBackgroundSyncCycle,
+} from "./background-sync.helpers";
 
 try {
   TaskManager.defineTask(BACKGROUND_SYNC_TASK_NAME, async () => {
-    try {
-      await runBackgroundSyncCycle();
+    // This callback's return value is what completes the host's CompletableDeferred. A cycle
+    // that never settles leaves it uncompleted, `tasks.awaitAll()` suspends, and the platform
+    // kills the job at its runtime limit and re-enqueues it -- H06h's loop. So the decision of
+    // WHETHER this settles lives in `resolveBackgroundTaskOutcome`, which cannot hang or throw;
+    // all that remains here is mapping its outcome onto the Expo enum.
+    const outcome = await resolveBackgroundTaskOutcome({
+      runCycle: runBackgroundSyncCycle,
+    });
 
-      return BackgroundTask.BackgroundTaskResult.Success;
-    } catch {
-      return BackgroundTask.BackgroundTaskResult.Failed;
-    }
+    return outcome === "success"
+      ? BackgroundTask.BackgroundTaskResult.Success
+      : BackgroundTask.BackgroundTaskResult.Failed;
   });
 } catch {
   // Expo may re-evaluate this module during tests or fast refresh.
