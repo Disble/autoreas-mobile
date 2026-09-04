@@ -52,6 +52,10 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
   },
 }));
 
+/**
+ * `sync_runtime_status` columns present on every device already migrated up through 0010, minus
+ * `is_background_task_registered` -- the one column these tests exercise as still missing.
+ */
 const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
   { name: "id" },
   { name: "registration_status" },
@@ -69,14 +73,24 @@ const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
   { name: "is_cycle_active" },
   { name: "last_backlog_read_count" },
   { name: "last_pruned_operations_count" },
+  { name: "last_cycle_id" },
+  { name: "last_cycle_stage" },
+  { name: "last_error_name" },
+  { name: "last_native_errcode_byte" },
+  { name: "last_error_stage" },
+  { name: "consecutive_unclosed_cycles" },
+  { name: "last_cycle_stage_at" },
+  { name: "last_failed_checkpoint_count" },
 ];
 
+/** A promise this test can resolve or reject from outside its own executor. */
 interface DeferredPromise<T> {
   readonly promise: Promise<T>;
   readonly reject: (reason?: unknown) => void;
   readonly resolve: (value: T | PromiseLike<T>) => void;
 }
 
+/** Builds a `DeferredPromise` so a test can hold one repair step pending mid-pipeline. */
 function createDeferredPromise<T>(): DeferredPromise<T> {
   let resolve!: DeferredPromise<T>["resolve"];
   let reject!: DeferredPromise<T>["reject"];
@@ -88,11 +102,16 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
   return { promise, reject, resolve };
 }
 
+/** Builds a mock `rawDb` with a caller-supplied `sync_runtime_status` column set. */
 function createRawDb(syncRuntimeStatusColumns: { name: string }[]) {
   return {
     getAllAsync: jest.fn().mockImplementation(async (query: string) => {
       if (query === "PRAGMA table_info(bridge_config)") {
-        return [{ name: "id" }, { name: "last_changelog_id" }];
+        return [
+          { name: "id" },
+          { name: "last_changelog_id" },
+          { name: "is_sync_telemetry_enabled" },
+        ];
       }
 
       if (query === "PRAGMA table_info(sync_runtime_status)") {
@@ -105,6 +124,7 @@ function createRawDb(syncRuntimeStatusColumns: { name: string }[]) {
 
       return [];
     }),
+    getFirstAsync: jest.fn().mockResolvedValue(null),
     runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
   };
 }
@@ -153,8 +173,13 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     });
 
     const preparation = runMigrations(rawDb as never);
-    await Promise.resolve();
-    await Promise.resolve();
+    // `clampPoisonedMigrationTimestamp` (Fix 2) awaits `getFirstAsync` before `migrate()` now
+    // runs, adding one more microtask hop ahead of the first `runAsync` call this test observes --
+    // flushing extra ticks is safe either way, because the whole pipeline stays blocked on
+    // `firstRepair` regardless of how many ticks are flushed before it resolves.
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
 
     expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
 

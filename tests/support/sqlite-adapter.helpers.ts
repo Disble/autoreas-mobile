@@ -50,6 +50,14 @@ export function createTestSqliteAdapter(): SQLiteDatabase {
         changes: Number(result.changes),
       });
     },
+    runSync(source: string, ...args: unknown[]): SQLiteRunResult {
+      const result = native.prepare(source).run(...toStatementArgs(args));
+
+      return {
+        lastInsertRowId: Number(result.lastInsertRowid),
+        changes: Number(result.changes),
+      };
+    },
     getAllAsync<T>(source: string, ...args: unknown[]): Promise<T[]> {
       return Promise.resolve(native.prepare(source).all(...toStatementArgs(args)) as T[]);
     },

@@ -29,6 +29,7 @@ jest.mock("../../../src/infrastructure/db/migrations/migrations", () => ({
   },
 }));
 
+/** Mirrors the exact `CREATE TABLE IF NOT EXISTS` statement the repair step is expected to issue. */
 const CREATE_TABLE_SQL =
   "CREATE TABLE IF NOT EXISTS pending_remote_changes (" +
   "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -56,6 +57,7 @@ describe("ensurePendingRemoteChangesTable", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -73,6 +75,7 @@ describe("ensurePendingRemoteChangesTable", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 

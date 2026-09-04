@@ -23,6 +23,18 @@ export interface OpenAppDatabaseSyncParams {
   readonly useNewConnection?: boolean;
 }
 
+/**
+ * Defines an open request for a NON-app SQLite file, such as the sync-cycle telemetry database.
+ * `busyTimeoutMs` is explicit because a side file wants a far shorter lock wait than the app
+ * database's, and `databaseName` is required so this can never silently open `autoreas.db`.
+ */
+export interface OpenTelemetryDatabaseSyncParams {
+  readonly databaseName: string;
+  readonly useNewConnection: boolean;
+  readonly enableChangeListener: boolean;
+  readonly busyTimeoutMs: number;
+}
+
 /** Defines one idempotent column migration for a legacy SQLite table. */
 export interface MissingColumnDefinition {
   readonly columnName: string;

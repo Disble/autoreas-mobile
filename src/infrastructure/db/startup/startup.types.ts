@@ -12,3 +12,8 @@ export interface SchemaIntegrityRow {
 export interface SchemaTableCountRow {
   readonly count: number;
 }
+
+/** SQLite row returned by `PRAGMA table_info(<table>)`, used for required-column validation. */
+export interface SchemaColumnInfoRow {
+  readonly name: string;
+}

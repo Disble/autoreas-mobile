@@ -62,6 +62,23 @@ describe('resolveBackgroundTaskOutcome always settles', () => {
     expect(outcome).toBe('failed');
   });
 
+  it('logs the failure instead of vanishing silently, unlike the foreground path', async () => {
+    // Before this, a cycle that died here produced ZERO output: the foreground path logs its own
+    // failures (`[useSyncFacade]`), but this background path had no logging at all, which is why
+    // the device ran silent 145ms no-op cycles every 15 minutes with no trace of why.
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const cycleError = new Error('cycle blew up');
+
+    await resolveBackgroundTaskOutcome({
+      runCycle: () => Promise.reject(cycleError),
+    });
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[resolveBackgroundTaskOutcome] Background sync cycle failed',
+      cycleError,
+    );
+  });
+
   it('reports failure instead of hanging when the cycle never settles', async () => {
     // THE case. Without this, the defineTask callback never returns, the host's
     // CompletableDeferred is never completed, tasks.awaitAll() suspends, and the platform kills

@@ -6,6 +6,7 @@ import { useResponsiveLayout } from '../../../../src/hooks/use-responsive-layout
 import { useBackgroundSyncStatus } from '../../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../../src/features/settings/use-bridge-config';
 import { useSyncFacade } from '../../../../src/features/sync/use-sync-facade';
+import { useSyncTelemetryPreference } from '../../../../src/features/settings/use-sync-telemetry-preference';
 import { useSettingsScreen } from '../../../../src/features/settings/ui/SettingsScreen/use-settings-screen';
 
 jest.mock('expo-router', () => ({
@@ -32,6 +33,10 @@ jest.mock('../../../../src/features/sync/use-sync-facade', () => ({
   useSyncFacade: jest.fn(),
 }));
 
+jest.mock('../../../../src/features/settings/use-sync-telemetry-preference', () => ({
+  useSyncTelemetryPreference: jest.fn(),
+}));
+
 jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: jest.fn(),
 }));
@@ -40,10 +45,16 @@ describe('useSettingsScreen', () => {
   const push = jest.fn();
   const replace = jest.fn();
   const unpair = jest.fn();
+  const setSyncTelemetryEnabled = jest.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+
+    (useSyncTelemetryPreference as jest.Mock).mockReturnValue({
+      isEnabled: true,
+      setEnabled: setSyncTelemetryEnabled,
+    });
 
     (useRouter as jest.Mock).mockReturnValue({ push, replace });
     (useBridgeConfig as jest.Mock).mockReturnValue({
@@ -181,5 +192,21 @@ describe('useSettingsScreen', () => {
 
     expect(unpair).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/setup?repair=1');
+  });
+
+  it('expone el estado persistido del switch de telemetría', () => {
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.isSyncTelemetryEnabled).toBe(true);
+  });
+
+  it('propaga la elección del switch al persistidor', () => {
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    act(() => {
+      result.current.handleToggleSyncTelemetry(false);
+    });
+
+    expect(setSyncTelemetryEnabled).toHaveBeenCalledWith(false);
   });
 });

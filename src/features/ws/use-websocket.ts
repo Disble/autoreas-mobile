@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { bridgeClient } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
+import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
@@ -71,6 +72,13 @@ export function useWebSocket({
 
       const backoffSeconds = Math.min(Math.pow(2, reconnectAttemptRef.current), 30);
       reconnectAttemptRef.current += 1;
+      // Separates "the socket is retrying" from "the socket gave up". Both look like silence
+      // from the bridge, and only one of them is a bug.
+      recordDiagnosticEvent({
+        source: 'websocket',
+        event: 'ws_reconnect_scheduled',
+        at: Date.now(),
+      });
 
       reconnectTimeoutRef.current = setTimeout(() => {
         if (isMounted && enabled) {
@@ -105,6 +113,10 @@ export function useWebSocket({
 
         ws.onopen = () => {
           reconnectAttemptRef.current = 0;
+          // Two opens milliseconds apart is how the duplicate-socket bug shows itself, and
+          // there is no other way to see it off-device: from the bridge, one live socket and
+          // two look identical until one of them is orphaned.
+          recordDiagnosticEvent({ source: 'websocket', event: 'ws_opened', at: Date.now() });
         };
 
         ws.onmessage = (event: MessageEvent) => {
@@ -161,6 +173,7 @@ export function useWebSocket({
 
         ws.onclose = () => {
           wsRef.current = null;
+          recordDiagnosticEvent({ source: 'websocket', event: 'ws_closed', at: Date.now() });
 
           if (isMounted && enabled) {
             scheduleReconnect();
@@ -169,6 +182,7 @@ export function useWebSocket({
 
         ws.onerror = () => {
           // onerror generally followed by onclose
+          recordDiagnosticEvent({ source: 'websocket', event: 'ws_error', at: Date.now() });
         };
       } catch (error) {
         console.error('Error in connect WS:', error);

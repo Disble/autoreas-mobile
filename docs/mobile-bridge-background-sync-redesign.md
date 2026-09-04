@@ -943,3 +943,68 @@ The error was conflating two different mechanisms that both use the word quota:
 - **Whether the repair holds is unmeasured.** The new build had been installed for six minutes at the time of these readings, and its own job has a fifteen-minute minimum latency, so its first cycle had not yet fired.
 - **H03 is settled in the binding direction**: SDK 36 is ≥ 35, so P1's 6 h/24 h `dataSync` cap applies. The branch where an always-on foreground service becomes viable again is closed.
 - **The app is not battery-optimization exempt** (`dumpsys deviceidle whitelist` does not list it), so D4's escalation path is available and ungranted.
+
+## Appendix E — Why nothing ever cut the hang: the timer audit, 2026-09-04
+
+Appendix D established *that* the worker dies at ~600 s and that the JS task never signals. It did not establish **why nothing inside the app stopped it first**. The app has six asynchronous bounds, several of them specifically added to prevent this. None of them fired.
+
+### E.1 Every bound in the cycle is a JS timer
+
+Auditing every `setTimeout` in `src/` shows that each asynchronous bound on the cycle path routes through `withDeadline`, and `withDeadline` is a `setTimeout` (`deadline.helpers.ts:32`):
+
+| Bound | Where | Budget | In background |
+|---|---|---|---|
+| `LOCAL_WRITE_DEADLINE_MS` | `client.helpers.ts:303` — the write door | 20 s | dead |
+| `BRIDGE_REQUEST_TIMEOUT_MS` | `bridge-client.helpers.ts:76` — HTTP | 10 s | dead |
+| `BACKGROUND_SYNC_CYCLE_DEADLINE_MS` | `background-sync.helpers.ts:38` | 45 s | dead |
+| `BACKGROUND_SYNC_TASK_SIGNAL_DEADLINE_MS` | `background-sync.helpers.ts:78` | 90 s | dead |
+| `HEADLESS_SYNC_CYCLE_DEADLINE_MS` | `headless-sync-cycle.helpers.ts` | 35 s | dead |
+| `HEADLESS_SYNC_CYCLE_RECOVERY_DEADLINE_MS` | `headless-sync-cycle.helpers.ts` | 8 s | dead |
+
+**Not one bound on the cycle path survives a paused timer queue.** One cause explains every symptom at once: the job hangs, no JS output appears for the whole ten minutes, and the host eventually kills it.
+
+### E.2 `(device)` evidence
+
+The build installed at 01:43 **contains** the 45 s outer deadline (commit `614d793`, 2026-09-04 00:45:20 -0500; the APK postdates it). Its cycles still ran the full 600 s. Had that `setTimeout` fired, they would have been abandoned at 45 s.
+
+Direct confirmation: across a logcat buffer containing **four** complete cycles, there are **zero** occurrences of
+
+```
+Started headless task <id> to keep JS timers alive
+```
+
+The only `task`-shaped matches in that buffer belong to Google Play Services.
+
+**Mechanism** (read from `expo-task-manager` source, `(source)`-class): React Native pauses JS timers while the Activity is paused. `expo-task-manager` compensates by registering a HeadlessJsTask — but only `if (isFirstEvent)` (`TaskService.java:395,397,410`), and `sEvents` drains solely through `notifyTaskFinished` (`:209-220`). A cycle that never signals leaves its event id in the queue, so the **next** cycle no longer registers the task. The trap is self-sustaining, which is why the condition persists across cycles rather than recovering.
+
+### E.3 The write door is jammed by the same cause
+
+`LOCAL_WRITE_DEADLINE_MS` exists precisely to bound a stuck write at 20 s. It never fires, so the queue entry never settles. `WRITE_QUEUE_BY_DATABASE` is keyed by **file path**, not by connection (`client.helpers.ts:288`), and is never cleaned, so one unsettled entry strands every foreground and background write for the remainder of the process.
+
+The permanent jam is therefore not an independent defect. It is what is left when the bound that should have cut it does not exist at runtime.
+
+### E.4 A claim retracted
+
+An earlier reading of `Access to closed resource` treated it as the disease. **It is the consequence of the previous mitigation, and that reading is retracted.** The chain, line by line:
+
+1. The cycle hangs in the post-HTTP `withLocalWrite` (`reconcile.helpers.ts:361`).
+2. At 45 s the outer deadline rejects and **abandons** the cycle, which keeps running — `withDeadline` bounds the caller's view and cannot cancel in-flight work, as its own docstring states.
+3. The rejection propagates to `background-sync.helpers.ts:54-56`, whose `finally { await runtime.close() }` **closes the native handle**.
+4. The orphaned cycle later writes through that closed handle, producing `Access to closed resource`, `errcode: null` (no `Error code X:` prefix to parse), and `stage: 'begin'`.
+
+That reproduces the observed diagnostics field for field, including the `'[runHeadlessSyncCycle] Operation-log pruning failed'` line, which comes from the orphan's own catch running *after* the close.
+
+### E.5 What this means for the repair
+
+Adding another JS deadline cannot work, by construction. The repair has to either restore the HeadlessJsTask registration so timers run, or replace the bounds with something native.
+
+Two consequences follow for anything built in the meantime:
+
+- **SQLite's `busy_timeout` still works.** It is a native handler inside the library, not a JS timer. Independent evidence: the reconcile HTTP round trip completes in 4–9 ms *during* background cycles, which requires a native promise to resolve back into JS with the Activity paused. What is broken is the timer queue, not the native bridge.
+- **The six abort branches have never executed in production.** Repairing the timers does not fix those paths; it **premieres** all six at once, with zero prior exposure. Each needs coverage of its abort/rejection path — the HTTP one first — before the repair ships.
+
+### E.6 What is NOT established
+
+- **Whether the inner 35 s deadline ever fires in background is unmeasured.** It uses the same `setTimeout`, so the expectation is that it does not, but no cycle has been observed under the new build with the buffer intact.
+- **Whether restoring HeadlessJsTask registration is sufficient** has not been tested. The mechanism above is read from source, not from a repaired build.
+- The liveness probe added in `runHeadlessSyncCycle` (a zero-delay `setTimeout` read in the `finally`) is designed to answer E.2 from JS on every future cycle, without a cable. **It has not yet reported from a device.**

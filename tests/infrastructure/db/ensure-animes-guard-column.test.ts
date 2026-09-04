@@ -46,6 +46,7 @@ describe("ensureAnimesGuardColumn", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -70,6 +71,7 @@ describe("ensureAnimesGuardColumn", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -93,6 +95,7 @@ describe("ensureAnimesGuardColumn", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockImplementation(async (sql: string) => {
         if (sql === "ALTER TABLE animes ADD COLUMN last_applied_change_ms INTEGER") {
           hasGuardColumn = true;

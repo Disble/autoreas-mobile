@@ -47,7 +47,7 @@
     {
       "idx": 6,
       "version": "6",
-      "when": 1789876543210,
+      "when": 1781926798121,
       "tag": "0006_sanitize_bridge_config_changelog_cursor",
       "breakpoints": true
     },
@@ -70,6 +70,13 @@
       "version": "6",
       "when": 1783383600000,
       "tag": "0009_add_season_rating_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788546067501,
+      "tag": "0010_add_sync_cycle_telemetry_columns",
       "breakpoints": true
     }
   ]

@@ -57,6 +57,14 @@ export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
       lastBacklogReadCount: latestSnapshot.lastBacklogReadCount ?? 0,
       lastPrunedOperationsCount: latestSnapshot.lastPrunedOperationsCount ?? 0,
       isBackgroundTaskRegistered: latestSnapshot.isBackgroundTaskRegistered ?? false,
+      lastCycleId: latestSnapshot.lastCycleId ?? null,
+      lastCycleStage: latestSnapshot.lastCycleStage ?? null,
+      lastErrorName: latestSnapshot.lastErrorName ?? null,
+      lastNativeErrcodeByte: latestSnapshot.lastNativeErrcodeByte ?? null,
+      lastErrorStage: latestSnapshot.lastErrorStage ?? null,
+      consecutiveUnclosedCycles: latestSnapshot.consecutiveUnclosedCycles ?? 0,
+      lastCycleStageAt: latestSnapshot.lastCycleStageAt ?? null,
+      lastFailedCheckpointCount: latestSnapshot.lastFailedCheckpointCount ?? 0,
     };
   }, [rawDb, snapshots]);
 

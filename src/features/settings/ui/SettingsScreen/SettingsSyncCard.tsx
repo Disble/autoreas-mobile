@@ -1,5 +1,6 @@
-import { Button, Alert as HeroAlert, Card, Chip } from 'heroui-native';
+import { Button, Alert as HeroAlert, Card, Chip, Switch } from 'heroui-native';
 import { View } from 'react-native';
+import { AppText } from '../../../../components/app-text';
 import {
   BACKGROUND_SYNC_SECTION_TITLE,
   METRIC_TILE_COLUMNS_BY_LAYOUT,
@@ -10,7 +11,15 @@ import type { SettingsSyncCardProps } from './settings-screen.types';
 
 /** Renders the settings sync card interface. */
 export function SettingsSyncCard(props: Readonly<SettingsSyncCardProps>) {
-  const { colors, handleSummaryAction, layoutMode, section, summary } = props;
+  const {
+    colors,
+    handleSummaryAction,
+    handleToggleSyncTelemetry,
+    isSyncTelemetryEnabled,
+    layoutMode,
+    section,
+    summary,
+  } = props;
   const columns = METRIC_TILE_COLUMNS_BY_LAYOUT[layoutMode];
 
   return (
@@ -70,6 +79,26 @@ export function SettingsSyncCard(props: Readonly<SettingsSyncCardProps>) {
           columns={columns}
           tiles={section.tiles}
         />
+
+        <View className="h-px w-full bg-surface-secondary" />
+
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-1 gap-1">
+            <AppText className="text-sm font-medium text-foreground">
+              Enviar diagnóstico al bridge
+            </AppText>
+            <AppText className="text-xs leading-snug text-muted">
+              Manda el resultado de cada ciclo de sync al bridge para poder diagnosticar fallas
+              sin conectar el dispositivo por cable. Sólo viajan códigos y contadores: ningún
+              título, ninguna ruta, ningún dato tuyo.
+            </AppText>
+          </View>
+          <Switch
+            accessibilityLabel="Enviar diagnóstico de sync al bridge"
+            isSelected={isSyncTelemetryEnabled}
+            onSelectedChange={handleToggleSyncTelemetry}
+          />
+        </View>
       </Card.Body>
     </Card>
   );

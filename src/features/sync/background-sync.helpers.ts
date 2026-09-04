@@ -82,9 +82,13 @@ export async function resolveBackgroundTaskOutcome({
     });
 
     return 'success';
-  } catch {
+  } catch (error) {
     // Every failure shape collapses to one outcome on purpose: a deadline, a thrown cycle and a
     // synchronous throw are all "this run did not succeed", and the host has only two answers.
+    // Logging is NOT optional here: the foreground path logs its own failures (`[useSyncFacade]`),
+    // but this background path had none, so a cycle that died here produced zero output -- a
+    // silent 145ms no-op every 15 minutes with no trace of why.
+    console.warn('[resolveBackgroundTaskOutcome] Background sync cycle failed', error);
     return 'failed';
   }
 }

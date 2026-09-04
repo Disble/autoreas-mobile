@@ -17,6 +17,8 @@ import {
 } from '../sync/sync-connection-store/sync-connection-store.helpers';
 import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
 import { getAnimeMutationFailureMessage } from './anime-mutation-failure.helpers';
+import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
+import { causeFromError } from '../sync/sync-telemetry.helpers';
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
@@ -205,6 +207,16 @@ export async function recordAnimeMutationFailure(
   label: string,
   error: unknown,
 ): Promise<void> {
+  // Emitted BEFORE the persisted write, because that write is exactly what fails when the
+  // database is unwritable -- which is the case this event most needs to report. The ring is
+  // in memory, so it survives the very failure that swallows the durable record.
+  recordDiagnosticEvent({
+    source: 'mutation',
+    event: 'mutation_failed',
+    cause: causeFromError(error),
+    at: Date.now(),
+  });
+
   try {
     await recordSyncAttemptFailed(
       rawDb,
@@ -266,6 +278,16 @@ export async function applyAnimeMutationPatch(
     .catch(async (err: unknown) => {
       const failure = err instanceof Error ? err : new Error('Sync failed');
 
+      // Distinct from `mutation_failed`: the local write LANDED and only the push to the bridge
+      // failed. Same symptom for the user, opposite diagnosis, and today the two are
+      // indistinguishable from anywhere but the device.
+      recordDiagnosticEvent({
+        source: 'mutation',
+        event: 'mutation_sync_failed',
+        cause: causeFromError(failure),
+        at: Date.now(),
+      });
+
       await publishSyncConnectionAttempt({
         attempt: syncAttempt,
         persistTelemetry: async () => {
@@ -286,10 +308,20 @@ export async function applyAnimeMutationPatch(
     });
 }
 
+/**
+ * Parses one JSON column back into a value, returning `unknown` so the caller must narrow it.
+ * The cast is deliberate: `JSON.parse` claims `any`, which would silently disable type checking
+ * for everything downstream of a stored column.
+ */
 function parseStoredJson(value: string): unknown {
   return JSON.parse(value) as unknown;
 }
 
+/**
+ * Rehydrates a raw SQLite row into the shape `AnimeSchema` validates.
+ * `dias` and `generos` are stored as JSON text but were written as arrays by older versions, so
+ * each is parsed only when it is still a string and falls back to an empty array otherwise.
+ */
 function parseStoredAnimeRow(row: AnimeRow) {
   return {
     ...row,

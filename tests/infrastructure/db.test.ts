@@ -119,6 +119,7 @@ describe("db client tracer helpers", () => {
   it("runMigrations ejecuta el journal completo incluyendo la migración formal nueva", async () => {
     const rawDb = {
       getAllAsync: jest.fn().mockResolvedValue([{ name: "id" }, { name: "last_changelog_id" }]),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -181,6 +182,7 @@ describe("db client tracer helpers", () => {
         { name: "device_id" },
         { name: "device_name" },
       ]),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -200,7 +202,11 @@ describe("db client tracer helpers", () => {
     const rawDb = {
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === "PRAGMA table_info(bridge_config)") {
-          return [{ name: "id" }, { name: "last_changelog_id" }];
+          return [
+            { name: "id" },
+            { name: "last_changelog_id" },
+            { name: "is_sync_telemetry_enabled" },
+          ];
         }
 
         if (query === "PRAGMA table_info(sync_runtime_status)") {
@@ -222,6 +228,14 @@ describe("db client tracer helpers", () => {
             { name: "last_backlog_read_count" },
             { name: "last_pruned_operations_count" },
             { name: "is_background_task_registered" },
+            { name: "last_cycle_id" },
+            { name: "last_cycle_stage" },
+            { name: "last_error_name" },
+            { name: "last_native_errcode_byte" },
+            { name: "last_error_stage" },
+            { name: "consecutive_unclosed_cycles" },
+            { name: "last_cycle_stage_at" },
+            { name: "last_failed_checkpoint_count" },
           ];
         }
 
@@ -231,6 +245,7 @@ describe("db client tracer helpers", () => {
 
         return [];
       }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -300,6 +315,7 @@ describe("db client tracer helpers", () => {
 
           return [];
         }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
@@ -343,6 +359,7 @@ describe("db client tracer helpers", () => {
 
           return [];
         }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 

@@ -13,9 +13,11 @@ import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
 
 import {
+  BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
   ERRCODE_PREFIX_PATTERN,
+  MIGRATION_0010_TIMESTAMP_MS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
@@ -24,6 +26,7 @@ import type {
   LocalWriteFailureStage,
   MissingColumnDefinition,
   OpenAppDatabaseSyncParams,
+  OpenTelemetryDatabaseSyncParams,
 } from './client.types';
 
 /**
@@ -75,8 +78,11 @@ export function toLocalWriteError(
  * pragma independently through the async API, which is idempotent against a connection already
  * covered here.
  */
-export function applyConnectionPolicy(rawDb: SQLiteDatabase): void {
-  rawDb.execSync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+export function applyConnectionPolicy(
+  rawDb: SQLiteDatabase,
+  busyTimeoutMs: number = SQLITE_BUSY_TIMEOUT_MS,
+): void {
+  rawDb.execSync(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
 }
 
 /** Executes the open app database sync operation. */
@@ -97,18 +103,46 @@ export function openAppDatabaseSync(options: OpenAppDatabaseSyncParams = {}) {
   return rawDb;
 }
 
+/**
+ * Opens a SQLite file that is NOT the app database, with its own lock-wait budget.
+ *
+ * Kept separate from `openAppDatabaseSync` rather than folded into it as an optional name: every
+ * write-door invariant in this file is reasoned about in terms of ONE app file, and a caller that
+ * could quietly repoint that opener at another name would make those invariants unverifiable.
+ * Deliberately returns a connection that no `withLocalWrite` ever touches -- the write queue is
+ * keyed by path, so a side file must stay outside the door entirely to be worth having.
+ */
+export function openTelemetryDatabaseSync(
+  options: OpenTelemetryDatabaseSyncParams,
+): SQLiteDatabase {
+  const openDatabaseSync = getOpenDatabaseSync();
+  const rawDb = openDatabaseSync(options.databaseName, {
+    enableChangeListener: options.enableChangeListener,
+    useNewConnection: options.useNewConnection,
+  });
+
+  applyConnectionPolicy(rawDb, options.busyTimeoutMs);
+
+  return rawDb;
+}
+
 /** Executes the create drizzle db operation. */
 export function createDrizzleDb(rawDb: SQLiteDatabase) {
   const drizzle = getDrizzleFactory();
   return drizzle(rawDb, { schema });
 }
 
-/** Adds the `last_changelog_id` cursor column to legacy `bridge_config` rows that predate it. */
+/**
+ * Adds the `last_changelog_id` cursor column to legacy `bridge_config` rows that predate it, then
+ * backfills every later `bridge_config` telemetry column (`BRIDGE_CONFIG_COLUMN_DEFINITIONS`) off
+ * the same `PRAGMA table_info` read -- these columns carry no migration-independent twin, so a
+ * device that skipped their migration relies entirely on this repair step to catch up.
+ */
 async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(bridge_config)');
-  const hasLastChangelogId = columns.some((column) => column.name === 'last_changelog_id');
+  const columnNames = new Set(columns.map((column) => column.name));
 
-  if (!hasLastChangelogId) {
+  if (!columnNames.has('last_changelog_id')) {
     await rawDb.runAsync(
       'ALTER TABLE bridge_config ADD COLUMN last_changelog_id INTEGER DEFAULT 0'
     );
@@ -117,6 +151,8 @@ async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(
     "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
   );
+
+  await ensureMissingColumns(rawDb, columnNames, BRIDGE_CONFIG_COLUMN_DEFINITIONS);
 }
 
 /** Backfills the sync-runtime status columns added after the table first shipped. */
@@ -230,6 +266,32 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 }
 
 /**
+ * Clamps an already-stored poisoned `__drizzle_migrations.created_at` back down to
+ * `MIGRATION_0010_TIMESTAMP_MS` before `migrate()` runs.
+ *
+ * `drizzle-orm`'s migrator (`sqlite-core/dialect.cjs`) decides what to apply with ONE scalar
+ * comparison against the single MAXIMUM `created_at` already stored -- it does not track by tag
+ * or hash. Migration 0006's journal entry once carried a hand-typed future `when`
+ * (2026-09-20, sixteen days ahead of every other entry and the highest value in the whole
+ * journal); on any device that had already applied 0006, every migration after it failed that
+ * gate SILENTLY. The journal entry itself is fixed (see `_journal.json`), but fixing the journal
+ * does nothing for a device that already stored the poisoned row -- this repair step is what
+ * un-poisons it. Guarded on `sqlite_master` so a fresh install with no `__drizzle_migrations`
+ * table yet is a clean no-op.
+ */
+async function clampPoisonedMigrationTimestamp(rawDb: SQLiteDatabase): Promise<void> {
+  const migrationsTable = await rawDb.getFirstAsync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'"
+  );
+
+  if (!migrationsTable) return;
+
+  await rawDb.runAsync(
+    `UPDATE __drizzle_migrations SET created_at = ${MIGRATION_0010_TIMESTAMP_MS} WHERE created_at > ${MIGRATION_0010_TIMESTAMP_MS}`
+  );
+}
+
+/**
  * Brings a connection's schema to the shape the app expects: the drizzle migrator first, then
  * ordered idempotent repair steps for everything migrations cannot express. Two REQUIRED_SCHEMA
  * tables -- `active_season_cache` and `sync_cycle_lock` -- exist ONLY as repair steps, so running
@@ -238,6 +300,7 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
+  await clampPoisonedMigrationTimestamp(rawDb);
   await migrate(db, migrations);
   await ensureBridgeConfigLastChangelogId(rawDb);
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);

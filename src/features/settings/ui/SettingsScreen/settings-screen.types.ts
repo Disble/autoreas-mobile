@@ -1,10 +1,12 @@
 import type { ComponentProps } from 'react';
+import type { useRouter } from 'expo-router';
 import type { Ionicons } from '@expo/vector-icons';
 import type { BridgeConfig } from '../../../../infrastructure/db/schema';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type { SyncVisibleStatus } from '../../../sync/sync-visible-status.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../sync/sync-runtime-status.types';
 import type { SyncConnectionStatus } from '../../../sync/sync-connection-store/sync-connection-store.types';
+import type { useBridgeConfig } from '../../use-bridge-config';
 
 /** Defines the settings screen props value shape. */
 export type SettingsScreenProps = Record<never, never>;
@@ -97,6 +99,40 @@ export interface BuildSettingsSyncSummaryInput {
   };
 }
 
+/** Defines the result contract for `useSettingsScreenTheme`. */
+export interface SettingsScreenThemeResult {
+  readonly themeColorForeground: string;
+  readonly themeColorMuted: string;
+  readonly themeColorSuccess: string;
+  readonly themeColorWarning: string;
+  readonly themeColorDanger: string;
+  readonly layoutMode: LayoutMode;
+}
+
+/** Defines the result contract for `useSettingsScreenSyncSummary`. */
+export interface SettingsScreenSyncSummaryResult
+  extends Pick<
+    ReturnType<typeof useBridgeConfig>,
+    'config' | 'isConfigured' | 'isUnpairing' | 'error' | 'unpair'
+  > {
+  readonly syncSummary: SettingsSyncSummary;
+  readonly bridgeStatus: SettingsBridgeStatus;
+}
+
+/** Defines the input contract for `useSettingsScreenActions`. */
+export interface UseSettingsScreenActionsInput {
+  readonly router: ReturnType<typeof useRouter>;
+  readonly unpair: ReturnType<typeof useBridgeConfig>['unpair'];
+  readonly actionKind: SettingsSyncSummaryActionKind | null;
+}
+
+/** Defines the result contract for `useSettingsScreenActions`. */
+export interface UseSettingsScreenActionsResult {
+  readonly handleGoToSetup: () => void;
+  readonly handleRePair: () => void;
+  readonly handleSyncSummaryAction: (() => void) | null;
+}
+
 /** Defines the data contract for settings screen view model. */
 export interface SettingsScreenViewModel {
   readonly backgroundSyncSection: BackgroundSyncSection;
@@ -112,9 +148,11 @@ export interface SettingsScreenViewModel {
   readonly themeColorSuccess: string;
   readonly themeColorWarning: string;
   readonly themeColorDanger: string;
+  readonly isSyncTelemetryEnabled: boolean;
   readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
   readonly handleSyncSummaryAction: (() => void) | null;
+  readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
 }
 
 /** Defines the data contract for settings bridge card props. */
@@ -134,6 +172,8 @@ export interface SettingsBridgeCardProps {
 export interface SettingsSyncCardProps {
   readonly colors: ResolvedToneColors;
   readonly handleSummaryAction: (() => void) | null;
+  readonly isSyncTelemetryEnabled: boolean;
+  readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
   readonly layoutMode: LayoutMode;
   readonly section: BackgroundSyncSection;
   readonly summary: SettingsSyncSummary;

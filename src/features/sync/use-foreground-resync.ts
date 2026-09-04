@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { AppState } from "react-native";
 import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import { resyncFromBridgeSnapshot } from "./full-resync.helpers";
+import { recordDiagnosticEvent } from './sync-diagnostic-store/sync-diagnostic-store.helpers';
+import { causeFromError } from './sync-telemetry.helpers';
 
 /**
  * Runs a snapshot-authoritative heal against the bridge's full anime list on the foreground
@@ -31,6 +33,14 @@ export function useForegroundResync(): void {
 
     resyncFromBridgeSnapshot(rawDb).catch((error: unknown) => {
       console.warn("[useForegroundResync] Resync failed", error);
+      // This path is outside any sync cycle, so the cycle post-mortem never sees it: without
+      // this the bridge cannot tell "the app never resynced" from "the app never opened".
+      recordDiagnosticEvent({
+        source: 'foreground_resync',
+        event: 'resync_failed',
+        cause: causeFromError(error),
+        at: Date.now(),
+      });
     });
   }, [rawDb]);
 

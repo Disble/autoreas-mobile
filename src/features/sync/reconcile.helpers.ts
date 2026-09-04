@@ -27,33 +27,43 @@ import {
   RECONCILE_BACKLOG_BATCH_LIMIT,
   syncStateByDatabase,
 } from './reconcile.constants';
+import { ReconcileHttpError } from './reconcile.errors';
 import {
   type ReconcileAppliedOperation,
   ReconcileResponseSchema,
   type ReconcileAnimeChange,
 } from './reconcile.schema';
-import type { ReconcileApplyMode, SyncPendingOperationsResult } from './reconcile.types';
-
-class ReconcileHttpError extends Error {
-  readonly status: number;
-  readonly responseBody: string | null;
-
-  constructor(status: number, responseBody: string | null) {
-    super(`Reconcile failed: ${status}`);
-    this.name = 'ReconcileHttpError';
-    this.status = status;
-    this.responseBody = responseBody;
-  }
-}
+import type {
+  ReconcileApplyMode,
+  ReconcileTelemetryContext,
+  SyncPendingOperationsResult,
+} from './reconcile.types';
+import {
+  buildSyncCycleTelemetry,
+  resolveClientTelemetry,
+} from './sync-telemetry.helpers';
+import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
 
 /**
  * Builds the reconcile request body from persisted operation-log rows.
  * Keeping this serialization pure makes the network workflow easier to test and evolve.
+ *
+ * `clientTelemetry` rides along on this request rather than travelling on an endpoint of its own,
+ * and that is the whole design: a cycle that dies cannot report itself, so its post-mortem has to
+ * leave on a request that is PROVEN to arrive. This one is -- it answers 202 in single-digit
+ * milliseconds even in the cycles that later hang. A separate telemetry call would share the
+ * failure domain of the thing it reports on.
+ *
+ * When there is nothing to send the key is OMITTED, never emitted as null. The bridge stores this
+ * body raw and verbatim, so an empty key would be permanent noise in its store rather than a
+ * serialization detail. `null` arrives here when the size cap declined to send, which is a
+ * decision to stay silent -- exactly the same absence.
  */
 export function buildReconcileRequestBody(
   deviceId: string | undefined,
   lastChangelogId: number,
   pendingOperations: OperationLogRow[],
+  clientTelemetry?: WireSyncCycleTelemetry | null,
 ) {
   return {
     device_id: deviceId ?? undefined,
@@ -64,6 +74,7 @@ export function buildReconcileRequestBody(
       payload: normalizePendingOperationPayload(operation.operation, operation.payload),
       created_at: operation.createdAt,
     })),
+    ...(clientTelemetry ? { client_telemetry: clientTelemetry } : {}),
   };
 }
 
@@ -104,6 +115,14 @@ export function getConfirmedOperationIds(
   return confirmedIds;
 }
 
+/**
+ * Decides whether one outbox row has real evidence of having landed on the bridge.
+ * `applied_operations` is the explicit ack and always wins, but it is optional in the contract,
+ * so when it is absent the only remaining evidence is the pulled `bridge_changes` themselves:
+ * every field this row sent must show up in the change's `changed_fields` or already match its
+ * snapshot. A payload with no fields carries nothing to evidence, so it can never be confirmed
+ * by inference -- guessing there would mark an unsent row as synced and lose the edit.
+ */
 function isOperationConfirmed(
   operation: OperationLogRow,
   appliedOperations: ReconcileAppliedOperation[] | undefined,
@@ -141,6 +160,12 @@ function isOperationConfirmed(
   });
 }
 
+/**
+ * Reads one persisted payload column, which is free-form TEXT and therefore untrusted.
+ * Anything that is not a JSON object -- corrupt text, a bare array, a scalar -- degrades to an
+ * empty object instead of throwing, because a single bad row must not abort the whole cycle for
+ * every other pending operation in the batch.
+ */
 function parseOperationPayload(payload: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(payload) as unknown;
@@ -155,6 +180,12 @@ function parseOperationPayload(payload: string): Record<string, unknown> {
   return {};
 }
 
+/**
+ * Translates the legacy Spanish keys still written into local outbox payloads into the English
+ * keys the wire contract accepts. The alias is always DELETED, even when no translation happened,
+ * so a legacy name can never reach the bridge and be stored verbatim. An English key already
+ * present wins over its alias: the caller that wrote it spoke the current contract on purpose.
+ */
 function normalizeLegacyAnimeUpdatePayloadAliases(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -167,9 +198,9 @@ function normalizeLegacyAnimeUpdatePayloadAliases(
     dias: 'days',
   } as const;
 
-  for (const legacyAlias of Object.keys(legacyAnimePayloadAliases) as Array<
-    keyof typeof legacyAnimePayloadAliases
-  >) {
+  for (const legacyAlias of Object.keys(
+    legacyAnimePayloadAliases,
+  ) as (keyof typeof legacyAnimePayloadAliases)[]) {
     const englishKey = legacyAnimePayloadAliases[legacyAlias];
 
     if (!(englishKey in normalizedPayload) && legacyAlias in payload) {
@@ -182,10 +213,23 @@ function normalizeLegacyAnimeUpdatePayloadAliases(
   return normalizedPayload;
 }
 
+/**
+ * Separates the failures that retrying can never fix from the ones it can.
+ * Only a 4xx means the bridge rejected THIS batch's content, so those rows go to `dead_letter`;
+ * everything else -- 5xx, transport, timeouts -- is the network or the bridge being temporarily
+ * unavailable and must go back to `pending`. Widening this predicate silently discards local
+ * edits that would have synced on the next attempt.
+ */
 function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {
   return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
 }
 
+/**
+ * Logs the failed request next to the response that rejected it.
+ * The bridge's body names what was wrong but not what was sent, so a status alone is not
+ * diagnosable after the fact -- the body we posted is the half that identifies the offending
+ * operation.
+ */
 function logReconcileHttpError(
   url: string,
   requestBody: ReturnType<typeof buildReconcileRequestBody>,
@@ -214,6 +258,7 @@ function logReconcileHttpError(
 export async function syncPendingOperations(
   rawDb: SQLiteDatabase,
   applyMode: ReconcileApplyMode = 'deferred',
+  telemetryContext?: ReconcileTelemetryContext,
 ): Promise<SyncPendingOperationsResult> {
   const syncKey = rawDb as object;
   const syncState = syncStateByDatabase.get(syncKey) ?? {
@@ -234,7 +279,7 @@ export async function syncPendingOperations(
 
     do {
       syncState.rerunRequested = false;
-      const batch = await performSyncPendingOperations(rawDb, applyMode);
+      const batch = await performSyncPendingOperations(rawDb, applyMode, telemetryContext);
 
       totalConfirmed += batch.syncedCount;
       totalBacklogRead += batch.backlogReadCount;
@@ -271,9 +316,19 @@ function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange 
   };
 }
 
+/**
+ * Runs exactly ONE reconcile round-trip; the rerun loop and the in-flight guard belong to
+ * `syncPendingOperations`, so this stays a single, restartable unit of work.
+ *
+ * The backlog is claimed as `processing` BEFORE the request and released in the catch, which is
+ * what keeps a crash from being indistinguishable from success: every row is either confirmed,
+ * requeued, or dead-lettered by the time this returns or throws. Nothing is left claimed by a
+ * cycle that is no longer running.
+ */
 async function performSyncPendingOperations(
   rawDb: SQLiteDatabase,
   applyMode: ReconcileApplyMode,
+  telemetryContext?: ReconcileTelemetryContext,
 ): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
@@ -303,10 +358,28 @@ async function performSyncPendingOperations(
 
   const connection = { ip: config.ip, port: config.port, token: config.token };
   const lastChangelogId = getLastChangelogId(config);
+  // The caller supplies what only it can know (the pre-write snapshot, the trigger, the cycle
+  // id); this supplies what only it knows (how many operations and which cursor). Passing the
+  // config through means the user's kill switch is evaluated at the single serialization point.
+  const clientTelemetry = telemetryContext
+    ? resolveClientTelemetry(
+        buildSyncCycleTelemetry({
+          cycleId: telemetryContext.cycleId,
+          triggerSource: telemetryContext.triggerSource,
+          appState: telemetryContext.appState,
+          snapshot: telemetryContext.snapshot,
+          pendingOpsCount: pendingOps.length,
+          cursor: lastChangelogId,
+          recentEvents: telemetryContext.recentEvents,
+        }),
+        config,
+      )
+    : null;
   const requestBody = buildReconcileRequestBody(
     config.deviceId ?? undefined,
     lastChangelogId,
     pendingOps,
+    clientTelemetry,
   );
 
   try {

@@ -7,6 +7,22 @@ import {
   buildSettingsSyncSummary,
 } from '../../../../src/features/settings/ui/SettingsScreen/settings-sync-status.helpers';
 
+/**
+ * The cycle post-mortem fields, which every snapshot in this file carries identically.
+ * Extracted so a new column added to `SyncRuntimeStatusSnapshot` costs one line here instead
+ * of one line in each of the six literals below -- which is how this file grew past its limit.
+ */
+const CYCLE_POSTMORTEM_DEFAULTS = {
+  lastCycleId: null,
+  lastCycleStage: null,
+  lastErrorName: null,
+  lastNativeErrcodeByte: null,
+  lastErrorStage: null,
+  consecutiveUnclosedCycles: 0,
+  lastCycleStageAt: null,
+  lastFailedCheckpointCount: 0,
+} as const;
+
 describe('settings-screen.helpers', () => {
   it('formats timestamps into a readable deterministic UTC string', () => {
     expect(formatBackgroundSyncTimestamp(1775812200000)).toBe('2026-04-10 09:10 UTC');
@@ -29,6 +45,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
         isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
@@ -126,6 +143,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
         isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
@@ -167,6 +185,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
         isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
@@ -199,6 +218,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 150,
         lastPrunedOperationsCount: 42,
         isBackgroundTaskRegistered: false,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
@@ -241,6 +261,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
         isBackgroundTaskRegistered: false,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
@@ -276,6 +297,7 @@ describe('settings-screen.helpers', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
         isBackgroundTaskRegistered: false,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 

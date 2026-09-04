@@ -6,6 +6,7 @@ import SettingsScreen from '../../../src/app/(tabs)/settings';
 import { useBackgroundSyncStatus } from '../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../src/features/settings/use-bridge-config';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
+import { useSyncTelemetryPreference } from '../../../src/features/settings/use-sync-telemetry-preference';
 
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
@@ -25,6 +26,10 @@ jest.mock('../../../src/features/settings/use-bridge-config', () => ({
 
 jest.mock('../../../src/features/settings/use-background-sync-status', () => ({
   useBackgroundSyncStatus: jest.fn(),
+}));
+
+jest.mock('../../../src/features/settings/use-sync-telemetry-preference', () => ({
+  useSyncTelemetryPreference: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/use-sync-facade', () => ({
@@ -83,6 +88,11 @@ describe('SettingsScreen', () => {
         lastBacklogReadCount: 0,
         lastPrunedOperationsCount: 0,
       },
+    });
+
+    (useSyncTelemetryPreference as jest.Mock).mockReturnValue({
+      isEnabled: true,
+      setEnabled: jest.fn().mockResolvedValue(undefined),
     });
 
     (useSyncFacade as jest.Mock).mockReturnValue({

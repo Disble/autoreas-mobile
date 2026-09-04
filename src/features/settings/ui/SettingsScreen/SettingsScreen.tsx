@@ -19,6 +19,7 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
     config,
     error,
     isConfigured,
+    isSyncTelemetryEnabled,
     isUnpairing,
     layoutMode,
     syncSummary,
@@ -30,6 +31,7 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
     handleGoToSetup,
     handleRePair,
     handleSyncSummaryAction,
+    handleToggleSyncTelemetry,
   } = useSettingsScreen(props);
 
   const toneColors: ResolvedToneColors = {
@@ -62,6 +64,8 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
     <SettingsSyncCard
       colors={toneColors}
       handleSummaryAction={handleSyncSummaryAction}
+      handleToggleSyncTelemetry={handleToggleSyncTelemetry}
+      isSyncTelemetryEnabled={isSyncTelemetryEnabled}
       layoutMode={layoutMode}
       section={backgroundSyncSection}
       summary={syncSummary}

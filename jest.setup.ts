@@ -2,7 +2,7 @@
 
 import type { TextInput } from 'react-native';
 import { installFocusedTestGuard } from './tests/setup/focused-test-guard.helpers';
-import type { MockPrimitiveProps } from './tests/setup/jest-setup.types';
+import type { MockPrimitiveProps, MockSwitchProps } from './tests/setup/jest-setup.types';
 
 installFocusedTestGuard();
 
@@ -49,27 +49,41 @@ jest.mock('heroui-native', () => {
   const RN = require('react-native') as typeof import('react-native');
   const actual = jest.requireActual('heroui-native');
 
-  // Simple passthrough wrapper that renders children in a View
-  const wrap =
-    (testID?: string) =>
-    ({ children, className: _className, ...props }: MockPrimitiveProps) =>
+  // Simple passthrough wrapper that renders children in a View.
+  // Each factory names the component it returns so a failing render points at the primitive
+  // instead of an anonymous frame -- these mocks stand in for the whole design system, so an
+  // unnamed one turns every UI test failure into a hunt.
+  const wrap = (testID?: string) => {
+    const Wrapped = ({ children, className: _className, ...props }: MockPrimitiveProps) =>
       React.createElement(RN.View, { testID, ...props }, children);
+    Wrapped.displayName = testID ?? 'MockView';
+    return Wrapped;
+  };
 
   // Text-like wrapper
-  const textWrap =
-    (testID?: string) =>
-    ({ children, className: _className, ...props }: MockPrimitiveProps) =>
+  const textWrap = (testID?: string) => {
+    const WrappedText = ({ children, className: _className, ...props }: MockPrimitiveProps) =>
       React.createElement(RN.Text, { testID, ...props }, children);
+    WrappedText.displayName = testID ?? 'MockText';
+    return WrappedText;
+  };
 
   // Pressable-like wrapper
-  const pressableWrap =
-    (testID?: string) =>
-    ({ children, className: _className, isDisabled, ...props }: MockPrimitiveProps) =>
+  const pressableWrap = (testID?: string) => {
+    const WrappedPressable = ({
+      children,
+      className: _className,
+      isDisabled,
+      ...props
+    }: MockPrimitiveProps) =>
       React.createElement(
         RN.Pressable,
         { testID, disabled: isDisabled, ...props },
         children
       );
+    WrappedPressable.displayName = testID ?? 'MockPressable';
+    return WrappedPressable;
+  };
 
   // Compound Card
   const Card = Object.assign(wrap('heroui-card'), {
@@ -118,6 +132,39 @@ jest.mock('heroui-native', () => {
     Content: wrap('heroui-tabs-content'),
   });
 
+  // Compound Switch. Unlike the other primitives this one MUST be mocked rather than passed
+  // through: the real implementation reads `globalIsAllAnimationsDisabled` off the HeroUI
+  // provider context, so rendering a screen containing one without wrapping every test in that
+  // provider throws. The mock stays interactive -- it reports the TOGGLED value on press -- so
+  // tests can still drive it with `fireEvent` and assert the handler contract.
+  const SwitchRoot = ({
+    children,
+    className: _className,
+    isDisabled,
+    isSelected,
+    onSelectedChange,
+    ...props
+  }: MockSwitchProps) =>
+    React.createElement(
+        RN.Pressable,
+        {
+          testID: 'heroui-switch',
+          accessibilityRole: 'switch',
+          accessibilityState: { checked: isSelected === true, disabled: isDisabled === true },
+          disabled: isDisabled === true,
+          onPress: () => onSelectedChange?.(isSelected !== true),
+          ...props,
+        },
+        children
+      );
+  SwitchRoot.displayName = 'heroui-switch';
+
+  const Switch = Object.assign(SwitchRoot, {
+    Thumb: wrap('heroui-switch-thumb'),
+    StartContent: wrap('heroui-switch-start-content'),
+    EndContent: wrap('heroui-switch-end-content'),
+  });
+
   // Compound TextField
   const TextField = wrap('heroui-text-field');
 
@@ -127,16 +174,19 @@ jest.mock('heroui-native', () => {
   });
 
   // Input extends TextInput
-  const Input = React.forwardRef<TextInput, MockPrimitiveProps>((props, ref) =>
-    React.createElement(RN.TextInput, { ref, ...props })
-  );
+  const InputRender = (props: MockPrimitiveProps, ref: React.Ref<TextInput>) =>
+    React.createElement(RN.TextInput, { ref, ...props });
+  InputRender.displayName = 'heroui-input';
+  const Input = React.forwardRef<TextInput, MockPrimitiveProps>(InputRender);
 
   // Simple components
   const Spinner = () => React.createElement(RN.ActivityIndicator);
+  Spinner.displayName = 'heroui-spinner';
   const Separator = wrap('heroui-separator');
   const Surface = wrap('heroui-surface');
   const Skeleton = ({ children, isLoading: _isLoading, ...props }: MockPrimitiveProps) =>
     React.createElement(RN.View, props, children);
+  Skeleton.displayName = 'heroui-skeleton';
 
   return {
     ...actual,
@@ -146,6 +196,7 @@ jest.mock('heroui-native', () => {
     Alert,
     BottomSheet,
     Tabs,
+    Switch,
     TextField,
     Label,
     Input,
@@ -265,5 +316,22 @@ jest.mock('react-native-worklets', () => {
       ...args: TArgs
     ) => callback?.(...args),
     WorkletsModule: {},
+  };
+});
+
+jest.mock('expo-crypto', () => {
+  // A real v4-SHAPED UUID per call, derived from a counter rather than a PRNG: tests exercise
+  // the shape the device produces AND stay reproducible, so a failure is the same failure on
+  // a rerun. A constant would be worse than either -- it would hide a collision bug behind an
+  // equality that always holds.
+  let sequence = 0;
+
+  return {
+    randomUUID: jest.fn(() => {
+      sequence += 1;
+      const body = sequence.toString(16).padStart(12, '0');
+
+      return `${body.slice(0, 8)}-${body.slice(8, 12)}-4000-8000-${body.padStart(12, '0')}`;
+    }),
   };
 });

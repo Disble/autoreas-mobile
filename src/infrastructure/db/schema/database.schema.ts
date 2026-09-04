@@ -1,5 +1,6 @@
 import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type {
+  SyncCycleStage,
   SyncRuntimeRegistrationStatus,
   SyncRuntimeTriggerSource,
 } from '../../../features/sync/sync-runtime-status.types';
@@ -94,6 +95,12 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   deviceId: text("device_id"),
   deviceName: text("device_name"),
   lastChangelogId: integer("last_changelog_id").default(0),
+  // User-owned kill switch for diagnostic telemetry. Defaults to ON so a device that hits the
+  // failure before anyone opens Settings still reports it, which is the whole point; turning it
+  // off stops the payload from being built or sent at all, not merely ignored downstream.
+  isSyncTelemetryEnabled: integer("is_sync_telemetry_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
 });
 
 /** Provides the shared pending remote changes value. */
@@ -140,6 +147,24 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   isBackgroundTaskRegistered: integer('is_background_task_registered', { mode: 'boolean' })
     .notNull()
     .default(false),
+  // Cycle post-mortem columns. A cycle killed by the host cannot report its own death, so the
+  // NEXT cycle reads these to reconstruct what happened. Each column answers a question that
+  // otherwise requires a USB cable and `adb logcat`.
+  lastCycleId: text('last_cycle_id'),
+  lastCycleStage: text('last_cycle_stage').$type<SyncCycleStage>(),
+  lastErrorName: text('last_error_name'),
+  lastNativeErrcodeByte: integer('last_native_errcode_byte'),
+  lastErrorStage: text('last_error_stage'),
+  consecutiveUnclosedCycles: integer('consecutive_unclosed_cycles').notNull().default(0),
+  // Instant the last checkpoint was taken. Without it, a `never_closed` cycle can only report
+  // `now - started_at`, which includes the gap until the NEXT cycle fired -- that measures how
+  // long ago it started, not how long it ran. With it, the duration is measured inside the cycle.
+  lastCycleStageAt: integer('last_cycle_stage_at'),
+  // Checkpoints that failed to persist during the last cycle. A checkpoint swallows its own
+  // errors so the instrument can never break the cycle, but silence would make a stale
+  // `last_cycle_stage` indistinguishable from an accurate one. Zero means the stage is
+  // trustworthy; anything else marks it as degraded rather than quietly wrong.
+  lastFailedCheckpointCount: integer('last_failed_checkpoint_count').notNull().default(0),
 });
 
 /** Defines the anime row value shape. */

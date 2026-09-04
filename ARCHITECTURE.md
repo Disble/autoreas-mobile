@@ -158,7 +158,7 @@ flowchart TD
   Provider --> Startup
   Startup --> ForegroundDB["prepareForegroundDatabase\nstartup DB adapter"]
   ForegroundDB --> Migrations["Drizzle migrations\nand ordered repairs"]
-  ForegroundDB --> Readiness["Schema validation\nPRAGMA user_version = 1"]
+  ForegroundDB --> Readiness["Schema validation\nPRAGMA user_version = migration count"]
   Startup --> Config["getBridgeConfigSnapshot"]
   BoundaryHook --> ReadyUI["Route Slot + SyncRuntimeGate\nready only"]
 
@@ -185,7 +185,7 @@ sequenceDiagram
   P->>S: handleDatabaseInit(rawDb)
   S->>D: busy timeout, WAL, migrations, ordered repairs
   S->>D: quick_check and required-table validation
-  S->>D: write user_version = 1
+  S->>D: write user_version = EXPECTED_SCHEMA_READINESS_VERSION
   S->>D: read bridge configuration
   S-->>B: ready + /(tabs) or /setup
   B->>R: replace target once
@@ -223,7 +223,26 @@ sequenceDiagram
 ### Startup invariants
 
 - Foreground startup is the only actor allowed to run migrations and schema repairs.
-- `PRAGMA user_version = 1` is written only after migrations and validation finish successfully.
+- `PRAGMA user_version = EXPECTED_SCHEMA_READINESS_VERSION` is written only after migrations and validation finish successfully.
+- **`EXPECTED_SCHEMA_READINESS_VERSION` is DERIVED from the migration journal, never written by hand.** It equals `migrationJournal.entries.length`, and a test in `tests/infrastructure/db/startup.helpers.test.ts` fails if the two ever diverge. This is not a style preference — see the defect below.
+
+### Why the readiness version is derived (measured defect, 2026-09-04)
+
+The constant used to be the literal `1`. That turned the readiness check into a **one-shot gate**: `prepareForegroundDatabase` returns early when the stored version already equals the expected one, so a device that had recorded `user_version = 1` on any earlier launch skipped `runMigrations` forever. **Every migration added after a device's first successful startup was silently never applied.**
+
+It surfaced only when an APK carrying new schema code was installed *over an existing install*: the app ran against the old table and failed on the first write to a column that was never created.
+
+```
+LocalWriteError: table sync_runtime_status has no column named last_cycle_id
+```
+
+Three properties of this defect are worth keeping in mind, because they are what made it survive:
+
+- **The full test suite was green.** 830 tests, typecheck, and lint all passed. Nothing exercised the upgrade path.
+- **A clean install would not reproduce it.** A fresh device reads `user_version = 0`, falls through, and migrates correctly. Only an upgrade over an existing install shows it.
+- **The tests were complicit.** They asserted the literal `'PRAGMA user_version = 1;'`, so the hardcoded value stayed consistent with itself and the gate looked correct. Those assertions now derive from the constant, and the `newer than expected` case derives as `EXPECTED + 1` — a literal `2` there would have silently become the *stale* case once the version passed 2, and stopped testing what it claims to test.
+
+**Adding a migration therefore requires no manual bump.** Generating one raises the journal length, an installed device reads a lower version, and the migrator runs. Drizzle tracks what it has already applied, so only the new entries execute.
 - Headless actors apply connection-local busy policy, verify exact durable readiness, then access application tables.
 - Headless actors close their dedicated connection and return a safe no-op while readiness is missing or stale.
 - The startup boundary exposes only allowlisted diagnostic fields. It never places raw SQLite errors, SQL, credentials, or bridge details in UI state.
@@ -291,6 +310,49 @@ hooks, `CI=true bun install` does not.
 `bun install` only installs hooks when it actually (re)installs packages, so a deleted hook on an
 otherwise-current tree is not restored by `bun install`. Repair with `npx lefthook install` on the
 host.
+
+## 14. Diagnostic Telemetry Boundary
+
+Sibling rule to §11. Where the Bridge Boundary says *all transport goes through one adapter*, this says **all diagnostic data reaches the wire through one function**. Full contract in `docs/mobile-diagnostic-telemetry.md`.
+
+```mermaid
+flowchart TD
+  subgraph Features["src/features/** — emitters"]
+    E1["use-websocket"]
+    E2["anime-mutation.helpers"]
+    E3["use-foreground-resync"]
+    E4["headless-sync-cycle"]
+  end
+
+  E1 --> RING["sync-diagnostic-store\nin-memory ring, coalesced\nnever throws, drops unknown symbols"]
+  E2 --> RING
+  E3 --> RING
+  E4 --> RING
+
+  RING --> GATE
+  SNAP["sync_runtime_status\nprevious cycle, read BEFORE\nthe attempt writes"] --> GATE
+  PREF["bridgeConfig\nis_sync_telemetry_enabled"] --> GATE
+
+  GATE["resolveClientTelemetry\nSINGLE EXIT\npreference + budget + serialization"]
+  GATE --> WIRE["buildReconcileRequestBody\nclient_telemetry"]
+  WIRE --> ADAPTER["BridgeClient\n§11 boundary"]
+
+  subgraph Infra["src/infrastructure/db — outside the write door"]
+    CP["sync-cycle-checkpoint\nautoreas-telemetry.db\nrunSync, own busy_timeout"]
+  end
+
+  E4 -.->|"stage checkpoints"| CP
+  CP -.->|"promoted next cycle"| SNAP
+```
+
+### Invariants
+
+- **One exit.** User preference, size budget and serialization converge in `resolveClientTelemetry`. Leaving any of the three to the caller makes it a convention a future call site forgets; funnelled into one function they are a property of the system. The kill switch has to be a guarantee, not a habit.
+- **Closed vocabularies, always.** The bridge stores request bodies verbatim and unsanitized. Every textual field is an allowlist member or `unknown` — never free text, never a raw `error.message`, which on Android carries database paths, SQL and bound values.
+- **Stage vocabulary is derived, never duplicated.** `SYNC_CYCLE_STAGES` is the single source; the union type derives from it and the transport allowlist re-exports it. A second hand-written copy is how a vocabulary drifts from the code it describes.
+- **The instrument never shares a failure domain with what it measures.** The event ring is in memory rather than on the shared write door, and stage checkpoints write synchronously to a **separate database file** — the write queue is keyed by file path, so a side file is the only way out of the door.
+- **Instrumentation never breaks its subject.** `recordDiagnosticEvent` never throws and drops anything outside the vocabulary.
+- **Absence is omission, not null.** With nothing to send, the key is absent from the body. The bridge stores that body raw, so an empty key is permanent noise in its store.
 
 ---
 *If in doubt, refer to the `src/features/animes` directory as the Gold Standard for implementation.*

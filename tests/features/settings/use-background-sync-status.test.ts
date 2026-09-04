@@ -50,6 +50,14 @@ describe('useBackgroundSyncStatus', () => {
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
       isBackgroundTaskRegistered: false,
+      lastCycleId: null,
+      lastCycleStage: null,
+      lastErrorName: null,
+      lastNativeErrcodeByte: null,
+      lastErrorStage: null,
+      consecutiveUnclosedCycles: 0,
+      lastCycleStageAt: null,
+      lastFailedCheckpointCount: 0,
     });
   });
 
@@ -71,6 +79,14 @@ describe('useBackgroundSyncStatus', () => {
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
           isBackgroundTaskRegistered: true,
+          lastCycleId: null,
+          lastCycleStage: null,
+          lastErrorName: null,
+          lastNativeErrcodeByte: null,
+          lastErrorStage: null,
+          consecutiveUnclosedCycles: 0,
+          lastCycleStageAt: null,
+          lastFailedCheckpointCount: 0,
         },
       ],
     });
@@ -91,6 +107,14 @@ describe('useBackgroundSyncStatus', () => {
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
       isBackgroundTaskRegistered: true,
+      lastCycleId: null,
+      lastCycleStage: null,
+      lastErrorName: null,
+      lastNativeErrcodeByte: null,
+      lastErrorStage: null,
+      consecutiveUnclosedCycles: 0,
+      lastCycleStageAt: null,
+      lastFailedCheckpointCount: 0,
     });
   });
 
@@ -112,6 +136,14 @@ describe('useBackgroundSyncStatus', () => {
           lastBacklogReadCount: 0,
           lastPrunedOperationsCount: 0,
           isBackgroundTaskRegistered: false,
+          lastCycleId: null,
+          lastCycleStage: null,
+          lastErrorName: null,
+          lastNativeErrcodeByte: null,
+          lastErrorStage: null,
+          consecutiveUnclosedCycles: 0,
+          lastCycleStageAt: null,
+          lastFailedCheckpointCount: 0,
         },
       ],
     });
@@ -132,6 +164,14 @@ describe('useBackgroundSyncStatus', () => {
       lastBacklogReadCount: 0,
       lastPrunedOperationsCount: 0,
       isBackgroundTaskRegistered: false,
+      lastCycleId: null,
+      lastCycleStage: null,
+      lastErrorName: null,
+      lastNativeErrcodeByte: null,
+      lastErrorStage: null,
+      consecutiveUnclosedCycles: 0,
+      lastCycleStageAt: null,
+      lastFailedCheckpointCount: 0,
     });
   });
 });

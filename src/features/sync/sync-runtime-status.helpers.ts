@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
-import { syncRuntimeStatus } from '../../infrastructure/db/schema';
+import { syncRuntimeStatus, type SyncRuntimeStatusRow } from '../../infrastructure/db/schema';
 import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
   SYNC_RUNTIME_STATUS_SINGLETON_ID,
@@ -100,10 +100,51 @@ function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch 
 }
 
 /**
+ * Applies the neutral fallback for a persisted column value using nullish coalescing, so a
+ * legitimate `0` (or `false`) survives instead of being replaced the way `||` would.
+ * Factored out so the per-column mapping below reads as a flat list of calls -- with no `??`
+ * of its own, that mapping stays a single, unbranched path.
+ */
+export function withColumnDefault<T>(value: T | null | undefined, fallback: T): T {
+  return value ?? fallback;
+}
+
+/**
+ * Maps a persisted runtime-status row into its snapshot shape, applying the neutral default
+ * for every optional column. Extracted from `getSyncRuntimeStatusSnapshot` so the per-column
+ * default tail does not inflate that function's own complexity budget.
+ */
+function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): SyncRuntimeStatusSnapshot {
+  return {
+    registrationStatus: row.registrationStatus,
+    executionMode: row.executionMode,
+    isForegroundServiceRunning: row.isForegroundServiceRunning,
+    canShowPersistentNotification: row.canShowPersistentNotification,
+    lastAttemptAt: withColumnDefault(row.lastAttemptAt, null),
+    lastSuccessAt: withColumnDefault(row.lastSuccessAt, null),
+    lastFailureMessage: withColumnDefault(row.lastFailureMessage, null),
+    lastTriggerSource: withColumnDefault(row.lastTriggerSource, null),
+    lastSyncedCount: withColumnDefault(row.lastSyncedCount, 0),
+    isCycleActive: withColumnDefault(row.isCycleActive, false),
+    lastBacklogReadCount: withColumnDefault(row.lastBacklogReadCount, 0),
+    lastPrunedOperationsCount: withColumnDefault(row.lastPrunedOperationsCount, 0),
+    isBackgroundTaskRegistered: withColumnDefault(row.isBackgroundTaskRegistered, false),
+    lastCycleId: withColumnDefault(row.lastCycleId, null),
+    lastCycleStage: withColumnDefault(row.lastCycleStage, null),
+    lastErrorName: withColumnDefault(row.lastErrorName, null),
+    lastNativeErrcodeByte: withColumnDefault(row.lastNativeErrcodeByte, null),
+    lastErrorStage: withColumnDefault(row.lastErrorStage, null),
+    consecutiveUnclosedCycles: withColumnDefault(row.consecutiveUnclosedCycles, 0),
+    lastCycleStageAt: withColumnDefault(row.lastCycleStageAt, null),
+    lastFailedCheckpointCount: withColumnDefault(row.lastFailedCheckpointCount, 0),
+  };
+}
+
+/**
  * Reads the persisted singleton runtime snapshot from SQLite.
  * When no row exists yet, the neutral snapshot is returned instead.
  */
-async function getSyncRuntimeStatusSnapshot(
+export async function getSyncRuntimeStatusSnapshot(
   rawDb: SQLiteDatabase,
 ): Promise<SyncRuntimeStatusSnapshot> {
   const db = createDrizzleDb(rawDb);
@@ -113,92 +154,131 @@ async function getSyncRuntimeStatusSnapshot(
     .where(eq(syncRuntimeStatus.id, SYNC_RUNTIME_STATUS_SINGLETON_ID))
     .limit(1);
 
-  if (!row) {
-    return createEmptySyncRuntimeStatusSnapshot();
-  }
+  return row ? mapSyncRuntimeStatusRowToSnapshot(row) : createEmptySyncRuntimeStatusSnapshot();
+}
 
+/**
+ * Applies a patch field that may deliberately clear a value to `null`. Unlike
+ * `withColumnDefault`, an explicit `null` in the patch is preserved as-is; only `undefined`
+ * (the field was not mentioned) falls back to the current value. This is what makes "no error
+ * this cycle" representable -- `??` would silently treat that `null` as absent instead.
+ */
+export function withPatchOverride<T>(patchValue: T | null | undefined, currentValue: T | null): T | null {
+  return patchValue === undefined ? currentValue : patchValue;
+}
+
+/**
+ * Merges a runtime-status patch onto the current snapshot, one column at a time. Extracted
+ * from `persistSyncRuntimeStatusPatch` so the per-column merge tail does not inflate that
+ * function's own complexity budget.
+ */
+function mergeSyncRuntimeStatusPatch(
+  current: SyncRuntimeStatusSnapshot,
+  patch: SyncRuntimeStatusPatch,
+): SyncRuntimeStatusSnapshot {
   return {
-    registrationStatus: row.registrationStatus,
-    executionMode: row.executionMode,
-    isForegroundServiceRunning: row.isForegroundServiceRunning,
-    canShowPersistentNotification: row.canShowPersistentNotification,
-    lastAttemptAt: row.lastAttemptAt ?? null,
-    lastSuccessAt: row.lastSuccessAt ?? null,
-    lastFailureMessage: row.lastFailureMessage ?? null,
-    lastTriggerSource: row.lastTriggerSource ?? null,
-    lastSyncedCount: row.lastSyncedCount ?? 0,
-    isCycleActive: row.isCycleActive ?? false,
-    lastBacklogReadCount: row.lastBacklogReadCount ?? 0,
-    lastPrunedOperationsCount: row.lastPrunedOperationsCount ?? 0,
-    isBackgroundTaskRegistered: row.isBackgroundTaskRegistered ?? false,
+    registrationStatus: withColumnDefault(patch.registrationStatus, current.registrationStatus),
+    executionMode: withColumnDefault(patch.executionMode, current.executionMode),
+    isForegroundServiceRunning: withColumnDefault(
+      patch.isForegroundServiceRunning,
+      current.isForegroundServiceRunning,
+    ),
+    canShowPersistentNotification: withColumnDefault(
+      patch.canShowPersistentNotification,
+      current.canShowPersistentNotification,
+    ),
+    lastAttemptAt: withPatchOverride(patch.lastAttemptAt, current.lastAttemptAt),
+    lastSuccessAt: withPatchOverride(patch.lastSuccessAt, current.lastSuccessAt),
+    lastFailureMessage: withPatchOverride(patch.lastFailureMessage, current.lastFailureMessage),
+    lastTriggerSource: withPatchOverride(patch.lastTriggerSource, current.lastTriggerSource),
+    lastSyncedCount: withColumnDefault(patch.lastSyncedCount, current.lastSyncedCount),
+    isCycleActive: withColumnDefault(patch.isCycleActive, current.isCycleActive),
+    lastBacklogReadCount: withColumnDefault(patch.lastBacklogReadCount, current.lastBacklogReadCount),
+    lastPrunedOperationsCount: withColumnDefault(
+      patch.lastPrunedOperationsCount,
+      current.lastPrunedOperationsCount,
+    ),
+    isBackgroundTaskRegistered: withColumnDefault(
+      patch.isBackgroundTaskRegistered,
+      current.isBackgroundTaskRegistered,
+    ),
+    // Nullable columns use `withPatchOverride` rather than `withColumnDefault`: a patch that
+    // deliberately CLEARS a field to null must survive, and a nullish-coalescing default would
+    // silently fall through to the current value instead, making "no error this cycle" unrepresentable.
+    lastCycleId: withPatchOverride(patch.lastCycleId, current.lastCycleId),
+    lastCycleStage: withPatchOverride(patch.lastCycleStage, current.lastCycleStage),
+    lastErrorName: withPatchOverride(patch.lastErrorName, current.lastErrorName),
+    lastNativeErrcodeByte: withPatchOverride(patch.lastNativeErrcodeByte, current.lastNativeErrcodeByte),
+    lastErrorStage: withPatchOverride(patch.lastErrorStage, current.lastErrorStage),
+    consecutiveUnclosedCycles: withColumnDefault(
+      patch.consecutiveUnclosedCycles,
+      current.consecutiveUnclosedCycles,
+    ),
+    lastCycleStageAt: withPatchOverride(patch.lastCycleStageAt, current.lastCycleStageAt),
+    lastFailedCheckpointCount: withColumnDefault(
+      patch.lastFailedCheckpointCount,
+      current.lastFailedCheckpointCount,
+    ),
   };
 }
 
-async function persistSyncRuntimeStatusPatch(
+/**
+ * Writes the merged runtime-status snapshot into the singleton row via upsert. Extracted from
+ * `persistSyncRuntimeStatusPatch` so that function's own line count and complexity stay within
+ * budget; the insert and update columns are built once and shared between both clauses.
+ */
+async function writeSyncRuntimeStatusRow(
   rawDb: SQLiteDatabase,
-  patch: SyncRuntimeStatusPatch,
+  next: SyncRuntimeStatusSnapshot,
 ): Promise<void> {
-  const current = await getSyncRuntimeStatusSnapshot(rawDb);
-  const next: SyncRuntimeStatusSnapshot = {
-    registrationStatus: patch.registrationStatus ?? current.registrationStatus,
-    executionMode: patch.executionMode ?? current.executionMode,
-    isForegroundServiceRunning:
-      patch.isForegroundServiceRunning ?? current.isForegroundServiceRunning,
-    canShowPersistentNotification:
-      patch.canShowPersistentNotification ?? current.canShowPersistentNotification,
-    lastAttemptAt: patch.lastAttemptAt === undefined ? current.lastAttemptAt : patch.lastAttemptAt,
-    lastSuccessAt: patch.lastSuccessAt === undefined ? current.lastSuccessAt : patch.lastSuccessAt,
-    lastFailureMessage:
-      patch.lastFailureMessage === undefined ? current.lastFailureMessage : patch.lastFailureMessage,
-    lastTriggerSource:
-      patch.lastTriggerSource === undefined ? current.lastTriggerSource : patch.lastTriggerSource,
-    lastSyncedCount: patch.lastSyncedCount ?? current.lastSyncedCount,
-    isCycleActive: patch.isCycleActive ?? current.isCycleActive,
-    lastBacklogReadCount: patch.lastBacklogReadCount ?? current.lastBacklogReadCount,
-    lastPrunedOperationsCount:
-      patch.lastPrunedOperationsCount ?? current.lastPrunedOperationsCount,
-    isBackgroundTaskRegistered:
-      patch.isBackgroundTaskRegistered ?? current.isBackgroundTaskRegistered,
+  const columns = {
+    registrationStatus: next.registrationStatus,
+    executionMode: next.executionMode,
+    isForegroundServiceRunning: next.isForegroundServiceRunning,
+    canShowPersistentNotification: next.canShowPersistentNotification,
+    lastAttemptAt: next.lastAttemptAt,
+    lastSuccessAt: next.lastSuccessAt,
+    lastFailureMessage: next.lastFailureMessage,
+    lastTriggerSource: next.lastTriggerSource,
+    lastSyncedCount: next.lastSyncedCount,
+    isCycleActive: next.isCycleActive,
+    lastBacklogReadCount: next.lastBacklogReadCount,
+    lastPrunedOperationsCount: next.lastPrunedOperationsCount,
+    isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
+    lastCycleId: next.lastCycleId,
+    lastCycleStage: next.lastCycleStage,
+    lastErrorName: next.lastErrorName,
+    lastNativeErrcodeByte: next.lastNativeErrcodeByte,
+    lastErrorStage: next.lastErrorStage,
+    consecutiveUnclosedCycles: next.consecutiveUnclosedCycles,
+    lastCycleStageAt: next.lastCycleStageAt,
+    lastFailedCheckpointCount: next.lastFailedCheckpointCount,
   };
 
   await withLocalWrite(rawDb, async (db) => {
     await db
       .insert(syncRuntimeStatus)
-      .values({
-        id: SYNC_RUNTIME_STATUS_SINGLETON_ID,
-        registrationStatus: next.registrationStatus,
-        executionMode: next.executionMode,
-        isForegroundServiceRunning: next.isForegroundServiceRunning,
-        canShowPersistentNotification: next.canShowPersistentNotification,
-        lastAttemptAt: next.lastAttemptAt,
-        lastSuccessAt: next.lastSuccessAt,
-        lastFailureMessage: next.lastFailureMessage,
-        lastTriggerSource: next.lastTriggerSource,
-        lastSyncedCount: next.lastSyncedCount,
-        isCycleActive: next.isCycleActive,
-        lastBacklogReadCount: next.lastBacklogReadCount,
-        lastPrunedOperationsCount: next.lastPrunedOperationsCount,
-        isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
-      })
+      .values({ id: SYNC_RUNTIME_STATUS_SINGLETON_ID, ...columns })
       .onConflictDoUpdate({
         target: syncRuntimeStatus.id,
-        set: {
-          registrationStatus: next.registrationStatus,
-          executionMode: next.executionMode,
-          isForegroundServiceRunning: next.isForegroundServiceRunning,
-          canShowPersistentNotification: next.canShowPersistentNotification,
-          lastAttemptAt: next.lastAttemptAt,
-          lastSuccessAt: next.lastSuccessAt,
-          lastFailureMessage: next.lastFailureMessage,
-          lastTriggerSource: next.lastTriggerSource,
-          lastSyncedCount: next.lastSyncedCount,
-          isCycleActive: next.isCycleActive,
-          lastBacklogReadCount: next.lastBacklogReadCount,
-          lastPrunedOperationsCount: next.lastPrunedOperationsCount,
-          isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
-        },
+        set: columns,
       });
   });
+}
+
+/**
+ * Read-modify-write of the singleton runtime row, so callers can patch one field without
+ * restating the rest. The full snapshot is rebuilt before writing because the row is an upsert:
+ * a partial `values()` would reset every column the caller did not mention.
+ */
+async function persistSyncRuntimeStatusPatch(
+  rawDb: SQLiteDatabase,
+  patch: SyncRuntimeStatusPatch,
+): Promise<void> {
+  const current = await getSyncRuntimeStatusSnapshot(rawDb);
+  const next = mergeSyncRuntimeStatusPatch(current, patch);
+
+  await writeSyncRuntimeStatusRow(rawDb, next);
 }
 
 /**
