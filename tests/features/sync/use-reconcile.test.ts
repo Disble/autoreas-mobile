@@ -32,7 +32,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
-// eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
+/** Bridge reconcile endpoint the mocked HTTP layer is asserted against. */
 const RECONCILE_URL = 'http://192.168.1.10:9876/api/sync/reconcile';
 
 describe('syncPendingOperations', () => {

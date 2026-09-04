@@ -31,7 +31,6 @@ describe('bridge-client', () => {
 
     const result = await client.listAnimes(connection);
 
-    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/animes', {
       method: 'GET',
       headers: { Authorization: 'Bearer token123' },
@@ -44,7 +43,6 @@ describe('bridge-client', () => {
       status: 200,
       data: [{ _id: 'anime-1' }],
       rawBody: JSON.stringify([{ _id: 'anime-1' }]),
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
       url: 'http://192.168.1.10:9876/api/animes',
     });
   });
@@ -57,7 +55,6 @@ describe('bridge-client', () => {
 
     const result = await client.reconcile(connection, { last_changelog_id: 0 });
 
-    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/sync/reconcile', {
       method: 'POST',
       headers: {
@@ -83,7 +80,6 @@ describe('bridge-client', () => {
       { pairingToken: 'pair-token', deviceName: 'AutoreasMobile' },
     );
 
-    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/devices/pair', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,7 +118,6 @@ describe('bridge-client', () => {
 
     const result = client.openWebSocket(connection);
 
-    // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses WS on the LAN.
     expect(createWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:9876/ws', 'token123');
     expect(result).toBe(socket);
   });

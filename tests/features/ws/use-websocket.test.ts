@@ -11,6 +11,7 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
   useOptionalSQLiteContext: jest.fn(),
 }));
 
+/** Builds a WebSocket test double whose handlers start null so a test can fire them by hand. */
 function buildWsMock() {
   return {
     onopen: null as ((e: Event) => void) | null,
@@ -68,7 +69,6 @@ describe('useWebSocket', () => {
       // The bridge speaks plain ws over the LAN behind a bearer token. This string
       // is what the hook builds, so asserting wss would assert behaviour that does
       // not exist; the transport choice is not made here.
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
       'ws://192.168.1.10:9876/ws',
       null,
       expect.objectContaining({ headers: { Authorization: 'Bearer token123' } }),

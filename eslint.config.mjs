@@ -1,7 +1,16 @@
-// dlinter-ts-react v0.9.0 integration (real test)
-// The Bridge Boundary that previously lived as hand-rolled no-restricted-syntax
-// selectors is now expressed as dlinter's infrastructure edge.
-import { createRecommendedConfig } from 'dlinter-ts-react';
+// `dlinter-ts-react` is deprecated and has been removed. It was a preset that bundled other
+// people's plugins, so dropping it dropped 540 active rules at once -- 231 react-doctor, 205
+// sonarjs, 38 @typescript-eslint, and the rest. The plugins worth keeping are wired directly
+// below instead, which is why `eslint-plugin-react-doctor` was already a direct dependency here
+// and did not need dlinter to reach it.
+//
+// `sonarjs` is deliberately NOT reinstated: its rules are the ESLint port of SonarQube's own
+// ruleset, and this project analyses that surface through SonarQube instead of at commit time.
+import js from '@eslint/js';
+import importPlugin from 'eslint-plugin-import-x';
+import reactDoctor from 'eslint-plugin-react-doctor';
+import typescriptEslint from '@typescript-eslint/eslint-plugin';
+import typescriptParser from '@typescript-eslint/parser';
 // dharness:eslint-import begin — rewritten by `dharness sync`; edits here are lost.
 import dharnessPlugin from "dharness-eslint-plugin";
 import dharnessExpo from "eslint-config-expo/flat.js";
@@ -29,16 +38,91 @@ export default [
       'tests/sqlite-lab/**',
     ],
   },
-  ...createRecommendedConfig({
-    infrastructure: {
-      importPatterns: ['(^|/)infrastructure(/|$)'],
-    },
-  }),
   {
-    // Write-door boundary (sqlite-write-lock-contention design.md Decision 8). dlinter's
-    // `infrastructure` edge above governs import specifiers and runtime globals, not method
-    // calls, so it cannot express "route every write through withLocalWrite". This block fills
-    // that gap directly: feature code may not call the raw SQLite write/transaction methods --
+    // react-doctor, wired directly rather than through the deprecated preset. `recommended` and
+    // `react-native` are plain config objects, not flat arrays, so their rule maps are merged
+    // here explicitly; the RN set is additive (40 rules) on top of the base (581).
+    //
+    // CLAUDE.md constraint 10 requires react-doctor to report 100/100 after React changes, so
+    // this is the one part of the removed preset that could not simply be dropped.
+    files: ['**/*.{js,jsx,ts,tsx,mjs,cjs}'],
+    plugins: {
+      ...reactDoctor.configs.recommended.plugins,
+      ...reactDoctor.configs['react-native'].plugins,
+    },
+    rules: {
+      ...reactDoctor.configs.recommended.rules,
+      ...reactDoctor.configs['react-native'].rules,
+      // Turned off because it contradicts a documented project constraint, not because it is
+      // noisy. The Hook Anatomy Rule (CLAUDE.md rule 2) prescribes a fixed order in which step 5
+      // is `useMemo` and step 6 is `useCallback`, so every hook in this codebase memoises by hand
+      // on purpose. This rule flagged 123 of them. One of the two has to give, and the repo-wide
+      // convention outranks a lint default that assumes the React Compiler is doing the work.
+      'react-doctor/react-compiler-no-manual-memoization': 'off',
+    },
+  },
+  {
+    // The 51 core rules the preset supplied. `js.configs.recommended` is exactly that set, so
+    // dropping the preset does not cost a single one of them.
+    files: ['**/*.{js,jsx,ts,tsx,mjs,cjs}'],
+    ...js.configs.recommended,
+  },
+  {
+    // TypeScript, syntax-only -- deliberately matching what the removed preset ACHIEVED rather
+    // than what it declared.
+    //
+    // The preset declared 23 type-aware rules at `error` (`no-floating-promises`,
+    // `no-misused-promises`, `require-await`, the `no-unsafe-*` family) but never configured
+    // `parserOptions.project`, and a type-aware rule without a program resolves nothing and
+    // reports nothing. Measured: enabling them properly here surfaced 484 findings on code that
+    // linted clean for as long as the preset was installed. They were switched on and blind.
+    //
+    // Turning them on for real is worth doing -- they are the only rules that can see an
+    // un-awaited promise, which is this codebase's recurring defect -- but it is a separate
+    // decision with 484 findings attached, not a side effect of deleting a deprecated preset.
+    // Restore `recommended-type-checked` plus `parserOptions: { projectService: true }` to take it.
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: { parser: typescriptParser },
+    plugins: { '@typescript-eslint': typescriptEslint },
+    rules: {
+      ...typescriptEslint.configs.recommended.rules,
+      // TypeScript already proves every identifier resolves, and with the real module graph
+      // rather than a globals list. Leaving core `no-undef` on for TS is the documented
+      // typescript-eslint anti-pattern: it reported 4949 findings here, every one of them a name
+      // the compiler already knows. The preset had it off for the same reason.
+      'no-undef': 'off',
+    },
+  },
+  {
+    // Import graph rules. `no-cycle` and `no-unresolved` are the two that carry weight here: a
+    // cycle between a feature's helpers and its barrel is exactly the shape this codebase keeps
+    // producing, and neither the core set nor react-doctor can see it.
+    files: ['**/*.{js,jsx,ts,tsx,mjs,cjs}'],
+    plugins: { 'import-x': importPlugin },
+    rules: {
+      'import-x/no-cycle': 'error',
+      'import-x/no-duplicates': 'error',
+      'import-x/no-named-as-default': 'error',
+      'import-x/no-named-as-default-member': 'error',
+    },
+  },
+  {
+    // `max-lines` came from the preset, not from any plugin's recommended set, and the 500-line
+    // ceiling is a documented project constraint (CLAUDE.md rule 5) -- so it is restored by hand
+    // rather than inherited. Without this the ceiling would be convention only, which is how the
+    // Bridge Boundary rule already decayed.
+    files: ['**/*.{js,jsx,ts,tsx,mjs,cjs}'],
+    rules: {
+      'max-lines': ['error', { max: 500, skipBlankLines: false, skipComments: false }],
+    },
+  },
+  {
+    // Write-door boundary (sqlite-write-lock-contention design.md Decision 8). This used to be
+    // described as filling a gap left by the removed preset's `infrastructure` edge, which
+    // governed import specifiers rather than method calls. That edge is gone with the preset, so
+    // these selectors are now the only thing expressing "route every write through
+    // withLocalWrite" -- nothing else in the config can see a method call on a connection.
+    // Feature code may not call the raw SQLite write/transaction methods --
     // it must go through withLocalWrite (src/infrastructure/db/client) and use the `tx` handle
     // that door provides. ESLint cannot statically prove an arbitrary identifier IS that `tx`
     // handle, so the exemption is fixed by convention: only a callee object literally named `tx`
