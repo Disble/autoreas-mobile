@@ -913,13 +913,29 @@ Every one of the 25 timeouts predates the new build — the most recent is **Thu
 
 The pending job reports `Minimum latency: +14m59s996ms`. Fifteen minutes, not fifteen hours. The unit repair is confirmed against the platform rather than against a constant.
 
-### D.3 A consequence nobody modelled: the app is out of job quota
+### D.3 The timeout counters — and a claim retracted
 
-`inQuotaTime` sits **40,393 seconds — about 11.2 hours — in the future.**
+`inQuotaTime` on both timeout trackers sits about 11.2 hours in the future, and the counters read 25 against limits of 3 (`timeout-reg`) and 10 (`timeout-total`).
 
-The timeout loop did not merely waste cycles. It **burned the app's JobScheduler quota**: 25 timeouts against a `timeout-reg` limit of 3 and a `timeout-total` limit of 10. JobScheduler now throttles this app's jobs until roughly 13:00 today, and no code change can shorten that — the penalty is held by the platform, keyed to the damage the old build already did.
+**An earlier version of this appendix concluded from that the app was throttled for eleven hours, and called it a measurement trap. That conclusion was wrong and is retracted.** The same `dumpsys` output disproves it, in lines that were already on screen:
 
-**This is a measurement trap and it must be stated before anyone tests.** If background sync looks broken during the next ~11 hours, that observation is *uninformative*: the throttle is a sufficient explanation on its own, independent of whether the repair works. Any campaign that starts before the quota window clears will produce a false negative and, worse, a confident one.
+```
+Satisfied constraints:   CONNECTIVITY FLEXIBILITY DEVICE_NOT_DOZING BACKGROUND_NOT_RESTRICTED WITHIN_QUOTA UID_NOT_RESTRICTED
+Unsatisfied constraints: TIMING_DELAY
+```
+
+`WITHIN_QUOTA` is **satisfied**, as are `BACKGROUND_NOT_RESTRICTED` and `UID_NOT_RESTRICTED`. The only thing holding the job is `TIMING_DELAY` — the fifteen-minute latency this change itself introduced. The app is not being throttled.
+
+The error was conflating two different mechanisms that both use the word quota:
+
+| Mechanism | What it governs | Evidence here |
+|---|---|---|
+| **QuotaController** | Per-standby-bucket *execution* quota. Produces the `WITHIN_QUOTA` job constraint. | Satisfied — the app is in bucket ACTIVE and within it. |
+| **`timeout-reg` / `timeout-total`** | `CountQuotaTracker` counters in `JobSchedulerService`, counting job timeouts per 24 h window. | 25 against limits of 3 and 10, `inQuotaTime` ~11.2 h out. |
+
+**What exceeding the timeout counters actually does is not established here, and this document will not guess a second time.** The counters are real and the overage is real; the operational consequence is unverified, and the one piece of direct evidence available points at *no* current restriction.
+
+**The H06h finding in D.1 is untouched by this.** It rests on the twenty-five recorded timeouts and their ~600 s spacing — a record of worker deaths, which stands regardless of what penalty the counter carries. The retraction costs the consequence, not the diagnosis.
 
 ### D.4 What is NOT established
 
