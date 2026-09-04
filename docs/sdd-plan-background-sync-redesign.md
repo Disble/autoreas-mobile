@@ -319,18 +319,49 @@ What shipped instead repairs the existing engine's two verified defects and ship
 
 ---
 
-## 12. The poison-batch freeze — a second, independent reason for the quarantine
+## 12. Invisible partial application — a failure mode worse than the one first described
 
-Found by `team-bridge` on 2026-09-04 while looking for A10's mirror image on their side. They did **not** find A10 there: the reconcile write path calls `GetMobileAnime` before writing, so an unknown `_id` never falls through to a zero-row update reported as success. Their `applied: true` is honest.
+Found by `team-bridge` on 2026-09-04 while looking for A10's mirror image on their side, then **corrected by them a second time** after they verified the loop instead of recalling it. Both the finding and its correction are recorded, because the corrected shape is materially worse and a quarantine designed against the first version would have been designed against the wrong problem.
 
-What they found instead is a different member of the same family, and it is worse in shape.
+They did **not** find A10 on the bridge. Its reconcile write path calls `GetMobileAnime` before writing, so an unknown `_id` never falls through to a zero-row update reported as success. Their `applied: true` is honest.
 
-**The bridge side.** A not-found error propagates up through `applyPendingOperations`, which breaks the loop and returns it, and `pendingOperationErrorResponse` has no not-found branch — so it falls to the default and answers **500 for the whole request**. Send five pending operations where exactly one names an anime the bridge does not have, and you do not get `applied: false` for that one and `true` for the other four. You get a 500, an `ErrorResponse` carrying no `applied_operations` at all, and **none of the five lands**.
+### 12.1 What actually happens
 
-**The mobile side, verified here.** `isPermanentReconcileError` (`reconcile.helpers.ts:185-187`) treats only 400–499 as permanent; everything else resets the batch to `pending` (`:413`). There is no attempt counter and no escape. So a poison batch is retried identically, forever — **the same 43-hour shape the measured symptom has, reached from an entirely different cause.** A record that is not poisonous because of its content, but because it does not exist on the other side.
+`applyPendingOperations` wraps the batch in **no transaction at all**. Each operation applies individually and durably through the gateway's own transaction, and the loop returns on the first failure:
 
-**Measured: it has never happened.** 520 reconciles in the retained window, all `accepted` with 202, zero `error_code`. Reachable in theory, unobserved in practice, and *not* the cause of what this redesign is chasing. Recording it as a hypothesis with a `(bridge)` verdict of NOT OBSERVED rather than as a live suspect.
+```go
+result, err := applyPendingPatch(ctx, operation.AnimeID, patch)
+if err != nil {
+    return results, err
+}
+```
 
-**Why it matters anyway — the quarantine now has two independent justifications.** §8.4 justified it by mobile's own all-or-nothing cursor. This justifies it again by the bridge's all-or-nothing batch. A `dead_letter` transition after N identical failures protects against both, and needs no contract change in either repository. That is a meaningfully stronger case than one reason twice as loud: two unrelated failure modes converge on the same local mechanism.
+So with operation 3 poisoned in a batch of five: **operations 1 and 2 are already written to disk**, 3 failed, and 4 and 5 were never attempted.
 
-**A contract asymmetry worth naming, for the bridge owner to decide.** `PATCH /api/animes/{id}` on an unknown id answers **404**, because its handler has the not-found guard. The same id inside a reconcile's `pending_operations` answers **500**. One condition, two status codes, and only one of them tells the client what went wrong. If it is ever taken up it becomes a new BR row: either the reconcile degrades to `applied: false` for that operation and applies the rest, or it answers 404 naming the offending `anime_id` instead of a mute 500. `team-bridge` has escalated it and deliberately did not touch it — it sits outside the three items their repo owner authorized.
+The first description of this said the whole batch was rejected and nothing landed. That was wrong, and the truth is worse rather than better — **because the client is told nothing about the prefix that landed.** The failure answers a mute 500 carrying an `ErrorResponse` with no `applied_operations` at all. Under genuine all-or-nothing a retry would at least be semantically clean: nothing had happened. Under partial application, mobile retries a batch in which two operations are already applied on the bridge while it still holds them as `pending`, with no way to tell which.
+
+### 12.2 The mobile half, verified here
+
+`isPermanentReconcileError` (`reconcile.helpers.ts:185-187`) treats only 400–499 as permanent; everything else resets the batch to `pending` (`:413`). There is no attempt counter anywhere. So the poisoned batch is retried identically, forever.
+
+**The hole is narrower than first described, and that narrowing is real.** A malformed operation fails `decodePendingOperationPatch`, which maps to **400** — and a 400 mobile already treats as permanent, so a malformed operation degrades correctly and never enters the loop. **Only the nonexistent-anime path answers 500**, and that is the only one mobile retries forever.
+
+**Measured: it has never happened.** 520 reconciles in the retained window, all `accepted` with 202, zero `error_code`. Reachable in theory, unobserved in practice, and **not** the cause of the failure this redesign is chasing. Recorded with a `(bridge)` verdict of NOT OBSERVED rather than as a live suspect.
+
+### 12.3 What this does and does not do to the quarantine design
+
+An earlier version of this section claimed the finding gave the quarantine a second independent justification, on the grounds that two unrelated all-or-nothing failures converged on one local mechanism. **With the corrected shape that argument does not hold**, and keeping it would have been the more comfortable error.
+
+What the bridge produces is not a second all-or-nothing failure. It is **invisible partial application**, and a quarantine that counts identical failures and dead-letters after N of them stops the freeze without telling mobile which operations were already applied. It is still the correct defence against the freeze — that part stands, and it is worth having — but it does not reconcile the prefix, and this document should not pretend otherwise.
+
+Reconciling the prefix needs information mobile cannot derive locally. The likely exit is that the bridge returns `applied_operations` **even on a failure response**, which is a third contract option neither side had put on the table. `team-bridge` raised it; it belongs to the bridge owner.
+
+### 12.4 Open, and deliberately not asserted
+
+Whether re-applying an already-applied operation on retry is harmless is **unverified**. `AnimePatchOutcomeNoOp` exists in the bridge's result vocabulary, so an identical patch probably resolves as a no-op producing neither a changelog row nor a broadcast — but `team-bridge` explicitly declined to assert it without measuring, and this plan will not assert it either. If any mobile design comes to depend on retry being inert, that measurement has to be requested first.
+
+### 12.5 A contract asymmetry, for the bridge owner
+
+`PATCH /api/animes/{id}` on an unknown id answers **404**, because its handler carries the not-found guard. The same id inside a reconcile's `pending_operations` answers **500**. One condition, two status codes, and only one of them tells the client what went wrong.
+
+Of the exits available, **degrading to `applied: false` for the offending operation and applying the rest** is better than answering 404 with the offending `anime_id` — and not merely for client convenience. A 404 is still all-or-nothing with a better message; per-operation degradation is what stops a missing record from being able to poison a batch at all, which is the actual problem. If it is taken up it becomes a new BR row. `team-bridge` escalated it and deliberately did not touch it: it sits outside the three items their repo owner authorized.
