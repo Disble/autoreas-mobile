@@ -97,17 +97,13 @@ describe('inbound remote changes land in the database', () => {
     expect(stored?.nombre).toBe('Local Name');
   });
 
-  it('characterizes A10: an update with changed_fields for an unknown _id is dropped, and still counted as applied', async () => {
-    // KNOWN DEFECT, verified at apply-remote-changes.helpers.ts:22-40. The existence check at
-    // :24-33 runs only when changed_fields is EMPTY. With fields present, control falls through
-    // to applyAnimePartial -- an UPDATE ... WHERE _id = ? matching zero rows -- and the function
-    // still returns true, so `applied` is incremented for a write that never happened.
+  it('A10 FIXED: an update with changed_fields for an unknown _id is upserted, not dropped', async () => {
+    // This assertion was the executable characterization of defect A10, and its inversion here
+    // is the proof the fix landed. Before the fix the record was absent AND `applied` was 1 --
+    // the diagnostic counter reporting success for a write that never happened.
     //
     // The bridge emits change_type "update" for records created on the PC while the phone was
     // offline, so this is the ordinary path for anything created elsewhere, not an edge case.
-    //
-    // Change 2026-09-04-durable-reconcile-footprint (MB-0c) MUST invert both assertions below.
-    // Their inversion is the proof the fix landed.
     const { adapter, db } = await openDatabase();
     const change: RemoteAnimeChange = {
       recordId: 'anime-never-seen',
@@ -119,8 +115,12 @@ describe('inbound remote changes land in the database', () => {
 
     const result = await applyRemoteChanges(db as never, [change], emptyMergeContext());
 
-    const rows = await adapter.getAllAsync<StoredAnimeRow>('SELECT _id FROM animes');
-    expect(rows).toEqual([]);
+    const stored = await adapter.getFirstAsync<StoredAnimeRow>(
+      'SELECT _id, nombre, nrocapvisto FROM animes WHERE _id = ?',
+      'anime-never-seen',
+    );
+    expect(stored).not.toBeNull();
+    expect(stored?.nrocapvisto).toBe(7);
     expect(result.applied).toBe(1);
   });
 

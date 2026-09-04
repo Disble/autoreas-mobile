@@ -6,6 +6,11 @@ import { buildPartialUpdate, deriveChangedFields } from './field-merge.helpers';
 import { decideMerge } from './merge-decision.helpers';
 import type { ApplyRemoteChangesResult, MergeContext, RemoteAnimeChange } from './merge.types';
 
+/**
+ * Writes one change the merge boundary already decided to accept. A `create` inserts the full
+ * snapshot; an `update` looks the record up first and upserts when it is unknown, then writes
+ * only the changed columns. Returns whether a write was issued.
+ */
 async function applyAcceptedChange(
   db: AppDatabase,
   change: RemoteAnimeChange,
@@ -19,19 +24,26 @@ async function applyAcceptedChange(
     return true;
   }
 
+  // The existence check is UNCONDITIONAL (A10). It used to sit inside the
+  // `changedFields.length === 0` branch, so an `update` carrying changed_fields for a record the
+  // device had never seen fell straight through to `applyAnimePartial` -- an UPDATE ... WHERE
+  // _id = ? matching zero rows -- and still returned true, incrementing `applied` for a write
+  // that never happened. The bridge emits `update` for anything created on the PC while the
+  // phone was offline, so that was the ORDINARY path for such records, not an edge case, and the
+  // diagnostic counter reported success for its own failure.
+  const [currentRow] = await db
+    .select()
+    .from(animes)
+    .where(eq(animes._id, change.recordId))
+    .limit(1);
+
+  if (!currentRow) {
+    await upsertAnime(db, change.snapshot, change.timestamp);
+    return true;
+  }
+
   let effectiveFields: readonly string[] = change.changedFields;
   if (effectiveFields.length === 0) {
-    const [currentRow] = await db
-      .select()
-      .from(animes)
-      .where(eq(animes._id, change.recordId))
-      .limit(1);
-
-    if (!currentRow) {
-      await upsertAnime(db, change.snapshot, change.timestamp);
-      return true;
-    }
-
     effectiveFields = deriveChangedFields(change.snapshot, currentRow);
   }
 

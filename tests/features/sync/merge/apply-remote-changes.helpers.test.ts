@@ -15,6 +15,7 @@ jest.mock("../../../../src/infrastructure/db/anime-repository", () => ({
   upsertAnime: jest.fn().mockResolvedValue(undefined),
 }));
 
+/** Builds a full remote anime snapshot, overridable field by field. */
 function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     _id: "anime-1",
@@ -41,6 +42,7 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
   } as never;
 }
 
+/** Builds one normalized remote change, defaulting to an `update` for `anime-1`. */
 function makeChange(overrides: Partial<RemoteAnimeChange> = {}): RemoteAnimeChange {
   return {
     recordId: "anime-1",
@@ -52,12 +54,26 @@ function makeChange(overrides: Partial<RemoteAnimeChange> = {}): RemoteAnimeChan
   };
 }
 
+/** Builds a merge context with no guards and no pending outbox ids unless overridden. */
 function makeContext(overrides: Partial<MergeContext> = {}): MergeContext {
   return {
     guardByRecordId: new Map(),
     pendingOutboxRecordIds: new Set(),
     ...overrides,
   };
+}
+
+/**
+ * Builds a drizzle-shaped stub whose `select().from().where().limit()` resolves to `rows`.
+ * Every `apply` path now performs this lookup: the existence check is unconditional since the
+ * A10 fix, so a stub that omits `select` no longer models the real coordinator.
+ */
+function stubDbSelecting(rows: unknown[]) {
+  const limit = jest.fn().mockResolvedValue(rows);
+  const where = jest.fn().mockReturnValue({ limit });
+  const from = jest.fn().mockReturnValue({ where });
+
+  return { select: jest.fn().mockReturnValue({ from }) } as never;
 }
 
 describe("applyRemoteChanges", () => {
@@ -68,7 +84,8 @@ describe("applyRemoteChanges", () => {
   it("change_type update aplica un partial update y estampa el guard (apply)", async () => {
     const change = makeChange({ changedFields: ["estado"], timestamp: 150 });
     const ctx = makeContext({ guardByRecordId: new Map([["anime-1", 100]]) });
-    const db = {} as never;
+    // The row exists, so the unconditional existence check finds it and the partial update runs.
+    const db = stubDbSelecting([{ _id: "anime-1", estado: 0 }]);
 
     const result = await applyRemoteChanges(db, [change], ctx);
 
@@ -213,7 +230,8 @@ describe("applyRemoteChanges", () => {
       ]),
       pendingOutboxRecordIds: new Set(["anime-3"]),
     });
-    const db = {} as never;
+    // Only anime-1 reaches the apply path; it exists locally, so the existence check finds it.
+    const db = stubDbSelecting([{ _id: "anime-1", estado: 0 }]);
 
     const result = await applyRemoteChanges(db, changes, ctx);
 
