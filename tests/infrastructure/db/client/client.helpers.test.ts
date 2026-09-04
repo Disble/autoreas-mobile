@@ -1,11 +1,11 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   applyConnectionPolicy,
-  LocalWriteError,
   openAppDatabaseSync,
   toLocalWriteError,
   withLocalWrite,
 } from '../../../../src/infrastructure/db/client/client.helpers';
+import { LocalWriteError } from '../../../../src/infrastructure/db/client/client.errors';
 import { getOpenDatabaseSync } from '../../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
 jest.mock('drizzle-orm', () => ({

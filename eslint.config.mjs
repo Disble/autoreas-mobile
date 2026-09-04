@@ -53,6 +53,43 @@ export default [
           message:
             'Feature code must not call the raw SQLite connection directly (a write bypassing the write door reintroduces lock contention -- local-write-serialization spec). Route the write through withLocalWrite (src/infrastructure/db/client) and use its `tx` callback parameter for statements inside the transaction.',
         },
+        {
+          selector:
+            "CallExpression[callee.name='withLocalWrite'] CallExpression[callee.object.name='bridgeClient']",
+          message:
+            'No bridge call inside a write door. withLocalWrite holds BEGIN IMMEDIATE on the connection, so an unbounded network await inside it jams that database file for every other writer -- and a JS timer cannot cancel native SQLite work, so the door cannot be opened to recover. Do the network call BEFORE or AFTER the door and pass the result in (see reconcile.helpers.ts, which reconciles between doors).',
+        },
+        {
+          selector:
+            "CallExpression[callee.name='withLocalWrite'] CallExpression[callee.name='fetch']",
+          message:
+            'No raw fetch inside a write door (and no raw fetch in feature code at all -- transport belongs to src/infrastructure/api). A network await inside withLocalWrite jams the write door for every writer on that database file.',
+        },
+      ],
+    },
+  },
+  {
+    // Same no-unbounded-IO-inside-the-door rule, for infrastructure. It needs its own config
+    // object rather than a widened `files` glob: two flat-config entries that both define
+    // `no-restricted-syntax` do NOT merge their selector arrays -- the later one replaces the
+    // earlier for any file both match. Overlapping globs here would silently disable the write
+    // door selector above for every file under src/features.
+    files: ['src/infrastructure/**/*.ts', 'src/infrastructure/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.name='withLocalWrite'] CallExpression[callee.object.name='bridgeClient']",
+          message:
+            'No bridge call inside a write door. withLocalWrite holds BEGIN IMMEDIATE on the connection, so an unbounded network await inside it jams that database file for every other writer -- and a JS timer cannot cancel native SQLite work, so the door cannot be opened to recover. Do the network call BEFORE or AFTER the door and pass the result in (see reconcile.helpers.ts, which reconciles between doors).',
+        },
+        {
+          selector:
+            "CallExpression[callee.name='withLocalWrite'] CallExpression[callee.name='fetch']",
+          message:
+            'No raw fetch inside a write door (and no raw fetch in feature code at all -- transport belongs to src/infrastructure/api). A network await inside withLocalWrite jams the write door for every writer on that database file.',
+        },
       ],
     },
   },

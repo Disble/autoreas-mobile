@@ -4,7 +4,7 @@ import type { createDrizzleDb } from './client.helpers';
 export type AppDatabase = ReturnType<typeof createDrizzleDb>;
 
 /** Discriminates the transaction phase where a local write failed. */
-export type LocalWriteFailureStage = 'begin' | 'task' | 'commit' | 'rollback';
+export type LocalWriteFailureStage = 'begin' | 'task' | 'commit' | 'rollback' | 'deadline';
 
 /**
  * Captures the write-failure diagnostics observable from JS, independent of the user-facing

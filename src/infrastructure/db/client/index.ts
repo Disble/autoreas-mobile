@@ -1,9 +1,9 @@
-export { DATABASE_NAME } from './client.constants';
+export { DATABASE_NAME, LOCAL_WRITE_DEADLINE_MS } from './client.constants';
+export { LocalWriteError } from './client.errors';
 export {
   clearBridgeConfig,
   createDrizzleDb,
   getBridgeConfigSnapshot,
-  LocalWriteError,
   openAppDatabaseSync,
   runMigrations,
   toLocalWriteError,

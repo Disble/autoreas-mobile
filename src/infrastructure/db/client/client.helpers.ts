@@ -8,16 +8,19 @@ import {
 } from "../native-runtime/native-runtime.helpers";
 import * as schema from "../schema";
 import { SQLITE_BUSY_TIMEOUT_MS, SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
+import { withDeadline } from '../../async/deadline.helpers';
+import { DeadlineExceededError } from '../../async/deadline.errors';
+import { LocalWriteError } from './client.errors';
 
 import {
   DATABASE_NAME,
+  LOCAL_WRITE_DEADLINE_MS,
   ERRCODE_PREFIX_PATTERN,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
 import type {
   AppDatabase,
-  LocalWriteFailureDiagnostics,
   LocalWriteFailureStage,
   MissingColumnDefinition,
   OpenAppDatabaseSyncParams,
@@ -42,20 +45,6 @@ function parseSqliteErrcode(message: string): number | null {
   return capturedCode.charCodeAt(0);
 }
 
-/** A local SQLite write failure carrying observable diagnostics alongside the original message. */
-export class LocalWriteError extends Error implements LocalWriteFailureDiagnostics {
-  readonly errcode: number | null;
-  readonly elapsedMs: number;
-  readonly stage: LocalWriteFailureStage;
-
-  constructor(message: string, diagnostics: LocalWriteFailureDiagnostics) {
-    super(message);
-    this.name = 'LocalWriteError';
-    this.errcode = diagnostics.errcode;
-    this.elapsedMs = diagnostics.elapsedMs;
-    this.stage = diagnostics.stage;
-  }
-}
 
 /**
  * Wraps a write-transaction failure into a `LocalWriteError`, copying `message` verbatim from the
@@ -114,6 +103,7 @@ export function createDrizzleDb(rawDb: SQLiteDatabase) {
   return drizzle(rawDb, { schema });
 }
 
+/** Adds the `last_changelog_id` cursor column to legacy `bridge_config` rows that predate it. */
 async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(bridge_config)');
   const hasLastChangelogId = columns.some((column) => column.name === 'last_changelog_id');
@@ -129,6 +119,7 @@ async function ensureBridgeConfigLastChangelogId(rawDb: SQLiteDatabase) {
   );
 }
 
+/** Backfills the sync-runtime status columns added after the table first shipped. */
 async function ensureSyncRuntimeStatusExecutionColumns(rawDb: SQLiteDatabase) {
   const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(sync_runtime_status)');
   const columnNames = new Set(columns.map((column) => column.name));
@@ -159,6 +150,7 @@ export async function ensureMissingColumns(
   );
 }
 
+/** Creates the index the bounded operation-log backlog and retention queries rely on. */
 async function ensureOperationLogRetentionIndex(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(
     'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
@@ -201,6 +193,7 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   );
 }
 
+/** Creates the durable season-rating queue for installs that predate it. */
 async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(
     'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
@@ -221,6 +214,7 @@ async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
   );
 }
 
+/** Creates the single-row active-season cache. Exists in no migration file; only here. */
 async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(
     'CREATE TABLE IF NOT EXISTS active_season_cache (' +
@@ -230,10 +224,17 @@ async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   );
 }
 
+/** Creates the advisory sync-cycle lock table. Exists in no migration file; only here. */
 async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(SYNC_CYCLE_LOCK_TABLE_SQL);
 }
 
+/**
+ * Brings a connection's schema to the shape the app expects: the drizzle migrator first, then
+ * ordered idempotent repair steps for everything migrations cannot express. Two REQUIRED_SCHEMA
+ * tables -- `active_season_cache` and `sync_cycle_lock` -- exist ONLY as repair steps, so running
+ * the migration files alone leaves a database that fails readiness.
+ */
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
@@ -273,6 +274,11 @@ export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   });
 }
 
+/**
+ * Serializes one write behind every earlier write to the same database FILE, and bounds only the
+ * CALLER's view of it. The queue deliberately chains on the real write rather than the bounded
+ * one -- see the comment inside for why a deadline must never open the door.
+ */
 async function withQueuedWrite<T>(
   rawDb: SQLiteDatabase,
   runWrite: () => Promise<T>,
@@ -281,12 +287,32 @@ async function withQueuedWrite<T>(
   // the same file queues behind the same door (Design Decision 1).
   const queueKey = rawDb.databasePath ?? DATABASE_NAME;
   const previousWrite = WRITE_QUEUE_BY_DATABASE.get(queueKey) ?? Promise.resolve();
+  const queuedAt = Date.now();
 
   const nextWrite = previousWrite.catch(() => undefined).then(runWrite);
 
+  // The queue chains on the REAL write, never on the bounded view below. This is the whole
+  // point: a deadline must NOT admit a successor. `withLocalWrite` issues BEGIN IMMEDIATE on the
+  // connection and a JS timer cannot cancel native SQLite work, so opening the door on expiry
+  // would start a second transaction on a connection that already has one open -- the
+  // SQLITE_BUSY_SNAPSHOT class this file-keyed door exists to prevent. A visible deadlock is the
+  // correct outcome; two concurrent transactions is not.
   WRITE_QUEUE_BY_DATABASE.set(queueKey, nextWrite.catch(() => undefined));
 
-  return nextWrite;
+  try {
+    return await withDeadline({
+      operation: () => nextWrite,
+      timeoutMs: LOCAL_WRITE_DEADLINE_MS,
+      label: 'local_write',
+    });
+  } catch (error) {
+    // `queuedAt` is taken when the write is QUEUED, not when its transaction begins, so a caller
+    // stuck behind a jammed door sees the wait it actually experienced instead of a near-zero
+    // number that hides the stall.
+    throw error instanceof DeadlineExceededError
+      ? toLocalWriteError(error, queuedAt, 'deadline')
+      : error;
+  }
 }
 
 /**

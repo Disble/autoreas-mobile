@@ -61,3 +61,12 @@ export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefin
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL',
   },
 ];
+
+/**
+ * Budget for one queued local write, measured from the moment it is QUEUED rather than from the
+ * moment its transaction begins -- a caller stuck behind a jammed door should see the wait it
+ * actually experienced. On expiry the caller is rejected and the door STAYS CLOSED; see
+ * `withQueuedWrite`. Sits above the bridge request budget and below the cycle deadline so a
+ * jammed door is attributed to the write layer rather than to the cycle.
+ */
+export const LOCAL_WRITE_DEADLINE_MS = 20_000;
