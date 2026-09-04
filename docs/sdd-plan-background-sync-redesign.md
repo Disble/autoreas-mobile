@@ -316,3 +316,21 @@ What shipped instead repairs the existing engine's two verified defects and ship
 ### 11.4 The honest status of the locked-device failure
 
 **It is not fixed, and nothing here claims it is.** `(device)` is still empty. What changed is that the failure is now legible: every cycle is bounded and reaches a terminal outcome, a `202` cannot silently vanish, a jammed write door reports itself instead of hanging, and remote records created elsewhere stop disappearing. The next diagnosis is a reading rather than an argument.
+
+---
+
+## 12. The poison-batch freeze — a second, independent reason for the quarantine
+
+Found by `team-bridge` on 2026-09-04 while looking for A10's mirror image on their side. They did **not** find A10 there: the reconcile write path calls `GetMobileAnime` before writing, so an unknown `_id` never falls through to a zero-row update reported as success. Their `applied: true` is honest.
+
+What they found instead is a different member of the same family, and it is worse in shape.
+
+**The bridge side.** A not-found error propagates up through `applyPendingOperations`, which breaks the loop and returns it, and `pendingOperationErrorResponse` has no not-found branch — so it falls to the default and answers **500 for the whole request**. Send five pending operations where exactly one names an anime the bridge does not have, and you do not get `applied: false` for that one and `true` for the other four. You get a 500, an `ErrorResponse` carrying no `applied_operations` at all, and **none of the five lands**.
+
+**The mobile side, verified here.** `isPermanentReconcileError` (`reconcile.helpers.ts:185-187`) treats only 400–499 as permanent; everything else resets the batch to `pending` (`:413`). There is no attempt counter and no escape. So a poison batch is retried identically, forever — **the same 43-hour shape the measured symptom has, reached from an entirely different cause.** A record that is not poisonous because of its content, but because it does not exist on the other side.
+
+**Measured: it has never happened.** 520 reconciles in the retained window, all `accepted` with 202, zero `error_code`. Reachable in theory, unobserved in practice, and *not* the cause of what this redesign is chasing. Recording it as a hypothesis with a `(bridge)` verdict of NOT OBSERVED rather than as a live suspect.
+
+**Why it matters anyway — the quarantine now has two independent justifications.** §8.4 justified it by mobile's own all-or-nothing cursor. This justifies it again by the bridge's all-or-nothing batch. A `dead_letter` transition after N identical failures protects against both, and needs no contract change in either repository. That is a meaningfully stronger case than one reason twice as loud: two unrelated failure modes converge on the same local mechanism.
+
+**A contract asymmetry worth naming, for the bridge owner to decide.** `PATCH /api/animes/{id}` on an unknown id answers **404**, because its handler has the not-found guard. The same id inside a reconcile's `pending_operations` answers **500**. One condition, two status codes, and only one of them tells the client what went wrong. If it is ever taken up it becomes a new BR row: either the reconcile degrades to `applied: false` for that operation and applies the rest, or it answers 404 naming the offending `anime_id` instead of a mute 500. `team-bridge` has escalated it and deliberately did not touch it — it sits outside the three items their repo owner authorized.
