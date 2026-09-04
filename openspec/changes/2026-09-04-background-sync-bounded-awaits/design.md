@@ -28,13 +28,17 @@ The organising invariant is a single total order over the existing and new timin
 | Local copy per seam | No new folder | Rejected — three copies of the same unhandled-rejection subtlety |
 | `AbortSignal.timeout()` | Zero code | Rejected — see Decision 2 |
 
-**Non-obvious requirement** (this is the whole reason it is a shared primitive): `Promise.race` leaves the loser's rejection **unhandled**, which surfaces as an `unhandledRejection` in RN. The primitive must attach a swallowing handler to the operation promise for the losing branch, and must `clearTimeout` on every path.
+**Non-obvious requirement**: the primitive must `clearTimeout` on every path. A leaked timer per call keeps the event loop alive, which in a background job means holding the host runtime open after the work is done. The mutation cycle confirms this guard is load-bearing — two tests fail without it.
+
+**CORRECTED AFTER IMPLEMENTATION (2026-09-04).** This section originally claimed that `Promise.race` leaves the loser's rejection **unhandled**, and that the swallowing `.catch()` was therefore the whole reason to have a shared primitive. **That is false.** `Promise.race` subscribes to every input promise, so a loser rejecting after the race settles already has a handler and never surfaces as an `unhandledRejection`. Deleting the `.catch()` changed no observable behaviour: the test asserting "no unhandled rejection" still passed without it.
+
+The `.catch()` is kept as cheap insurance against a refactor that stops racing, and the shipped code documents it as exactly that. It is recorded here rather than quietly edited because the claim was inherited into two agent hand-offs before a mutation caught it — a design that asserts a mechanism it does not have survives review precisely because it sounds specific.
 
 ```ts
 const timer = setTimeout(() => rejectDeadline(new DeadlineExceededError(label, timeoutMs)), timeoutMs);
 // Racing does NOT cancel `operation`; it only bounds the CALLER's view of it.
 const settled = operation();
-settled.catch(() => undefined); // the losing branch must never surface as unhandledRejection
+settled.catch(() => undefined); // defence in depth only -- `race` already handles this promise
 try { return await Promise.race([settled, deadlinePromise]); } finally { clearTimeout(timer); }
 ```
 
@@ -189,7 +193,7 @@ All unit, all fake timers (`jest.useFakeTimers()` + `await jest.advanceTimersByT
 
 | Seam | Test | Approach |
 |---|---|---|
-| Primitive | resolves before deadline; rejects `DeadlineExceededError` after; `jest.getTimerCount() === 0` on both paths; a late operation rejection raises no `unhandledRejection` | inject a never-settling and a late-rejecting `operation`; register a `process.on('unhandledRejection')` probe |
+| Primitive | resolves before deadline; rejects `DeadlineExceededError` after; `jest.getTimerCount() === 0` on both paths; a late operation rejection raises no `unhandledRejection` (an end-to-end property, provided by `race` rather than by the `.catch()` -- see the correction above) | inject a never-settling and a late-rejecting `operation`; register a `process.on('unhandledRejection')` probe |
 | 1 Request | a `fetchFn` that never settles rejects `BridgeTimeoutError` at `BRIDGE_REQUEST_TIMEOUT_MS`; `init.signal.aborted === true`; `spec.timeoutMs` overrides; timer count is 0 after success, HTTP 500, **and** network throw | substitute `dependencies.fetchFn`; capture `init` from the mock's first arg |
 | 1 Classification | `BridgeTimeoutError instanceof BridgeUnreachableError === true` | direct assertion — pins the two `instanceof` consumers |
 | 2 Cycle | a `run` that never settles → `runBackgroundSyncCycle` rejects `SyncCycleDeadlineError` at 45 s **and** `releaseSyncCycleLock` still ran | mock `withExclusiveSyncCycle` collaborators; assert the release write was issued |
