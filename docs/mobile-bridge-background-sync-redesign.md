@@ -885,3 +885,45 @@ It resets only in `onopen` (`:107`), so failures that never reach an open socket
 ### Consequence for MB-3
 
 MB-3's scope is unchanged, but its justification is now `(source)`-grounded rather than general, and its test plan gains three concrete orderings to reproduce: late `onclose` nulling a live ref (C1), concurrent entry across the config await (C2), and repeated app-state toggling (C3). All three are device-free and unit-testable with fake timers.
+
+---
+
+## Appendix D — First `(device)` evidence, 2026-09-04 01:49
+
+A device became available after the design and the implementation were complete. These are the first `(device)`-class readings this project has ever had. Samsung **SM-X800** (Galaxy Tab S8+), Android 16, **SDK 36**, package `com.disble.autoreasmobile`, new build installed 01:43:46.
+
+### D.1 H06h — **CONFIRMED**
+
+`dumpsys jobscheduler` reports the app's JobScheduler timeout quota counters:
+
+```
+com.disble.autoreasmobile::timeout-reg:    countLimit=3,  countInWindow=25
+com.disble.autoreasmobile::timeout-total:  countLimit=10, countInWindow=25
+```
+
+**25 job timeouts in the 24-hour window**, against limits of 3 and 10. The 25 recorded timestamps are spaced, in milliseconds of elapsed realtime: **603.1 s, 607.6 s, 600.2 s, 604.2 s, 611.3 s, 600.3 s, 600.3 s, 603.0 s, …**
+
+The bridge measured an arrival cadence of **601.9 s**. The OS-recorded job-death cadence is the same number.
+
+This is exactly the mechanism H06h described and it is no longer an inference from `expo-background-task`'s source: **the operating system itself recorded 25 worker deaths by runtime timeout, at ~600 s intervals.** The JS task never signalled, `tasks.awaitAll()` suspended, JobScheduler killed the worker at its runtime limit and re-enqueued with no backoff. The 600-second scheduler that §7 could not name was JobScheduler's own kill-and-retry loop.
+
+Every one of the 25 timeouts predates the new build — the most recent is **Thu Sep 3 14:33:17**, over eleven hours before the 01:43 install.
+
+### D.2 D8 — **VERIFIED on device**
+
+The pending job reports `Minimum latency: +14m59s996ms`. Fifteen minutes, not fifteen hours. The unit repair is confirmed against the platform rather than against a constant.
+
+### D.3 A consequence nobody modelled: the app is out of job quota
+
+`inQuotaTime` sits **40,393 seconds — about 11.2 hours — in the future.**
+
+The timeout loop did not merely waste cycles. It **burned the app's JobScheduler quota**: 25 timeouts against a `timeout-reg` limit of 3 and a `timeout-total` limit of 10. JobScheduler now throttles this app's jobs until roughly 13:00 today, and no code change can shorten that — the penalty is held by the platform, keyed to the damage the old build already did.
+
+**This is a measurement trap and it must be stated before anyone tests.** If background sync looks broken during the next ~11 hours, that observation is *uninformative*: the throttle is a sufficient explanation on its own, independent of whether the repair works. Any campaign that starts before the quota window clears will produce a false negative and, worse, a confident one.
+
+### D.4 What is NOT established
+
+- **H16 remains open.** `am get-standby-bucket` returned **10 (ACTIVE)**, but the app had just been installed and opened, so ACTIVE is what the reading had to be. H16 asks what the bucket is after an overnight idle; reading it now observes the consequent with the antecedent absent, which §15's own review findings identify as an invalid inference. Take it again after a genuine idle period.
+- **Whether the repair holds is unmeasured.** The new build had been installed for six minutes at the time of these readings, and its own job has a fifteen-minute minimum latency, so its first cycle had not yet fired.
+- **H03 is settled in the binding direction**: SDK 36 is ≥ 35, so P1's 6 h/24 h `dataSync` cap applies. The branch where an always-on foreground service becomes viable again is closed.
+- **The app is not battery-optimization exempt** (`dumpsys deviceidle whitelist` does not list it), so D4's escalation path is available and ungranted.
