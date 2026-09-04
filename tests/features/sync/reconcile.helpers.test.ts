@@ -1,7 +1,5 @@
-import {
-  getConfirmedOperationIds,
-  syncPendingOperations,
-} from '../../../src/features/sync/reconcile.helpers';
+import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
+import { getConfirmedOperationIds } from '../../../src/features/sync/reconcile-confirmation.helpers';
 import { ReconcileResponseSchema } from '../../../src/features/sync/reconcile.schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';

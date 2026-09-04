@@ -1,7 +1,5 @@
-import {
-  buildReconcileRequestBody,
-  getConfirmedOperationIds,
-} from '../../../src/features/sync/reconcile.helpers';
+import { buildReconcileRequestBody } from '../../../src/features/sync/reconcile-request.helpers';
+import { getConfirmedOperationIds } from '../../../src/features/sync/reconcile-confirmation.helpers';
 
 describe('reconcile pending operation payload helpers', () => {
   const baseOperation = {

@@ -1,4 +1,4 @@
-import { buildReconcileRequestBody } from '../../../src/features/sync/reconcile.helpers';
+import { buildReconcileRequestBody } from '../../../src/features/sync/reconcile-request.helpers';
 import type { OperationLogRow } from '../../../src/infrastructure/db/schema';
 import type { WireSyncCycleTelemetry } from '../../../src/features/sync/sync-telemetry.types';
 

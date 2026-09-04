@@ -9,11 +9,7 @@ import {
   getBridgeConfigSnapshot,
   withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
-import {
-  bridgeConfig,
-  operationLog,
-  type OperationLogRow,
-} from '../../infrastructure/db/schema';
+import { bridgeConfig, operationLog } from '../../infrastructure/db/schema';
 import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
@@ -23,16 +19,14 @@ import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.
 import type { RemoteAnimeChange } from './merge/merge.types';
 import { readOperationLogBacklog } from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
+import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
+import { buildReconcileRequestBody } from './reconcile-request.helpers';
 import {
   RECONCILE_BACKLOG_BATCH_LIMIT,
   syncStateByDatabase,
 } from './reconcile.constants';
 import { ReconcileHttpError } from './reconcile.errors';
-import {
-  type ReconcileAppliedOperation,
-  ReconcileResponseSchema,
-  type ReconcileAnimeChange,
-} from './reconcile.schema';
+import { ReconcileResponseSchema, type ReconcileAnimeChange } from './reconcile.schema';
 import type {
   ReconcileApplyMode,
   ReconcileTelemetryContext,
@@ -42,176 +36,6 @@ import {
   buildSyncCycleTelemetry,
   resolveClientTelemetry,
 } from './sync-telemetry.helpers';
-import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
-
-/**
- * Builds the reconcile request body from persisted operation-log rows.
- * Keeping this serialization pure makes the network workflow easier to test and evolve.
- *
- * `clientTelemetry` rides along on this request rather than travelling on an endpoint of its own,
- * and that is the whole design: a cycle that dies cannot report itself, so its post-mortem has to
- * leave on a request that is PROVEN to arrive. This one is -- it answers 202 in single-digit
- * milliseconds even in the cycles that later hang. A separate telemetry call would share the
- * failure domain of the thing it reports on.
- *
- * When there is nothing to send the key is OMITTED, never emitted as null. The bridge stores this
- * body raw and verbatim, so an empty key would be permanent noise in its store rather than a
- * serialization detail. `null` arrives here when the size cap declined to send, which is a
- * decision to stay silent -- exactly the same absence.
- */
-export function buildReconcileRequestBody(
-  deviceId: string | undefined,
-  lastChangelogId: number,
-  pendingOperations: OperationLogRow[],
-  clientTelemetry?: WireSyncCycleTelemetry | null,
-) {
-  return {
-    device_id: deviceId ?? undefined,
-    last_changelog_id: lastChangelogId,
-    pending_operations: pendingOperations.map((operation) => ({
-      anime_id: operation.animeId,
-      operation: operation.operation,
-      payload: normalizePendingOperationPayload(operation.operation, operation.payload),
-      created_at: operation.createdAt,
-    })),
-    ...(clientTelemetry ? { client_telemetry: clientTelemetry } : {}),
-  };
-}
-
-/**
- * Parses one persisted outbox payload into the bridge-facing reconcile shape.
- * This keeps legacy Spanish SQLite/domain names local while transport always emits English keys.
- */
-function normalizePendingOperationPayload(
-  operation: string,
-  payload: string,
-): Record<string, unknown> {
-  const parsedPayload = parseOperationPayload(payload);
-
-  if (operation !== 'update') {
-    return parsedPayload;
-  }
-
-  return normalizeLegacyAnimeUpdatePayloadAliases(parsedPayload);
-}
-
-/**
- * Returns only the operation ids that the bridge response confirms as applied.
- * This prevents mobile from marking rows as synced after a superficial 202 without business evidence.
- */
-export function getConfirmedOperationIds(
-  processingOperations: OperationLogRow[],
-  appliedOperations: ReconcileAppliedOperation[] | undefined,
-  bridgeChanges: ReconcileAnimeChange[],
-): number[] {
-  const confirmedIds: number[] = [];
-
-  for (const operation of processingOperations) {
-    if (isOperationConfirmed(operation, appliedOperations, bridgeChanges)) {
-      confirmedIds.push(operation.id);
-    }
-  }
-
-  return confirmedIds;
-}
-
-/**
- * Decides whether one outbox row has real evidence of having landed on the bridge.
- * `applied_operations` is the explicit ack and always wins, but it is optional in the contract,
- * so when it is absent the only remaining evidence is the pulled `bridge_changes` themselves:
- * every field this row sent must show up in the change's `changed_fields` or already match its
- * snapshot. A payload with no fields carries nothing to evidence, so it can never be confirmed
- * by inference -- guessing there would mark an unsent row as synced and lose the edit.
- */
-function isOperationConfirmed(
-  operation: OperationLogRow,
-  appliedOperations: ReconcileAppliedOperation[] | undefined,
-  bridgeChanges: ReconcileAnimeChange[],
-): boolean {
-  const appliedOperation = appliedOperations?.find(
-    (candidate) =>
-      candidate.anime_id === operation.animeId &&
-      candidate.operation === operation.operation,
-  );
-
-  if (appliedOperation) {
-    return appliedOperation.applied;
-  }
-
-  const payload = normalizePendingOperationPayload(operation.operation, operation.payload);
-  const payloadKeys = Object.keys(payload);
-
-  if (payloadKeys.length === 0) {
-    return false;
-  }
-
-  return bridgeChanges.some((change) => {
-    if (change.record_id !== operation.animeId || change.change_type === 'delete') {
-      return false;
-    }
-
-    const snapshot = change.snapshot as Record<string, unknown> | undefined;
-
-    return payloadKeys.every(
-      (field) =>
-        change.changed_fields.includes(field) ||
-        snapshot?.[field] === payload[field],
-    );
-  });
-}
-
-/**
- * Reads one persisted payload column, which is free-form TEXT and therefore untrusted.
- * Anything that is not a JSON object -- corrupt text, a bare array, a scalar -- degrades to an
- * empty object instead of throwing, because a single bad row must not abort the whole cycle for
- * every other pending operation in the batch.
- */
-function parseOperationPayload(payload: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(payload) as unknown;
-
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return {};
-  }
-
-  return {};
-}
-
-/**
- * Translates the legacy Spanish keys still written into local outbox payloads into the English
- * keys the wire contract accepts. The alias is always DELETED, even when no translation happened,
- * so a legacy name can never reach the bridge and be stored verbatim. An English key already
- * present wins over its alias: the caller that wrote it spoke the current contract on purpose.
- */
-function normalizeLegacyAnimeUpdatePayloadAliases(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const normalizedPayload = { ...payload };
-
-  const legacyAnimePayloadAliases = {
-    estado: 'status',
-    nrocapvisto: 'episodesWatched',
-    fechaUltCapVisto: 'lastWatchedAt',
-    dias: 'days',
-  } as const;
-
-  for (const legacyAlias of Object.keys(
-    legacyAnimePayloadAliases,
-  ) as (keyof typeof legacyAnimePayloadAliases)[]) {
-    const englishKey = legacyAnimePayloadAliases[legacyAlias];
-
-    if (!(englishKey in normalizedPayload) && legacyAlias in payload) {
-      normalizedPayload[englishKey] = payload[legacyAlias];
-    }
-
-    delete normalizedPayload[legacyAlias];
-  }
-
-  return normalizedPayload;
-}
 
 /**
  * Separates the failures that retrying can never fix from the ones it can.
