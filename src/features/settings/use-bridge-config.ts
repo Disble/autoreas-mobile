@@ -10,9 +10,9 @@ import { bridgeConfig, type BridgeConfig } from '../../infrastructure/db/schema'
 
 /**
  * Coordinates bridge config state and actions.
- * `isConfigLoaded` reports whether the pairing row has actually been read, so consumers can tell
- * "not paired" apart from "the config query has not answered yet" instead of acting on the empty
- * first render of the live query.
+ * `configStatus` reports whether the pairing row has actually been read, so consumers can tell
+ * "not paired" apart from "the config query has not answered yet" and from "the config cannot be
+ * read at all", instead of acting on the empty first render of the live query.
  */
 export function useBridgeConfig() {
   const rawDb = useOptionalSQLiteContext();
@@ -29,10 +29,7 @@ export function useBridgeConfig() {
     return db.select().from(bridgeConfig).orderBy(desc(bridgeConfig.id)).limit(1);
   }, [db]);
 
-  const { data: configs, hasLoaded: isConfigLoaded } = useOptionalLiveQuery<BridgeConfig[]>(
-    query,
-    [],
-  );
+  const { data: configs, status: configStatus } = useOptionalLiveQuery<BridgeConfig[]>(query, []);
 
   const config = configs?.[0] ?? null;
   const isConfigured = !!config?.deviceId;
@@ -59,7 +56,7 @@ export function useBridgeConfig() {
 
   return {
     config,
-    isConfigLoaded,
+    configStatus,
     isConfigured,
     isUnpairing,
     error,

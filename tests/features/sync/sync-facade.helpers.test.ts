@@ -4,6 +4,7 @@ import { operationLog, seasonRatingQueue } from '../../../src/infrastructure/db/
 import {
   buildPendingOperationsQuery,
   buildUnresolvedSeasonRatingQuery,
+  resolveSyncPrerequisites,
 } from '../../../src/features/sync/sync-facade.helpers';
 
 jest.mock('drizzle-orm', () => ({
@@ -54,5 +55,60 @@ describe('sync facade helpers', () => {
       'syncing',
       'failed',
     ]);
+  });
+});
+
+describe('resolveSyncPrerequisites', () => {
+  it('reads a bridge config that has not answered as unknown, never as missing', () => {
+    expect(
+      resolveSyncPrerequisites({
+        hasDatabase: true,
+        configStatus: 'pending',
+        isConfigured: false,
+      }),
+    ).toBe('unknown');
+  });
+
+  it('is ready once the config answers as paired', () => {
+    expect(
+      resolveSyncPrerequisites({
+        hasDatabase: true,
+        configStatus: 'loaded',
+        isConfigured: true,
+      }),
+    ).toBe('ready');
+  });
+
+  it('is missing once the config answers as unpaired', () => {
+    expect(
+      resolveSyncPrerequisites({
+        hasDatabase: true,
+        configStatus: 'loaded',
+        isConfigured: false,
+      }),
+    ).toBe('missing');
+  });
+
+  it('is missing when the config can no longer be read, even while stale rows still say paired', () => {
+    // drizzle keeps serving the last successful rows after a later read rejects, so `isConfigured`
+    // can still be true off a config nobody can refresh. Syncing on it would claim a bridge this
+    // instance can no longer verify.
+    expect(
+      resolveSyncPrerequisites({
+        hasDatabase: true,
+        configStatus: 'unavailable',
+        isConfigured: true,
+      }),
+    ).toBe('missing');
+  });
+
+  it('is missing without a database even while the config is still unknown', () => {
+    expect(
+      resolveSyncPrerequisites({
+        hasDatabase: false,
+        configStatus: 'pending',
+        isConfigured: true,
+      }),
+    ).toBe('missing');
   });
 });

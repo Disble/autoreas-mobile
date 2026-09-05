@@ -84,25 +84,33 @@ describe('useBridgeConfig', () => {
     expect(result.current.isConfigured).toBe(false);
   });
 
-  it('reporta la config como no cargada mientras la live query no respondió', () => {
-    (useOptionalLiveQuery as jest.Mock).mockReturnValue({ data: [], hasLoaded: false });
+  it('never claims the bridge is unpaired while the live query has not answered', () => {
+    (useOptionalLiveQuery as jest.Mock).mockReturnValue({ data: [], status: 'pending' });
 
     const { result } = renderHook(() => useBridgeConfig());
 
-    expect(result.current.isConfigLoaded).toBe(false);
+    expect(result.current.configStatus).toBe('pending');
     expect(result.current.isConfigured).toBe(false);
   });
 
-  it('reporta la config como cargada cuando la live query ya respondió', () => {
+  it('reports the config as read once the live query has answered', () => {
     (useOptionalLiveQuery as jest.Mock).mockReturnValue({
       data: [{ id: 1, ip: '192.168.0.10', port: 9876, token: 'secret', deviceId: 'bridge-123' }],
-      hasLoaded: true,
+      status: 'loaded',
     });
 
     const { result } = renderHook(() => useBridgeConfig());
 
-    expect(result.current.isConfigLoaded).toBe(true);
+    expect(result.current.configStatus).toBe('loaded');
     expect(result.current.isConfigured).toBe(true);
+  });
+
+  it('propagates an unreadable config so nothing waits on an answer that never comes', () => {
+    (useOptionalLiveQuery as jest.Mock).mockReturnValue({ data: [], status: 'unavailable' });
+
+    const { result } = renderHook(() => useBridgeConfig());
+
+    expect(result.current.configStatus).toBe('unavailable');
   });
 
   it('unpair() exitoso llama clearBridgeConfig', async () => {

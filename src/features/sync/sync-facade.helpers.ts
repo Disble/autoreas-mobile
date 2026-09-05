@@ -17,7 +17,34 @@ import {
   markSyncConnectionSucceeded,
   publishSyncConnectionAttempt,
 } from './sync-connection-store/sync-connection-store.helpers';
-import type { RunCoordinatedForegroundSyncCycleInput } from './sync-facade.types';
+import type {
+  ResolveSyncPrerequisitesInput,
+  RunCoordinatedForegroundSyncCycleInput,
+  SyncPrerequisiteVerdict,
+} from './sync-facade.types';
+
+/**
+ * Resolves whether this facade may sync, must publish local mode, or knows nothing yet.
+ * The `unknown` verdict is the whole point: a bridge-config query that has not answered is not
+ * evidence of an unpaired bridge, and publishing it as one erased the shared online status on
+ * every mount. An unanswerable config is different -- it never resolves, so waiting on it would
+ * keep a stale online claim alive for the rest of the session.
+ */
+export function resolveSyncPrerequisites({
+  hasDatabase,
+  configStatus,
+  isConfigured,
+}: ResolveSyncPrerequisitesInput): SyncPrerequisiteVerdict {
+  if (!hasDatabase || configStatus === 'unavailable') {
+    return 'missing';
+  }
+
+  if (configStatus === 'pending') {
+    return 'unknown';
+  }
+
+  return isConfigured ? 'ready' : 'missing';
+}
 
 /**
  * Persists failure telemetry without allowing an observability write to replace the original sync error.

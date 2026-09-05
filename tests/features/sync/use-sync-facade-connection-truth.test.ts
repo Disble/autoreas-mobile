@@ -53,7 +53,7 @@ describe('useSyncFacade shared connection truth', () => {
 
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockImplementation(
-      (_query: unknown, fallbackData: unknown) => ({ data: fallbackData, hasLoaded: true }),
+      (_query: unknown, fallbackData: unknown) => ({ data: fallbackData, status: 'loaded' }),
     );
     (dbClient.createDrizzleDb as jest.Mock).mockReturnValue({
       select: jest.fn().mockReturnThis(),
@@ -63,7 +63,7 @@ describe('useSyncFacade shared connection truth', () => {
     });
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
       config: { deviceId: 'device-1' },
-      isConfigLoaded: true,
+      configStatus: 'loaded',
       isConfigured: true,
       isUnpairing: false,
       error: null,
@@ -119,7 +119,7 @@ describe('useSyncFacade shared connection truth', () => {
     // Publishing that as truth is what dropped the bridge connection on entering Settings.
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValueOnce({
       config: null,
-      isConfigLoaded: false,
+      configStatus: 'pending',
       isConfigured: false,
       isUnpairing: false,
       error: null,
@@ -133,12 +133,53 @@ describe('useSyncFacade shared connection truth', () => {
     expect(result.current.lastSyncAt).toBe(1_000);
   });
 
+  it('leaves the live bridge status alone when a sync is requested before the config answers', async () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionSucceeded(attempt, 1_000);
+    (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
+      config: null,
+      configStatus: 'pending',
+      isConfigured: false,
+      isUnpairing: false,
+      error: null,
+      unpair: jest.fn(),
+    });
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    await act(async () => {
+      await expect(result.current.requestSync('manual')).resolves.toBe(0);
+    });
+
+    expect(syncModule.syncPendingOperations).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe('online');
+  });
+
   it('drops stale online truth once the bridge config resolves as unpaired', () => {
     const attempt = beginSyncConnectionAttempt();
     markSyncConnectionSucceeded(attempt, 1_000);
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
       config: null,
-      isConfigLoaded: true,
+      configStatus: 'loaded',
+      isConfigured: false,
+      isUnpairing: false,
+      error: null,
+      unpair: jest.fn(),
+    });
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    expect(result.current.connectionStatus).toBe('idle');
+  });
+
+  it('drops stale online truth when the bridge config query can never answer', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionSucceeded(attempt, 1_000);
+    // A rejected live query never stamps a result, so waiting on it would keep a stale online
+    // claim alive forever. An unanswerable query is not evidence of a healthy bridge.
+    (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
+      config: null,
+      configStatus: 'unavailable',
       isConfigured: false,
       isUnpairing: false,
       error: null,

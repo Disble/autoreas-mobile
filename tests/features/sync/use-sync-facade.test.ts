@@ -57,7 +57,7 @@ describe('useSyncFacade', () => {
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
       config: { deviceId: 'device-1' },
-      isConfigLoaded: true,
+      configStatus: 'loaded',
       isConfigured: true,
       isUnpairing: false,
       error: null,
@@ -70,7 +70,7 @@ describe('useSyncFacade', () => {
       where: jest.fn().mockReturnThis(),
     });
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockImplementation(
-      (_query: unknown, fallbackData: unknown) => ({ data: fallbackData }),
+      (_query: unknown, fallbackData: unknown) => ({ data: fallbackData, status: 'loaded' }),
     );
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
