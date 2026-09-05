@@ -16,6 +16,12 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-09-04
+
+First published release. The app has existed for a while; this is the first build anyone can download rather than compile. The entries below are what changed most recently — for everything before them, the app is what the README describes: an Android client that keeps a local anime catalogue in SQLite and syncs it against an Autoreas Bridge on your network.
+
+Install the APK below and allow installation from unknown sources. Verify it against `SHA256SUMS-android.txt` if you care to.
+
 ### Added
 
 - **Sync now carries the Bridge's version token for each anime.** Until now the app had no way to learn the token it needed to send back, so an edit made on the phone silently overwrote whatever the desktop had done in the meantime. Concurrent edits on both sides are now detected and reconciled per record instead of one side winning by accident.
