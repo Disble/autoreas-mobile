@@ -61,3 +61,8 @@ build-*/
 
 #ignore
 .ignore/
+
+# MCP server config. Untracked on purpose: server definitions carry credentials
+# in their `env` blocks (SONARQUBE_TOKEN and the like), and a tracked file is one
+# absent-minded `git add` away from publishing one to a public repo.
+.mcp.json
