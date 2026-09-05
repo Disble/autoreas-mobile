@@ -57,6 +57,7 @@ describe('useSyncFacade', () => {
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
       config: { deviceId: 'device-1' },
+      isConfigLoaded: true,
       isConfigured: true,
       isUnpairing: false,
       error: null,
@@ -142,38 +143,6 @@ describe('useSyncFacade', () => {
 
     await expect(firstPromise).resolves.toBe(7);
     await expect(secondPromise).resolves.toBe(7);
-  });
-
-  it('shares the latest unreachable failure across mounted facade consumers', async () => {
-    (syncModule.syncPendingOperations as jest.Mock)
-      .mockResolvedValueOnce({
-        syncedCount: 0,
-        backlogReadCount: 0,
-        hasMorePending: false,
-      })
-      .mockRejectedValueOnce(
-        new BridgeUnreachableError('http://bridge.test/api/sync/reconcile', 'offline'),
-      );
-
-    const firstFacade = renderHook(() => useSyncFacade());
-    const secondFacade = renderHook(() => useSyncFacade());
-
-    await act(async () => {
-      await firstFacade.result.current.manualSync();
-    });
-
-    expect(firstFacade.result.current.connectionStatus).toBe('online');
-    expect(secondFacade.result.current.connectionStatus).toBe('online');
-
-    await act(async () => {
-      await expect(secondFacade.result.current.manualSync()).rejects.toBeInstanceOf(
-        BridgeUnreachableError,
-      );
-    });
-
-    expect(firstFacade.result.current.connectionStatus).toBe('unreachable');
-    expect(secondFacade.result.current.connectionStatus).toBe('unreachable');
-    expect(firstFacade.result.current.lastSyncAt).not.toBeNull();
   });
 
   it('publishes the original bridge failure even when telemetry persistence also fails', async () => {

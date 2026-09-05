@@ -22,7 +22,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   // 2. State
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
-  const { isConfigured } = useBridgeConfig();
+  const { isConfigLoaded, isConfigured } = useBridgeConfig();
   const setActiveSeasonSnapshot = useActiveSeasonStore((state) => state.setActiveSeasonSnapshot);
   const syncConnection = useSyncExternalStore(
     subscribeSyncConnection,
@@ -67,12 +67,21 @@ export function useSyncFacade(): UseSyncFacadeResult {
 
   // 7. Effects
   useEffect(() => {
-    if (rawDb && isConfigured) {
+    if (!rawDb) {
+      invalidateSyncConnectionOnline();
+      return;
+    }
+
+    // Until the bridge-config live query answers, `isConfigured` is false because the query
+    // starts empty, not because the bridge is unpaired. Publishing that as truth erased the
+    // shared online status on every mount of a facade, so entering Settings dropped a live
+    // bridge connection that only a manual sync could bring back.
+    if (!isConfigLoaded || isConfigured) {
       return;
     }
 
     invalidateSyncConnectionOnline();
-  }, [isConfigured, rawDb]);
+  }, [isConfigLoaded, isConfigured, rawDb]);
 
   return {
     connectionStatus: syncConnection.kind,

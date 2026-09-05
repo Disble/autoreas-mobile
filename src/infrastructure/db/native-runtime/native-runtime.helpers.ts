@@ -4,10 +4,12 @@ import type { SQLiteDatabase, SQLiteProviderProps } from 'expo-sqlite';
 import { EXPO_SQLITE_UNAVAILABLE_MESSAGE, NATIVE_RUNTIME_CACHE } from './native-runtime.constants';
 import type { DrizzleExpoSQLiteModule, DrizzleMigratorModule, ExpoSQLiteModule } from './native-runtime.types';
 
+/** Reports whether an error means expo-sqlite is absent from this binary rather than broken. */
 function shouldTreatAsUnavailable(error: unknown) {
   return error instanceof Error && /ExpoSQLite|expo-sqlite/i.test(error.message);
 }
 
+/** Reports whether an error means the caller rendered outside an SQLiteProvider. */
 function shouldTreatAsMissingProvider(error: unknown) {
   return error instanceof Error && /SQLiteProvider/i.test(error.message);
 }
@@ -36,6 +38,7 @@ export function loadCachedNativeModule<TModule>(
   }
 }
 
+/** Resolves the expo-sqlite module once, or null when the binary does not ship it. */
 function loadExpoSQLiteModule() {
   return loadCachedNativeModule(
     NATIVE_RUNTIME_CACHE.expoSQLite,
@@ -49,6 +52,7 @@ function loadExpoSQLiteModule() {
   );
 }
 
+/** Resolves the drizzle Expo SQLite bindings once, or null when they are unavailable. */
 function loadDrizzleExpoSQLiteModule() {
   return loadCachedNativeModule(
     NATIVE_RUNTIME_CACHE.drizzleExpoSQLite,
@@ -62,6 +66,7 @@ function loadDrizzleExpoSQLiteModule() {
   );
 }
 
+/** Resolves the drizzle migrator binding once, or null when it is unavailable. */
 function loadDrizzleMigratorModule() {
   return loadCachedNativeModule(
     NATIVE_RUNTIME_CACHE.drizzleMigrator,
@@ -85,14 +90,16 @@ export function getSQLiteProvider(): ComponentType<SQLiteProviderProps> | null {
   return loadExpoSQLiteModule()?.SQLiteProvider ?? null;
 }
 
+/** Reads the SQLite context hook when it exists, falling back to null without a native module. */
 function readSQLiteContextOrNull(): SQLiteDatabase | null {
   const readContext = loadExpoSQLiteModule()?.useSQLiteContext ?? (() => null);
   return readContext();
 }
 
-function readLiveQueryOrFallback(query: unknown): { data: unknown } {
+/** Reads drizzle's live query when available, returning an unanswered result otherwise. */
+function readLiveQueryOrFallback(query: unknown): { data: unknown; updatedAt?: Date } {
   const readLiveQuery = loadDrizzleExpoSQLiteModule()?.useLiveQuery as
-    | ((input: unknown) => { data: unknown })
+    | ((input: unknown) => { data: unknown; updatedAt?: Date })
     | undefined;
   return readLiveQuery?.(query) ?? { data: undefined };
 }
@@ -110,15 +117,24 @@ export function useOptionalSQLiteContext(): SQLiteDatabase | null {
   }
 }
 
-/** Coordinates optional live query state and actions. */
+/**
+ * Coordinates optional live query state and actions.
+ * `hasLoaded` separates "the query has not answered yet" from "the query answered with nothing":
+ * drizzle seeds a live query with an empty result set and only stamps `updatedAt` once a real
+ * result lands, so a caller that would otherwise read that empty first render as durable truth
+ * can wait for the answer instead.
+ */
 export function useOptionalLiveQuery<TResult>(query: unknown, fallbackData: TResult) {
   try {
-    const result = readLiveQueryOrFallback(query) as { data: TResult | undefined };
+    const result = readLiveQueryOrFallback(query) as {
+      data: TResult | undefined;
+      updatedAt?: Date;
+    };
 
-    return { data: result.data ?? fallbackData };
+    return { data: result.data ?? fallbackData, hasLoaded: result.updatedAt !== undefined };
   } catch (error) {
     if (shouldTreatAsMissingProvider(error) || shouldTreatAsUnavailable(error)) {
-      return { data: fallbackData };
+      return { data: fallbackData, hasLoaded: false };
     }
 
     throw error;

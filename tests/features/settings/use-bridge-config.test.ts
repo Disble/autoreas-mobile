@@ -84,6 +84,27 @@ describe('useBridgeConfig', () => {
     expect(result.current.isConfigured).toBe(false);
   });
 
+  it('reporta la config como no cargada mientras la live query no respondió', () => {
+    (useOptionalLiveQuery as jest.Mock).mockReturnValue({ data: [], hasLoaded: false });
+
+    const { result } = renderHook(() => useBridgeConfig());
+
+    expect(result.current.isConfigLoaded).toBe(false);
+    expect(result.current.isConfigured).toBe(false);
+  });
+
+  it('reporta la config como cargada cuando la live query ya respondió', () => {
+    (useOptionalLiveQuery as jest.Mock).mockReturnValue({
+      data: [{ id: 1, ip: '192.168.0.10', port: 9876, token: 'secret', deviceId: 'bridge-123' }],
+      hasLoaded: true,
+    });
+
+    const { result } = renderHook(() => useBridgeConfig());
+
+    expect(result.current.isConfigLoaded).toBe(true);
+    expect(result.current.isConfigured).toBe(true);
+  });
+
   it('unpair() exitoso llama clearBridgeConfig', async () => {
     (clearBridgeConfig as jest.Mock).mockResolvedValue(undefined);
 
