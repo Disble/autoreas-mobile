@@ -15,12 +15,18 @@ The version is declared in **one** place: `expo.version` in `app.json`.
 `package.json` carries a copy because tooling expects the field; nothing reads it
 and it is never the source. A guard fails the release when the two disagree.
 
-> **Unproven until the first tag lands.** Everything about the local build,
-> `eas.json`, the version fields and the CHANGELOG contract below is measured on
-> this repository. The CI pipeline in `.github/workflows/release.yml` has never
-> completed a run — this repo had zero tags and zero releases when it was written.
-> Treat every claim about the runner as designed-not-observed until `v1.0.0`
-> finishes, then rewrite this block with what actually happened.
+> **Proven on `v1.0.0`, 2026-09-05.** The first run went green end to end on the
+> first attempt: run `33944095152`, 04:16:06Z → 04:45:51Z, **~29m45s** wall clock.
+> `guard` finished in about three minutes and the Gradle build took the rest. The
+> APK read back `versionName=1.0.0 versionCode=2`, weighed **132 MiB**
+> (138,478,251 bytes), and published with its `SHA256SUMS-android.txt` at
+> <https://github.com/Disble/autoreas-mobile/releases/tag/v1.0.0>.
+>
+> Two things that were guesses when this was written and are now observed: the
+> `ubuntu-latest` runner carries an Android SDK whose `build-tools` contain
+> `aapt2` (the artifact guards found it), and remote versioning was already
+> initialised for this project — the `Remote versions are not configured.` landmine
+> below did **not** fire, and EAS handed back `versionCode=2`.
 
 There are two ways to produce a build, and they share every precondition below.
 Only the last step differs: who runs the build, and where the artifact lands.
@@ -108,6 +114,15 @@ release to exist.
   give `git commit` a timeout of at least 300000 ms.
 - The tag format is `v` + the exact `expo.version`, no suffix — `v1.2.0`, not
   `1.2.0` or `release-1.2.0`.
+- **Every `uses:` in the workflow is pinned to a 40-character commit SHA, never a
+  tag.** A tag is mutable by whoever owns the action, and the publish job holds
+  `EXPO_TOKEN` plus `contents: write` — a re-pointed tag there exfiltrates the
+  token or publishes whatever it likes. The trailing `# vX.Y.Z` comment names the
+  version each SHA was; update both together, deliberately. Do not "tidy" these
+  back into tags.
+- **`contents: write` lives on the `release` job only.** The workflow default is
+  `contents: read`; `guard` never needs more than that to check out, test and
+  upload an artifact.
 
 ## Decision Gates
 
@@ -152,11 +167,15 @@ Do these once, on `dev`, regardless of which path ships the build.
 
 ### What CI publishes
 
-- `autoreas-mobile-X.Y.Z-android.apk`
+- `autoreas-mobile-X.Y.Z-android.apk` (~132 MiB on 1.0.0)
 - `SHA256SUMS-android.txt`
 
 Android only. There is no iOS profile in `eas.json` and no Apple account wired to
 this project.
+
+Budget about **30 minutes** from pushed tag to published release, nearly all of it
+Gradle. `guard` fails inside three minutes when it is going to fail, which is the
+whole reason it is a separate job.
 
 ### The guards CI runs, and what each one catches
 
@@ -242,7 +261,10 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
   it falls back to `expo.android.versionCode`, which this repo does not declare,
   and then throws. If a build dies with that string, initialise it once with
   `eas build:version:set` — do **not** "fix" it by adding a local `versionCode`,
-  which reintroduces a second source of truth.
+  which reintroduces a second source of truth. It did not fire on 1.0.0: remote
+  versioning was already initialised for this project and EAS returned
+  `versionCode=2`. It stays documented because nothing in the repo records that
+  remote state, so a new EAS project or a reset would hit it cold.
 - **`bunx eas-cli@latest`** is what both the container and the workflow run, for
   parity. It means a release can change behaviour without this repo changing. If a
   run breaks with no local diff, check whether eas-cli shipped a major.
