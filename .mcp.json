@@ -7,6 +7,16 @@
         "fallow@latest",
         "fallow-mcp"
       ]
+    },
+    "autoreas-request-mcp": {
+      "type": "stdio",
+      "command": "go",
+      "args": [
+        "run",
+        "-C",
+        "${AUTOREAS_BRIDGE_DIR:-../autoreas-bridge}",
+        "./cmd/autoreas-request-mcp"
+      ]
     }
   }
 }
