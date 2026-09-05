@@ -38,7 +38,7 @@ describe('useBridgeConfig', () => {
     (useOptionalLiveQuery as jest.Mock).mockReturnValue({ data: [] });
   });
 
-  it('retorna config cuando hay bridgeConfig en SQLite', () => {
+  it('returns the config when SQLite holds a bridgeConfig row', () => {
     (useOptionalLiveQuery as jest.Mock).mockReturnValue({
       data: [
         {
@@ -65,7 +65,7 @@ describe('useBridgeConfig', () => {
     expect(result.current.isConfigured).toBe(true);
   });
 
-  it('retorna isConfigured=false cuando no hay deviceId', () => {
+  it('reports isConfigured=false when the stored row carries no deviceId', () => {
     (useOptionalLiveQuery as jest.Mock).mockReturnValue({
       data: [
         {
@@ -113,7 +113,7 @@ describe('useBridgeConfig', () => {
     expect(result.current.configStatus).toBe('unavailable');
   });
 
-  it('unpair() exitoso llama clearBridgeConfig', async () => {
+  it('unpair() clears the stored bridge config on success', async () => {
     (clearBridgeConfig as jest.Mock).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useBridgeConfig());
@@ -135,7 +135,7 @@ describe('useBridgeConfig', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('unpair() fallido expone error', async () => {
+  it('unpair() exposes the error when clearing the config fails', async () => {
     (clearBridgeConfig as jest.Mock).mockRejectedValue(new Error('No se pudo limpiar'));
 
     const { result } = renderHook(() => useBridgeConfig());
