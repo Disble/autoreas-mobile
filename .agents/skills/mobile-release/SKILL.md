@@ -27,6 +27,12 @@ and it is never the source. A guard fails the release when the two disagree.
 > `aapt2` (the artifact guards found it), and remote versioning was already
 > initialised for this project — the `Remote versions are not configured.` landmine
 > below did **not** fire, and EAS handed back `versionCode=2`.
+>
+> **The hardened workflow is proven too, on `v1.0.1` (run `33983180735`, 27m03s).**
+> That release existed only to exercise the SHA pins, `--ignore-scripts` and the
+> pinned `eas-cli@23.2.0`, on a candidate where a failure cost nothing; all three
+> held. It also confirmed the claim its own changelog made: the APK differed from
+> 1.0.0 by **4 bytes** and `versionCode=3`, and nothing else.
 
 There are two ways to produce a build, and they share every precondition below.
 Only the last step differs: who runs the build, and where the artifact lands.
@@ -255,6 +261,17 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
   that instruction has not worked since the `dharness` layer went live.
 
 ## Landmines
+
+- **The pinned actions target Node 20, which GitHub is retiring.** Both v1.0.0 and
+  v1.0.1 raised the annotation *"Node.js 20 is deprecated. The following actions
+  target Node.js 20 but are being forced to run on Node.js 24:
+  `actions/checkout`, `actions/upload-artifact`"*. It is a warning today and the
+  runner substitutes Node 24 for you, but the substitution is a courtesy that ends.
+  This is the standing cost of pinning: a SHA freezes the runtime an action targets
+  as well as its code, so it is now on you to move it. When `actions/checkout` and
+  `actions/upload-artifact` publish releases built for Node 24, bump both the SHA
+  and its trailing version comment. Do not answer this warning by going back to
+  floating tags.
 
 - **`Remote versions are not configured.`** With `appVersionSource: "remote"`,
   eas-cli resolves `versionCode` from its servers; when no remote version exists
