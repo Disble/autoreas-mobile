@@ -16,6 +16,17 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-09-05
+
+**Nothing changed for you.** The APK in this release behaves exactly like 1.0.0 — only the pipeline that builds it changed. If you already have 1.0.0 installed there is no reason to update, and the two differ only in build number.
+
+### Internal
+
+- The release workflow pins every GitHub Action it uses to a full commit SHA instead of a moving tag, so the job that holds the signing token and the publish permission cannot silently begin running different code.
+- Write permission is no longer granted across the whole workflow; only the job that publishes the release holds it, and the checks that run before it are read-only.
+- Dependency installation on the runner passes `--ignore-scripts`, so no package lifecycle script can execute there regardless of what the environment says.
+- The EAS CLI is pinned to the exact version that built 1.0.0 rather than tracking `@latest`, so a release can no longer change behaviour without this repository changing.
+
 ## [1.0.0] — 2026-09-04
 
 First published release. The app has existed for a while; this is the first build anyone can download rather than compile. The entries below are what changed most recently — for everything before them, the app is what the README describes: an Android client that keeps a local anime catalogue in SQLite and syncs it against an Autoreas Bridge on your network.
