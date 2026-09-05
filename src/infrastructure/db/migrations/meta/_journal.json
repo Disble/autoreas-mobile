@@ -85,6 +85,13 @@
       "when": 1788562374503,
       "tag": "0011_add_animes_bridge_modified_at",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788567478580,
+      "tag": "0012_add_operation_log_conflict_attempt_count",
+      "breakpoints": true
     }
   ]
 }

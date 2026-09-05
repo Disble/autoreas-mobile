@@ -22,6 +22,13 @@ const ReconcileAppliedOperationSchema = z.object({
   // `0` and a parsed absent key must stay distinguishable, because `0` is a real, legitimate
   // token (see `collectConfirmedAnimeTokens`, which reads this field).
   modified_at: z.number().int().optional(),
+  // Present only when `applied: false`. Deliberately `z.string().optional()`, NOT a `z.enum` of
+  // the two known members (`conflict`, `unsupported_operation`): the closed vocabulary is
+  // enforced at the CLASSIFICATION layer (`reconcile-conflict.helpers.ts`), never at parse time --
+  // an `z.enum` would abort the ENTIRE response's parse the day the bridge ships a third value,
+  // rather than letting that one operation be surfaced as unrecognized (spec Requirement
+  // "Unrecognized Reason Is Surfaced, Never Classified").
+  reason: z.string().optional(),
 });
 
 // NOTE (Conflict Honesty, see spec): remote->local resolution is deterministic field-level

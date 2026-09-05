@@ -36,6 +36,11 @@ export interface ReconcileTelemetryContext {
  */
 export interface SyncPendingOperationsResult {
   readonly syncedCount: number;
+  /**
+   * Counts DISTINCT ANIMES batched, not rows queued -- the backlog read dedupes to one operation
+   * per anime per cycle (design.md Decision 9). A queue with many duplicate ops for one anime
+   * reports a smaller number here than the raw row count would.
+   */
   readonly backlogReadCount: number;
   readonly hasMorePending: boolean;
 }

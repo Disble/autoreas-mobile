@@ -14,10 +14,12 @@ jest.mock('../../../src/infrastructure/api', () => ({
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withLocalWrite: jest.fn(),
+  createDrizzleDb: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   persistConfirmedAnimeTokens: jest.fn().mockResolvedValue(undefined),
+  readAnimeBridgeTokens: jest.fn().mockResolvedValue(new Map()),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -35,6 +37,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
+  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 /**

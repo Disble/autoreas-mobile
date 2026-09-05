@@ -39,4 +39,19 @@ describe("migration journal timestamp order", () => {
     expect(entry11?.when).toBeGreaterThan(MIGRATION_0010_TIMESTAMP_MS);
     expect(MIGRATION_0010_TIMESTAMP_MS).toBe(1788546067501);
   });
+
+  /**
+   * Same clamp concern as 0011: 0012's `when` must clear the clamp target, and
+   * MIGRATION_0010_TIMESTAMP_MS must stay the fixed 0010 literal, never derived or bumped to the
+   * newest migration (that would poison 0012 next).
+   */
+  it("keeps entry 0012 strictly after MIGRATION_0010_TIMESTAMP_MS and after entry 0011", () => {
+    const entry11 = journal.entries.find((entry) => entry.tag.startsWith("0011_"));
+    const entry12 = journal.entries.find((entry) => entry.tag.startsWith("0012_"));
+
+    expect(entry12).toBeDefined();
+    expect(entry12?.when).toBeGreaterThan(MIGRATION_0010_TIMESTAMP_MS);
+    expect(entry12?.when).toBeGreaterThan(entry11?.when ?? 0);
+    expect(MIGRATION_0010_TIMESTAMP_MS).toBe(1788546067501);
+  });
 });

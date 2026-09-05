@@ -1,4 +1,5 @@
 import type { OperationLogRow } from '../../infrastructure/db/schema';
+import { buildOptimisticBaseKey } from './reconcile-base-token.helpers';
 import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
 
 /**
@@ -15,12 +16,19 @@ import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
  * body raw and verbatim, so an empty key would be permanent noise in its store rather than a
  * serialization detail. `null` arrives here when the size cap declined to send, which is a
  * decision to stay silent -- exactly the same absence.
+ *
+ * `bridgeTokensByAnimeId` (Part 2, Requirement 9) is optional and defaults to omitted: without it
+ * every operation's `base` key is omitted, byte-identical to Part 1. When supplied, each
+ * operation's `base` is built via `buildOptimisticBaseKey` from that anime's stored token --
+ * present (including `0`) whenever the token is known, omitted only when it is `NULL`/absent from
+ * the map.
  */
 export function buildReconcileRequestBody(
   deviceId: string | undefined,
   lastChangelogId: number,
   pendingOperations: OperationLogRow[],
   clientTelemetry?: WireSyncCycleTelemetry | null,
+  bridgeTokensByAnimeId?: ReadonlyMap<string, number | null>,
 ) {
   return {
     device_id: deviceId ?? undefined,
@@ -30,6 +38,7 @@ export function buildReconcileRequestBody(
       operation: operation.operation,
       payload: normalizePendingOperationPayload(operation.operation, operation.payload),
       created_at: operation.createdAt,
+      ...buildOptimisticBaseKey(bridgeTokensByAnimeId?.get(operation.animeId) ?? null),
     })),
     ...(clientTelemetry ? { client_telemetry: clientTelemetry } : {}),
   };

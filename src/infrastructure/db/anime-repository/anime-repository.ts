@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { ConfirmedAnimeToken } from "../../../features/sync/applied-operation-token.helpers";
 import type { Anime } from "../../validation/anime-schema";
 import { buildOptionalAnimeSyncColumns } from "./anime-repository.helpers";
@@ -100,4 +100,28 @@ export async function persistConfirmedAnimeTokens(
     // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: every write shares the caller's already-open write door on one SQLite connection; parallelizing risks interleaving native statements on the same handle.
     await applyAnimeBridgeToken(db, token.animeId, token.bridgeModifiedAt);
   }
+}
+
+/**
+ * Reads the stored OCC token for the given record ids, projecting ONLY `{ _id, bridgeModifiedAt }`
+ * -- this is the only query in the codebase that names `bridge_modified_at` on the read path
+ * (design.md Decision 7), mirroring `loadGuardMap`'s (`merge-context.helpers.ts`) shape for the
+ * staleness guard. A missing entry in the returned map means the row was not found; a present
+ * entry of `null` means the row exists but no token is known yet -- both read as "no known token"
+ * at the call site (`?? null`), but only the latter reflects a real row.
+ */
+export async function readAnimeBridgeTokens(
+  db: AppDatabase,
+  recordIds: readonly string[],
+): Promise<Map<string, number | null>> {
+  if (recordIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
+    .select({ _id: animes._id, bridgeModifiedAt: animes.bridgeModifiedAt })
+    .from(animes)
+    .where(inArray(animes._id, recordIds));
+
+  return new Map(rows.map((row) => [row._id, row.bridgeModifiedAt]));
 }

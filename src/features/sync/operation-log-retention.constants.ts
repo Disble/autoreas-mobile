@@ -14,6 +14,13 @@ export const DEFAULT_OPERATION_LOG_RETENTION_POLICY: OperationLogRetentionPolicy
     ttlDays: 30,
     maxCount: 500,
   },
+  // Same cadence as dead_letter: both are "something went permanently wrong" terminal states,
+  // and a row here is at least as worth keeping around for diagnosis (design.md Decision 6).
+  conflictExhausted: {
+    status: 'conflict_exhausted',
+    ttlDays: 30,
+    maxCount: 500,
+  },
   now: () => Date.now(),
 };
 

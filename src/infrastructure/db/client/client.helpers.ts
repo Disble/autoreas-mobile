@@ -19,6 +19,7 @@ import {
   LOCAL_WRITE_DEADLINE_MS,
   ERRCODE_PREFIX_PATTERN,
   MIGRATION_0010_TIMESTAMP_MS,
+  OPERATION_LOG_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
@@ -210,6 +211,19 @@ async function ensureAnimesColumns(rawDb: SQLiteDatabase) {
 }
 
 /**
+ * Adds every `operation_log` column added after the table first shipped, mirroring
+ * `ensureAnimesColumns`'s single-PRAGMA-read mechanism. Unlike the `animes` OCC columns,
+ * `conflict_attempt_count` is NOT NULL with a default of 0 (design.md Decision 6) -- every
+ * pre-existing queued row can safely read back "zero conflicts so far".
+ */
+async function ensureOperationLogColumns(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(operation_log)');
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  await ensureMissingColumns(rawDb, columnNames, OPERATION_LOG_COLUMN_DEFINITIONS);
+}
+
+/**
  * Creates the `pending_remote_changes` staging table when missing. Background/headless
  * sync runs (no reactive change listener, separate JS runtime) write remote changes here
  * instead of applying them to `animes` directly; a foreground drain hook later applies
@@ -306,6 +320,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);
   await ensureOperationLogRetentionIndex(rawDb);
   await ensureAnimesColumns(rawDb);
+  await ensureOperationLogColumns(rawDb);
   await ensurePendingRemoteChangesTable(rawDb);
   await ensureSeasonRatingQueueTable(rawDb);
   await ensureActiveSeasonCacheTable(rawDb);

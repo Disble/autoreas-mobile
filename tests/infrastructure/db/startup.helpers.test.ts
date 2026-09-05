@@ -41,6 +41,7 @@ describe('database startup helpers', () => {
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
+          { name: 'conflict_attempt_count' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -57,6 +58,7 @@ describe('database startup helpers', () => {
       'migrations',
       'quick-check',
       'table-check',
+      'column-check',
       'column-check',
       'column-check',
       'column-check',
@@ -123,6 +125,7 @@ describe('database startup helpers', () => {
         { name: 'is_sync_telemetry_enabled' },
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
+        { name: 'conflict_attempt_count' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockClear();
@@ -155,6 +158,7 @@ describe('database startup helpers', () => {
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
+          { name: 'conflict_attempt_count' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -239,6 +243,7 @@ describe('database startup helpers', () => {
         { name: 'is_sync_telemetry_enabled' },
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
+        { name: 'conflict_attempt_count' },
       ]),
     } as unknown as SQLiteDatabase;
     const newerDb = {
@@ -283,7 +288,7 @@ describe('database startup helpers', () => {
     );
   });
 
-  it('reports ready at version 12 when bridge_modified_at is present', async () => {
+  it('reports ready at version 13 when bridge_modified_at and conflict_attempt_count are present', async () => {
     const rawDb = {
       execAsync: jest.fn().mockResolvedValue(undefined),
       getFirstAsync: jest
@@ -295,15 +300,47 @@ describe('database startup helpers', () => {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }];
         }
 
+        if (query === 'PRAGMA table_info(operation_log)') {
+          return [{ name: 'id' }, { name: 'conflict_attempt_count' }];
+        }
+
         return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(12);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(13);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
+  });
+
+  it('reports not-ready when operation_log exists but conflict_attempt_count does not', async () => {
+    const rawDb = {
+      execAsync: jest.fn().mockResolvedValue(undefined),
+      getFirstAsync: jest
+        .fn()
+        .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === 'PRAGMA table_info(operation_log)') {
+          return [{ name: 'id' }];
+        }
+
+        return [
+          { name: 'last_cycle_id' },
+          { name: 'is_sync_telemetry_enabled' },
+          { name: 'last_applied_change_ms' },
+          { name: 'bridge_modified_at' },
+        ];
+      }),
+    } as unknown as SQLiteDatabase;
+    (runMigrations as jest.Mock).mockReset();
+    (runMigrations as jest.Mock).mockResolvedValue(undefined);
+
+    await expect(prepareForegroundDatabase(rawDb)).rejects.toBeInstanceOf(
+      SchemaValidationError,
+    );
   });
 });
 

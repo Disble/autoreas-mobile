@@ -7,6 +7,7 @@ import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply
 import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
+import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
 
 jest.mock('../../../src/infrastructure/api', () => ({
   bridgeClient: { reconcile: jest.fn() },
@@ -15,10 +16,12 @@ jest.mock('../../../src/infrastructure/api', () => ({
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withLocalWrite: jest.fn(),
+  createDrizzleDb: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   persistConfirmedAnimeTokens: jest.fn().mockResolvedValue(undefined),
+  readAnimeBridgeTokens: jest.fn().mockResolvedValue(new Map()),
 }));
 
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
@@ -36,6 +39,7 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
+  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 describe('reconcile helpers', () => {
@@ -46,6 +50,7 @@ describe('reconcile helpers', () => {
     payload: JSON.stringify({ episodesWatched: 5, lastWatchedAt: 1710000000000 }),
     status: 'processing',
     createdAt: 1710000000000,
+    conflictAttemptCount: 0,
   };
 
   it('getConfirmedOperationIds confirma updates cuando bridge refleja los campos aplicados', () => {
@@ -180,6 +185,7 @@ describe('syncPendingOperations applyMode routing', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
+  const mockCountBacklogRows = operationLogRetention.countOperationLogBacklogRows as jest.Mock;
   const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
   const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =
@@ -190,6 +196,7 @@ describe('syncPendingOperations applyMode routing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadBacklog.mockResolvedValue([]);
+    mockCountBacklogRows.mockResolvedValue(0);
     mockGetBridgeConfigSnapshot.mockResolvedValue({
       id: 1,
       ip: '192.168.1.10',
@@ -369,5 +376,118 @@ describe('syncPendingOperations applyMode routing', () => {
 
     expect(mockStagePendingRemoteChanges).toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalled();
+  });
+
+  it('reports hasMorePending: true when the dedup batch suppressed rows behind it (200 pending rows across 3 animes)', async () => {
+    mockReadBacklog.mockResolvedValue([
+      { id: 1, animeId: 'anime-1', operation: 'update', payload: '{}', status: 'processing', createdAt: 100 },
+      { id: 2, animeId: 'anime-2', operation: 'update', payload: '{}', status: 'processing', createdAt: 200 },
+      { id: 3, animeId: 'anime-3', operation: 'update', payload: '{}', status: 'processing', createdAt: 300 },
+    ]);
+    mockCountBacklogRows.mockResolvedValue(200);
+
+    const writeDb = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => task(writeDb, {}));
+
+    mockReconcile.mockResolvedValue({
+      ok: true,
+      status: 202,
+      url: 'https://192.168.1.10:9876/api/sync/reconcile',
+      rawBody: '{}',
+      data: {
+        status: 'accepted',
+        // Every batched op is confirmed, so `unconfirmedIds.length > 0` alone cannot explain a
+        // `true` result here -- only the suppressed-rows comparison (200 total > 3 batched) can.
+        applied_operations: [
+          { anime_id: 'anime-1', operation: 'update', applied: true },
+          { anime_id: 'anime-2', operation: 'update', applied: true },
+          { anime_id: 'anime-3', operation: 'update', applied: true },
+        ],
+        bridge_changes: [],
+        conflicts: [],
+      },
+    });
+
+    const rawDb = { name: 'dedup-more-pending-db' };
+    const result = await syncPendingOperations(rawDb as never);
+
+    expect(result.hasMorePending).toBe(true);
+  });
+
+  it('reports hasMorePending: false when the total backlog row count matches the batch size', async () => {
+    mockReadBacklog.mockResolvedValue([
+      { id: 1, animeId: 'anime-1', operation: 'update', payload: '{}', status: 'processing', createdAt: 100 },
+    ]);
+    mockCountBacklogRows.mockResolvedValue(1);
+
+    const writeDb = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => task(writeDb, {}));
+
+    mockReconcile.mockResolvedValue({
+      ok: true,
+      status: 202,
+      url: 'https://192.168.1.10:9876/api/sync/reconcile',
+      rawBody: '{}',
+      data: {
+        status: 'accepted',
+        applied_operations: [{ anime_id: 'anime-1', operation: 'update', applied: true }],
+        bridge_changes: [],
+        conflicts: [],
+      },
+    });
+
+    const rawDb = { name: 'dedup-no-more-pending-db' };
+    const result = await syncPendingOperations(rawDb as never);
+
+    expect(result.hasMorePending).toBe(false);
+  });
+
+  it('reads bridge tokens for the batch and wires them into the request body as base (Requirement 9)', async () => {
+    mockReadBacklog.mockResolvedValue([
+      { id: 1, animeId: 'anime-1', operation: 'update', payload: '{}', status: 'processing', createdAt: 100 },
+    ]);
+    (animeRepository.readAnimeBridgeTokens as jest.Mock).mockResolvedValue(
+      new Map([['anime-1', 555]]),
+    );
+
+    const writeDb = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => task(writeDb, {}));
+
+    mockReconcile.mockResolvedValue({
+      ok: true,
+      status: 202,
+      url: 'https://192.168.1.10:9876/api/sync/reconcile',
+      rawBody: '{}',
+      data: { status: 'accepted', applied_operations: [], bridge_changes: [], conflicts: [] },
+    });
+
+    const rawDb = { name: 'base-token-wiring-db' };
+    await syncPendingOperations(rawDb as never);
+
+    expect(animeRepository.readAnimeBridgeTokens).toHaveBeenCalledWith(
+      expect.anything(),
+      ['anime-1'],
+    );
+    expect(mockReconcile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        pending_operations: [expect.objectContaining({ anime_id: 'anime-1', base: 555 })],
+      }),
+    );
   });
 });

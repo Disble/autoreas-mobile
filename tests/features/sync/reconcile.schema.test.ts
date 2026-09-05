@@ -191,4 +191,84 @@ describe('ReconcileResponseSchema conflict honesty', () => {
 
     expect(parsed.success).toBe(false);
   });
+
+  it('parses a rejected applied_operations entry carrying reason: "conflict" and its modified_at', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [
+        {
+          anime_id: 'anime-1',
+          operation: 'update',
+          applied: false,
+          reason: 'conflict',
+          modified_at: 1788540735366,
+        },
+      ],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.reason).toBe('conflict');
+    expect(parsed.data.applied_operations[0]?.modified_at).toBe(1788540735366);
+  });
+
+  it('parses a rejected applied_operations entry carrying reason: "unsupported_operation"', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [
+        { anime_id: 'anime-1', operation: 'delete', applied: false, reason: 'unsupported_operation' },
+      ],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.reason).toBe('unsupported_operation');
+  });
+
+  it('parses an UNRECOGNIZED reason value without rejecting the whole response (surfaced later, never a schema failure)', () => {
+    // The vocabulary is closed at the CLASSIFICATION layer (reconcile-conflict.helpers.ts), not
+    // at the schema layer -- rejecting an unknown reason here would abort the whole batch parse
+    // instead of letting this one operation be surfaced as unrecognized.
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [
+        { anime_id: 'anime-1', operation: 'update', applied: false, reason: 'some_future_value' },
+      ],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.reason).toBe('some_future_value');
+  });
+
+  it('parses a confirmed (applied: true) entry with no reason key as reason: undefined', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [{ anime_id: 'anime-1', operation: 'update', applied: true }],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.reason).toBeUndefined();
+  });
 });

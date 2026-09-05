@@ -38,9 +38,11 @@ const RECONCILE_URL = 'http://192.168.1.10:9876/api/sync/reconcile';
 describe('syncPendingOperations', () => {
   let rawDb: {
     getAllAsync: jest.Mock<Promise<unknown[]>, [string, ...unknown[]]>;
+    getFirstAsync: jest.Mock<Promise<{ count: number }>, [string, ...unknown[]]>;
   };
   let mockDb: {
     update: jest.Mock;
+    select: jest.Mock;
   };
   let mockUpdateSet: jest.Mock;
   let mockUpdateWhere: jest.Mock;
@@ -80,6 +82,9 @@ describe('syncPendingOperations', () => {
   beforeEach(() => {
     rawDb = {
       getAllAsync: jest.fn().mockResolvedValue([]),
+      // Backs `countOperationLogBacklogRows` (Part 2 `hasMorePending` fix): a fixed 0 keeps
+      // every existing assertion in this file unaffected by the new suppressed-rows check.
+      getFirstAsync: jest.fn().mockResolvedValue({ count: 0 }),
     };
 
     mockUpdateWhere = jest.fn();
@@ -87,6 +92,11 @@ describe('syncPendingOperations', () => {
 
     mockDb = {
       update: jest.fn().mockReturnValue({ set: mockUpdateSet }),
+      // Backs `readAnimeBridgeTokens` (Part 2 request-side base emission): an empty result means
+      // every operation's `base` stays omitted, byte-identical to this file's Part 1 assertions.
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      }),
     };
 
     (dbClient.createDrizzleDb as jest.Mock).mockReturnValue(mockDb);
@@ -128,8 +138,10 @@ describe('syncPendingOperations', () => {
     expect(result).toEqual({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
     // Backlog includes 'processing' so ops orphaned by a crashed/killed cycle are recovered
     // (re-sent + confirmed), instead of perpetually blocking their anime via defer_outbox.
+    // The read now opts into the per-anime dedup (Part 2, Requirement 10), so the query carries
+    // the `ROW_NUMBER()`/`animeRank` window rather than the old flat shape.
     expect(rawDb.getAllAsync).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE status IN (?, ?) ORDER BY created_at ASC, id ASC LIMIT ?'),
+      expect.stringContaining('WHERE animeRank = 1 ORDER BY createdAt ASC, id ASC LIMIT ?'),
       'pending',
       'processing',
       200,

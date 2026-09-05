@@ -13,6 +13,7 @@ import m0008 from './0008_add_pending_remote_changes.sql';
 import m0009 from './0009_add_season_rating_queue.sql';
 import m0010 from './0010_add_sync_cycle_telemetry_columns.sql';
 import m0011 from './0011_add_animes_bridge_modified_at.sql';
+import m0012 from './0012_add_operation_log_conflict_attempt_count.sql';
 
   export default {
     journal,
@@ -28,6 +29,7 @@ m0007,
 m0008,
 m0009,
 m0010,
-m0011
+m0011,
+m0012
     }
   }

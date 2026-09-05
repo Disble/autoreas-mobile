@@ -6,11 +6,19 @@ import {
   normalizeWireAnimeChangedFields,
 } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
 import {
+  createDrizzleDb,
   getBridgeConfigSnapshot,
   withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
-import { persistConfirmedAnimeTokens } from '../../infrastructure/db/anime-repository';
+import type { AppDatabase } from '../../infrastructure/db/client/client.types';
+import {
+  applyAnimeBridgeToken,
+  persistConfirmedAnimeTokens,
+  readAnimeBridgeTokens,
+} from '../../infrastructure/db/anime-repository';
 import { bridgeConfig, operationLog } from '../../infrastructure/db/schema';
+import type { OperationLogRow } from '../../infrastructure/db/schema';
+import type { ConfirmedAnimeToken } from './applied-operation-token.helpers';
 import { collectConfirmedAnimeTokens } from './applied-operation-token.helpers';
 import {
   getLastChangelogId,
@@ -19,9 +27,14 @@ import {
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 import type { RemoteAnimeChange } from './merge/merge.types';
-import { readOperationLogBacklog } from './operation-log-retention.helpers';
+import {
+  countOperationLogBacklogRows,
+  readOperationLogBacklog,
+} from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
+import type { ConflictOutcome } from './reconcile-conflict.helpers';
+import { classifyUnconfirmedOperations } from './reconcile-conflict.helpers';
 import { buildReconcileRequestBody } from './reconcile-request.helpers';
 import {
   RECONCILE_BACKLOG_BATCH_LIMIT,
@@ -142,6 +155,131 @@ function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange 
   };
 }
 
+/** Input to `applyReconcileResponseWrites`, one field per write source this cycle produced. */
+interface ApplyReconcileResponseWritesParams {
+  readonly applyMode: ReconcileApplyMode;
+  readonly normalizedChanges: readonly RemoteAnimeChange[];
+  readonly confirmedAnimeTokens: readonly ConfirmedAnimeToken[];
+  readonly conflictOutcomes: readonly ConflictOutcome[];
+  readonly deadLetterIds: readonly number[];
+  readonly confirmedIds: readonly number[];
+  readonly remainingUnconfirmedIds: readonly number[];
+  readonly lastChangelogId: number;
+  readonly nextLastChangelogId: number;
+  readonly bridgeConfigId: number;
+}
+
+/**
+ * Applies every write this cycle's response produced, all inside the ONE shared write door the
+ * caller already opened. Extracted out of `performSyncPendingOperations` to keep that function's
+ * cognitive complexity under threshold (constraint: "Complexity Budget Note") -- this function
+ * owns nothing about WHEN to run (that stays `withLocalWrite`'s job), only WHAT to write and in
+ * what order, per design.md Decision 1/2 (extended to Part 2's conflict outcomes, which are
+ * column-disjoint from the confirmed write-back and so carry no ordering dependency against it).
+ */
+async function applyReconcileResponseWrites(
+  writeDb: AppDatabase,
+  params: ApplyReconcileResponseWritesParams,
+): Promise<void> {
+  const {
+    applyMode,
+    normalizedChanges,
+    confirmedAnimeTokens,
+    conflictOutcomes,
+    deadLetterIds,
+    confirmedIds,
+    remainingUnconfirmedIds,
+    lastChangelogId,
+    nextLastChangelogId,
+    bridgeConfigId,
+  } = params;
+
+  if (applyMode === 'staged') {
+    await stagePendingRemoteChanges(writeDb, normalizedChanges);
+  } else {
+    const recordIds = normalizedChanges.map((change) => change.recordId);
+    const [guardByRecordId, pendingOutboxRecordIds] = await Promise.all([
+      loadGuardMap(writeDb, recordIds),
+      loadPendingOutboxRecordIds(writeDb),
+    ]);
+
+    await applyRemoteChanges(
+      writeDb,
+      normalizedChanges,
+      { guardByRecordId, pendingOutboxRecordIds },
+      'deferred',
+    );
+  }
+
+  // MUST run after the `bridge_changes` apply above: that apply may be what CREATES the row
+  // (an `update` for a record the device has never seen falls through to `upsertAnime`), and a
+  // token write against a not-yet-existing row matches zero rows. Column-disjoint from the write
+  // above (`bridge_modified_at` only, design.md Decision 2), so ordering here is a row-existence
+  // dependency, never a conflict to resolve.
+  await persistConfirmedAnimeTokens(writeDb, confirmedAnimeTokens);
+
+  for (const outcome of conflictOutcomes) {
+    // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: every write shares the caller's already-open write door on one SQLite connection.
+    await applyAnimeBridgeToken(writeDb, outcome.animeId, outcome.bridgeModifiedAt);
+    await writeDb
+      .update(operationLog)
+      .set({ status: outcome.status, conflictAttemptCount: outcome.conflictAttemptCount })
+      .where(eq(operationLog.id, outcome.operationId));
+  }
+
+  if (deadLetterIds.length > 0) {
+    await writeDb
+      .update(operationLog)
+      .set({ status: 'dead_letter' })
+      .where(inArray(operationLog.id, deadLetterIds as number[]));
+  }
+
+  if (confirmedIds.length > 0) {
+    await writeDb
+      .update(operationLog)
+      .set({ status: 'synced' })
+      .where(inArray(operationLog.id, confirmedIds as number[]));
+  }
+
+  if (remainingUnconfirmedIds.length > 0) {
+    await writeDb
+      .update(operationLog)
+      .set({ status: 'pending' })
+      .where(inArray(operationLog.id, remainingUnconfirmedIds as number[]));
+  }
+
+  if (shouldPersistLastChangelogId(lastChangelogId, nextLastChangelogId)) {
+    await writeDb
+      .update(bridgeConfig)
+      .set({ lastChangelogId: nextLastChangelogId })
+      .where(eq(bridgeConfig.id, bridgeConfigId));
+  }
+}
+
+/**
+ * Reverts a batch claimed `'processing'` back to a retry-eligible state after this cycle failed,
+ * or moves it to `dead_letter` when the bridge's own 4xx response says the batch's CONTENT was
+ * rejected (see `isPermanentReconcileError`). No-ops for an empty batch. Extracted out of
+ * `performSyncPendingOperations`'s `catch` block to keep that function's cognitive complexity
+ * under threshold (constraint: "Complexity Budget Note").
+ */
+async function revertPendingOperationsOnFailure(
+  rawDb: SQLiteDatabase,
+  pendingOps: readonly OperationLogRow[],
+  error: unknown,
+): Promise<void> {
+  if (pendingOps.length === 0) {
+    return;
+  }
+
+  await withLocalWrite(rawDb, async (writeDb) => {
+    await writeDb
+      .update(operationLog)
+      .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })
+      .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+  });
+}
+
 /**
  * Runs exactly ONE reconcile round-trip; the rerun loop and the in-flight guard belong to
  * `syncPendingOperations`, so this stays a single, restartable unit of work.
@@ -167,11 +305,24 @@ async function performSyncPendingOperations(
   // `loadPendingOutboxRecordIds` treats it as un-acked local intent and `defer_outbox` then
   // drops EVERY remote change for that anime, freezing it permanently out of sync. Re-sending
   // is safe: cycles are serialized per connection and the patches are absolute/idempotent.
+  // `dedupeBy: 'anime_id'` (design.md Decision 9, Requirement 10) caps the batch at one queued
+  // operation per anime -- the oldest by `created_at`/`id` -- so `limit` bounds distinct animes
+  // rather than rows here.
   const pendingOps = await readOperationLogBacklog(rawDb, {
     status: ['pending', 'processing'],
     limit: RECONCILE_BACKLOG_BATCH_LIMIT,
     orderBy: 'oldest_first',
+    dedupeBy: 'anime_id',
   });
+
+  // Reported-value only (design.md Decision 9): under `dedupeBy: 'anime_id'`, `pendingOps.length`
+  // counts distinct animes batched, not rows queued, so it alone cannot tell whether more rows
+  // are waiting behind the ones this batch suppressed. This total is read once per cycle purely
+  // so `hasMorePending` stays truthful; it never drives the rerun loop, which is
+  // `syncState.rerunRequested` alone.
+  const totalBacklogRowCount = pendingOps.length > 0
+    ? await countOperationLogBacklogRows(rawDb, ['pending', 'processing'])
+    : 0;
 
   if (pendingOps.length > 0) {
     await withLocalWrite(rawDb, async (writeDb) => {
@@ -201,11 +352,19 @@ async function performSyncPendingOperations(
         config,
       )
     : null;
+  // Read-only, outside any write door: the SAME shape `getBridgeConfigSnapshot` uses for its own
+  // read. This is the value each operation's `base` is built from (Requirement 9) -- read here,
+  // before the request goes out, so it reflects the token as of the moment this batch was sent.
+  const bridgeTokensByAnimeId = await readAnimeBridgeTokens(
+    createDrizzleDb(rawDb),
+    pendingOps.map((operation) => operation.animeId),
+  );
   const requestBody = buildReconcileRequestBody(
     config.deviceId ?? undefined,
     lastChangelogId,
     pendingOps,
     clientTelemetry,
+    bridgeTokensByAnimeId,
   );
 
   try {
@@ -248,6 +407,20 @@ async function performSyncPendingOperations(
       }
     }
 
+    // Pure classification pass, outside the write door: for every unconfirmed operation with a
+    // matching REJECTED (`applied: false`) entry, decide what it means (design.md Decision 6).
+    // `remainingUnconfirmedIds` is the generic "reset to pending" bucket that Part 1 always used;
+    // `deadLetterIds`/`conflictOutcomes` get their own explicit write inside the door instead, so
+    // they must NOT also be swept into the generic bulk reset below.
+    const { remainingUnconfirmedIds, deadLetterIds, conflictOutcomes } =
+      classifyUnconfirmedOperations({
+        unconfirmedIds,
+        pendingOps,
+        appliedOperations: applied_operations,
+        bridgeTokensByAnimeId,
+        now: Date.now(),
+      });
+
     const normalizedChanges = bridge_changes.map(normalizeBridgeChange);
 
     // Route every pulled bridge change through the single merge boundary instead of the old
@@ -261,70 +434,29 @@ async function performSyncPendingOperations(
     //   false`), not from a different transaction path here (design.md Decision 4).
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
-    await withLocalWrite(rawDb, async (writeDb) => {
-      if (applyMode === 'staged') {
-        await stagePendingRemoteChanges(writeDb, normalizedChanges);
-      } else {
-        const recordIds = normalizedChanges.map((change) => change.recordId);
-        const [guardByRecordId, pendingOutboxRecordIds] = await Promise.all([
-          loadGuardMap(writeDb, recordIds),
-          loadPendingOutboxRecordIds(writeDb),
-        ]);
-
-        await applyRemoteChanges(
-          writeDb,
-          normalizedChanges,
-          { guardByRecordId, pendingOutboxRecordIds },
-          'deferred',
-        );
-      }
-
-      // MUST run after the `bridge_changes` apply above: that apply may be what CREATES the
-      // row (an `update` for a record the device has never seen falls through to `upsertAnime`),
-      // and a token write against a not-yet-existing row matches zero rows. Column-disjoint from
-      // the write above (`bridge_modified_at` only, design.md Decision 2), so ordering here is a
-      // row-existence dependency, never a conflict to resolve.
-      await persistConfirmedAnimeTokens(writeDb, confirmedAnimeTokens);
-
-      if (confirmedIds.length > 0) {
-        await writeDb
-          .update(operationLog)
-          .set({ status: 'synced' })
-          .where(inArray(operationLog.id, confirmedIds));
-      }
-
-      if (unconfirmedIds.length > 0) {
-        await writeDb
-          .update(operationLog)
-          .set({ status: 'pending' })
-          .where(inArray(operationLog.id, unconfirmedIds));
-      }
-
-      if (shouldPersistLastChangelogId(lastChangelogId, nextLastChangelogId)) {
-        await writeDb
-          .update(bridgeConfig)
-          .set({ lastChangelogId: nextLastChangelogId })
-          .where(eq(bridgeConfig.id, config.id));
-      }
-    });
+    await withLocalWrite(rawDb, (writeDb) =>
+      applyReconcileResponseWrites(writeDb, {
+        applyMode,
+        normalizedChanges,
+        confirmedAnimeTokens,
+        conflictOutcomes,
+        deadLetterIds,
+        confirmedIds,
+        remainingUnconfirmedIds,
+        lastChangelogId,
+        nextLastChangelogId,
+        bridgeConfigId: config.id,
+      }),
+    );
 
     return {
       syncedCount: confirmedIds.length,
       backlogReadCount: pendingOps.length,
       hasMorePending:
-        unconfirmedIds.length > 0 ||
-        pendingOps.length === RECONCILE_BACKLOG_BATCH_LIMIT,
+        unconfirmedIds.length > 0 || totalBacklogRowCount > pendingOps.length,
     };
   } catch (error) {
-    if (pendingOps.length > 0) {
-      await withLocalWrite(rawDb, async (writeDb) => {
-        await writeDb
-          .update(operationLog)
-          .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })
-          .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
-      });
-    }
-
+    await revertPendingOperationsOnFailure(rawDb, pendingOps, error);
     throw error;
   }
 }

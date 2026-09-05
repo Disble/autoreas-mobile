@@ -50,6 +50,14 @@ export const operationLog = sqliteTable(
     payload: text("payload").notNull(),
     status: text("status").notNull().default("pending"),
     createdAt: integer("created_at").notNull(),
+    // Per-row, client-authored count of NON-PROGRESSING `conflict` responses this operation has
+    // received (design.md Decision 6). Lives on `operation_log`, not `animes`, because its
+    // lifetime is the OPERATION: two queued operations for the same anime must not share one
+    // budget, or the second could be born already exhausted by the first's failures. Resets to 0
+    // whenever a conflict response's token advances past the stored one (progress was made);
+    // increments only when it repeats the same token. NOT NULL with a default of 0 -- unlike the
+    // OCC token columns, a freshly queued row has definitely made zero attempts, never "unknown".
+    conflictAttemptCount: integer("conflict_attempt_count").notNull().default(0),
   },
   (table) => [
     index('operation_log_status_created_at_idx').on(

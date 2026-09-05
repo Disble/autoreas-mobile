@@ -255,12 +255,15 @@ describe("db client tracer helpers", () => {
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(7);
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(8);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE operation_log ADD COLUMN conflict_attempt_count INTEGER DEFAULT 0 NOT NULL'
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE TABLE IF NOT EXISTS pending_remote_changes (' +

@@ -9,6 +9,7 @@ describe('reconcile pending operation payload helpers', () => {
     payload: JSON.stringify({ episodesWatched: 5, lastWatchedAt: 1710000000000 }),
     status: 'processing',
     createdAt: 1710000000000,
+    conflictAttemptCount: 0,
   };
 
   it('omits device_id when missing and keeps malformed payloads on the safe empty-object fallback', () => {

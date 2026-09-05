@@ -125,6 +125,20 @@ export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
 ];
 
 /**
+ * Lists the `operation_log` columns added after the table first shipped, mirroring
+ * `ANIMES_COLUMN_DEFINITIONS`. Unlike those two, `conflict_attempt_count` is NOT NULL with a
+ * default of 0: it is a per-row client-authored fact (design.md Decision 6), not a bridge token,
+ * so every pre-existing queued row can safely read back "zero conflicts so far" rather than an
+ * unknown value.
+ */
+export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
+  {
+    columnName: 'conflict_attempt_count',
+    sql: 'ALTER TABLE operation_log ADD COLUMN conflict_attempt_count INTEGER DEFAULT 0 NOT NULL',
+  },
+];
+
+/**
  * Migration 0010's own `when` from `_journal.json`, duplicated here as a HARDCODED literal rather
  * than derived from the journal at runtime. This is the clamp target for
  * `clampPoisonedMigrationTimestamp`, and deriving it from `max(journal.entries[].when)` would

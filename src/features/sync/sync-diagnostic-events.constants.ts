@@ -14,6 +14,7 @@ export const SYNC_DIAGNOSTIC_SOURCES = [
   'foreground_resync',
   'background_task',
   'startup',
+  'reconcile_conflict',
 ] as const;
 
 /**
@@ -29,6 +30,15 @@ export const SYNC_DIAGNOSTIC_SOURCES = [
  * - `headless_task_registered` / `headless_task_missing` -> whether the host kept JS timers
  *   alive. Its absence is what makes every deadline in the app silently dead in background,
  *   and today it is only observable through `adb logcat`.
+ * - `conflict_reason_unrecognized` -> the bridge sent an `applied_operations[].reason` outside
+ *   the closed vocabulary. Surfaced rather than guessed at, per spec Requirement "Unrecognized
+ *   Reason Is Surfaced, Never Classified".
+ * - `conflict_token_missing` -> a `reason: "conflict"` entry arrived with no `modified_at`, a
+ *   contract violation the schema types as optional only because the OTHER branch legitimately
+ *   omits it. Never defaulted to `0` -- a real, legitimate token.
+ * - `conflict_operation_stalled` -> an operation has been losing a PROGRESSING optimistic-
+ *   concurrency race for longer than `STALLED_OPERATION_VISIBILITY_THRESHOLD_MS`. It stays
+ *   queued and keeps retrying; this event exists only so that silence has a bound too.
  */
 export const SYNC_DIAGNOSTIC_EVENTS = [
   'ws_opened',
@@ -41,6 +51,9 @@ export const SYNC_DIAGNOSTIC_EVENTS = [
   'write_failed',
   'headless_task_registered',
   'headless_task_missing',
+  'conflict_reason_unrecognized',
+  'conflict_token_missing',
+  'conflict_operation_stalled',
 ] as const;
 
 /**

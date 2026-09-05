@@ -184,7 +184,7 @@ sequenceDiagram
   B->>P: render with onInit(handleDatabaseInit)
   P->>S: handleDatabaseInit(rawDb)
   S->>D: busy timeout, WAL, migrations, ordered repairs
-  S->>D: quick_check and required-table validation
+  S->>D: quick_check, required-table, and required-column validation
   S->>D: write user_version = EXPECTED_SCHEMA_READINESS_VERSION
   S->>D: read bridge configuration
   S-->>B: ready + /(tabs) or /setup
@@ -247,6 +247,66 @@ Three properties of this defect are worth keeping in mind, because they are what
 - Headless actors close their dedicated connection and return a safe no-op while readiness is missing or stale.
 - The startup boundary exposes only allowlisted diagnostic fields. It never places raw SQLite errors, SQL, credentials, or bridge details in UI state.
 - Route replacement, splash hiding, `Slot`, and `SyncRuntimeGate` are terminal-ready behaviors. A fatal startup state renders its controlled fallback without mounting runtime consumers.
+
+### The migrator's own gate is a second, independent failure mode (measured 2026-09-04)
+
+The readiness-version fix above closes one route to a silently-incomplete schema. Drizzle's own migrator has a second, independent gate, and it decides what to apply with a single scalar comparison, not per-migration tracking:
+
+```js
+// node_modules/drizzle-orm/sqlite-core/dialect.cjs:673-679
+const dbMigrations = await session.values(sql`SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1`);
+const lastDbMigration = dbMigrations[0] ?? void 0;
+for (const migration of migrations) {
+  if (!lastDbMigration || Number(lastDbMigration[2]) < migration.folderMillis) { /* apply */ }
+}
+```
+
+It reads the single MAXIMUM `created_at` already stored **once**, before the loop, and compares every journal entry's `when` against that one value — it does not track applied state per tag or per hash (`node_modules/drizzle-orm/expo-sqlite/migrator.cjs:41` writes `hash: ""` on every recorded migration).
+
+Journal entry `0006` once carried `when = 1789876543210` — 2026-09-20, sixteen days in the future and, at the time, the maximum timestamp in the whole journal. On every device that had already applied it, `lastDbMigration` held that inflated value, so migrations `0007` through `0010` all failed `lastDbMigration < migration.folderMillis` and were skipped **silently** — `migrate()` returned without error. Fresh installs were unaffected: an empty `__drizzle_migrations` table has no `lastDbMigration`, so a first launch applies the whole journal regardless of ordering. The poison only bites on an upgrade over an existing install — the same asymmetry as the readiness-version bug above, from an unrelated cause.
+
+`0007`–`0009` went unnoticed since June because each already has an idempotent `ensure*` twin in `prepareDatabaseSchema` (`src/infrastructure/db/client/client.helpers.ts:294-314`: `ensureAnimesColumns`, `ensurePendingRemoteChangesTable`, `ensureSeasonRatingQueueTable`). `0010` was the first skipped migration whose columns had no twin yet, which is why it was the one that surfaced:
+
+```
+LocalWriteError: table sync_runtime_status has no column named last_cycle_id
+```
+
+The secondary damage compounded the miss: `migrate()` not throwing meant the readiness check of the time — table names only — passed too, so readiness got stamped over a schema still missing its columns. `startup.helpers.ts:22-27` now names this bug class directly: `validateRequiredColumns` exists because "a table surviving in `sqlite_master` proves nothing about which columns a silently skipped migration would have added." See the DQS finding below for why a table-name-only check could not have caught this on its own.
+
+This is now closed by removing every human-authored single point of failure the gate exposed:
+
+- **Every migration ships with its `ensure*` twin as one inseparable unit.** The twin is what kept `0007`–`0009` silently safe while the gate itself stayed broken.
+- **A new journal `when` must be strictly greater than `MIGRATION_0010_TIMESTAMP_MS` (`1788546067501`, `src/infrastructure/db/client/client.constants.ts:139`), and that constant must never be bumped.** `clampPoisonedMigrationTimestamp` (`client.helpers.ts:282-292`) clamps any already-stored poisoned row back down to it before `migrate()` runs; deriving the target from the journal instead would make the clamp poison whichever migration is newest, the moment a migration after `0010` exists.
+- **`tests/infrastructure/db/journal-monotonic-timestamps.test.ts`** asserts entry `0011`'s `when` is strictly after that constant, and that the constant itself is unchanged — this is what stops this exact bug class from recurring.
+
+### Why readiness validates columns, not just table names (SQLITE_DQS)
+
+`node_modules/expo-sqlite/vendor/sqlite3/sqlite3.c:186018` defaults `SQLITE_DQS` (double-quoted string literals) to `3` when the build does not define it, and `node_modules/expo-sqlite/android/build.gradle:26-42` (`getSQLiteBuildFlags`) never passes `-DSQLITE_DQS`; the project sets no `expo.sqlite.customBuildFlags`. Drizzle quotes every identifier with double quotes, so under `DQS=3` a missing column degrades to a **string literal** instead of raising `no such column`.
+
+Measured with `bun:sqlite`, which shares this default (`node:sqlite` ships `DQS=0` and cannot reproduce it):
+
+```
+SELECT "id","kept","missing_col" FROM t     -- no error; every row returns {"missing_col": "missing_col"}
+WHERE "missing_col" = 'missing_col'         -- matches EVERY row
+WHERE "missing_col" = 'beta'                -- matches NONE
+UPDATE t SET kept='X' WHERE "missing_col" = 'missing_col'  -- changes = 3, ALL rows overwritten
+INSERT INTO t ("missing_col") VALUES ('x')  -- THROWS (the only statement shape that does)
+```
+
+The `WHERE` case is the dangerous one: it does not filter wrongly, it stops filtering, silently, with nothing to catch. This is exactly why `validateRequiredColumns` (`src/infrastructure/db/startup/startup.helpers.ts:22-46`) checks columns via `PRAGMA table_info`, never via a query that names the column — `PRAGMA` reads catalog metadata rather than referencing an identifier, so it is immune to DQS. Checking only `sqlite_master` table names, as the guard did before this defect, proves nothing about missing columns.
+
+**Audited exposure today:** every Drizzle `.update(...)` call in the codebase filters on a row's `id`, which always exists (`src/features/settings/use-sync-telemetry-preference.ts:56-58`, `src/infrastructure/db/anime-repository/anime-repository.ts:67-69,85-87`, `src/features/animes/anime-mutation.helpers.ts:254-256`, `src/features/sync/reconcile.helpers.ts:195-197,307-309,314-316,321-323,337-339`) — so the mass-overwrite vector above is not currently reachable. It is one skipped migration away: the day an `UPDATE` filters on a newer column, a device that silently missed that column's migration matches every row instead of none.
+
+**Unfixed remediation, recorded as a known gap:** this is a CNG project with no `android/` directory, so the build flag cannot be edited directly. `plugins/withAndroidGradleMemory.js` is the existing precedent for writing Gradle properties from a config plugin (`withGradleProperties` + `AndroidConfig.BuildProperties.updateAndroidBuildProperty`), so `expo.sqlite.customBuildFlags=-DSQLITE_DQS=0` is reachable the same way — but it needs a native rebuild and changes SQLite's parsing behavior app-wide, so it must be measured on a build before being taken, not applied reflexively.
+
+### Repair vs. refuse: why foreground and headless diverge on the same check
+
+Both startup paths run the identical column probe, `validateRequiredColumns`, and reach opposite conclusions on the same failure, deliberately:
+
+- **`prepareForegroundDatabase` (`startup.helpers.ts:77-116`) repairs.** When `user_version` already equals `EXPECTED_SCHEMA_READINESS_VERSION` but a required column is missing, it falls through to `runMigrations` instead of throwing (`startup.helpers.ts:83-102`). Refusing here would turn a silent no-op sync into a hard startup crash on precisely the device the repair exists to rescue. The validation that runs *after* the repair is deliberately left uncaught (`startup.helpers.ts:113`) — one chance, not a retry loop; genuine corruption still fails.
+- **`prepareHeadlessDatabase` (`startup.helpers.ts:118-163`) refuses.** It runs the same probe and raises `SchemaNotReadyError('stale')` on a miss (`startup.helpers.ts:137-145`) rather than repairing, because migrations are foreground-owned — two writers racing the schema is exactly the contention the write-door boundary (§11) exists to prevent. `runBackgroundSyncCycle` already absorbs `SchemaNotReadyError` as a clean no-op, and the next foreground start performs the repair.
+
+This asymmetry closed a real device failure: a silently skipped migration left `sync_runtime_status` without `last_cycle_id` while `user_version` still read the expected number, so the headless check returned clean and the cycle died several layers later writing to a column that did not exist (`startup.helpers.ts:128-131`).
 
 ## 13. Incremental Mutation-Test Boundary
 
@@ -353,6 +413,27 @@ flowchart TD
 - **The instrument never shares a failure domain with what it measures.** The event ring is in memory rather than on the shared write door, and stage checkpoints write synchronously to a **separate database file** — the write queue is keyed by file path, so a side file is the only way out of the door.
 - **Instrumentation never breaks its subject.** `recordDiagnosticEvent` never throws and drops anything outside the vocabulary.
 - **Absence is omission, not null.** With nothing to send, the key is absent from the body. The bridge stores that body raw, so an empty key is permanent noise in its store.
+
+## 15. Device Verification Method: The JobScheduler Timeout Quota
+
+Before drawing any conclusion about background sync from a real device, check whether Android is running the background job **at all**. Measured via `adb shell dumpsys jobscheduler`:
+
+```
+com.disble.autoreasmobile::timeout-reg:    countLimit=3   countInWindow=41  windowSizeMs=86400000
+com.disble.autoreasmobile::timeout-total:  countLimit=10  countInWindow=41  windowSizeMs=86400000
+```
+
+41 job timeouts in a 24-hour window — earned by an earlier build's 600-second hangs — against limits of 3 and 10. While a device holds that count, Android refuses to run the background job at all, so a correct fix and a broken one look identical on that device: both produce zero background activity, for opposite reasons.
+
+**Method consequence:** check the quota *before* concluding anything about background sync behavior on a device. A device over the limit is not running the code under evaluation, and no amount of re-testing the fix changes that until the 24-hour window rolls over.
+
+What does **not** lift it, measured on the same device:
+- `adb shell cmd jobscheduler run -f` fails — WorkManager registers its job under the `androidx.work.systemjobscheduler` proxy, which the CLI's job-id addressing cannot reach.
+- The app was already in standby bucket 10 (ACTIVE), so bucket demotion was not the constraint.
+- `adb shell cmd jobscheduler reset-execution-quota` left `countInWindow` unchanged.
+- `run-as` is refused on a release build, closing the direct-inspection route too.
+
+The only observable path left in that window is the foreground.
 
 ---
 *If in doubt, refer to the `src/features/animes` directory as the Gold Standard for implementation.*

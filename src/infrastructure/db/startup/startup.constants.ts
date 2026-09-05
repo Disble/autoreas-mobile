@@ -47,6 +47,7 @@ export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>
   sync_runtime_status: ['last_cycle_id'],
   bridge_config: ['is_sync_telemetry_enabled'],
   animes: ['last_applied_change_ms', 'bridge_modified_at'],
+  operation_log: ['conflict_attempt_count'],
 };
 
 /** Counts required tables without exposing runtime values or application data. */

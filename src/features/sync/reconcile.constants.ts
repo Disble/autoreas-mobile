@@ -1,8 +1,11 @@
 import type { SyncPendingOperationsResult } from './reconcile.types';
 
 /**
- * Maximum number of pending operation-log rows the reconcile cycle reads in one batch.
- * This keeps memory usage bounded regardless of how large the backlog grows.
+ * Maximum number of pending operation-log entries the reconcile cycle reads in one batch.
+ * Bounds DISTINCT ANIMES, not rows, because the backlog read dedupes per anime (design.md
+ * Decision 9): a queue with many duplicate ops for one anime still only contributes its oldest
+ * row toward this same numeric budget. This keeps memory usage bounded regardless of how large
+ * the backlog grows.
  */
 export const RECONCILE_BACKLOG_BATCH_LIMIT = 200;
 

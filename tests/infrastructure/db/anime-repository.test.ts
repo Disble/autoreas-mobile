@@ -1,14 +1,16 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   applyAnimeBridgeToken,
   applyAnimePartial,
   persistConfirmedAnimeTokens,
+  readAnimeBridgeTokens,
   upsertAnime,
 } from "../../../src/infrastructure/db/anime-repository";
 import { animes } from "../../../src/infrastructure/db/schema";
 
 jest.mock("drizzle-orm", () => ({
   eq: jest.fn((column, value) => ({ column, value })),
+  inArray: jest.fn((column, values) => ({ column, values })),
 }));
 
 describe("applyAnimePartial", () => {
@@ -156,5 +158,42 @@ describe("persistConfirmedAnimeTokens", () => {
     await persistConfirmedAnimeTokens(db, []);
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("readAnimeBridgeTokens", () => {
+  it("projects only _id and bridgeModifiedAt for the given record ids", async () => {
+    const where = jest.fn().mockResolvedValue([
+      { _id: "anime-1", bridgeModifiedAt: 1788540735366 },
+      { _id: "anime-2", bridgeModifiedAt: null },
+    ]);
+    const from = jest.fn().mockReturnValue({ where });
+    const select = jest.fn().mockReturnValue({ from });
+    const db = { select } as never;
+
+    const tokens = await readAnimeBridgeTokens(db, ["anime-1", "anime-2"]);
+
+    expect(select).toHaveBeenCalledWith({
+      _id: animes._id,
+      bridgeModifiedAt: animes.bridgeModifiedAt,
+    });
+    expect(from).toHaveBeenCalledWith(animes);
+    expect(inArray).toHaveBeenCalledWith(animes._id, ["anime-1", "anime-2"]);
+    expect(tokens).toEqual(
+      new Map([
+        ["anime-1", 1788540735366],
+        ["anime-2", null],
+      ]),
+    );
+  });
+
+  it("skips the query entirely for an empty record id list", async () => {
+    const select = jest.fn();
+    const db = { select } as never;
+
+    const tokens = await readAnimeBridgeTokens(db, []);
+
+    expect(select).not.toHaveBeenCalled();
+    expect(tokens).toEqual(new Map());
   });
 });
