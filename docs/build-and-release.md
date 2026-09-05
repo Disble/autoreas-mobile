@@ -90,6 +90,18 @@ docker compose -f docker-compose.eas.yml run --rm eas-build production
 For the development profile: install the APK, start Metro with `bun run start`, then open the app so
 it attaches to the local bundler.
 
+> [!WARNING]
+> **The production profile only emits an APK because `eas.json` sets
+> `production.android.buildType: "apk"`.** EAS defaults that key to APK *only* when a profile
+> declares `distribution: "internal"`; with it unset, the Gradle command falls through to
+> `:app:bundleRelease` and the output is an **AAB**, which cannot be sideloaded. This section
+> described the output as an APK from the start while no `buildType` was set — corrected
+> 2026-09-04. Never trust the extension alone:
+>
+> ```bash
+> unzip -l build-*.apk | grep -q BundleConfig.pb && echo "this is an AAB"
+> ```
+
 **Output**
 
 - the APK is written to the project root as `build-*.apk`
@@ -183,17 +195,31 @@ bunx eas-cli build --platform android --profile development
 **Before closing a task**
 
 ```bash
-bun run validate   # lint + typecheck + test
+bun run typecheck && bun run test
 ```
+
+`bun run validate` adds `eslint .` on top of those two, which exits 1 on standing repo-wide
+`dharness` debt no matter what you changed (measured 2026-09-04: 252 problems). Lint is enforced
+per staged file by the pre-commit hook instead — see CLAUDE.md constraint 12.
 
 ---
 
 ## Release checklists
 
+> A **release** is a pushed `vX.Y.Z` tag on `main`, which is what publishes the APK to GitHub
+> Releases. The full procedure — version bump, changelog, branch model, and every guard the
+> workflow runs — lives in [`.claude/skills/mobile-release/SKILL.md`](../.claude/skills/mobile-release/SKILL.md)
+> and `.github/workflows/release.yml`. What follows is only the local rehearsal.
+
 ### Preview Android
 
 1. Install dependencies: `bun install`
-2. Verify quality: `bun run validate`
+2. Verify quality: `bun run typecheck && bun run test`
+
+   > Not `bun run validate`. It also runs `eslint .`, which exits 1 on the repo-wide `dharness`
+   > debt (measured 2026-09-04: 252 problems) that lint enforces per staged file instead. See
+   > CLAUDE.md constraint 12.
+
 3. Generate the preview build:
 
    ```bash
@@ -207,21 +233,8 @@ bun run validate   # lint + typecheck + test
    - sync against the local Bridge
    - main navigation
 
-### Production Android
-
-1. Install dependencies: `bun install`
-2. Verify quality: `bun run validate`
-3. Generate the production build:
-
-   ```bash
-   bunx eas-cli build --platform android --profile production
-   ```
-
-4. Submit for distribution:
-
-   ```bash
-   bunx eas-cli submit --platform android --profile production
-   ```
+   > If no device is available, say the release is unverified on device rather than skipping the
+   > step silently. Nothing in CI runs the app.
 
 ### Minimum checklist before any build
 
