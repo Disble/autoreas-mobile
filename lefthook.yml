@@ -46,8 +46,9 @@ pre-commit:
         jobs:
           # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
           #
-          # No CI runs this suite anywhere else, so it stays whole-suite: narrowing it
-          # locally would mean these tests never run in full, anywhere. `--maxWorkers=4`
+          # Stays whole-suite: the only other place this runs is the release workflow,
+          # and that fires on a pushed v-tag, not on a commit. Narrowing it here would
+          # mean these tests never run in full between releases. `--maxWorkers=4`
           # is the cap, not `--runInBand` (measured: 122s serial vs 10s at 4 workers).
           - name: test
             run: bunx jest --maxWorkers=4

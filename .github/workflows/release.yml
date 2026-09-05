@@ -1,0 +1,252 @@
+name: Release
+
+# A pushed v-tag is the only thing that publishes a release. Nothing here runs on
+# a branch push: `main` carries deployments, and the tag is what names one.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Everything that can be known without building. This job exists so a bad tag
+  # fails in about a minute instead of after a ~20-minute Gradle build.
+  guard:
+    name: Guard
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the version this tag declares
+        id: version
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is missing the v prefix; the tag format is v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag $GITHUB_REF_NAME does not name a semver version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tag $GITHUB_REF_NAME declares version $version"
+
+      # Catches: a tag that disagrees with the version the app will actually report.
+      - name: Tag agrees with app.json
+        env:
+          EXPECTED: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          declared=$(node -p "require('./app.json').expo.version")
+          echo "app.json expo.version = $declared"
+          if [ "$declared" != "$EXPECTED" ]; then
+            echo "::error::tag $GITHUB_REF_NAME disagrees with app.json expo.version ($declared)"
+            exit 1
+          fi
+
+      # Catches: the second version field drifting. app.json is the source; this
+      # only proves the copy still matches it.
+      - name: package.json agrees with app.json
+        run: |
+          set -euo pipefail
+          app=$(node -p "require('./app.json').expo.version")
+          pkg=$(node -p "require('./package.json').version")
+          echo "package.json version = $pkg"
+          if [ "$pkg" != "$app" ]; then
+            echo "::error::package.json version ($pkg) disagrees with app.json expo.version ($app)"
+            exit 1
+          fi
+
+      # Catches: a release published with empty notes.
+      - name: CHANGELOG carries a non-empty section for this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Exact prefix match, not a regex: a version is full of dots, and every
+          # attempt to escape them through awk -v silently matched nothing.
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no non-empty ## [$VERSION] section; promote ## [Unreleased] before tagging"
+            exit 1
+          fi
+          echo "--- release notes ---"
+          cat release-notes.md
+
+      # Catches: a release cut from unmerged dev. main carries deployments.
+      - name: Tagged commit is on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::$GITHUB_SHA is not an ancestor of main; merge dev into main and tag the merge commit"
+            exit 1
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+
+      # CI=true is set by GitHub Actions, which is what stops lefthook's postinstall
+      # from installing hooks in here. See ARCHITECTURE.md "Hook installation is host-owned".
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Catches: a tag cut from a commit whose pre-commit hook failed OPEN. A
+      # clobbered lefthook hook exits 0 while running nothing, so the local gate
+      # cannot be trusted to have run. `lint` is deliberately absent: it is
+      # enforced per staged file, and `eslint .` repo-wide still carries standing
+      # debt that has nothing to do with this release.
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 1
+
+  release:
+    name: Build and publish
+    needs: guard
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      APK: autoreas-mobile-${{ needs.guard.outputs.version }}-android.apk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The same command the local Docker path runs, on a host that needs none of
+      # Docker Desktop's workarounds. Signing keys are not in this repo:
+      # credentialsSource defaults to remote, so EAS hands the keystore down over
+      # its API and EXPO_TOKEN is the only secret this needs.
+      - name: Build the release APK
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          bunx eas-cli@latest build \
+            --local \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --output "$APK"
+
+      - name: Locate aapt2
+        id: aapt2
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt2=$(find "$sdk/build-tools" -name aapt2 -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$aapt2" ]; then
+            echo "::error::no aapt2 under $sdk/build-tools; the artifact guards cannot run"
+            exit 1
+          fi
+          echo "path=$aapt2" >> "$GITHUB_OUTPUT"
+          echo "using $aapt2"
+
+      # Catches: eas.json losing android.buildType, which silently swaps the APK
+      # for an AAB. Nobody can sideload an AAB from a GitHub release, and the
+      # build stays green all the way through.
+      - name: Artifact is an APK, not an app bundle
+        env:
+          AAPT2: ${{ steps.aapt2.outputs.path }}
+        run: |
+          set -euo pipefail
+          if unzip -l "$APK" | grep -q 'BundleConfig.pb'; then
+            echo "::error::$APK is an Android App Bundle, not an APK; restore android.buildType=apk in eas.json"
+            exit 1
+          fi
+          "$AAPT2" dump badging "$APK" > badging.txt
+          echo "artifact verified as an installable APK"
+
+      # Catches: a build whose versionName does not match the tag. appVersionSource
+      # is remote, so nothing bumps expo.version for you and a stale prebuild would
+      # ship the previous name without failing anything.
+      - name: APK reports the tagged version
+        run: |
+          set -euo pipefail
+          name=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" badging.txt | head -1)
+          code=$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" badging.txt | head -1)
+          echo "APK versionName=$name versionCode=$code"
+          if [ "$name" != "$VERSION" ]; then
+            echo "::error::APK versionName ($name) does not match the tag ($VERSION)"
+            exit 1
+          fi
+
+      # Catches: withAndroidForegroundSync silently no longer applying. It is the
+      # only source of android:foregroundServiceType, and Android 14+ refuses to
+      # start the service without it — background sync would die on device while
+      # every test and the build stay green.
+      - name: Foreground sync survived the prebuild
+        env:
+          AAPT2: ${{ steps.aapt2.outputs.path }}
+        run: |
+          set -euo pipefail
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > manifest.txt
+          for needle in app.notifee.core.ForegroundService foregroundServiceType; do
+            if ! grep -q "$needle" manifest.txt; then
+              echo "::error::the shipped manifest is missing $needle; plugins/withAndroidForegroundSync.js did not apply"
+              exit 1
+            fi
+          done
+          for permission in \
+            android.permission.FOREGROUND_SERVICE \
+            android.permission.FOREGROUND_SERVICE_DATA_SYNC \
+            android.permission.POST_NOTIFICATIONS \
+            android.permission.WAKE_LOCK; do
+            if ! grep -q "$permission" badging.txt; then
+              echo "::error::the shipped APK is missing $permission"
+              exit 1
+            fi
+          done
+          echo "foreground service, its data-sync type and all four permissions are present"
+
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          sha256sum "$APK" > SHA256SUMS-android.txt
+          cat SHA256SUMS-android.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            "$APK" \
+            SHA256SUMS-android.txt
+          gh release view "$GITHUB_REF_NAME" --json url,assets
