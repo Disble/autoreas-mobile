@@ -125,6 +125,25 @@ export async function prepareHeadlessDatabase(rawDb: SQLiteDatabase): Promise<vo
   const actualVersion = readiness?.user_version;
 
   if (actualVersion === EXPECTED_SCHEMA_READINESS_VERSION) {
+    // The stamped version is not proof, and this path learned that on a real device: a silently
+    // skipped migration left `sync_runtime_status` without `last_cycle_id` while readiness still
+    // read the expected number, so this returned clean and the cycle died several layers later
+    // writing to a column that does not exist.
+    //
+    // Headless deliberately does NOT repair -- migrations are foreground-owned, and two writers
+    // racing the schema is the contention this whole boundary exists to prevent. It refuses
+    // instead, and `SchemaNotReadyError` is the refusal `runBackgroundSyncCycle` already absorbs
+    // as a clean no-op. The next foreground start performs the repair.
+    try {
+      await validateRequiredColumns(rawDb);
+    } catch (error) {
+      if (error instanceof SchemaValidationError) {
+        throw new SchemaNotReadyError('stale');
+      }
+
+      throw error;
+    }
+
     return;
   }
 
