@@ -265,9 +265,20 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
   versioning was already initialised for this project and EAS returned
   `versionCode=2`. It stays documented because nothing in the repo records that
   remote state, so a new EAS project or a reset would hit it cold.
-- **`bunx eas-cli@latest`** is what both the container and the workflow run, for
-  parity. It means a release can change behaviour without this repo changing. If a
-  run breaks with no local diff, check whether eas-cli shipped a major.
+- **The workflow pins `eas-cli`; the container still floats on `@latest`.** CI runs
+  `bunx eas-cli@23.2.0` — the exact version that built v1.0.0 — because a release
+  must not change behaviour without this repo changing (SonarQube `S8543`).
+  `docker-compose.eas.yml` deliberately keeps `@latest`, since a local build is a
+  rehearsal and picking up fixes early there is the point. **The two therefore
+  drift**, and that is the trade: a rehearsal can pass on a newer CLI than the one
+  that will ship it. When you bump the pin, bump it to a version you rehearsed, and
+  say so in the commit.
+- **Both CI installs pass `--ignore-scripts`** (SonarQube `S6505`). Nothing in this
+  repo needs a lifecycle script to run — `package.json` has no `prepare` by design
+  and `trustedDependencies` lists only lefthook — so the flag costs nothing and
+  stops the runner rewriting hooks even if `CI=true` ever goes missing. Do not
+  remove it to "fix" an install; if an install needs a script, that is the thing to
+  question.
 
 ## Agent Notes
 
