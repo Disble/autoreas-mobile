@@ -12,6 +12,7 @@ import m0007 from './0007_add_animes_last_applied_change_ms.sql';
 import m0008 from './0008_add_pending_remote_changes.sql';
 import m0009 from './0009_add_season_rating_queue.sql';
 import m0010 from './0010_add_sync_cycle_telemetry_columns.sql';
+import m0011 from './0011_add_animes_bridge_modified_at.sql';
 
   export default {
     journal,
@@ -26,7 +27,7 @@ m0006,
 m0007,
 m0008,
 m0009,
-m0010
+m0010,
+m0011
     }
   }
-  

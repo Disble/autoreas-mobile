@@ -1,5 +1,6 @@
 import { ReconcileResponseSchema } from '../../../src/features/sync/reconcile.schema';
 
+/** Builds a fixture English bridge wire anime snapshot, including the required OCC token. */
 function makeWireSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'anime-1',
@@ -22,6 +23,7 @@ function makeWireSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
     studios: null,
     origin: null,
     durationMinutes: null,
+    modified_at: 0,
     ...overrides,
   };
 }
@@ -135,5 +137,58 @@ describe('ReconcileResponseSchema conflict honesty', () => {
 
     // Tolerant parse: the unknown `conflicts` field is silently stripped, never branched on.
     expect('conflicts' in parsed.data).toBe(false);
+  });
+
+  it('parses a confirmed applied_operations modified_at of 0 to exactly 0, not undefined', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [{ anime_id: 'anime-1', operation: 'update', applied: true, modified_at: 0 }],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.modified_at).toBe(0);
+  });
+
+  it('parses an absent applied_operations modified_at as undefined, distinguishable from a parsed 0', () => {
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [{ anime_id: 'anime-1', operation: 'update', applied: true }],
+      bridge_changes: [],
+    });
+
+    expect(parsed.success).toBe(true);
+
+    if (!parsed.success) {
+      throw new Error('Expected successful parse');
+    }
+
+    expect(parsed.data.applied_operations[0]?.modified_at).toBeUndefined();
+  });
+
+  it('rejects a bridge_changes snapshot missing modified_at (WireAnimeSchema is shared, required is coupled)', () => {
+    const snapshot = makeWireSnapshot() as Record<string, unknown>;
+    delete snapshot.modified_at;
+
+    const parsed = ReconcileResponseSchema.safeParse({
+      status: 'accepted',
+      applied_operations: [],
+      bridge_changes: [
+        {
+          record_id: 'anime-1',
+          change_type: 'update',
+          changed_fields: ['status'],
+          snapshot,
+          timestamp: 1710000001000,
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

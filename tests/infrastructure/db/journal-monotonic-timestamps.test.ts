@@ -1,4 +1,5 @@
 import journal from "../../../src/infrastructure/db/migrations/meta/_journal.json";
+import { MIGRATION_0010_TIMESTAMP_MS } from "../../../src/infrastructure/db/client/client.constants";
 
 /**
  * H0Xx root cause: entry idx 6 (0006) carried a hand-typed future `when` (2026-09-20) that was
@@ -24,5 +25,18 @@ describe("migration journal timestamp order", () => {
     expect(entry5).toBeDefined();
     expect(entry6).toBeDefined();
     expect(entry6?.when).toBe((entry5?.when ?? 0) + 1);
+  });
+
+  /**
+   * 0011's `when` must clear the clamp target or `clampPoisonedMigrationTimestamp` un-poisons it
+   * right back down before it ever gets to run (see design.md Decision 5). The constant itself
+   * must stay put -- deriving or bumping it to the newest migration would poison THAT one next.
+   */
+  it("keeps entry 0011 strictly after MIGRATION_0010_TIMESTAMP_MS", () => {
+    const entry11 = journal.entries.find((entry) => entry.tag.startsWith("0011_"));
+
+    expect(entry11).toBeDefined();
+    expect(entry11?.when).toBeGreaterThan(MIGRATION_0010_TIMESTAMP_MS);
+    expect(MIGRATION_0010_TIMESTAMP_MS).toBe(1788546067501);
   });
 });

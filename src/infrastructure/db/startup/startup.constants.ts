@@ -46,7 +46,7 @@ export const SYNC_CYCLE_LOCK_TABLE_SQL =
 export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   sync_runtime_status: ['last_cycle_id'],
   bridge_config: ['is_sync_telemetry_enabled'],
-  animes: ['last_applied_change_ms'],
+  animes: ['last_applied_change_ms', 'bridge_modified_at'],
 };
 
 /** Counts required tables without exposing runtime values or application data. */

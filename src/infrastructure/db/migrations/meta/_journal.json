@@ -78,6 +78,13 @@
       "when": 1788546067501,
       "tag": "0010_add_sync_cycle_telemetry_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788562374503,
+      "tag": "0011_add_animes_bridge_modified_at",
+      "breakpoints": true
     }
   ]
 }

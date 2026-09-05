@@ -10,6 +10,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
   upsertAnime: jest.fn().mockResolvedValue(undefined),
+  persistConfirmedAnimeTokens: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
@@ -34,8 +35,11 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
 }));
 
+/** Mocks `getBridgeConfigSnapshot`, controlling whether the bridge connection is configured. */
 const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
+/** Mocks the bridge client's `reconcile` HTTP call. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
+/** Mocks `readOperationLogBacklog`, controlling the pending-operation batch read from the queue. */
 const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
 
 describe('reconcile applies remote bridge changes reactively', () => {
@@ -62,7 +66,6 @@ describe('reconcile applies remote bridge changes reactively', () => {
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The local bridge contract intentionally uses HTTP on the LAN.
       url: 'http://192.168.1.10:9876/api/sync/reconcile',
       rawBody: '{}',
       data: {

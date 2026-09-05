@@ -3,10 +3,66 @@ import {
   getDefaultAnimeDayFilter,
   isAnimePseudoDayFilter,
   matchesAnimeDayFilter,
+  parseAnimeRow,
   sortAnimesBySelectedDay,
 } from "../../../../src/features/animes/anime.helpers";
-import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
+import { AnimeSchema, type Anime } from "../../../../src/infrastructure/validation/anime-schema";
+import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
 
+/** Frozen domain key list `parseAnimeRow`'s output must match exactly -- no sync-internal leak. */
+const FROZEN_ANIME_DOMAIN_KEYS = [
+  "_id",
+  "activo",
+  "carpeta",
+  "dias",
+  "duracion",
+  "estado",
+  "estudios",
+  "fechaCreacion",
+  "fechaEliminacion",
+  "fechaEstreno",
+  "fechaUltCapVisto",
+  "generos",
+  "nombre",
+  "nrocapvisto",
+  "origen",
+  "pagina",
+  "portada",
+  "primeravez",
+  "tipo",
+  "totalcap",
+].sort();
+
+/** Builds a fixture `AnimeRow`, as it would come back from a raw SQLite select. */
+function buildAnimeRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
+  return {
+    _id: "anime-1",
+    nombre: "Anime",
+    estado: 0,
+    nrocapvisto: 0,
+    totalcap: null,
+    dias: null,
+    generos: null,
+    tipo: null,
+    activo: 1,
+    primeravez: 0,
+    fechaUltCapVisto: null,
+    fechaEstreno: null,
+    fechaCreacion: null,
+    fechaEliminacion: null,
+    portada: null,
+    pagina: null,
+    carpeta: null,
+    estudios: null,
+    origen: null,
+    duracion: null,
+    lastAppliedChangeMs: null,
+    bridgeModifiedAt: null,
+    ...overrides,
+  };
+}
+
+/** Builds a fixture domain `Anime`. */
 function buildAnime(overrides: Partial<Anime> = {}): Anime {
   return {
     _id: "anime-1",
@@ -129,5 +185,39 @@ describe("anime.helpers", () => {
         expect(isAnimePseudoDayFilter(filter)).toBe(false);
       },
     );
+  });
+
+  describe("parseAnimeRow", () => {
+    it("never leaks bridgeModifiedAt (or any sync-internal column) onto the domain shape", () => {
+      const rowWithToken = buildAnimeRow({ bridgeModifiedAt: 1788540735366, lastAppliedChangeMs: 500 });
+
+      const parsed = parseAnimeRow(rowWithToken);
+
+      expect(Object.keys(parsed).sort()).toEqual(FROZEN_ANIME_DOMAIN_KEYS);
+      expect(parsed).not.toHaveProperty("bridgeModifiedAt");
+      expect(parsed).not.toHaveProperty("lastAppliedChangeMs");
+    });
+
+    it("parses dias and generos JSON columns as before", () => {
+      const row = buildAnimeRow({
+        dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]),
+        generos: JSON.stringify(["accion"]),
+      });
+
+      const parsed = parseAnimeRow(row);
+
+      expect(parsed.dias).toEqual([{ dia: "Jueves", orden: 1 }]);
+      expect(parsed.generos).toEqual(["accion"]);
+    });
+
+    it("still strips the token via AnimeSchema's default zod strip mode (pins anime-mutation.helpers.ts's fetchParsedAnime path)", () => {
+      const parsed = AnimeSchema.parse({
+        ...buildAnimeRow({ bridgeModifiedAt: 1788540735366 }),
+        dias: [],
+        generos: [],
+      });
+
+      expect(parsed).not.toHaveProperty("bridgeModifiedAt");
+    });
   });
 });

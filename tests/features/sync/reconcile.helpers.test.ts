@@ -17,6 +17,10 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withLocalWrite: jest.fn(),
 }));
 
+jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
+  persistConfirmedAnimeTokens: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
 }));
@@ -221,6 +225,7 @@ describe('syncPendingOperations applyMode routing', () => {
               firstCycle: 0,
               days: [],
               genres: [],
+              modified_at: 0,
             },
             timestamp: 1710000001000,
           },

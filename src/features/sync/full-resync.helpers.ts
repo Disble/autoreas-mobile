@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes } from '../../infrastructure/db/schema';
+import type { Anime } from '../../infrastructure/validation/anime-schema';
 import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
 import { mapWireAnimeToLegacyAnime } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
 import { fetchInitialSyncSnapshot } from './initial-sync.helpers';
@@ -10,9 +11,13 @@ import { loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 
 import type { ResyncResult } from './full-resync.types';
 
-function normalizeFetchedAnime(
-  anime: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>[number],
-) {
+/**
+ * Always a permanent identity no-op: `anime` is already the domain `Anime` (Spanish keys) this
+ * function's caller unwraps from `IngestedAnime.anime`, so `WireAnimeSchema.safeParse` (English
+ * keys) never succeeds against it. Drift recorded, not fixed -- out of scope for this change
+ * (design.md Decision 10).
+ */
+function normalizeFetchedAnime(anime: Anime) {
   const parsedWireAnime = WireAnimeSchema.safeParse(anime);
 
   if (parsedWireAnime.success) {
@@ -51,7 +56,11 @@ export async function resyncFromBridgeSnapshot(
     port: config.port,
     token: config.token,
   });
-  const normalizedRemote = remote.map(normalizeFetchedAnime);
+  // `remote` is `IngestedAnime[]` (Decision 10) -- unwrap `entry.anime` to keep this heal path
+  // byte-identical to before the token-ingest change. The token itself is intentionally not
+  // threaded through here: this is the heal/diff path, not a confirmed write-back (see
+  // design.md "Migration / Rollout" -- left as a documented, deliberately out-of-scope option).
+  const normalizedRemote = remote.map((entry) => normalizeFetchedAnime(entry.anime));
 
   if (normalizedRemote.length === 0) {
     return { healed: 0 };

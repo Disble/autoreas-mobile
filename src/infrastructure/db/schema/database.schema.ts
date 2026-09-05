@@ -30,6 +30,13 @@ export const animes = sqliteTable("animes", {
   origen: text("origen"),
   duracion: integer("duracion"),
   lastAppliedChangeMs: integer("last_applied_change_ms"),
+  // Bridge-authored optimistic-concurrency token (`modified_at` on the wire), nullable with no
+  // default so a pre-migration row reads back NULL ("no token known"), never a fabricated 0 --
+  // 0 is itself a real, legitimate token. Transport/persistence only: it must never reach the
+  // domain `Anime`/`AnimeSchema` shape or any UI-facing list item (see `anime.helpers.ts`).
+  // Distinct from `lastAppliedChangeMs`, which guards remote->local apply order and is derived
+  // from `change.timestamp`; this column is never derived from that guard or from it.
+  bridgeModifiedAt: integer("bridge_modified_at"),
 });
 
 /** Provides the shared operation log value. */

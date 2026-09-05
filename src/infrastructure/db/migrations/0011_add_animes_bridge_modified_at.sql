@@ -1,0 +1,1 @@
+ALTER TABLE `animes` ADD `bridge_modified_at` integer;

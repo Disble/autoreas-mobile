@@ -189,6 +189,7 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     expect(rawDb.runAsync.mock.calls.map(([statement]) => statement)).toEqual([
       expect.stringMatching(/^UPDATE bridge_config/),
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS operation_log/),
+      expect.stringMatching(/^ALTER TABLE animes ADD COLUMN bridge_modified_at/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS pending_remote_changes/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS season_rating_queue/),
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS season_rating_queue/),

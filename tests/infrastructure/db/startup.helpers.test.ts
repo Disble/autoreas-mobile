@@ -39,6 +39,7 @@ describe('database startup helpers', () => {
           { name: 'last_cycle_id' },
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
+          { name: 'bridge_modified_at' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -120,6 +121,7 @@ describe('database startup helpers', () => {
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
         { name: 'last_applied_change_ms' },
+        { name: 'bridge_modified_at' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockClear();
@@ -148,7 +150,11 @@ describe('database startup helpers', () => {
           return repaired ? [{ name: 'last_cycle_id' }] : [{ name: 'id' }];
         }
 
-        return [{ name: 'is_sync_telemetry_enabled' }, { name: 'last_applied_change_ms' }];
+        return [
+          { name: 'is_sync_telemetry_enabled' },
+          { name: 'last_applied_change_ms' },
+          { name: 'bridge_modified_at' },
+        ];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
@@ -211,6 +217,56 @@ describe('database startup helpers', () => {
     await expect(prepareHeadlessDatabase(newerDb)).rejects.toBeInstanceOf(
       SchemaIncompatibleError,
     );
+  });
+
+  it('reports not-ready when animes exists but bridge_modified_at does not, even though the table itself is present', async () => {
+    // H0Xx class: `animes` surviving in `sqlite_master` proves nothing about which columns a
+    // silently skipped migration (0011) would have added. SQLITE_DQS=3 makes this the barrier --
+    // a projected SELECT naming the missing column would otherwise resolve to a plausible string
+    // instead of erroring.
+    const rawDb = {
+      execAsync: jest.fn().mockResolvedValue(undefined),
+      getFirstAsync: jest
+        .fn()
+        .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === 'PRAGMA table_info(animes)') {
+          return [{ name: '_id' }, { name: 'last_applied_change_ms' }];
+        }
+
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }];
+      }),
+    } as unknown as SQLiteDatabase;
+    (runMigrations as jest.Mock).mockReset();
+    (runMigrations as jest.Mock).mockResolvedValue(undefined);
+
+    await expect(prepareForegroundDatabase(rawDb)).rejects.toBeInstanceOf(
+      SchemaValidationError,
+    );
+  });
+
+  it('reports ready at version 12 when bridge_modified_at is present', async () => {
+    const rawDb = {
+      execAsync: jest.fn().mockResolvedValue(undefined),
+      getFirstAsync: jest
+        .fn()
+        .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === 'PRAGMA table_info(animes)') {
+          return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }];
+        }
+
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }];
+      }),
+    } as unknown as SQLiteDatabase;
+    (runMigrations as jest.Mock).mockReset();
+    (runMigrations as jest.Mock).mockResolvedValue(undefined);
+
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(12);
+    await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
+    expect(runMigrations).not.toHaveBeenCalled();
   });
 });
 

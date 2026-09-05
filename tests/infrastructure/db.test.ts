@@ -240,7 +240,11 @@ describe("db client tracer helpers", () => {
         }
 
         if (query === "PRAGMA table_info(animes)") {
-          return [{ name: "_id" }, { name: "last_applied_change_ms" }];
+          return [
+            { name: "_id" },
+            { name: "last_applied_change_ms" },
+            { name: "bridge_modified_at" },
+          ];
         }
 
         return [];

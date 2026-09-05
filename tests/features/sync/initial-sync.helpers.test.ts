@@ -46,6 +46,7 @@ describe('initial-sync helpers', () => {
       studios: null,
       origin: null,
       durationMinutes: null,
+      modified_at: 0,
     },
   ];
   const normalizedAnimeSnapshot = [
@@ -72,6 +73,9 @@ describe('initial-sync helpers', () => {
       duracion: null,
     },
   ];
+  const ingestedAnimeSnapshot = [
+    { anime: normalizedAnimeSnapshot[0], bridgeModifiedAt: 0 },
+  ];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -97,7 +101,7 @@ describe('initial-sync helpers', () => {
       port: 9876,
       token: 'auth-secret',
     });
-    expect(result).toEqual(normalizedAnimeSnapshot);
+    expect(result).toEqual(ingestedAnimeSnapshot);
   });
 
   it('falla fuerte cuando el bridge responde un snapshot inválido en inglés', async () => {
@@ -123,11 +127,16 @@ describe('initial-sync helpers', () => {
       await task({}, {});
     });
 
-    const count = await persistInitialSyncSnapshot(rawDb as never, normalizedAnimeSnapshot);
+    const count = await persistInitialSyncSnapshot(rawDb as never, ingestedAnimeSnapshot);
 
     expect(count).toBe(1);
     expect(withLocalWrite).toHaveBeenCalledTimes(1);
-    expect(animeRepository.upsertAnime).toHaveBeenCalledWith({}, normalizedAnimeSnapshot[0]);
+    expect(animeRepository.upsertAnime).toHaveBeenCalledWith(
+      {},
+      normalizedAnimeSnapshot[0],
+      undefined,
+      0,
+    );
   });
 
   it('commits bridge config and snapshot together in one deferred write so live queries can observe it', async () => {
@@ -154,7 +163,7 @@ describe('initial-sync helpers', () => {
         deviceId: 'device-1',
         deviceName: 'Bridge Casa',
       },
-      normalizedAnimeSnapshot,
+      ingestedAnimeSnapshot,
     );
 
     expect(count).toBe(1);
@@ -171,6 +180,8 @@ describe('initial-sync helpers', () => {
     expect(animeRepository.upsertAnime).toHaveBeenCalledWith(
       expect.objectContaining({ delete: deleteMock, insert: insertMock }),
       normalizedAnimeSnapshot[0],
+      undefined,
+      0,
     );
   });
 });

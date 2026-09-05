@@ -4,6 +4,7 @@ import {
   WireAnimeSchema,
 } from '../../../src/infrastructure/validation/anime-schema';
 
+/** Minimal valid domain `Anime` fixture, extended per test via spread overrides. */
 const minimalAnime = {
   _id: 'anime-1',
   nombre: 'Fullmetal Alchemist',
@@ -58,9 +59,57 @@ describe('AnimeSchema', () => {
       genres: ['accion'],
       days: [{ day: 'Monday', order: 1 }],
       lastWatchedAt: 1710000000000,
+      modified_at: 1788540735366,
     });
 
     expect(parsed.lastWatchedAt).toBe(1710000000000);
+  });
+
+  it('survives a listAnimes wire record modified_at through the parse boundary', () => {
+    const parsed = WireAnimeSchema.parse({
+      id: 'anime-1',
+      name: 'Fullmetal Alchemist',
+      status: 0,
+      episodesWatched: 3,
+      active: 1,
+      firstCycle: 0,
+      genres: ['accion'],
+      days: [{ day: 'Monday', order: 1 }],
+      modified_at: 1788540735366,
+    });
+
+    expect(parsed.modified_at).toBe(1788540735366);
+  });
+
+  it('parses a zero modified_at to exactly 0, not dropped or replaced', () => {
+    const parsed = WireAnimeSchema.parse({
+      id: 'anime-1',
+      name: 'Fullmetal Alchemist',
+      status: 0,
+      episodesWatched: 3,
+      active: 1,
+      firstCycle: 0,
+      genres: ['accion'],
+      days: [{ day: 'Monday', order: 1 }],
+      modified_at: 0,
+    });
+
+    expect(parsed.modified_at).toBe(0);
+  });
+
+  it('rejects a wire record missing modified_at (required, never a silent default)', () => {
+    expect(() =>
+      WireAnimeSchema.parse({
+        id: 'anime-1',
+        name: 'Fullmetal Alchemist',
+        status: 0,
+        episodesWatched: 3,
+        active: 1,
+        firstCycle: 0,
+        genres: ['accion'],
+        days: [{ day: 'Monday', order: 1 }],
+      })
+    ).toThrow(z.ZodError);
   });
 
   it('coerciona generos vacio a array vacio', () => {

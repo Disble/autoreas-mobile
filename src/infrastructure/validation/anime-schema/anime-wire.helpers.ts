@@ -1,5 +1,8 @@
 import type { Anime, WireAnime } from './anime.schema';
 import { LOCAL_FIELD_BY_WIRE_FIELD } from './anime-wire.constants';
+import type { IngestedAnime } from './anime-wire.types';
+
+export type { IngestedAnime } from './anime-wire.types';
 
 /**
  * Maps one English bridge anime snapshot into the stable Spanish local/domain shape.
@@ -19,6 +22,19 @@ export function mapWireAnimeToLegacyAnime(anime: WireAnime): Anime {
 }
 
 /**
+ * Pairs one wire anime's mapped domain shape with its bridge-authored OCC token, for the
+ * `listAnimes` initial-sync ingest path (`WireAnimeSchema.modified_at` is required -- see
+ * anime.schema.ts). `bridgeModifiedAt` is read directly, never through `??`/`||`, so a real `0`
+ * token survives.
+ */
+export function mapWireAnimeToIngestedAnime(anime: WireAnime): IngestedAnime {
+  return {
+    anime: mapWireAnimeToLegacyAnime(anime),
+    bridgeModifiedAt: anime.modified_at,
+  };
+}
+
+/**
  * Normalizes English bridge `changed_fields` into the Spanish local field names once.
  * This centralizes field ownership so merge code consumes only the local vocabulary.
  */
@@ -30,12 +46,4 @@ export function normalizeWireAnimeChangedFields(
 
     return normalizedField ? [normalizedField] : [];
   });
-}
-
-/**
- * Maps an English bridge anime list into the stable Spanish local/domain shape.
- * This keeps bootstrap, resync, and reconcile snapshot consumers on one normalized contract.
- */
-export function mapWireAnimeListToLegacyAnimes(animes: readonly WireAnime[]): Anime[] {
-  return animes.map(mapWireAnimeToLegacyAnime);
 }

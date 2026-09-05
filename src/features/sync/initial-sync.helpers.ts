@@ -48,9 +48,9 @@ export async function persistInitialSyncSnapshot(
   }
 
   await withLocalWrite(rawDb, async (db) => {
-    for (const anime of remoteAnimes) {
+    for (const entry of remoteAnimes) {
       // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
-      await upsertAnime(db, anime);
+      await upsertAnime(db, entry.anime, undefined, entry.bridgeModifiedAt);
     }
   });
 
@@ -77,9 +77,9 @@ export async function persistPairedBridgeConfiguration(
       deviceName: config.deviceName,
     });
 
-    for (const anime of remoteAnimes) {
+    for (const entry of remoteAnimes) {
       // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
-      await upsertAnime(db, anime);
+      await upsertAnime(db, entry.anime, undefined, entry.bridgeModifiedAt);
     }
   });
 

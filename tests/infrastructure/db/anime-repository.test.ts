@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import {
+  applyAnimeBridgeToken,
   applyAnimePartial,
+  persistConfirmedAnimeTokens,
   upsertAnime,
 } from "../../../src/infrastructure/db/anime-repository";
 import { animes } from "../../../src/infrastructure/db/schema";
@@ -98,5 +100,61 @@ describe("upsertAnime", () => {
       pagina: "https://example.com/anime-1",
     }));
     expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ target: animes._id }));
+  });
+});
+
+describe("applyAnimeBridgeToken", () => {
+  it("writes only bridge_modified_at for the given record id, no other column changes", async () => {
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const db = { update } as never;
+
+    await applyAnimeBridgeToken(db, "anime-1", 1788540735366);
+
+    expect(update).toHaveBeenCalledWith(animes);
+    expect(set).toHaveBeenCalledWith({ bridgeModifiedAt: 1788540735366 });
+    expect(where).toHaveBeenCalledWith({ column: animes._id, value: "anime-1" });
+  });
+
+  it("leaves lastAppliedChangeMs untouched", async () => {
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const db = { update } as never;
+
+    await applyAnimeBridgeToken(db, "anime-1", 0);
+
+    expect(set).toHaveBeenCalledWith({ bridgeModifiedAt: 0 });
+    expect(set.mock.calls[0][0]).not.toHaveProperty("lastAppliedChangeMs");
+  });
+});
+
+describe("persistConfirmedAnimeTokens", () => {
+  it("writes every token in the batch inside the caller's already-open write door (no new transaction acquired)", async () => {
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const db = { update } as never;
+
+    await persistConfirmedAnimeTokens(db, [
+      { animeId: "anime-1", bridgeModifiedAt: 100 },
+      { animeId: "anime-2", bridgeModifiedAt: 0 },
+    ]);
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(set).toHaveBeenNthCalledWith(1, { bridgeModifiedAt: 100 });
+    expect(set).toHaveBeenNthCalledWith(2, { bridgeModifiedAt: 0 });
+    expect(where).toHaveBeenNthCalledWith(1, { column: animes._id, value: "anime-1" });
+    expect(where).toHaveBeenNthCalledWith(2, { column: animes._id, value: "anime-2" });
+  });
+
+  it("no-ops for an empty batch, still without acquiring a transaction", async () => {
+    const update = jest.fn();
+    const db = { update } as never;
+
+    await persistConfirmedAnimeTokens(db, []);
+
+    expect(update).not.toHaveBeenCalled();
   });
 });

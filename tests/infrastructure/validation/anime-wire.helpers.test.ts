@@ -1,9 +1,11 @@
 import {
+  mapWireAnimeToIngestedAnime,
   mapWireAnimeToLegacyAnime,
   normalizeWireAnimeChangedFields,
   WireAnimeListSchema,
 } from '../../../src/infrastructure/validation/anime-schema';
 
+/** Builds a fixture English bridge wire anime record, including the required OCC token. */
 function makeWireAnime(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'anime-1',
@@ -26,6 +28,7 @@ function makeWireAnime(overrides: Partial<Record<string, unknown>> = {}) {
     studios: 'Bones',
     origin: 'Manga',
     durationMinutes: 24,
+    modified_at: 0,
     ...overrides,
   };
 }
@@ -59,5 +62,24 @@ describe('anime wire helpers', () => {
     const parsed = WireAnimeListSchema.safeParse([makeWireAnime({ episodesWatched: '12' })]);
 
     expect(parsed.success).toBe(false);
+  });
+
+  describe('mapWireAnimeToIngestedAnime', () => {
+    it('pairs a byte-identical mapWireAnimeToLegacyAnime output with the wire record bridgeModifiedAt', () => {
+      const wire = makeWireAnime({ modified_at: 1788540735366 });
+
+      const ingested = mapWireAnimeToIngestedAnime(wire);
+
+      expect(ingested.anime).toEqual(mapWireAnimeToLegacyAnime(wire));
+      expect(ingested.bridgeModifiedAt).toBe(1788540735366);
+    });
+
+    it('preserves a modified_at of 0 as a real token, not dropped or replaced', () => {
+      const wire = makeWireAnime({ modified_at: 0 });
+
+      const ingested = mapWireAnimeToIngestedAnime(wire);
+
+      expect(ingested.bridgeModifiedAt).toBe(0);
+    });
   });
 });

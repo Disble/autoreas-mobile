@@ -107,6 +107,24 @@ export const BRIDGE_CONFIG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
 ];
 
 /**
+ * Lists the `animes` columns added after the table first shipped, mirroring
+ * `BRIDGE_CONFIG_COLUMN_DEFINITIONS`. Both columns are intentionally nullable with no default and
+ * no backfill: NULL carries its own meaning for each ("older than any remote change" for the
+ * staleness guard, "no bridge token known yet" for the OCC token), so every pre-existing row must
+ * read back NULL, never a fabricated value that could be mistaken for a real one.
+ */
+export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
+  {
+    columnName: 'last_applied_change_ms',
+    sql: 'ALTER TABLE animes ADD COLUMN last_applied_change_ms INTEGER',
+  },
+  {
+    columnName: 'bridge_modified_at',
+    sql: 'ALTER TABLE animes ADD COLUMN bridge_modified_at INTEGER',
+  },
+];
+
+/**
  * Migration 0010's own `when` from `_journal.json`, duplicated here as a HARDCODED literal rather
  * than derived from the journal at runtime. This is the clamp target for
  * `clampPoisonedMigrationTimestamp`, and deriving it from `max(journal.entries[].when)` would

@@ -9,7 +9,9 @@ import {
   getBridgeConfigSnapshot,
   withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
+import { persistConfirmedAnimeTokens } from '../../infrastructure/db/anime-repository';
 import { bridgeConfig, operationLog } from '../../infrastructure/db/schema';
+import { collectConfirmedAnimeTokens } from './applied-operation-token.helpers';
 import {
   getLastChangelogId,
   shouldPersistLastChangelogId,
@@ -228,6 +230,10 @@ async function performSyncPendingOperations(
       last_changelog_id: responseLastChangelogId,
     } = parsed.data;
     const nextLastChangelogId = responseLastChangelogId ?? lastChangelogId;
+    // Pure, computed OUTSIDE the write door: `applied_operations` is the only valid token
+    // source (never `bridge_changes[].snapshot.modified_at`, which the bridge hardcodes to 0 --
+    // see design.md invariant 1 / Decision 2).
+    const confirmedAnimeTokens = collectConfirmedAnimeTokens(applied_operations);
     const confirmedIds = getConfirmedOperationIds(
       pendingOps,
       applied_operations,
@@ -272,6 +278,13 @@ async function performSyncPendingOperations(
           'deferred',
         );
       }
+
+      // MUST run after the `bridge_changes` apply above: that apply may be what CREATES the
+      // row (an `update` for a record the device has never seen falls through to `upsertAnime`),
+      // and a token write against a not-yet-existing row matches zero rows. Column-disjoint from
+      // the write above (`bridge_modified_at` only, design.md Decision 2), so ordering here is a
+      // row-existence dependency, never a conflict to resolve.
+      await persistConfirmedAnimeTokens(writeDb, confirmedAnimeTokens);
 
       if (confirmedIds.length > 0) {
         await writeDb

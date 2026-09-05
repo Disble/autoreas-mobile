@@ -10,6 +10,11 @@ import {
 } from "./anime.constants";
 import type { AnimeDayFilter, AnimeDayFilterOption } from "./anime.types";
 
+/**
+ * Parses a persisted JSON-text column into an array, degrading to an empty array for a null,
+ * empty, or malformed value instead of throwing -- storage corruption in one column must not
+ * abort parsing the rest of the row.
+ */
 function parseJsonArray<T>(value: string | null): T[] {
   if (!value) {
     return [];
@@ -22,6 +27,7 @@ function parseJsonArray<T>(value: string | null): T[] {
   }
 }
 
+/** Finds the anime's `dias` entry matching the given day/pseudo-day filter, or `null`. */
 function getAnimeDayMatch(
   anime: Anime,
   filter: AnimeDayFilter,
@@ -32,12 +38,37 @@ function getAnimeDayMatch(
 /**
  * Normalizes a persisted SQLite anime row into the validated domain shape used by UI hooks.
  * This keeps JSON parsing in one place so list consumers don't duplicate storage concerns.
+ *
+ * Built field-by-field ON PURPOSE, never `{...row}`: `AnimeRow` carries sync-internal columns
+ * (`lastAppliedChangeMs`, `bridgeModifiedAt`) that must never reach the domain `Anime` shape or
+ * any UI-facing list item. A spread leaks them at runtime with the compiler silent -- excess-
+ * property checking does not fire on a spread, and a type alias like `Omit<AnimeRow, ...>`
+ * cannot close the leak either, since a wider object stays assignable to a narrower one. Listing
+ * every field explicitly is what makes the leak unreachable regardless of what any `select()`
+ * returns, at any call site, forever.
  */
 export function parseAnimeRow(row: AnimeRow): Anime {
   return {
-    ...row,
+    _id: row._id,
+    nombre: row.nombre,
+    estado: row.estado,
+    nrocapvisto: row.nrocapvisto,
+    totalcap: row.totalcap,
     dias: parseJsonArray<AnimeDay>(row.dias),
     generos: parseJsonArray<string>(row.generos),
+    tipo: row.tipo,
+    activo: row.activo,
+    primeravez: row.primeravez,
+    fechaUltCapVisto: row.fechaUltCapVisto,
+    fechaEstreno: row.fechaEstreno,
+    fechaCreacion: row.fechaCreacion,
+    fechaEliminacion: row.fechaEliminacion,
+    portada: row.portada,
+    pagina: row.pagina,
+    carpeta: row.carpeta,
+    estudios: row.estudios,
+    origen: row.origen,
+    duracion: row.duracion,
   };
 }
 

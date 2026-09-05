@@ -13,6 +13,7 @@ import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
 
 import {
+  ANIMES_COLUMN_DEFINITIONS,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
@@ -194,19 +195,18 @@ async function ensureOperationLogRetentionIndex(rawDb: SQLiteDatabase) {
 }
 
 /**
- * Adds the per-anime staleness-guard column when missing. The column is intentionally
- * nullable with no default and no backfill: NULL means "older than any remote change",
- * so every pre-existing row accepts the first remote change that targets it.
+ * Adds every `animes` column added after the table first shipped, mirroring
+ * `ensureBridgeConfigLastChangelogId`'s single-PRAGMA-read mechanism. Both current columns are
+ * intentionally nullable with no default and no backfill: NULL means "older than any remote
+ * change" for the staleness guard, and "no bridge token known yet" for the OCC token, so every
+ * pre-existing row accepts the first remote change / stays untouched until its first confirmed
+ * write, respectively -- never a fabricated value that could be mistaken for a real one.
  */
-async function ensureAnimesGuardColumn(rawDb: SQLiteDatabase) {
+async function ensureAnimesColumns(rawDb: SQLiteDatabase) {
   const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(animes)');
-  const hasGuardColumn = columns.some((column) => column.name === 'last_applied_change_ms');
+  const columnNames = new Set(columns.map((column) => column.name));
 
-  if (!hasGuardColumn) {
-    await rawDb.runAsync(
-      'ALTER TABLE animes ADD COLUMN last_applied_change_ms INTEGER'
-    );
-  }
+  await ensureMissingColumns(rawDb, columnNames, ANIMES_COLUMN_DEFINITIONS);
 }
 
 /**
@@ -305,7 +305,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureBridgeConfigLastChangelogId(rawDb);
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);
   await ensureOperationLogRetentionIndex(rawDb);
-  await ensureAnimesGuardColumn(rawDb);
+  await ensureAnimesColumns(rawDb);
   await ensurePendingRemoteChangesTable(rawDb);
   await ensureSeasonRatingQueueTable(rawDb);
   await ensureActiveSeasonCacheTable(rawDb);

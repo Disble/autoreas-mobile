@@ -31,11 +31,16 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => {
   };
 });
 
+/** Mocks `getBridgeConfigSnapshot`, controlling whether the bridge connection is configured. */
 const mockGetConfig = getBridgeConfigSnapshot as jest.Mock;
+/** Mocks `fetchInitialSyncSnapshot`, standing in for the real bridge `listAnimes` fetch. */
 const mockFetch = fetchInitialSyncSnapshot as jest.Mock;
+/** Mocks `withLocalWrite`, standing in for the real deferred-write transaction. */
 const mockDeferredWrite = withLocalWrite as jest.Mock;
+/** Mocks `loadPendingOutboxRecordIds`, controlling which animes have an un-acked local intent. */
 const mockPendingIds = loadPendingOutboxRecordIds as jest.Mock;
 
+/** Builds a fixture English bridge wire anime snapshot, including the required OCC token. */
 function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'anime-1',
@@ -58,10 +63,23 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
     studios: null,
     origin: null,
     durationMinutes: null,
+    modified_at: 0,
     ...overrides,
   };
 }
 
+/**
+ * `fetchInitialSyncSnapshot` is mocked in this suite, so this wraps a wire-shaped snapshot into
+ * the `IngestedAnime` pair its real implementation now returns (Decision 10). Wire-shaped, so
+ * `normalizeFetchedAnime`'s internal `WireAnimeSchema.safeParse` still succeeds against
+ * `entry.anime`, preserving this suite's pre-existing (accidental, documented as drift)
+ * exercised behavior byte-for-byte.
+ */
+function makeIngestedSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
+  return { anime: makeSnapshot(overrides), bridgeModifiedAt: 0 };
+}
+
+/** Builds a fixture persisted `animes` row, as it would come back from a raw SQLite select. */
 function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     _id: 'anime-1',
@@ -85,10 +103,12 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     origen: null,
     duracion: null,
     lastAppliedChangeMs: 500,
+    bridgeModifiedAt: null,
     ...overrides,
   };
 }
 
+/** Placeholder raw SQLite handle; every collaborator that reads it is mocked. */
 const rawDb = { name: 'raw-db' } as never;
 
 describe('resyncFromBridgeSnapshot', () => {
@@ -112,7 +132,7 @@ describe('resyncFromBridgeSnapshot', () => {
   it('heals a diverged row by applying only the differing fields, preserving the guard', async () => {
     // Local is behind by several chapters (5) vs the bridge truth (12); estado also differs.
     wireWriteWithLocalRows([makeRow({ nrocapvisto: 5, estado: 0, lastAppliedChangeMs: 500 })]);
-    mockFetch.mockResolvedValue([makeSnapshot({ nrocapvisto: 12, estado: 1 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 })]);
 
     const result = await resyncFromBridgeSnapshot(rawDb);
 
@@ -127,7 +147,7 @@ describe('resyncFromBridgeSnapshot', () => {
 
   it('skips animes with an unconfirmed local outbox op (protects local intent)', async () => {
     wireWriteWithLocalRows([makeRow({ nrocapvisto: 5 })]);
-    mockFetch.mockResolvedValue([makeSnapshot({ nrocapvisto: 12 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12 })]);
     mockPendingIds.mockResolvedValue(new Set(['anime-1']));
 
     const result = await resyncFromBridgeSnapshot(rawDb);
@@ -139,7 +159,7 @@ describe('resyncFromBridgeSnapshot', () => {
 
   it('cold-inserts an anime that is missing locally', async () => {
     wireWriteWithLocalRows([]);
-    const snapshot = makeSnapshot();
+    const snapshot = makeIngestedSnapshot();
     mockFetch.mockResolvedValue([snapshot]);
 
     const result = await resyncFromBridgeSnapshot(rawDb);
@@ -171,7 +191,7 @@ describe('resyncFromBridgeSnapshot', () => {
 
   it('no-ops a row already in sync', async () => {
     wireWriteWithLocalRows([makeRow({ nrocapvisto: 12, estado: 1 })]);
-    mockFetch.mockResolvedValue([makeSnapshot({ nrocapvisto: 12, estado: 1 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 })]);
 
     const result = await resyncFromBridgeSnapshot(rawDb);
 
@@ -197,6 +217,19 @@ describe('resyncFromBridgeSnapshot', () => {
     );
   });
 
+  it('never surfaces bridgeModifiedAt as a changed field, even when the local row carries a token (MERGEABLE_FIELDS is an explicit whitelist)', async () => {
+    wireWriteWithLocalRows([
+      makeRow({ nrocapvisto: 5, estado: 0, lastAppliedChangeMs: 500, bridgeModifiedAt: 1788540735366 }),
+    ]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 })]);
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    const [, , columns] = (applyAnimePartial as jest.Mock).mock.calls[0];
+    expect(columns).not.toHaveProperty('bridgeModifiedAt');
+    expect(columns).not.toHaveProperty('bridge_modified_at');
+  });
+
   it('reads pending outbox ids and local rows independently, regardless of resolve order', async () => {
     // loadPendingOutboxRecordIds resolves AFTER the local rows select to prove the two reads
     // are not sequenced through each other's result (parallelized via Promise.all).
@@ -216,7 +249,7 @@ describe('resyncFromBridgeSnapshot', () => {
       resolvePendingIds(new Set());
       return taskPromise;
     });
-    mockFetch.mockResolvedValue([makeSnapshot({ episodesWatched: 12 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ episodesWatched: 12 })]);
 
     const result = await resyncFromBridgeSnapshot(rawDb);
 

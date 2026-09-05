@@ -3,11 +3,17 @@ import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../../../src/infrastructure/store/active-season-store";
 
+/** Mocks `useOptionalSQLiteContext`, controlling whether a raw SQLite connection is available. */
 const mockUseOptionalSQLiteContext = jest.fn();
+/** Mocks `useOptionalLiveQuery`, feeding fixture rows to the hook under test. */
 const mockUseOptionalLiveQuery = jest.fn();
+/** Mocks `createDrizzleDb`, standing in for the real drizzle factory. */
 const mockCreateDrizzleDb = jest.fn();
+/** Spy for the drizzle `select()` call chain, unused directly but kept for chain shape parity. */
 const mockSelect = jest.fn();
+/** Spy for the drizzle `.from()` call chain, unused directly but kept for chain shape parity. */
 const mockFrom = jest.fn();
+/** Spy for the drizzle `.where()` call chain, unused directly but kept for chain shape parity. */
 const mockWhere = jest.fn();
 
 jest.mock("../../../../src/infrastructure/db/native-runtime", () => ({
@@ -30,6 +36,7 @@ jest.mock("../../../../src/infrastructure/db/client/client.helpers", () => ({
   createDrizzleDb: (...args: unknown[]) => mockCreateDrizzleDb(...args),
 }));
 
+/** Builds a fixture `AnimeRow`, as it would come back from a raw SQLite select. */
 function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
   return {
     _id: "anime-1",
@@ -53,10 +60,12 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     origen: null,
     duracion: null,
     lastAppliedChangeMs: null,
+    bridgeModifiedAt: null,
     ...overrides,
   };
 }
 
+/** Queues the fixture anime + season-rating-queue rows the next `useOptionalLiveQuery` calls return. */
 function mockLiveQueryData(animeRows: AnimeRow[], seasonQueueRows: readonly unknown[] = []) {
   mockUseOptionalLiveQuery
     .mockImplementationOnce(() => ({ data: animeRows }))

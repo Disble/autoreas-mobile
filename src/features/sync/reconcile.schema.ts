@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
-
-const ReconcileArrayFallback = <TSchema extends z.ZodTypeAny>(itemSchema: TSchema) =>
-  z.array(itemSchema).nullish().transform((value) => value ?? []);
+import { ReconcileArrayFallback } from './reconcile-schema.helpers';
 
 /** Validates reconcile anime change schema payloads at runtime. */
 
@@ -20,6 +18,10 @@ const ReconcileAppliedOperationSchema = z.object({
   anime_id: z.string(),
   operation: z.string(),
   applied: z.boolean(),
+  // Bridge-authored OCC token confirmed for this operation. PRESENCE, not truthiness: a parsed
+  // `0` and a parsed absent key must stay distinguishable, because `0` is a real, legitimate
+  // token (see `collectConfirmedAnimeTokens`, which reads this field).
+  modified_at: z.number().int().optional(),
 });
 
 // NOTE (Conflict Honesty, see spec): remote->local resolution is deterministic field-level
