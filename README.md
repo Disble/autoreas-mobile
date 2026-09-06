@@ -362,7 +362,8 @@ incrementally instead of never.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | The complete, enforced ruleset |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
 | [`docs/specs/`](docs/specs/) | Functional specs (SDD-00 → SDD-07) |
-| [`docs/build-and-release.md`](docs/build-and-release.md) | EAS and Docker builds, Git hooks, release checklists |
+| [`docs/deployment.md`](docs/deployment.md) | How a release ships: version bump, tag, CI pipeline and its guards |
+| [`docs/build-and-release.md`](docs/build-and-release.md) | EAS and Docker builds, Git hooks, local build paths |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Native module, cleartext HTTP and Expo Router issues |
 | [`docs/postmortems/`](docs/postmortems/) | Incident write-ups |
 | [`docs/Autoreas_mobile_design_doc.md`](docs/Autoreas_mobile_design_doc.md) | The original RFC |

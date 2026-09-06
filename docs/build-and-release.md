@@ -3,7 +3,8 @@
 Everything about producing an installable binary of Autoreas Mobile, and the invariants that keep
 the build environment from damaging your working copy.
 
-> Back to the [README](../README.md).
+> Back to the [README](../README.md). Producing a binary is not the same as shipping one — for how a
+> release actually reaches users, see [Deployment](deployment.md).
 
 ---
 
@@ -204,12 +205,11 @@ per staged file by the pre-commit hook instead — see CLAUDE.md constraint 12.
 
 ---
 
-## Release checklists
+## Pre-build checklists
 
 > A **release** is a pushed `vX.Y.Z` tag on `main`, which is what publishes the APK to GitHub
 > Releases. The full procedure — version bump, changelog, branch model, and every guard the
-> workflow runs — lives in [`.claude/skills/mobile-release/SKILL.md`](../.claude/skills/mobile-release/SKILL.md)
-> and `.github/workflows/release.yml`. What follows is only the local rehearsal.
+> workflow runs — lives in [Deployment](deployment.md). What follows is only the local rehearsal.
 
 ### Preview Android
 
