@@ -7,6 +7,7 @@
 An offline-first Android companion for Autoreas Desktop, built to sit next to your video player in
 split-screen and stay out of your way.
 
+[![Latest release](https://img.shields.io/github/v/release/Disble/autoreas-mobile?label=download&logo=android&logoColor=white&color=3DDC84)](https://github.com/Disble/autoreas-mobile/releases/latest)
 [![Expo SDK](https://img.shields.io/badge/Expo_SDK-55-000020?logo=expo&logoColor=white)](https://docs.expo.dev/)
 [![React Native](https://img.shields.io/badge/React_Native-0.83-61DAFB?logo=react&logoColor=black)](https://reactnative.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -15,8 +16,9 @@ split-screen and stay out of your way.
 [![Tests](https://img.shields.io/badge/tests-109_suites-success?logo=jest&logoColor=white)](#testing)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue)](LICENSE)
 
-[Overview](#overview) · [Features](#features) · [Screenshots](#screenshots) · [Stack](#tech-stack) ·
-[Getting started](#getting-started) · [Structure](#project-structure) · [Docs](#documentation)
+[Overview](#overview) · [Features](#features) · [Screenshots](#screenshots) ·
+[Install](#install-the-app) · [Stack](#tech-stack) · [Getting started](#getting-started) ·
+[Structure](#project-structure) · [Docs](#documentation)
 
 </div>
 
@@ -110,6 +112,35 @@ success, backlog read, and whether the persistent foreground service is actually
 - **Instant boot** — `bridge_config` is read synchronously from SQLite in `_layout.tsx`, so a cold
   start goes straight to the list with no white flash and no setup detour.
 - **Local mode** — with no Bridge reachable, the app keeps serving the local catalogue copy.
+
+---
+
+## Install the app
+
+You do not have to build anything. Every release publishes a ready-to-install APK:
+
+**[⬇ Download the latest release](https://github.com/Disble/autoreas-mobile/releases/latest)** ·
+`autoreas-mobile-X.Y.Z-android.apk`, about 132 MiB
+
+1. Download the APK and `SHA256SUMS-android.txt` from the release page.
+2. Verify it — the checksum file is published for exactly this reason:
+
+   ```bash
+   sha256sum -c SHA256SUMS-android.txt
+   ```
+
+3. Copy the APK to your Android device and open it. Android will ask you to allow installation from
+   unknown sources, and Play Protect will scan it: the app is signed, but it is **not distributed
+   through Google Play**, so both prompts are expected.
+4. Open the app and [pair it with your Bridge](#pair-with-the-bridge).
+
+> [!NOTE]
+> **Android only, and a Bridge is required.** There is no iOS build and none is planned. The app is
+> a companion to Autoreas Desktop — without a reachable Bridge on the same Wi-Fi network it starts
+> in local mode with an empty catalogue.
+
+The rest of this README is for working on the app, not using it. How a release is produced and
+published is documented in [Deployment](docs/deployment.md).
 
 ---
 
