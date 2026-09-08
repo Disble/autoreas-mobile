@@ -48,6 +48,10 @@ import type {
   SyncPendingOperationsResult,
 } from './reconcile.types';
 import {
+  captureSyncDiagnosticsEnvelope,
+  flushSyncDiagnosticsOutbox,
+} from './sync-diagnostics-flush.helpers';
+import {
   buildSyncCycleTelemetry,
   resolveClientTelemetry,
 } from './sync-telemetry.helpers';
@@ -366,6 +370,15 @@ async function performSyncPendingOperations(
     clientTelemetry,
     bridgeTokensByAnimeId,
   );
+
+  // Both calls sit here, lexically BEFORE the `try` below and outside any `withLocalWrite`
+  // callback (design.md Decision 5). `captureSyncDiagnosticsEnvelope` is synchronous and
+  // swallows by contract; `flushSyncDiagnosticsOutbox` never rejects. Placement, not the
+  // never-rejecting contract alone, is what makes a diagnostics-delivery failure unreachable
+  // from the `catch` below: that `catch` calls `revertPendingOperationsOnFailure`, which would
+  // otherwise dead-letter or requeue the user's own pending mutations over a diagnostics POST.
+  captureSyncDiagnosticsEnvelope(clientTelemetry);
+  await flushSyncDiagnosticsOutbox({ connection });
 
   try {
     const result = await bridgeClient.reconcile(connection, requestBody);

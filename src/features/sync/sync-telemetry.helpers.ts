@@ -211,6 +211,7 @@ export function toWireSyncCycleTelemetry(
 
   return {
     cycle_id: telemetry.cycleId,
+    degraded: null,
     trigger_source: telemetry.triggerSource,
     app_state: telemetry.appState,
     previous_cycle: previousCycle
@@ -273,7 +274,13 @@ export function capWireSyncCycleTelemetry(
   // pressure the specific diagnosis of this cycle is worth more than the surrounding pattern:
   // `outcome` and `last_stage` name the failure, the ring only contextualises it.
   if (wire.recent_events.length > 0) {
-    const withoutEvents: WireSyncCycleTelemetry = { ...wire, recent_events: [] };
+    // The tier is set on THIS intermediate, before it is measured: `measureWireBytes` must
+    // count `degraded` itself, or the cap under-reports by up to 12 bytes (design.md Decision 1).
+    const withoutEvents: WireSyncCycleTelemetry = {
+      ...wire,
+      recent_events: [],
+      degraded: 'events',
+    };
 
     if (measureWireBytes(withoutEvents) <= maxBytes) {
       return withoutEvents;
@@ -285,6 +292,7 @@ export function capWireSyncCycleTelemetry(
   if (wire.previous_cycle !== null) {
     const withoutErrorDetail: WireSyncCycleTelemetry = {
       ...wire,
+      degraded: 'error_detail',
       previous_cycle: {
         ...wire.previous_cycle,
         error_name: null,
@@ -303,7 +311,11 @@ export function capWireSyncCycleTelemetry(
     }
   }
 
-  const withoutPreviousCycle: WireSyncCycleTelemetry = { ...wire, previous_cycle: null };
+  const withoutPreviousCycle: WireSyncCycleTelemetry = {
+    ...wire,
+    previous_cycle: null,
+    degraded: 'previous_cycle',
+  };
 
   if (measureWireBytes(withoutPreviousCycle) <= maxBytes) {
     return withoutPreviousCycle;

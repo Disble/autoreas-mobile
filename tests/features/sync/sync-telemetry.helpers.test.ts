@@ -195,6 +195,7 @@ describe('toWireSyncCycleTelemetry', () => {
 
     expect(wire).toEqual({
       cycle_id: 'cycle-2',
+      degraded: null,
       trigger_source: 'background_task',
       app_state: 'background',
       previous_cycle: {
@@ -282,9 +283,10 @@ describe('capWireSyncCycleTelemetry', () => {
   });
 
   it('suelta el ciclo previo entero antes que romper el presupuesto', () => {
-    // 220 entra justo para el payload sin ciclo previo (~204 B con el anillo ya vacío) y no
-    // para el que lo conserva, así que fuerza el segundo escalón y no el tercero.
-    const capped = capWireSyncCycleTelemetry(buildWire(), 220);
+    // 232 entra justo para el payload sin ciclo previo (232 B con degraded y el anillo ya
+    // vacío) y no para el que conserva el detalle de error, así que fuerza el segundo
+    // escalón y no el tercero.
+    const capped = capWireSyncCycleTelemetry(buildWire(), 232);
 
     expect(capped?.previous_cycle).toBeNull();
     expect(capped?.counters.consecutive_unclosed_cycles).toBe(5);

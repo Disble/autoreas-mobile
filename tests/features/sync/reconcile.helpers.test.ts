@@ -13,6 +13,11 @@ jest.mock('../../../src/infrastructure/api', () => ({
   bridgeClient: { reconcile: jest.fn() },
 }));
 
+jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => ({
+  captureSyncDiagnosticsEnvelope: jest.fn(),
+  flushSyncDiagnosticsOutbox: jest.fn().mockResolvedValue({ attempted: 0, delivered: 0 }),
+}));
+
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withLocalWrite: jest.fn(),

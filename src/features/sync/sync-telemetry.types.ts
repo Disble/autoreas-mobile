@@ -34,6 +34,17 @@ export type SyncCycleErrorStage = (typeof SYNC_CYCLE_ERROR_STAGES)[number];
 /** Canonical reason a cycle failed, derived on-client from the message so the message stays home. */
 export type SyncCycleErrorCause = (typeof SYNC_CYCLE_ERROR_CAUSES)[number];
 
+/**
+ * Which tier of the envelope `capWireSyncCycleTelemetry` shed to fit the transport budget.
+ * `null` means nothing was shed. Each non-null value implies every lighter tier is ABSENT from
+ * this payload -- shed or never present; it does not assert a lighter tier was itself dropped.
+ */
+export type SyncCycleTelemetryDegradedTier =
+  | null
+  | 'events'
+  | 'error_detail'
+  | 'previous_cycle';
+
 /** The previous cycle's post-mortem, reconstructed from what it managed to persist. */
 export interface PreviousCycleTelemetry {
   readonly cycleId: string | null;
@@ -88,6 +99,12 @@ export interface BuildSyncCycleTelemetryInput {
 /** The exact snake_case shape sent to the bridge. Nothing outside this contract crosses the wire. */
 export interface WireSyncCycleTelemetry {
   readonly cycle_id: string;
+  /**
+   * Second key by contract: the bridge requires it in this position, and object spread
+   * preserves the insertion order of a key that already exists, so `toWireSyncCycleTelemetry`
+   * setting it here is what keeps it there through every later shedding step.
+   */
+  readonly degraded: SyncCycleTelemetryDegradedTier;
   readonly trigger_source: SyncRuntimeTriggerSource;
   readonly app_state: SyncCycleAppState;
   readonly previous_cycle: {

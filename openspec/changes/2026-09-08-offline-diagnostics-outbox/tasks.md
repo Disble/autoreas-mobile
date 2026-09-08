@@ -77,44 +77,44 @@ Chain strategy: pending
 
 ### Phase 6: `degraded` On The Wire Type (Decision 1)
 
-- [ ] 6.1 RED `tests/features/sync/__tests__/sync-telemetry-degraded.test.ts`: each shedding branch (`events` → `error_detail` → `previous_cycle`) sets the matching tier; `degraded` is key 2 in the `JSON.stringify` output — assert on the serialized string, not the object; `measureWireBytes` counts the `degraded` key.
-- [ ] 6.2 GREEN `src/features/sync/sync-telemetry.types.ts`: `SyncCycleTelemetryDegradedTier = null | 'events' | 'error_detail' | 'previous_cycle'`; `degraded` as the second key of `WireSyncCycleTelemetry`.
-- [ ] 6.3 GREEN `src/features/sync/sync-telemetry.helpers.ts`: `toWireSyncCycleTelemetry` emits `degraded: null`; each branch in `capWireSyncCycleTelemetry` sets the shed tier on the intermediate object BEFORE `measureWireBytes` runs, so byte accounting includes it (design: setting it after under-reports by up to 12 bytes).
+- [x] 6.1 RED `tests/features/sync/__tests__/sync-telemetry-degraded.test.ts`: each shedding branch (`events` → `error_detail` → `previous_cycle`) sets the matching tier; `degraded` is key 2 in the `JSON.stringify` output — assert on the serialized string, not the object; `measureWireBytes` counts the `degraded` key.
+- [x] 6.2 GREEN `src/features/sync/sync-telemetry.types.ts`: `SyncCycleTelemetryDegradedTier = null | 'events' | 'error_detail' | 'previous_cycle'`; `degraded` as the second key of `WireSyncCycleTelemetry`.
+- [x] 6.3 GREEN `src/features/sync/sync-telemetry.helpers.ts`: `toWireSyncCycleTelemetry` emits `degraded: null`; each branch in `capWireSyncCycleTelemetry` sets the shed tier on the intermediate object BEFORE `measureWireBytes` runs, so byte accounting includes it (design: setting it after under-reports by up to 12 bytes).
 
 ### Phase 7: Sync Diagnostics Flush — Constants & Timing Chain
 
-- [ ] 7.1 GREEN `src/features/sync/sync-diagnostics-flush.constants.ts`: `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE = 3`, `SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS = 3_000`.
-- [ ] 7.2 RED→GREEN `tests/features/sync/__tests__/sync-diagnostics-timing-order.test.ts` (pattern: `tests/features/sync/__tests__/background-sync-bounded-awaits.test.ts`'s seven-constant chain test, read-only): one pure-comparison test asserting `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE * SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS + BRIDGE_REQUEST_TIMEOUT_MS < BACKGROUND_SYNC_CYCLE_DEADLINE_MS`, importing the real constants (`19_000 < 45_000`).
+- [x] 7.1 GREEN `src/features/sync/sync-diagnostics-flush.constants.ts`: `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE = 3`, `SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS = 3_000`.
+- [x] 7.2 RED→GREEN `tests/features/sync/__tests__/sync-diagnostics-timing-order.test.ts` (pattern: `tests/features/sync/__tests__/background-sync-bounded-awaits.test.ts`'s seven-constant chain test, read-only): one pure-comparison test asserting `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE * SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS + BRIDGE_REQUEST_TIMEOUT_MS < BACKGROUND_SYNC_CYCLE_DEADLINE_MS`, importing the real constants (`19_000 < 45_000`).
 
 ### Phase 8: Sync Diagnostics Flush — Capture & Disposition Algorithm (Decision 4)
 
-- [ ] 8.1 RED `tests/features/sync/__tests__/sync-diagnostics-flush.helpers.test.ts` (fake store + fake client): `captureSyncDiagnosticsEnvelope` enqueues only under the same conditions that already gate building the envelope (telemetry preference on AND `resolveClientTelemetry` returned non-null); no capture when the preference is disabled or no telemetry context is supplied.
-- [ ] 8.2 RED (same suite): a `2xx` response removes the row and continues to the next candidate; a thrown request leaves the row and stops the batch.
-- [ ] 8.3 RED (same suite — BINDING per the orchestrator's amendment to Decision 4): a `404` response leaves the row queued AND stops the batch. The bridge endpoint is not built yet; a blanket 4xx-deletes rule would drain the queue silently during the dual-write window, reproducing the exact invisible-loss failure this change exists to close.
-- [ ] 8.4 RED (same suite): a `400` response removes the row and continues — the response names the offending field, so the bridge will reject the same bytes identically forever.
-- [ ] 8.5 RED (same suite): `413` and `422` also remove-and-continue (same envelope-malformed family as `400`); `408`, `429`, and every `5xx` leave the row and stop the batch, calling `deferUntil(now + retryAfterMs)` when a `retryAfterMs` is present.
-- [ ] 8.6 RED (same suite): a shut gate (`readFlushCandidates` returns `[]`) issues zero POSTs.
-- [ ] 8.7 GREEN `src/features/sync/sync-diagnostics-flush.types.ts`: flush params and result types.
-- [ ] 8.8 GREEN `src/features/sync/sync-diagnostics-flush.helpers.ts`: `captureSyncDiagnosticsEnvelope` (synchronous, swallows by contract) and `flushSyncDiagnosticsOutbox` (never rejects; oldest-first; batch size `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE`; the disposition taxonomy is a fresh per-envelope rule — it MUST NOT reuse `isPermanentReconcileError`'s (`src/features/sync/reconcile.helpers.ts:62-64`, read-only) blanket `>= 400 && < 500`; governing principle: drop only what is wrong with THIS envelope, preserve anything wrong with the link or endpoint).
-- [ ] 8.9 MUTATE (guard cycle #3 — poison-pill): delete the `remove()` call on the `400/413/422` branch; run only the "400 removes and continues" test and confirm RED; restore.
-- [ ] 8.10 MUTATE (guard cycle #4): delete the stop/`break` after a transient failure (`404`/`408`/`429`/`5xx`/throw); run only the stop-at-first-failure test and confirm RED (exactly one POST on a dead link); restore.
+- [x] 8.1 RED `tests/features/sync/__tests__/sync-diagnostics-flush.helpers.test.ts` (fake store + fake client): `captureSyncDiagnosticsEnvelope` enqueues only under the same conditions that already gate building the envelope (telemetry preference on AND `resolveClientTelemetry` returned non-null); no capture when the preference is disabled or no telemetry context is supplied.
+- [x] 8.2 RED (same suite): a `2xx` response removes the row and continues to the next candidate; a thrown request leaves the row and stops the batch.
+- [x] 8.3 RED (same suite — BINDING per the orchestrator's amendment to Decision 4): a `404` response leaves the row queued AND stops the batch. The bridge endpoint is not built yet; a blanket 4xx-deletes rule would drain the queue silently during the dual-write window, reproducing the exact invisible-loss failure this change exists to close.
+- [x] 8.4 RED (same suite): a `400` response removes the row and continues — the response names the offending field, so the bridge will reject the same bytes identically forever.
+- [x] 8.5 RED (same suite): `413` and `422` also remove-and-continue (same envelope-malformed family as `400`); `408`, `429`, and every `5xx` leave the row and stop the batch, calling `deferUntil(now + retryAfterMs)` when a `retryAfterMs` is present.
+- [x] 8.6 RED (same suite): a shut gate (`readFlushCandidates` returns `[]`) issues zero POSTs.
+- [x] 8.7 GREEN `src/features/sync/sync-diagnostics-flush.types.ts`: flush params and result types.
+- [x] 8.8 GREEN `src/features/sync/sync-diagnostics-flush.helpers.ts`: `captureSyncDiagnosticsEnvelope` (synchronous, swallows by contract) and `flushSyncDiagnosticsOutbox` (never rejects; oldest-first; batch size `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE`; the disposition taxonomy is a fresh per-envelope rule — it MUST NOT reuse `isPermanentReconcileError`'s (`src/features/sync/reconcile.helpers.ts:62-64`, read-only) blanket `>= 400 && < 500`; governing principle: drop only what is wrong with THIS envelope, preserve anything wrong with the link or endpoint).
+- [x] 8.9 MUTATE (guard cycle #3 — poison-pill): delete the `remove()` call on the `400/413/422` branch; run only the "400 removes and continues" test and confirm RED; restore.
+- [x] 8.10 MUTATE (guard cycle #4): delete the stop/`break` after a transient failure (`404`/`408`/`429`/`5xx`/throw); run only the stop-at-first-failure test and confirm RED (exactly one POST on a dead link); restore.
 
 ### Phase 9: Wiring Into `performSyncPendingOperations` (Decision 5)
 
-- [ ] 9.1 RED `tests/features/sync/reconcile.helpers.test.ts`: a throwing `bridgeClient.reconcile` still leaves a durable `sync_diagnostics_outbox` row afterward — the change's headline inversion.
-- [ ] 9.2 RED (same suite): a throwing/rejecting flush never reaches `revertPendingOperationsOnFailure` — the flush's own failure must not be misread as a reconcile failure.
-- [ ] 9.3 GREEN `src/features/sync/reconcile.helpers.ts`: place `captureSyncDiagnosticsEnvelope(clientTelemetry)` and `await flushSyncDiagnosticsOutbox({ connection, ... })` immediately after `requestBody` is built (~:368), lexically BEFORE the `try` at `:370`, outside every `withLocalWrite` callback (already enforced for `bridgeClient.*` by the existing `no-restricted-syntax` selector in `eslint.config.mjs`, read-only).
-- [ ] 9.4 MUTATE (guard cycle #5): move the capture call inside the `try` (or delete it); run only the "throwing reconcile still leaves a row" test and confirm RED; restore.
+- [x] 9.1 RED `tests/features/sync/reconcile.helpers.test.ts`: a throwing `bridgeClient.reconcile` still leaves a durable `sync_diagnostics_outbox` row afterward — the change's headline inversion.
+- [x] 9.2 RED (same suite): a throwing/rejecting flush never reaches `revertPendingOperationsOnFailure` — the flush's own failure must not be misread as a reconcile failure.
+- [x] 9.3 GREEN `src/features/sync/reconcile.helpers.ts`: place `captureSyncDiagnosticsEnvelope(clientTelemetry)` and `await flushSyncDiagnosticsOutbox({ connection, ... })` immediately after `requestBody` is built (~:368), lexically BEFORE the `try` at `:370`, outside every `withLocalWrite` callback (already enforced for `bridgeClient.*` by the existing `no-restricted-syntax` selector in `eslint.config.mjs`, read-only).
+- [x] 9.4 MUTATE (guard cycle #5): move the capture call inside the `try` (or delete it); run only the "throwing reconcile still leaves a row" test and confirm RED; restore.
 
 ### Phase 10: Behaviour Proof
 
-- [ ] 10.1 RED→GREEN `tests/behaviour/sync/diagnostics-outbox-round-trip.behaviour.test.ts` (pattern: `tests/behaviour/sync/outbox-round-trip.behaviour.test.ts`, read-only): real SQLite, real drizzle, real write door, real `bridgeClient` — queue a row under a faked failing bridge on one cycle, drain it on a later cycle under a faked success, via `installFakeBridge`.
+- [x] 10.1 RED→GREEN `tests/behaviour/sync/diagnostics-outbox-round-trip.behaviour.test.ts` (pattern: `tests/behaviour/sync/outbox-round-trip.behaviour.test.ts`, read-only): real SQLite, real drizzle, real write door, real `bridgeClient` — queue a row under a faked failing bridge on one cycle, drain it on a later cycle under a faked success, via `installFakeBridge`.
 
 ### Phase 11: Slice B Verification
 
-- [ ] 11.1 Run `npm test` and record the final suite/test count against the Phase 5.1 baseline plus every new suite from Phases 6-10, all green.
-- [ ] 11.2 `npm run validate` (lint + typecheck + test) green across every file touched in Phases 6-10. JSDoc for every newly staged export is written as part of its edit (constraint 12), never a bulk pass.
-- [ ] 11.3 Commit Slice B with a conventional commit message (e.g. `feat(sync): durably capture and flush diagnostics envelopes to the bridge`).
+- [x] 11.1 Run `npm test` and record the final suite/test count against the Phase 5.1 baseline plus every new suite from Phases 6-10, all green.
+- [x] 11.2 `npm run validate` (lint + typecheck + test) green across every file touched in Phases 6-10. JSDoc for every newly staged export is written as part of its edit (constraint 12), never a bulk pass.
+- [x] 11.3 Commit Slice B with a conventional commit message (e.g. `feat(sync): durably capture and flush diagnostics envelopes to the bridge`).
 
 ## Naming & Structural Constraints (apply throughout)
 

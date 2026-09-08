@@ -22,6 +22,7 @@ function buildOperation(overrides: Partial<OperationLogRow> = {}): OperationLogR
  */
 const WIRE_TELEMETRY: WireSyncCycleTelemetry = {
   cycle_id: '5f6d4c3b-2a19-4e87-9d0f-1a2b3c4d5e6f',
+  degraded: null,
   trigger_source: 'background_task',
   app_state: 'background',
   previous_cycle: {
