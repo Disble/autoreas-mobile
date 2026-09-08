@@ -2,6 +2,7 @@ import {
   BRIDGE_API_PATHS,
   BRIDGE_HTTP_SCHEME,
   BRIDGE_WS_SCHEME,
+  SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS,
 } from './bridge-client.constants';
 import type {
   ActiveSeasonCandidateSnapshot,
@@ -99,6 +100,46 @@ export function buildPostActiveSeasonRatingBody(
     grade: request.nota,
     rated_at: request.ratedAt,
   };
+}
+
+/**
+ * Parses a bridge response's `Retry-After` header value into a milliseconds delay, or `null`
+ * when no server-directed backoff should be honored (Decision 2).
+ *
+ * Delta-seconds (RFC 9110 SS10.2.3, e.g. `"120"`) is tried FIRST and matched strictly against
+ * `/^\d+$/`. `Date.parse('2000')` yields a valid year-2000 date in V8/Hermes, so a legitimate
+ * 2000-second delay would silently become a 26-year backoff if the date branch ran first.
+ *
+ * `Date.parse` is only *specified* for ISO-8601; IMF-fixdate (HTTP-date) support is
+ * implementation-defined, and V8 additionally accepts loose, non-standard fragments (measured:
+ * `Date.parse('-5')` and `Date.parse('1.5')` both resolve to real dates instead of `NaN`). Every
+ * valid RFC 9110 date form (IMF-fixdate, obsolete RFC 850, and asctime) carries an `HH:MM:SS`
+ * time-of-day, so requiring a colon before calling `Date.parse` rejects that lenient
+ * misparsing without narrowing which real dates are accepted. The bridge contract sends
+ * delta-seconds; the date branch is defensive, not relied upon.
+ */
+export function parseRetryAfterMs(rawValue: string | null, now: number): number | null {
+  if (rawValue === null) {
+    return null;
+  }
+
+  const trimmed = rawValue.trim();
+
+  if (/^\d+$/.test(trimmed)) {
+    return Math.min(Number(trimmed) * 1_000, SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS);
+  }
+
+  if (!trimmed.includes(':')) {
+    return null;
+  }
+
+  const parsedDate = Date.parse(trimmed);
+
+  if (Number.isNaN(parsedDate)) {
+    return null;
+  }
+
+  return Math.min(Math.max(parsedDate - now, 0), SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS);
 }
 
 /**

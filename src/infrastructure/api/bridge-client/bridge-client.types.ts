@@ -60,6 +60,8 @@ export interface BridgeHttpResult {
   readonly data: unknown;
   readonly rawBody: string | null;
   readonly url: string;
+  /** Parsed `Retry-After` delay in ms, or `null` when absent, unparseable, or not honored. */
+  readonly retryAfterMs: number | null;
 }
 
 /** Minimal diagnostic logger seam consumed by the bridge client. */
@@ -90,6 +92,15 @@ export interface BridgeClient {
   readonly reconcile: (
     connection: BridgeConnection,
     body: unknown,
+    options?: BridgeRequestOptions,
+  ) => Promise<BridgeHttpResult>;
+  /**
+   * Delivers one diagnostics outbox entry's payload to the bridge. Storage-agnostic: the caller
+   * owns the durable outbox (`sync-diagnostics-outbox`) and this method only performs the POST.
+   */
+  readonly postSyncDiagnostics: (
+    connection: BridgeConnection,
+    envelope: unknown,
     options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly openWebSocket: (connection: BridgeConnection) => WebSocket;

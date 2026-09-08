@@ -14,6 +14,7 @@ export const IMPLEMENTED_MEMBERS = new Set([
   'runAsync',
   'runSync',
   'getAllAsync',
+  'getAllSync',
   'getFirstAsync',
 ]);
 

@@ -13,6 +13,7 @@ import {
   buildBridgeUrl,
   buildBridgeWebSocketUrl,
   parseBridgeResponseBody,
+  parseRetryAfterMs,
 } from './bridge-url.helpers';
 import type {
   BridgeClient,
@@ -104,6 +105,12 @@ export function createBridgeClient(
 
     const rawBody = typeof response.text === 'function' ? await response.text() : null;
     const data = parseBridgeResponseBody(rawBody);
+    // Defensive read (Decision 8): production `Response` always has `headers`, but several test
+    // doubles across this codebase (`tests/support/fake-bridge.helpers.ts`, this file's own
+    // `buildResponse` fixtures) do not carry one. An unguarded `.get()` call throws against them.
+    const retryAfterHeader =
+      typeof response.headers?.get === 'function' ? response.headers.get('Retry-After') : null;
+    const retryAfterMs = parseRetryAfterMs(retryAfterHeader, Date.now());
 
     logger.debug('[BridgeClient] response', {
       url,
@@ -117,6 +124,7 @@ export function createBridgeClient(
       data,
       rawBody,
       url,
+      retryAfterMs,
     };
   }
 
@@ -158,6 +166,14 @@ export function createBridgeClient(
         path: BRIDGE_API_PATHS.reconcile,
         token: connection.token,
         body,
+        timeoutMs: options?.timeoutMs,
+      }),
+    postSyncDiagnostics: (connection, envelope, options?: BridgeRequestOptions) =>
+      request(connection, {
+        method: 'POST',
+        path: BRIDGE_API_PATHS.syncDiagnostics,
+        token: connection.token,
+        body: envelope,
         timeoutMs: options?.timeoutMs,
       }),
     openWebSocket: (connection) =>

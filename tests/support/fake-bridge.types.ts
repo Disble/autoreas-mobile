@@ -10,6 +10,9 @@ export interface FakeBridgeRequest {
 export interface QueuedBridgeResponse {
   readonly status: number;
   readonly body: unknown;
+  /** Headers replayed via a case-insensitive `Response.headers.get` (Decision 8). Optional -- a
+   * response queued without any still resolves without throwing. */
+  readonly headers?: Record<string, string>;
 }
 
 /** Handle returned by `installFakeBridge`, used to queue, inspect and uninstall. */

@@ -56,6 +56,32 @@ describe('installFakeBridge', () => {
     fakeBridge.restore();
   });
 
+  it('replays a queued response headers via a case-insensitive get (Decision 8)', async () => {
+    const fakeBridge = installFakeBridge();
+    fakeBridge.queueResponse({
+      status: 503,
+      body: { status: 'busy' },
+      headers: { 'Retry-After': '120' },
+    });
+
+    const response = await globalThis.fetch('https://bridge.local/sync/diagnostics');
+
+    expect(response.headers.get('Retry-After')).toBe('120');
+    expect(response.headers.get('retry-after')).toBe('120');
+    expect(response.headers.get('Missing-Header')).toBeNull();
+
+    fakeBridge.restore();
+  });
+
+  it('still resolves without throwing when a queued response carries no headers', async () => {
+    const fakeBridge = installFakeBridge();
+    fakeBridge.queueResponse({ status: 200, body: { status: 'ok' } });
+
+    await expect(globalThis.fetch('https://bridge.local/sync/diagnostics')).resolves.toBeDefined();
+
+    fakeBridge.restore();
+  });
+
   it('restore() returns globalThis.fetch to its previous value', () => {
     const originalFetch = globalThis.fetch;
     const fakeBridge = installFakeBridge();

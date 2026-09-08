@@ -25,9 +25,11 @@ function toStatementArgs(args: readonly unknown[]): SQLInputValue[] {
 }
 
 /**
- * Builds one `node:sqlite`-backed `SQLiteDatabase` implementation (design D2). Only the six
- * members the app actually calls are implemented; a `Proxy` throws on any other
- * `SQLiteDatabase`-shaped property access instead of silently returning `undefined`.
+ * Builds one `node:sqlite`-backed `SQLiteDatabase` implementation (design D2). Only the members
+ * the app actually calls are implemented -- `getAllSync` was added for the synchronous-store
+ * pattern (`sync-cycle-checkpoint`, `sync-diagnostics-outbox`) alongside the existing async
+ * reads -- and a `Proxy` throws on any other `SQLiteDatabase`-shaped property access instead of
+ * silently returning `undefined`.
  */
 export function createTestSqliteAdapter(): SQLiteDatabase {
   const native = new DatabaseSync(':memory:');
@@ -61,6 +63,9 @@ export function createTestSqliteAdapter(): SQLiteDatabase {
     getAllAsync<T>(source: string, ...args: unknown[]): Promise<T[]> {
       return Promise.resolve(native.prepare(source).all(...toStatementArgs(args)) as T[]);
     },
+    getAllSync<T>(source: string, ...args: unknown[]): T[] {
+      return native.prepare(source).all(...toStatementArgs(args)) as T[];
+    },
     getFirstAsync<T>(source: string, ...args: unknown[]): Promise<T | null> {
       const row = native.prepare(source).get(...toStatementArgs(args));
 
@@ -78,7 +83,7 @@ export function createTestSqliteAdapter(): SQLiteDatabase {
         throw new Error(
           `tests/support/sqlite-adapter: "${property}" is not implemented on the test ` +
             'SQLiteDatabase adapter (design D2 -- only databasePath, execAsync, execSync, ' +
-            'runAsync, getAllAsync and getFirstAsync exist).',
+            'runAsync, runSync, getAllAsync, getAllSync and getFirstAsync exist).',
         );
       }
 

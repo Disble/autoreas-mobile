@@ -63,6 +63,21 @@ describe('createTestSqliteAdapter', () => {
     ]);
   });
 
+  it('getAllSync returns every matching row synchronously', () => {
+    adapter.execSync('CREATE TABLE widgets (id INTEGER PRIMARY KEY, label TEXT NOT NULL)');
+    adapter.runSync('INSERT INTO widgets (id, label) VALUES (?, ?)', 1, 'alpha');
+    adapter.runSync('INSERT INTO widgets (id, label) VALUES (?, ?)', 2, 'beta');
+
+    const rows = adapter.getAllSync<{ id: number; label: string }>(
+      'SELECT id, label FROM widgets ORDER BY id ASC',
+    );
+
+    expect(rows).toEqual([
+      { id: 1, label: 'alpha' },
+      { id: 2, label: 'beta' },
+    ]);
+  });
+
   it('getFirstAsync returns the first matching row, or null when nothing matches', async () => {
     await adapter.execAsync('CREATE TABLE widgets (id INTEGER PRIMARY KEY, label TEXT NOT NULL)');
     await adapter.runAsync('INSERT INTO widgets (id, label) VALUES (?, ?)', 1, 'alpha');

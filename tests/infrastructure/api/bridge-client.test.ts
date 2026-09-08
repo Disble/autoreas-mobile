@@ -44,6 +44,7 @@ describe('bridge-client', () => {
       data: [{ _id: 'anime-1' }],
       rawBody: JSON.stringify([{ _id: 'anime-1' }]),
       url: 'http://192.168.1.10:9876/api/animes',
+      retryAfterMs: null,
     });
   });
 
