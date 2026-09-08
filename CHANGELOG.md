@@ -16,6 +16,27 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-08
+
+**No new Bridge version is required.** This release works against every Bridge that 1.0.1 worked against. The diagnostic records it now keeps are offered to a Bridge endpoint that older versions do not have; those Bridges decline them harmlessly and the app holds the records until a Bridge that accepts them is reachable.
+
+### Added
+
+- When a background sync fails, the app now keeps its record of what went wrong on the device and hands it to the Bridge the next time one is reachable, instead of discarding it the moment the failing attempt ends. Previously a phone that spent a day away from its Bridge delivered one such record and destroyed roughly ninety-five others — including the one signal that says whether Android let the background job run at all, which is exactly the evidence that was missing every time background sync misbehaved and nobody could say why.
+- Kept records are capped at one hundred, oldest discarded first, so a long stretch offline cannot grow them without bound. Sending them is deliberately given up on quickly when the Bridge is unreachable, so a device that cannot connect never spends its sync window retrying diagnostics instead of syncing your catalogue.
+- The diagnostics switch in Settings governs this completely: with it turned off nothing is recorded and nothing accumulates on the device.
+
+### Fixed
+
+- A rate-limit or slow-down response from the Bridge could previously be misread as an instruction to retry immediately, because of a quirk in how the phone interpreted a malformed delay. Delays are now read strictly, and an unreadable one is ignored rather than treated as "retry now".
+
+### Internal
+
+- Diagnostic records are stored in the existing separate telemetry database, written on their own connection, so recording a sync failure can never queue behind the very database contention it is reporting on.
+- Delivery is attempted from the single point every sync trigger already passes through, so a reconnect, a foreground refresh, or a background cycle all drain the backlog without any new scheduler.
+- A failed delivery can never fail the sync cycle that carried it, and cannot reach the code path that returns pending catalogue changes to the queue.
+- Only a Bridge response that rejects the record's own contents discards it; an unreachable or unavailable Bridge always preserves it.
+
 ## [1.0.1] — 2026-09-05
 
 **Nothing changed for you.** The APK in this release behaves exactly like 1.0.0 — only the pipeline that builds it changed. If you already have 1.0.0 installed there is no reason to update, and the two differ only in build number.
