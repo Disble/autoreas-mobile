@@ -1,0 +1,66 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  Tech stack: Expo ~55 / React Native 0.83 / TypeScript 5.9 (strict), Expo Router, drizzle-orm + expo-sqlite.
+  Architecture: feature-colocation (src/features/<name>: index.ts, .tsx, use-*.ts, *.helpers.ts). Reference: src/features/animes.
+  UI: HeroUI Native primitives + Tailwind (Uniwind) via cn(). .tsx files are Dumb UI only (no logic/useEffect/DB calls).
+  Hooks: 10-step anatomy (imports, signature, refs, state, context/3rd-party, queries/mutations, derived state, callbacks, effects, return).
+  Testing: Jest (jest-expo) under tests/, NOT colocated with src/. Strict TDD enabled.
+  Lint: dharness/* ESLint layer, JSDoc debt paid per-file-as-touched, never bulk.
+  Delivery: no PR/push/deploy — every SDD change ends in a local merge to main.
+  Scaffolding: new feature folders MUST use `npm run generate:feature <name>`.
+
+strict_tdd: true
+
+testing:
+  test_command: "npm test"
+  test_command_resolved: "jest --maxWorkers=4"
+  focused_test_command: 'bunx jest <path> -t "<name>"'
+  coverage_command: "npm run test:coverage"
+  lint_command: "npm run lint"
+  typecheck_command: "npm run typecheck"
+  validate_command: "npm run validate"
+  formatter: null
+  test_layout: "tests/features/<feature>/__tests__/ mirrors src/features/<feature>/ — jest.config.js roots is tests/ only, nothing under src/ is collected"
+  mutation:
+    tool: "Stryker (@stryker-mutator/core + jest-runner)"
+    staged_command: "npm run test:mutation:staged"
+    scope: "src/features/sync/native-foreground-sync-ticker.helpers.ts (incremental, not full-repo)"
+    manual_cycle: "stage first, then mutate: git add <file> while green -> delete the guarded behavior -> run only that test and confirm FAIL -> git checkout -- <file> to restore from index"
+    forbidden_restores:
+      - "git checkout HEAD -- <file>"
+      - "git restore <file> --source=HEAD"
+    forbidden_reason: "both restore from HEAD and delete the entire uncommitted feature, not just the mutation"
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Never plan a PR/push/deploy workflow — every change ends in a local merge to main
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Respect the Bridge Boundary rule: all HTTP/WS traffic to autoreas-bridge goes through BridgeClient in src/infrastructure/api (convention-only, not lint-enforced)
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Scaffold new feature folders only via `npm run generate:feature <name>`, never by hand
+  apply:
+    guidelines:
+      - Follow existing code patterns; use src/features/animes as the structural reference
+      - ".tsx files: JSX + HeroUI Native + cn() only — zero business logic, no useEffect, no DB calls"
+      - "Custom hooks (use-*.ts) follow the 10-step anatomy order"
+      - Any file over 500 lines must be refactored (extract sub-components or Facade Hooks)
+      - "RED -> GREEN -> MUTATE -> REFACTOR per constraint 9/4; tests live under tests/features/<feature>/__tests__/, never colocated in src/"
+      - Touching a file makes its existing dharness/* lint findings (JSDoc, role-file-shape, etc.) yours to fix; never bulk-fix unrelated files
+    tdd: true
+    test_command: "npm test"
+  verify:
+    test_command: "npm run validate"
+    build_command: "npm run doctor:react"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
