@@ -27,51 +27,51 @@ Chain strategy: pending
 
 ### Phase 1: Bridge Client — Defensive Header Read & `Retry-After` Parsing (Decision 2; Decision 8, guard half)
 
-- [ ] 1.1 RED `tests/infrastructure/api/bridge-client-retry-after.test.ts`: a header-less `Response` double — today's `tests/support/fake-bridge.helpers.ts` (read-only) shape — does not throw and yields `retryAfterMs: null`. This is the regression guard for the verified breakage in Decision 8.
-- [ ] 1.2 GREEN `src/infrastructure/api/bridge-client/bridge-client.helpers.ts`: defensive read `typeof response.headers?.get === 'function' ? response.headers.get('Retry-After') : null`.
-- [ ] 1.3 RED (same suite): every remaining row of Decision 2's table for `parseRetryAfterMs` — delta-seconds (`"120"` → `120_000`), HTTP-date in the future, HTTP-date already past (→ `0`), absent/empty/negative/fractional/`"soon"`/unparseable (→ `null`), and any accepted value clamped to `SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS`.
-- [ ] 1.4 GREEN `src/infrastructure/api/bridge-client/bridge-url.helpers.ts`: pure `parseRetryAfterMs(rawValue, now)` — strict `/^\d+$/` delta-seconds branch tried and matched FIRST, `Date.parse` only as fallback.
-- [ ] 1.5 GREEN `src/infrastructure/api/bridge-client/bridge-client.constants.ts`: `SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS = 3_600_000`.
-- [ ] 1.6 GREEN `src/infrastructure/api/bridge-client/bridge-client.types.ts`: `retryAfterMs: number | null` on `BridgeHttpResult`.
-- [ ] 1.7 GREEN `bridge-client.helpers.ts`: wire `parseRetryAfterMs(headerValue, now)` into `request()`'s returned result.
-- [ ] 1.8 MUTATE (guard cycle #7 — stage first, then mutate per constraint 9): `git add` the file while green; delete the strict `/^\d+$/` branch so `Date.parse` runs first; run only the `"2000"` case and confirm it goes RED (asserts `2_000_000` ms, not a year-2000 date); `git checkout -- <file>` to restore. Never `git checkout HEAD --` while the feature is uncommitted.
+- [x] 1.1 RED `tests/infrastructure/api/bridge-client-retry-after.test.ts`: a header-less `Response` double — today's `tests/support/fake-bridge.helpers.ts` (read-only) shape — does not throw and yields `retryAfterMs: null`. This is the regression guard for the verified breakage in Decision 8.
+- [x] 1.2 GREEN `src/infrastructure/api/bridge-client/bridge-client.helpers.ts`: defensive read `typeof response.headers?.get === 'function' ? response.headers.get('Retry-After') : null`.
+- [x] 1.3 RED (same suite): every remaining row of Decision 2's table for `parseRetryAfterMs` — delta-seconds (`"120"` → `120_000`), HTTP-date in the future, HTTP-date already past (→ `0`), absent/empty/negative/fractional/`"soon"`/unparseable (→ `null`), and any accepted value clamped to `SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS`.
+- [x] 1.4 GREEN `src/infrastructure/api/bridge-client/bridge-url.helpers.ts`: pure `parseRetryAfterMs(rawValue, now)` — strict `/^\d+$/` delta-seconds branch tried and matched FIRST, `Date.parse` only as fallback.
+- [x] 1.5 GREEN `src/infrastructure/api/bridge-client/bridge-client.constants.ts`: `SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS = 3_600_000`.
+- [x] 1.6 GREEN `src/infrastructure/api/bridge-client/bridge-client.types.ts`: `retryAfterMs: number | null` on `BridgeHttpResult`.
+- [x] 1.7 GREEN `bridge-client.helpers.ts`: wire `parseRetryAfterMs(headerValue, now)` into `request()`'s returned result.
+- [x] 1.8 MUTATE (guard cycle #7 — stage first, then mutate per constraint 9): `git add` the file while green; delete the strict `/^\d+$/` branch so `Date.parse` runs first; run only the `"2000"` case and confirm it goes RED (asserts `2_000_000` ms, not a year-2000 date); `git checkout -- <file>` to restore. Never `git checkout HEAD --` while the feature is uncommitted.
 
 ### Phase 2: Fake Bridge Extension (Decision 8, second half)
 
-- [ ] 2.1 RED `tests/support/__tests__/fake-bridge.test.ts`: a queued response's `headers` are replayed via a case-insensitive `get`; a response queued without `headers` still resolves without throwing.
-- [ ] 2.2 GREEN `tests/support/fake-bridge.types.ts`: `QueuedBridgeResponse.headers?: Record<string, string>`.
-- [ ] 2.3 GREEN `tests/support/fake-bridge.helpers.ts`: synthesize a minimal case-insensitive `headers.get` from the optional map when present, absent otherwise.
-- [ ] 2.4 Verify: run the four existing behaviour suites under `tests/behaviour/sync/` (read-only) unchanged and green — none may regress now that `request()` reads `response.headers` inside their `installFakeBridge` flow.
+- [x] 2.1 RED `tests/support/__tests__/fake-bridge.test.ts`: a queued response's `headers` are replayed via a case-insensitive `get`; a response queued without `headers` still resolves without throwing.
+- [x] 2.2 GREEN `tests/support/fake-bridge.types.ts`: `QueuedBridgeResponse.headers?: Record<string, string>`.
+- [x] 2.3 GREEN `tests/support/fake-bridge.helpers.ts`: synthesize a minimal case-insensitive `headers.get` from the optional map when present, absent otherwise.
+- [x] 2.4 Verify: run the four existing behaviour suites under `tests/behaviour/sync/` (read-only) unchanged and green — none may regress now that `request()` reads `response.headers` inside their `installFakeBridge` flow.
 
 ### Phase 3: `postSyncDiagnostics` Adapter Method
 
-- [ ] 3.1 RED `tests/infrastructure/api/bridge-client.helpers.test.ts`: `postSyncDiagnostics` sends bearer + JSON to the `syncDiagnostics` path; honors a `timeoutMs` override via `BridgeRequestOptions`; surfaces a non-2xx `BridgeHttpResult` without throwing — mirroring the existing `postActiveSeasonRating` cases in the same file (read-only pattern).
-- [ ] 3.2 GREEN `src/infrastructure/api/bridge-client/bridge-client.constants.ts`: `syncDiagnostics` path constant.
-- [ ] 3.3 GREEN `src/infrastructure/api/bridge-client/bridge-client.types.ts`: `postSyncDiagnostics` on `BridgeClient`.
-- [ ] 3.4 GREEN `bridge-client.helpers.ts`: implement `postSyncDiagnostics` through the shared `request()`.
-- [ ] 3.5 GREEN `src/infrastructure/api/bridge-client/index.ts`, `src/infrastructure/api/index.ts`: re-export the new surface.
-- [ ] 3.6 Verify at commit time: the pre-commit `fallow` dead-code audit does not flag `postSyncDiagnostics` as unused via the barrel `ignoreExports` rule — the audit exits 1 on a finding, and this method has no production caller until Slice B (design Open Question).
+- [x] 3.1 RED `tests/infrastructure/api/bridge-client.helpers.test.ts`: `postSyncDiagnostics` sends bearer + JSON to the `syncDiagnostics` path; honors a `timeoutMs` override via `BridgeRequestOptions`; surfaces a non-2xx `BridgeHttpResult` without throwing — mirroring the existing `postActiveSeasonRating` cases in the same file (read-only pattern).
+- [x] 3.2 GREEN `src/infrastructure/api/bridge-client/bridge-client.constants.ts`: `syncDiagnostics` path constant.
+- [x] 3.3 GREEN `src/infrastructure/api/bridge-client/bridge-client.types.ts`: `postSyncDiagnostics` on `BridgeClient`.
+- [x] 3.4 GREEN `bridge-client.helpers.ts`: implement `postSyncDiagnostics` through the shared `request()`.
+- [x] 3.5 GREEN `src/infrastructure/api/bridge-client/index.ts`, `src/infrastructure/api/index.ts`: re-export the new surface.
+- [x] 3.6 Verify at commit time: the pre-commit `fallow` dead-code audit does not flag `postSyncDiagnostics` as unused via the barrel `ignoreExports` rule — the audit exits 1 on a finding, and this method has no production caller until Slice B (design Open Question).
 
 ### Phase 4: Diagnostics Outbox Store (Decisions 3, 6, 7)
 
-- [ ] 4.1 RED `tests/infrastructure/db/sync-diagnostics-outbox.helpers.test.ts` (pattern: `tests/infrastructure/db/sync-cycle-checkpoint.helpers.test.ts`, read-only): enqueue-then-read via `readFlushCandidates`; `remove` deletes by `cycle_id`; the store's write path never calls `withLocalWrite` (spy/assert zero invocations).
-- [ ] 4.2 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.constants.ts`: DDL for `sync_diagnostics_outbox` and `sync_diagnostics_outbox_state`, the insert/select/remove/gate SQL strings, `SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS = 100`, `SYNC_DIAGNOSTICS_OUTBOX_BUSY_TIMEOUT_MS = 250`.
-- [ ] 4.3 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.types.ts`: row, entry, store params, and the `SyncDiagnosticsOutboxStore` interface (`enqueue`, `readFlushCandidates`, `remove`, `deferUntil`, `getFailedWriteCount`).
-- [ ] 4.4 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.helpers.ts`: `createSyncDiagnosticsOutboxStore` on a private `useNewConnection: true, enableChangeListener: false` connection; all reads/writes synchronous (`runSync`/`getAllSync`).
-- [ ] 4.5 GREEN `src/infrastructure/db/sync-diagnostics-outbox/index.ts`: pure barrel.
-- [ ] 4.6 Verify at commit time: `execSync` accepts the multi-statement `DROP TRIGGER IF EXISTS ...; CREATE TRIGGER ... BEGIN ... END` block under the installed `expo-sqlite` version (design Open Question).
-- [ ] 4.7 RED (same suite): eviction at exactly the 100/101-row boundary — the 101st insert evicts the single oldest row and the count stays at 100; an insert below the cap evicts nothing and the count grows by exactly one.
-- [ ] 4.8 MUTATE (guard cycle #1): `git add` while green; delete the `WHEN (...) > ${MAX}` trigger condition (or the whole trigger); run only the 100/101 boundary test and confirm RED; `git checkout -- <file>` to restore.
-- [ ] 4.9 RED (same suite): `readFlushCandidates(limit, now)` returns `[]` when the persisted `not_before` is in the future relative to `now`, and returns rows once `now >= not_before`.
-- [ ] 4.10 MUTATE (guard cycle #2): delete the `WHERE COALESCE((SELECT not_before ...), 0) <= ?` gate clause; run only the gate test and confirm RED — this is the proof the backoff is a clock comparison, not a timer; restore.
-- [ ] 4.11 RED (same suite): re-inserting the same `cycle_id` — simulating `syncPendingOperations`'s rerun loop, `reconcile.helpers.ts:119-126` (read-only) — leaves `created_at` unchanged.
-- [ ] 4.12 MUTATE (guard cycle #6): change `ON CONFLICT(cycle_id) DO NOTHING` to `DO UPDATE`; run only the rerun test and confirm RED; restore.
+- [x] 4.1 RED `tests/infrastructure/db/sync-diagnostics-outbox.helpers.test.ts` (pattern: `tests/infrastructure/db/sync-cycle-checkpoint.helpers.test.ts`, read-only): enqueue-then-read via `readFlushCandidates`; `remove` deletes by `cycle_id`; the store's write path never calls `withLocalWrite` (spy/assert zero invocations).
+- [x] 4.2 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.constants.ts`: DDL for `sync_diagnostics_outbox` and `sync_diagnostics_outbox_state`, the insert/select/remove/gate SQL strings, `SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS = 100`, `SYNC_DIAGNOSTICS_OUTBOX_BUSY_TIMEOUT_MS = 250`.
+- [x] 4.3 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.types.ts`: row, entry, store params, and the `SyncDiagnosticsOutboxStore` interface (`enqueue`, `readFlushCandidates`, `remove`, `deferUntil`, `getFailedWriteCount`).
+- [x] 4.4 GREEN `src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.helpers.ts`: `createSyncDiagnosticsOutboxStore` on a private `useNewConnection: true, enableChangeListener: false` connection; all reads/writes synchronous (`runSync`/`getAllSync`).
+- [x] 4.5 GREEN `src/infrastructure/db/sync-diagnostics-outbox/index.ts`: pure barrel.
+- [x] 4.6 Verify at commit time: `execSync` accepts the multi-statement `DROP TRIGGER IF EXISTS ...; CREATE TRIGGER ... BEGIN ... END` block under the installed `expo-sqlite` version (design Open Question).
+- [x] 4.7 RED (same suite): eviction at exactly the 100/101-row boundary — the 101st insert evicts the single oldest row and the count stays at 100; an insert below the cap evicts nothing and the count grows by exactly one.
+- [x] 4.8 MUTATE (guard cycle #1): `git add` while green; delete the `WHEN (...) > ${MAX}` trigger condition (or the whole trigger); run only the 100/101 boundary test and confirm RED; `git checkout -- <file>` to restore.
+- [x] 4.9 RED (same suite): `readFlushCandidates(limit, now)` returns `[]` when the persisted `not_before` is in the future relative to `now`, and returns rows once `now >= not_before`.
+- [x] 4.10 MUTATE (guard cycle #2): delete the `WHERE COALESCE((SELECT not_before ...), 0) <= ?` gate clause; run only the gate test and confirm RED — this is the proof the backoff is a clock comparison, not a timer; restore.
+- [x] 4.11 RED (same suite): re-inserting the same `cycle_id` — simulating `syncPendingOperations`'s rerun loop, `reconcile.helpers.ts:119-126` (read-only) — leaves `created_at` unchanged.
+- [x] 4.12 MUTATE (guard cycle #6): change `ON CONFLICT(cycle_id) DO NOTHING` to `DO UPDATE`; run only the rerun test and confirm RED; restore.
 
 ### Phase 5: Slice A Verification
 
-- [ ] 5.1 Run `npm test` on the pre-Slice-A tree and record the exact current suite/test counts as the baseline. Do not trust the recorded `109/654` or `142/953` figures from other artifacts — they disagree.
-- [ ] 5.2 `npm run validate` (lint + typecheck + test) green across every file touched in Phases 1-4. JSDoc for every newly staged export is written as part of its edit (constraint 12), never as a bulk pass — this staged set inherits standing `dharness/require-jsdoc` / `require-variable-jsdoc` debt on any pre-existing file it touches (e.g. `bridge-client.helpers.ts`, `bridge-client.types.ts`).
-- [ ] 5.3 Commit Slice A with a conventional commit message (e.g. `feat(sync): add diagnostics outbox store and bridge Retry-After parsing`). Touches zero files under `src/features/**`; the reconcile path behaves exactly as before this commit.
+- [x] 5.1 Run `npm test` on the pre-Slice-A tree and record the exact current suite/test counts as the baseline. Do not trust the recorded `109/654` or `142/953` figures from other artifacts — they disagree.
+- [x] 5.2 `npm run validate` (lint + typecheck + test) green across every file touched in Phases 1-4. JSDoc for every newly staged export is written as part of its edit (constraint 12), never as a bulk pass — this staged set inherits standing `dharness/require-jsdoc` / `require-variable-jsdoc` debt on any pre-existing file it touches (e.g. `bridge-client.helpers.ts`, `bridge-client.types.ts`).
+- [x] 5.3 Commit Slice A with a conventional commit message (e.g. `feat(sync): add diagnostics outbox store and bridge Retry-After parsing`). Touches zero files under `src/features/**`; the reconcile path behaves exactly as before this commit.
 
 ## Slice B — Feature Wiring
 
