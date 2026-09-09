@@ -23,8 +23,13 @@ function buildRetentionCutoffTimestamp(now: number, ttlDays: number) {
   return now - ttlDays * OPERATION_LOG_RETENTION_DAY_IN_MS;
 }
 
-/** Counts operation-log rows for one status, the shared building block behind every count/prune query. */
-async function countRowsForStatus(rawDb: SQLiteDatabase, status: string) {
+/**
+ * Counts operation-log rows for one status, the shared building block behind every count/prune
+ * query. Exported so `operation-log-convergence.helpers.ts` composes it directly instead of
+ * duplicating this `COUNT` (design.md Decision 1) -- `countOperationLogBacklogRows` below is the
+ * in-repo precedent for that composition.
+ */
+export async function countRowsForStatus(rawDb: SQLiteDatabase, status: string) {
   const row = await rawDb.getFirstAsync<OperationLogCountRow>(
     'SELECT COUNT(*) AS count FROM operation_log WHERE status = ?',
     status,

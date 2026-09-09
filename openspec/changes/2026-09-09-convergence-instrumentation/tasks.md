@@ -61,10 +61,10 @@ phase closes that gap and must land before Phase 5.
 
 ## Phase 4: Operation-Log Convergence Projection
 
-- [ ] 4.1 `operation-log-retention.helpers.ts`: export `countRowsForStatus`; create `operation-log-convergence.types.ts` (`OperationLogConvergence`).
-- [ ] 4.2 RED `operation-log-convergence.helpers.test.ts` (in-memory SQLite): `dead_letter`/`conflict_exhausted`/`processing` counts, `oldestPendingAgeMs` null on empty, `hasMore` at/over the batch limit.
-- [ ] 4.3 GREEN create `operation-log-convergence.helpers.ts`: `readOperationLogConvergence(rawDb)`; fix `dharness/*` findings.
-- [ ] 4.4 MUTATE: flip the `hasMore` comparator; confirm test fails; restore via checkout.
+- [x] 4.1 `operation-log-retention.helpers.ts`: export `countRowsForStatus`; create `operation-log-convergence.types.ts` (`OperationLogConvergence`).
+- [x] 4.2 RED `operation-log-convergence.helpers.test.ts` (in-memory SQLite): `dead_letter`/`conflict_exhausted`/`processing` counts, `oldestPendingAgeMs` null on empty, `hasMore` at/over the batch limit.
+- [x] 4.3 GREEN create `operation-log-convergence.helpers.ts`: `readOperationLogConvergence(rawDb)`; fix `dharness/*` findings.
+- [x] 4.4 MUTATE: flip the `hasMore` comparator; confirm test fails; restore via checkout.
 
 ## Phase 5: Single-Write Integration & Settings Surface
 
