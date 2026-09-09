@@ -1,5 +1,6 @@
 import type { SYNC_CYCLE_STAGES } from './sync-runtime-status.constants';
 import type { SyncExecutionMode } from './sync-execution-mode.types';
+import type { SyncCycleErrorName, SyncCycleErrorStage } from './sync-telemetry.types';
 
 /** Defines the sync runtime registration status value shape. */
 export type SyncRuntimeRegistrationStatus = 'registered' | 'unregistered' | 'unsupported';
@@ -80,10 +81,34 @@ export interface SyncRuntimeStatusPatch {
   readonly isBackgroundTaskRegistered?: boolean;
   readonly lastCycleId?: string | null;
   readonly lastCycleStage?: SyncCycleStage | null;
-  readonly lastErrorName?: string | null;
+  // Narrowed to the closed vocabulary (D4): a caller cannot construct an out-of-vocabulary
+  // value here, so drift fails `tsc` at the write site instead of surfacing only as a bridge
+  // `400`. `SyncRuntimeStatusSnapshot` keeps `string | null` -- the column is free-form TEXT
+  // and legacy rows predate this union.
+  readonly lastErrorName?: SyncCycleErrorName | null;
   readonly lastNativeErrcodeByte?: number | null;
-  readonly lastErrorStage?: string | null;
+  readonly lastErrorStage?: SyncCycleErrorStage | null;
   readonly consecutiveUnclosedCycles?: number;
   readonly lastCycleStageAt?: number | null;
   readonly lastFailedCheckpointCount?: number;
+}
+
+/**
+ * Extra facts a failure patch may carry beyond the failure message, so `previous_cycle.*`
+ * can report where and why the cycle failed instead of only that it failed. Every field is
+ * optional and defaults to `null`: a caller outside the headless cycle's stage machine (a
+ * foreground sync, a mutation write) has none of this to report, and `null` says so honestly
+ * instead of fabricating a stage or error class the failure never actually passed through.
+ */
+export interface SyncAttemptFailureDetail {
+  /** Correlates this failure with the request the bridge captured for it, when known. */
+  readonly cycleId?: string | null;
+  /** How far the cycle got before it failed. */
+  readonly stage?: SyncCycleStage | null;
+  /** Error class the cycle failed with, restricted to the closed vocabulary. */
+  readonly errorName?: SyncCycleErrorName | null;
+  /** Transaction phase the error surfaced in, restricted to the closed vocabulary. */
+  readonly errorStage?: SyncCycleErrorStage | null;
+  /** Code point of the native control byte, when one was parseable. */
+  readonly nativeErrcodeByte?: number | null;
 }

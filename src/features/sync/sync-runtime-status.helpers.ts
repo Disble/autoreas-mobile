@@ -7,6 +7,7 @@ import {
   SYNC_RUNTIME_STATUS_SINGLETON_ID,
 } from './sync-runtime-status.constants';
 import type {
+  SyncAttemptFailureDetail,
   SyncRuntimeStatusPatch,
   SyncRuntimeStatusSnapshot,
   SyncRuntimeTriggerSource,
@@ -22,27 +23,50 @@ export function createEmptySyncRuntimeStatusSnapshot(): SyncRuntimeStatusSnapsho
 
 /**
  * Builds the snapshot patch for the start of a sync attempt.
- * Starting a cycle always clears the previous failure and records the current trigger source.
+ *
+ * Starting a cycle always clears the previous failure and records the current trigger source,
+ * and now also records this cycle's identity, marks its stage `attempt_started`, and CLEARS the
+ * error triple to explicit `null` -- without that clear a three-cycle-old error would keep being
+ * reported as the previous cycle's. `consecutiveUnclosedCycles` is derived purely from
+ * `previous`: it increments when the prior cycle never released `isCycleActive` (it started but
+ * never closed) and resets to zero otherwise. `cycleId` defaults to `null` because a caller
+ * outside the headless cycle's stage machine has no cycle identity to correlate.
  */
 export function buildSyncAttemptStartedPatch(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
+  previous: SyncRuntimeStatusSnapshot,
+  cycleId: string | null = null,
 ): SyncRuntimeStatusPatch {
   return {
     lastAttemptAt: attemptedAt,
     lastFailureMessage: null,
     lastTriggerSource: triggerSource,
+    lastCycleId: cycleId,
+    lastCycleStage: 'attempt_started',
+    lastCycleStageAt: attemptedAt,
+    lastErrorName: null,
+    lastErrorStage: null,
+    lastNativeErrcodeByte: null,
+    consecutiveUnclosedCycles: previous.isCycleActive
+      ? previous.consecutiveUnclosedCycles + 1
+      : 0,
   };
 }
 
 /**
  * Builds the snapshot patch for a successful sync cycle.
- * Success records both the latest attempt timestamp and how many operations were confirmed.
+ *
+ * Success records both the latest attempt timestamp and how many operations were confirmed, and
+ * now also marks the stage `closed`, CLEARS the error triple to explicit `null` (Requirement:
+ * "A succeeded cycle clears the previous error detail"), and resets `consecutiveUnclosedCycles`
+ * -- a success closes the cycle it belongs to.
  */
 export function buildSyncAttemptSucceededPatch(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
   syncedCount: number,
+  cycleId: string | null = null,
 ): SyncRuntimeStatusPatch {
   return {
     lastAttemptAt: attemptedAt,
@@ -50,22 +74,43 @@ export function buildSyncAttemptSucceededPatch(
     lastFailureMessage: null,
     lastTriggerSource: triggerSource,
     lastSyncedCount: syncedCount,
+    lastCycleId: cycleId,
+    lastCycleStage: 'closed',
+    lastCycleStageAt: attemptedAt,
+    lastErrorName: null,
+    lastErrorStage: null,
+    lastNativeErrcodeByte: null,
+    consecutiveUnclosedCycles: 0,
   };
 }
 
 /**
  * Builds the snapshot patch for a failed sync cycle.
- * Failures keep the last success intact while exposing the current error to Settings.
+ *
+ * Failures keep the last success intact while exposing the current error to Settings, and now
+ * also record the stage and classified error the cycle failed with (Requirement: "A failed
+ * cycle records the stage and error it failed with"). Every `detail` field defaults to `null`:
+ * a caller that cannot classify where or why the cycle failed reports that honestly rather than
+ * fabricating a stage or error class. A failure also closes the cycle, so
+ * `consecutiveUnclosedCycles` resets to zero.
  */
 export function buildSyncAttemptFailedPatch(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
   message: string,
+  detail: SyncAttemptFailureDetail = {},
 ): SyncRuntimeStatusPatch {
   return {
     lastAttemptAt: attemptedAt,
     lastFailureMessage: message,
     lastTriggerSource: triggerSource,
+    lastCycleId: detail.cycleId ?? null,
+    lastCycleStage: detail.stage ?? null,
+    lastCycleStageAt: attemptedAt,
+    lastErrorName: detail.errorName ?? null,
+    lastErrorStage: detail.errorStage ?? null,
+    lastNativeErrcodeByte: detail.nativeErrcodeByte ?? null,
+    consecutiveUnclosedCycles: 0,
   };
 }
 
@@ -294,16 +339,25 @@ export async function updateSyncRuntimeStatusSnapshot(
 
 /**
  * Persists the start of a sync attempt into the runtime snapshot singleton.
- * This records the latest trigger source and clears any stale visible failure.
+ *
+ * This records the latest trigger source and clears any stale visible failure. The pre-cycle
+ * snapshot is read here (a second read beyond `persistSyncRuntimeStatusPatch`'s own) because
+ * `buildSyncAttemptStartedPatch` needs it BEFORE this cycle's write overwrites the very fields
+ * `consecutiveUnclosedCycles` depends on -- the two reads stay outside `withLocalWrite`, so this
+ * costs no extra transaction on the shared write door. `cycleId` is optional: a caller outside
+ * the headless cycle's stage machine has none to correlate.
  */
 export async function recordSyncAttemptStarted(
   rawDb: SQLiteDatabase,
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
+  cycleId: string | null = null,
 ) {
+  const previous = await getSyncRuntimeStatusSnapshot(rawDb);
+
   await persistSyncRuntimeStatusPatch(
     rawDb,
-    buildSyncAttemptStartedPatch(triggerSource, attemptedAt),
+    buildSyncAttemptStartedPatch(triggerSource, attemptedAt, previous, cycleId),
   );
 }
 
@@ -316,10 +370,11 @@ export async function recordSyncAttemptSucceeded(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
   syncedCount: number,
+  cycleId: string | null = null,
 ) {
   await persistSyncRuntimeStatusPatch(
     rawDb,
-    buildSyncAttemptSucceededPatch(triggerSource, attemptedAt, syncedCount),
+    buildSyncAttemptSucceededPatch(triggerSource, attemptedAt, syncedCount, cycleId),
   );
 }
 
@@ -332,10 +387,11 @@ export async function recordSyncAttemptFailed(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
   message: string,
+  detail: SyncAttemptFailureDetail = {},
 ) {
   await persistSyncRuntimeStatusPatch(
     rawDb,
-    buildSyncAttemptFailedPatch(triggerSource, attemptedAt, message),
+    buildSyncAttemptFailedPatch(triggerSource, attemptedAt, message, detail),
   );
 }
 
