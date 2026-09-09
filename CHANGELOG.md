@@ -16,6 +16,28 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-09
+
+**No new Bridge version is required.** This release works against every Bridge that 1.1.0 worked against. It fills in fields the Bridge already had columns for and adds nothing new to the wire, so an older Bridge sees exactly the shape it saw before.
+
+### Added
+
+- Settings now tells you something the app could never say before: how many of your changes were permanently rejected by the Bridge or gave up after losing repeated conflicts — each of those is an edit of yours that is gone — along with how many are stuck part-way through syncing and how long the oldest unsent change has been waiting.
+- The pending-changes count in Settings now says whether it is your whole queue or only the first two hundred. It was always capped at two hundred and never said so, so a backlog of thousands looked like a backlog of two hundred.
+
+### Fixed
+
+- The diagnostic records the app sends when a background sync misbehaves used to arrive almost empty. Which sync attempt a record described, how far that attempt got, how long it ran, and what kind of error ended it were blank in every record ever sent — not sometimes, always. They now carry real values, which is the difference between a report that names the failure and one that only says a failure happened.
+- The app could send the same diagnostic record twice and count both as delivered, because a failure to clear the record from the device afterwards was silently ignored. A record is now only counted as delivered once it is confirmed cleared, and a clearing failure is counted and reported instead of disappearing.
+- When the Bridge rejects a record as malformed the app destroys it, and that was previously indistinguishable from a record still waiting for a reachable Bridge — both simply left the count unchanged. Destroyed records are now counted separately from waiting ones.
+- Where the app cannot honestly say which stage a sync attempt reached, it now reports nothing instead of the closest-looking guess. A guess there would have described a local database problem as a network problem, which are the two things this reporting exists to tell apart.
+
+### Internal
+
+- Eight additive, nullable columns (migration 0013) carry the new counters. They are folded into the single bookkeeping write each sync cycle already performed rather than opening a second transaction, and reverting to an older APK leaves them unread rather than stranding anything.
+- The counters are read with a query that never touches the shared write door, because putting instrumentation on the same lock it is meant to report on is how a measuring device becomes the fault it measures.
+- The stage and error vocabularies the Bridge validates are now enforced by the type system at the point of writing, so a value it would reject cannot be produced. Such a value returns a rejection, and a rejected record is destroyed on the device.
+
 ## [1.1.0] — 2026-09-08
 
 **No new Bridge version is required.** This release works against every Bridge that 1.0.1 worked against. The diagnostic records it now keeps are offered to a Bridge endpoint that older versions do not have; those Bridges decline them harmlessly and the app holds the records until a Bridge that accepts them is reachable.
