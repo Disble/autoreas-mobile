@@ -17,6 +17,7 @@ import type {
   SyncDiagnosticsOutboxRow,
   SyncDiagnosticsOutboxStore,
   SyncDiagnosticsOutboxStoreParams,
+  SyncDiagnosticsOutboxWriteOutcome,
 } from './sync-diagnostics-outbox.types';
 
 /** Maps a raw SQLite row onto the record shape the flush algorithm consumes. */
@@ -97,11 +98,15 @@ export function createSyncDiagnosticsOutboxStore(
     }
   }
 
-  function remove(cycleId: string): void {
+  function remove(cycleId: string): SyncDiagnosticsOutboxWriteOutcome {
     try {
       connect().runSync(SYNC_DIAGNOSTICS_OUTBOX_REMOVE_SQL, cycleId);
+
+      return 'removed';
     } catch {
       failedWriteCount += 1;
+
+      return 'failed';
     }
   }
 

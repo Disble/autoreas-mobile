@@ -51,6 +51,7 @@ import {
   captureSyncDiagnosticsEnvelope,
   flushSyncDiagnosticsOutbox,
 } from './sync-diagnostics-flush.helpers';
+import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
 import {
   buildSyncCycleTelemetry,
   resolveClientTelemetry,
@@ -119,6 +120,9 @@ export async function syncPendingOperations(
     let totalConfirmed = 0;
     let totalBacklogRead = 0;
     let hasMorePending: boolean;
+    // Reruns replace, rather than accumulate, the diagnostics-flush outcome: each batch flushes
+    // whatever the outbox holds AT THAT MOMENT, and the caller cares about the most recent state.
+    let diagnosticsFlush: SyncDiagnosticsFlushResult;
 
     do {
       syncState.rerunRequested = false;
@@ -127,12 +131,14 @@ export async function syncPendingOperations(
       totalConfirmed += batch.syncedCount;
       totalBacklogRead += batch.backlogReadCount;
       hasMorePending = batch.hasMorePending;
+      diagnosticsFlush = batch.diagnosticsFlush;
     } while (syncState.rerunRequested);
 
     return {
       syncedCount: totalConfirmed,
       backlogReadCount: totalBacklogRead,
       hasMorePending,
+      diagnosticsFlush,
     };
   };
 
@@ -379,7 +385,7 @@ async function performSyncPendingOperations(
   // from the `catch` below: that `catch` calls `revertPendingOperationsOnFailure`, which would
   // otherwise dead-letter or requeue the user's own pending mutations over a diagnostics POST.
   captureSyncDiagnosticsEnvelope(clientTelemetry);
-  await flushSyncDiagnosticsOutbox({ connection });
+  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection });
 
   try {
     const result = await bridgeClient.reconcile(connection, requestBody);
@@ -468,6 +474,7 @@ async function performSyncPendingOperations(
       backlogReadCount: pendingOps.length,
       hasMorePending:
         unconfirmedIds.length > 0 || totalBacklogRowCount > pendingOps.length,
+      diagnosticsFlush,
     };
   } catch (error) {
     await revertPendingOperationsOnFailure(rawDb, pendingOps, error);

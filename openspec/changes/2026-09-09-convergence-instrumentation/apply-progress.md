@@ -136,6 +136,93 @@ by the new argument.
 
 Not committed — orchestrator owns commit + final verification.
 
+## Phase 3: Diagnostics Delivery Outcome — DONE
+
+- [x] 3.1 RED `tests/infrastructure/db/sync-diagnostics-outbox.helpers.test.ts`
+- [x] 3.2 GREEN `sync-diagnostics-outbox.{types,helpers}.ts`; `buildFakeStore` updated
+- [x] 3.3 RED `tests/features/sync/__tests__/sync-diagnostics-flush.helpers.test.ts`
+- [x] 3.4 GREEN `sync-diagnostics-flush.{types,helpers}.ts` + `reconcile.{types,helpers}.ts`
+- [x] 3.5 MUTATE — deleted the `isEnvelopeRejection` check; confirmed 3 tests fail; restored from index
+
+### What changed
+
+- `sync-diagnostics-outbox.types.ts`: new `SyncDiagnosticsOutboxWriteOutcome = 'removed' | 'failed'`;
+  `SyncDiagnosticsOutboxStore.remove` now returns it instead of `void`.
+- `sync-diagnostics-outbox.helpers.ts`: `remove()` returns `'removed'` after a successful
+  `runSync`, `'failed'` from the existing `catch` (which still increments `failedWriteCount` —
+  the swallow contract is untouched, per design.md D2). RED for the `'failed'` case forced a new
+  technique: `getNativeHandle(opener.adapter).close()` on the real `node:sqlite` handle after one
+  successful `enqueue`, so the store's cached connection is still truthy (`connect()` skips
+  reopening) and the next `runSync` throws for real — no existing test in this file exercised a
+  post-connect throw.
+- `sync-diagnostics-flush.types.ts`: `SyncDiagnosticsFlushResult` gained `discarded` and
+  `failedRemovals` (design.md D3).
+- `sync-diagnostics-flush.helpers.ts`: the 2xx branch now counts `delivered` only when
+  `store.remove(...) === 'removed'`, else `failedRemovals`; the `isEnvelopeRejection` branch
+  now also increments `discarded`.
+- `reconcile.types.ts`: `SyncPendingOperationsResult` gained `diagnosticsFlush: SyncDiagnosticsFlushResult`.
+- `reconcile.helpers.ts`: `performSyncPendingOperations` captures `flushSyncDiagnosticsOutbox`'s
+  return value into `diagnosticsFlush` (previously discarded) and returns it. The OUTER
+  `syncPendingOperations` wrapper's rerun loop (`run()`) also builds a full
+  `SyncPendingOperationsResult` literal — a second construction site D2's inventory did not name —
+  so it now tracks `diagnosticsFlush` across iterations the same way it already tracked
+  `hasMorePending`: last batch wins, not accumulated (a rerun re-reads whatever the outbox holds
+  at that moment).
+
+### Drift found beyond D2's inventory — reported as asked
+
+D2's caller/assertion inventory named `reconcile.helpers.test.ts:18` and
+`reconcile-diagnostics-wiring.test.ts:19` as the two stubs needing the new counters, both
+confirmed present and updated. It did **not** name two more real breakages, both in
+`tests/features/sync/use-reconcile.test.ts`: that file does not mock
+`sync-diagnostics-flush.helpers` at all, so `syncPendingOperations` runs the REAL
+`flushSyncDiagnosticsOutbox` (against a store that fails to connect and returns `[]`, so it's
+inert) and its two `expect(result).toEqual({ syncedCount, backlogReadCount, hasMorePending })`
+assertions (lines 138, 329) are exact-shape checks that fail the moment `diagnosticsFlush`
+becomes a real field. Both updated to include
+`diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 }`. Also verified
+the outer rerun-loop `run()` construction site above — the second literal that needed the field
+threaded through it to keep `tsc` clean — since D2 didn't mention it either. Checked, and ruled
+out as unaffected: `sync-facade.helpers.ts`, `use-reconcile.ts` (production consumers only
+destructure the fields they use), and every other test that mocks `syncPendingOperations`/
+`reconcile.helpers` wholesale (`use-sync-facade.test.ts`, `sync-facade-failure-precedence.test.ts`,
+`use-sync-facade-connection-truth.test.ts`, `anime-mutation-connection.test.ts`) — untyped
+`jest.fn()` mocks with local, decoupled result types, so an added required field on the real
+interface cannot break them.
+
+### Mutation (3.5)
+
+Staged the green `sync-diagnostics-flush.helpers.ts`, deleted the `isEnvelopeRejection` guard
+(the 400/413/422 branch), ran the full flush suite: exactly the 3 tests naming that malformed-
+envelope family failed (`removes the row and continues on a 400/413/422`, each expecting 2 POSTs
+and a `discarded` count that the mutated code — now falling into the generic transient-failure
+branch and `break`ing the batch after 1 POST — could no longer produce). Restored via
+`git checkout -- src/features/sync/sync-diagnostics-flush.helpers.ts` (index restore).
+
+### Verification
+
+- `npx jest tests/infrastructure/db/sync-diagnostics-outbox.helpers.test.ts
+  tests/features/sync/__tests__/sync-diagnostics-flush.helpers.test.ts` — 28/28 passed
+- `npx jest tests/features/sync/reconcile.helpers.test.ts
+  tests/features/sync/reconcile-diagnostics-wiring.test.ts tests/features/sync/use-reconcile.test.ts
+  tests/features/sync/use-sync-facade.test.ts tests/features/animes/anime-mutation-connection.test.ts
+  tests/features/sync/sync-facade-failure-precedence.test.ts
+  tests/features/sync/use-sync-facade-connection-truth.test.ts
+  tests/features/sync/notifee-foreground-service-adapter.test.ts` — 67/67 passed
+- `npm test` (full suite) — **150 suites / 1023 tests passed** (baseline 150/1021; net +2: one
+  `'failed'`-outcome test in the outbox suite, one `failedRemovals` test in the flush suite)
+- `npx tsc --noEmit` — exit 0, no errors
+- `npx eslint --max-warnings=0 --no-warn-ignored <all 11 touched files>` — clean, zero
+  `dharness/*` findings (one line-length regression self-caught: an edit temporarily pushed
+  `reconcile.helpers.test.ts` to 501 lines via a 3-line mock reformat; collapsed back to one line,
+  498 total, before the final eslint pass)
+
+Every file this phase touched (6 src, 5 test) stayed well under the 500-line rule (largest:
+`reconcile.helpers.ts` at 483 lines, `sync-diagnostics-outbox.helpers.ts` at 128).
+
+Not committed — orchestrator owns commit + final verification. Ready for Phase 4 (Operation-Log
+Convergence Projection).
+
 ## Phase 2: Elapsed Time Correctness — DONE
 
 - [x] 2.1 RED `tests/features/sync/__tests__/sync-telemetry.helpers.test.ts`

@@ -53,11 +53,11 @@ phase closes that gap and must land before Phase 5.
 
 ## Phase 3: Diagnostics Delivery Outcome
 
-- [ ] 3.1 RED `sync-diagnostics-outbox.helpers.test.ts`: `remove()` returns `'removed'` on success, `'failed'` on a thrown `runSync`, never throws.
-- [ ] 3.2 GREEN outbox types/helpers: add `SyncDiagnosticsOutboxWriteOutcome`; `remove()` returns it; update `buildFakeStore` in `sync-diagnostics-flush.helpers.test.ts` to `mockReturnValue('removed')`.
-- [ ] 3.3 RED `sync-diagnostics-flush.helpers.test.ts`: `delivered` only on `'removed'`; `failedRemovals` on 2xx+`'failed'`; `discarded` on 400/413/422.
-- [ ] 3.4 GREEN `sync-diagnostics-flush.{types,helpers}.ts`; widen `SyncPendingOperationsResult` (`reconcile.types.ts`), return the flush result upward (`reconcile.helpers.ts`); update reconcile test stubs; fix `dharness/*` findings.
-- [ ] 3.5 MUTATE `sync-diagnostics-flush.helpers.ts`: delete the `isEnvelopeRejection` check; confirm test fails; restore via checkout.
+- [x] 3.1 RED `sync-diagnostics-outbox.helpers.test.ts`: `remove()` returns `'removed'` on success, `'failed'` on a thrown `runSync`, never throws.
+- [x] 3.2 GREEN outbox types/helpers: add `SyncDiagnosticsOutboxWriteOutcome`; `remove()` returns it; update `buildFakeStore` in `sync-diagnostics-flush.helpers.test.ts` to `mockReturnValue('removed')`.
+- [x] 3.3 RED `sync-diagnostics-flush.helpers.test.ts`: `delivered` only on `'removed'`; `failedRemovals` on 2xx+`'failed'`; `discarded` on 400/413/422.
+- [x] 3.4 GREEN `sync-diagnostics-flush.{types,helpers}.ts`; widen `SyncPendingOperationsResult` (`reconcile.types.ts`), return the flush result upward (`reconcile.helpers.ts`); update reconcile test stubs; fix `dharness/*` findings.
+- [x] 3.5 MUTATE `sync-diagnostics-flush.helpers.ts`: delete the `isEnvelopeRejection` check; confirm test fails; restore via checkout.
 
 ## Phase 4: Operation-Log Convergence Projection
 

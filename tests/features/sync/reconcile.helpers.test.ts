@@ -15,7 +15,7 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => ({
   captureSyncDiagnosticsEnvelope: jest.fn(),
-  flushSyncDiagnosticsOutbox: jest.fn().mockResolvedValue({ attempted: 0, delivered: 0 }),
+  flushSyncDiagnosticsOutbox: jest.fn().mockResolvedValue({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 }),
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({

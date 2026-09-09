@@ -1,4 +1,5 @@
 import type { SyncDiagnosticEvent } from './sync-diagnostic-events.types';
+import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
 import type { SyncRuntimeStatusSnapshot, SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 import type { SyncCycleAppState } from './sync-telemetry.types';
 
@@ -43,4 +44,6 @@ export interface SyncPendingOperationsResult {
    */
   readonly backlogReadCount: number;
   readonly hasMorePending: boolean;
+  /** The diagnostics-outbox flush outcome for this cycle (design.md Decision 2/3). */
+  readonly diagnosticsFlush: SyncDiagnosticsFlushResult;
 }

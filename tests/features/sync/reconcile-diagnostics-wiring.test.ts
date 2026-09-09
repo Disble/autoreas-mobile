@@ -16,7 +16,9 @@ jest.mock('../../../src/infrastructure/api', () => ({
 
 jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => ({
   captureSyncDiagnosticsEnvelope: jest.fn(),
-  flushSyncDiagnosticsOutbox: jest.fn().mockResolvedValue({ attempted: 0, delivered: 0 }),
+  flushSyncDiagnosticsOutbox: jest
+    .fn()
+    .mockResolvedValue({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 }),
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
@@ -115,7 +117,7 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockFlush.mockResolvedValue({ attempted: 0, delivered: 0 });
+    mockFlush.mockResolvedValue({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 });
     (dbClient.withLocalWrite as jest.Mock).mockResolvedValue(undefined);
     mockReconcile.mockResolvedValue({
       ok: true,

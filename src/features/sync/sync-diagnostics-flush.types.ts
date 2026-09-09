@@ -25,6 +25,16 @@ export interface FlushSyncDiagnosticsOutboxParams {
 export interface SyncDiagnosticsFlushResult {
   /** Number of entries the bridge was actually asked about this pass. */
   readonly attempted: number;
-  /** Number of entries confirmed delivered (2xx) this pass. */
+  /** Number of entries confirmed delivered -- a 2xx response AND a confirmed outbox removal. */
   readonly delivered: number;
+  /**
+   * Number of entries permanently rejected by the bridge as malformed (400/413/422) and
+   * discarded client-side -- a report destroyed, distinct from one still pending redelivery.
+   */
+  readonly discarded: number;
+  /**
+   * Number of entries that received a 2xx but whose outbox removal failed. The row remains
+   * queued and re-sends next cycle instead of being counted as delivered.
+   */
+  readonly failedRemovals: number;
 }

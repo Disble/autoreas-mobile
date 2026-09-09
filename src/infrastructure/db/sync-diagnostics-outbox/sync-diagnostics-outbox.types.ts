@@ -37,6 +37,13 @@ export interface SyncDiagnosticsOutboxRecord {
 }
 
 /**
+ * Outcome of one outbox write attempt. `'removed'` means the DELETE executed without throwing --
+ * deliberately not gated on `changes > 0`, since a row already absent is still absent, which is
+ * the invariant callers need. `'failed'` means it threw; the row remains queued.
+ */
+export type SyncDiagnosticsOutboxWriteOutcome = 'removed' | 'failed';
+
+/**
  * Storage only. It never learns what an HTTP status means -- the same refusal the checkpoint
  * store makes about `SYNC_CYCLE_STAGES`; that vocabulary belongs to the feature layer's flush
  * disposition algorithm.
@@ -49,8 +56,11 @@ export interface SyncDiagnosticsOutboxStore {
     limit: number,
     now: number,
   ) => readonly SyncDiagnosticsOutboxRecord[];
-  /** Removes one entry by `cycleId` -- delivered, or permanently rejected by the bridge. */
-  readonly remove: (cycleId: string) => void;
+  /**
+   * Removes one entry by `cycleId` -- delivered, or permanently rejected by the bridge. Never
+   * throws; returns the outcome instead so a caller can tell a confirmed delete from a failed one.
+   */
+  readonly remove: (cycleId: string) => SyncDiagnosticsOutboxWriteOutcome;
   /** Persists the not-before timestamp gating the next `readFlushCandidates` call. */
   readonly deferUntil: (notBefore: number) => void;
   /** Counts writes that could not be persisted, so a caller never trusts a silent failure. */

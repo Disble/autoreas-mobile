@@ -135,7 +135,12 @@ describe('syncPendingOperations', () => {
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(result).toEqual({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+    expect(result).toEqual({
+      syncedCount: 0,
+      backlogReadCount: 0,
+      hasMorePending: false,
+      diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 },
+    });
     // Backlog includes 'processing' so ops orphaned by a crashed/killed cycle are recovered
     // (re-sent + confirmed), instead of perpetually blocking their anime via defer_outbox.
     // The read now opts into the per-anime dedup (Part 2, Requirement 10), so the query carries
@@ -326,7 +331,12 @@ describe('syncPendingOperations', () => {
 
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
-    expect(result).toEqual({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
+    expect(result).toEqual({
+      syncedCount: 1,
+      backlogReadCount: 1,
+      hasMorePending: false,
+      diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 },
+    });
     expect(reconcileMock).toHaveBeenCalledWith(
       { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({ device_id: 'device-abc' }),

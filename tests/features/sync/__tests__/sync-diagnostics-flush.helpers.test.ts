@@ -31,7 +31,7 @@ function buildFakeStore(
   return {
     enqueue: jest.fn(),
     readFlushCandidates: jest.fn().mockReturnValue([]),
-    remove: jest.fn(),
+    remove: jest.fn().mockReturnValue('removed'),
     deferUntil: jest.fn(),
     getFailedWriteCount: jest.fn().mockReturnValue(0),
     ...overrides,
@@ -100,7 +100,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
     const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
 
     expect(client.postSyncDiagnostics).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 0, delivered: 0 });
+    expect(result).toEqual({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 });
   });
 
   it('removes the row and continues to the next candidate on a 2xx', async () => {
@@ -120,13 +120,32 @@ describe('flushSyncDiagnosticsOutbox', () => {
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
     expect(store.remove).toHaveBeenCalledWith('cycle-2');
-    expect(result).toEqual({ attempted: 2, delivered: 2 });
+    expect(result).toEqual({ attempted: 2, delivered: 2, discarded: 0, failedRemovals: 0 });
     // Timeout is passed through as the diagnostics-specific budget, never the reconcile one.
     expect(postSyncDiagnostics).toHaveBeenCalledWith(
       CONNECTION,
       expect.anything(),
       expect.objectContaining({ timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS }),
     );
+  });
+
+  it('does not count delivered when the 2xx removal is not confirmed -- counts failedRemovals instead', async () => {
+    // The 600,055 ms replay this change exists to close: a confirmed 2xx whose DELETE throws
+    // must not be counted as delivered, since the row is still there for the next cycle to re-send.
+    const first = buildRecord({ cycleId: 'cycle-1' });
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue([first]),
+      remove: jest.fn().mockReturnValue('failed'),
+    });
+    const postSyncDiagnostics = jest
+      .fn()
+      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
+    const client = { postSyncDiagnostics };
+
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+
+    expect(store.remove).toHaveBeenCalledWith('cycle-1');
+    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 1 });
   });
 
   it('leaves the row queued and stops the batch when the request throws', async () => {
@@ -143,7 +162,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
     // Only the first row is even attempted -- the next row would fail identically.
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 1, delivered: 0 });
+    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
   });
 
   it('leaves the row queued AND stops the batch on a 404 -- the endpoint is not built yet', async () => {
@@ -165,7 +184,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 1, delivered: 0 });
+    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
   });
 
   it('removes the row and continues on a 400 -- the bridge names the offending field, it will reject the same bytes forever', async () => {
@@ -185,7 +204,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
     expect(store.remove).toHaveBeenCalledWith('cycle-2');
-    expect(result).toEqual({ attempted: 2, delivered: 1 });
+    expect(result).toEqual({ attempted: 2, delivered: 1, discarded: 1, failedRemovals: 0 });
   });
 
   it.each([413, 422])(
@@ -207,6 +226,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
       expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
       expect(store.remove).toHaveBeenCalledWith('cycle-1');
       expect(result.delivered).toBe(1);
+      expect(result.discarded).toBe(1);
     },
   );
 
@@ -227,7 +247,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
 
       expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
       expect(store.remove).not.toHaveBeenCalled();
-      expect(result).toEqual({ attempted: 1, delivered: 0 });
+      expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
     },
   );
 

@@ -1,7 +1,7 @@
 import * as clientHelpers from '../../../src/infrastructure/db/client/client.helpers';
 import { createSyncDiagnosticsOutboxStore } from '../../../src/infrastructure/db/sync-diagnostics-outbox';
 import { SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS } from '../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox.constants';
-import { createTestSqliteAdapter } from '../../support/sqlite-adapter.helpers';
+import { createTestSqliteAdapter, getNativeHandle } from '../../support/sqlite-adapter.helpers';
 
 /** A timestamp far enough in the future that every persisted not-before gate has already opened. */
 const FAR_FUTURE = 999_999_999_999;
@@ -50,14 +50,29 @@ describe('sync diagnostics outbox store', () => {
     ]);
   });
 
-  it('remove deletes the row by cycle_id, so a later read no longer returns it', () => {
+  it('remove deletes the row by cycle_id, so a later read no longer returns it, and returns "removed"', () => {
     const opener = buildOpener();
     const store = createSyncDiagnosticsOutboxStore({ openDatabase: opener.open, now: () => 1_000 });
 
     store.enqueue({ cycleId: 'cycle-1', payload: '{}' });
-    store.remove('cycle-1');
 
+    expect(store.remove('cycle-1')).toBe('removed');
     expect(store.readFlushCandidates(10, 1_000)).toEqual([]);
+  });
+
+  it('remove returns "failed" and never throws when the underlying delete throws', () => {
+    const opener = buildOpener();
+    const store = createSyncDiagnosticsOutboxStore({ openDatabase: opener.open, now: () => 1_000 });
+
+    store.enqueue({ cycleId: 'cycle-1', payload: '{}' });
+    getNativeHandle(opener.adapter).close();
+
+    let outcome: string | undefined;
+    expect(() => {
+      outcome = store.remove('cycle-1');
+    }).not.toThrow();
+    expect(outcome).toBe('failed');
+    expect(store.getFailedWriteCount()).toBe(1);
   });
 
   it('never routes its writes through the shared local-write door', () => {
