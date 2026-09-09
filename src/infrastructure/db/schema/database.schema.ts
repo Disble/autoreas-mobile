@@ -180,6 +180,23 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   // `last_cycle_stage` indistinguishable from an accurate one. Zero means the stage is
   // trustworthy; anything else marks it as degraded rather than quietly wrong.
   lastFailedCheckpointCount: integer('last_failed_checkpoint_count').notNull().default(0),
+  // Convergence-instrumentation columns (design.md `2026-09-09-convergence-instrumentation`
+  // Decision 6). All eight are additive and NULLABLE with no default: a row that predates this
+  // change, or a cycle that never reached the folded bookkeeping write, must read back NULL --
+  // never a plausible zero, which would misreport "no lost edits" (Decision 7's false-answer
+  // defect class). They fold into the SAME write `recordBacklogReadCount` already performs, so
+  // this table gains zero new write-door transactions.
+  lastDiagnosticsDiscardedCount: integer('last_diagnostics_discarded_count'),
+  lastDiagnosticsFailedRemovalCount: integer('last_diagnostics_failed_removal_count'),
+  lastOutboxFailedWriteCount: integer('last_outbox_failed_write_count'),
+  lastDeadLetterCount: integer('last_dead_letter_count'),
+  lastConflictExhaustedCount: integer('last_conflict_exhausted_count'),
+  lastStuckProcessingCount: integer('last_stuck_processing_count'),
+  lastOldestPendingAgeMs: integer('last_oldest_pending_age_ms'),
+  // TRUE `operation_log` backlog depth (`OperationLogConvergence.pendingRowCount`), never the
+  // bounded per-cycle batch size. `hasMore` is DERIVED from this at read time (Decision 1),
+  // never stored, so it can never go stale against the count beside it.
+  lastPendingRowCount: integer('last_pending_row_count'),
 });
 
 /** Defines the anime row value shape. */

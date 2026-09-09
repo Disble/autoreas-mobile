@@ -92,6 +92,13 @@
       "when": 1788567478580,
       "tag": "0012_add_operation_log_conflict_attempt_count",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788975205349,
+      "tag": "0013_add_convergence_instrumentation_columns",
+      "breakpoints": true
     }
   ]
 }

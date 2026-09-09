@@ -7,6 +7,8 @@ import {
   HEADLESS_SYNC_CYCLE_RECOVERY_DEADLINE_MS,
 } from './headless-sync-cycle.constants';
 import { pruneOperationLog } from './operation-log-retention.helpers';
+import { readOperationLogConvergence } from './operation-log-convergence.helpers';
+import { syncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import { syncPendingOperations } from './reconcile.helpers';
 import type { ReconcileTelemetryContext } from './reconcile.types';
 import {
@@ -154,14 +156,25 @@ async function runCycleBody(
     // on this connection -- only the foreground drain hook writes `animes`, on the shared
     // reactive connection, where `useLiveQuery` can observe it.
     progress.stage = 'reconcile';
-    const { syncedCount, backlogReadCount } = await syncPendingOperations(
+    const { syncedCount, backlogReadCount, diagnosticsFlush } = await syncPendingOperations(
       rawDb,
       'staged',
       telemetryContext,
     );
 
     progress.stage = 'result_bookkeeping';
-    await recordBacklogReadCount(rawDb, backlogReadCount);
+    // Read BEFORE `pruneOperationLog` below: the projection counts terminal-failure rows
+    // (`dead_letter`, `conflict_exhausted`) retention is about to delete, so it must observe
+    // them first (spec: sync-convergence-observability). Folded into the SAME bookkeeping write
+    // `recordBacklogReadCount` already performed, so this costs no extra write-door transaction.
+    const convergence = await readOperationLogConvergence(rawDb);
+    await recordBacklogReadCount(
+      rawDb,
+      backlogReadCount,
+      diagnosticsFlush,
+      syncDiagnosticsOutboxStore.getFailedWriteCount(),
+      convergence,
+    );
     await recordSyncAttemptSucceeded(
       rawDb,
       params.triggerSource,

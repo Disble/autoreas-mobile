@@ -53,7 +53,7 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
 }));
 
 /**
- * `sync_runtime_status` columns present on every device already migrated up through 0010, minus
+ * `sync_runtime_status` columns present on every device already migrated up through 0013, minus
  * `is_background_task_registered` -- the one column these tests exercise as still missing.
  */
 const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
@@ -81,6 +81,14 @@ const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
   { name: "consecutive_unclosed_cycles" },
   { name: "last_cycle_stage_at" },
   { name: "last_failed_checkpoint_count" },
+  { name: "last_diagnostics_discarded_count" },
+  { name: "last_diagnostics_failed_removal_count" },
+  { name: "last_outbox_failed_write_count" },
+  { name: "last_dead_letter_count" },
+  { name: "last_conflict_exhausted_count" },
+  { name: "last_stuck_processing_count" },
+  { name: "last_oldest_pending_age_ms" },
+  { name: "last_pending_row_count" },
 ];
 
 /** A promise this test can resolve or reject from outside its own executor. */

@@ -1,13 +1,10 @@
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import {
-  clearBridgeConfig,
   openAppDatabaseSync,
   runMigrations,
-  withLocalWrite,
 } from "../../src/infrastructure/db/client";
 import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
-import { bridgeConfig } from "../../src/infrastructure/db/schema";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 jest.mock("drizzle-orm", () => ({
@@ -236,6 +233,14 @@ describe("db client tracer helpers", () => {
             { name: "consecutive_unclosed_cycles" },
             { name: "last_cycle_stage_at" },
             { name: "last_failed_checkpoint_count" },
+            { name: "last_diagnostics_discarded_count" },
+            { name: "last_diagnostics_failed_removal_count" },
+            { name: "last_outbox_failed_write_count" },
+            { name: "last_dead_letter_count" },
+            { name: "last_conflict_exhausted_count" },
+            { name: "last_stuck_processing_count" },
+            { name: "last_oldest_pending_age_ms" },
+            { name: "last_pending_row_count" },
           ];
         }
 
@@ -418,77 +423,6 @@ describe("db client tracer helpers", () => {
     );
   });
 
-  it("devuelve el resultado del callback diferido", async () => {
-    const rawDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const result = await withLocalWrite(rawDb as never, async () => "ok");
-
-    expect(result).toBe("ok");
-    expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
-    expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
-  });
-
-  it("clearBridgeConfig usa el write diferido y borra bridge_config sin runAsync directo", async () => {
-    const rawDb = {
-      __state: {
-        animes: [] as Record<string, unknown>[],
-        deletes: [] as unknown[],
-      },
-      runAsync: jest.fn(),
-      execAsync: jest.fn().mockResolvedValue(undefined),
-    };
-
-    await clearBridgeConfig(rawDb as never);
-
-    expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
-    expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
-    expect(rawDb.__state.deletes).toEqual([bridgeConfig]);
-    expect(rawDb.runAsync).not.toHaveBeenCalled();
-  });
-
-  it("serializa writes diferidos concurrentes sobre la misma db", async () => {
-    const executionOrder: string[] = [];
-    let releaseFirst!: () => void;
-    const firstDone = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    const rawDb = {
-      execAsync: jest.fn(async (sql: string) => {
-        if (sql === "BEGIN IMMEDIATE") executionOrder.push("start");
-        if (sql === "COMMIT") executionOrder.push("end");
-      }),
-    };
-
-    const firstWrite = withLocalWrite(rawDb as never, async () => {
-      executionOrder.push("task-1");
-      await firstDone;
-      executionOrder.push("task-1-done");
-      return "first";
-    });
-
-    const secondWrite = withLocalWrite(rawDb as never, async () => {
-      executionOrder.push("task-2");
-      return "second";
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(executionOrder).toEqual(["start", "task-1"]);
-
-    releaseFirst();
-
-    await expect(firstWrite).resolves.toBe("first");
-    await expect(secondWrite).resolves.toBe("second");
-    expect(executionOrder).toEqual([
-      "start",
-      "task-1",
-      "task-1-done",
-      "end",
-      "start",
-      "task-2",
-      "end",
-    ]);
-  });
+  // Deferred write-door behavior (`withLocalWrite`, `clearBridgeConfig`, write serialization)
+  // moved to the sibling `db-write-queue.test.ts` (CLAUDE.md #5, the 500-line rule).
 });

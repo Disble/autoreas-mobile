@@ -1,17 +1,22 @@
 import {
+  withColumnDefault,
+  withPatchOverride,
+} from '../../../../src/features/sync/sync-runtime-status.helpers';
+import {
+  buildCycleBookkeepingPatch,
   buildSyncAttemptFailedPatch,
   buildSyncAttemptStartedPatch,
   buildSyncAttemptSucceededPatch,
   createEmptySyncRuntimeStatusSnapshot,
-  withColumnDefault,
-  withPatchOverride,
-} from '../../../../src/features/sync/sync-runtime-status.helpers';
+} from '../../../../src/features/sync/sync-runtime-status-patch.helpers';
 import { SYNC_CYCLE_STAGES } from '../../../../src/features/sync/sync-runtime-status.constants';
 import {
   SYNC_CYCLE_ERROR_NAMES,
   SYNC_CYCLE_ERROR_STAGES,
 } from '../../../../src/features/sync/sync-telemetry.constants';
 import type { SyncRuntimeStatusSnapshot } from '../../../../src/features/sync/sync-runtime-status.types';
+import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
+import type { OperationLogConvergence } from '../../../../src/features/sync/operation-log-convergence.types';
 
 /** Shared neutral snapshot fixture, so each test only spells out the fields it cares about. */
 const NEUTRAL_SNAPSHOT: SyncRuntimeStatusSnapshot = createEmptySyncRuntimeStatusSnapshot();
@@ -40,6 +45,14 @@ describe('sync runtime status helpers', () => {
       consecutiveUnclosedCycles: 0,
       lastCycleStageAt: null,
       lastFailedCheckpointCount: 0,
+      lastDiagnosticsDiscardedCount: null,
+      lastDiagnosticsFailedRemovalCount: null,
+      lastOutboxFailedWriteCount: null,
+      lastDeadLetterCount: null,
+      lastConflictExhaustedCount: null,
+      lastStuckProcessingCount: null,
+      lastOldestPendingAgeMs: null,
+      lastPendingRowCount: null,
     });
   });
 
@@ -282,5 +295,58 @@ describe('column semantics that the whole runtime-status mapping rests on', () =
   it('withPatchOverride keeps the current value only when the field is absent', () => {
     expect(withPatchOverride(undefined, 'previous error')).toBe('previous error');
     expect(withPatchOverride('new error', 'previous error')).toBe('new error');
+  });
+});
+
+describe('buildCycleBookkeepingPatch folds flush and convergence counters into the single write recordBacklogReadCount already performs (D6)', () => {
+  const DIAGNOSTICS_FLUSH: SyncDiagnosticsFlushResult = {
+    attempted: 4,
+    delivered: 1,
+    discarded: 2,
+    failedRemovals: 1,
+  };
+
+  const CONVERGENCE: OperationLogConvergence = {
+    deadLetterCount: 3,
+    conflictExhaustedCount: 1,
+    stuckProcessingCount: 2,
+    oldestPendingAgeMs: 5_000,
+    pendingRowCount: 210,
+    hasMore: true,
+  };
+
+  it('folds the backlog read count, the flush counters, the outbox write-failure count and the convergence projection into one patch', () => {
+    expect(buildCycleBookkeepingPatch(5, DIAGNOSTICS_FLUSH, 3, CONVERGENCE)).toEqual({
+      lastBacklogReadCount: 5,
+      lastDiagnosticsDiscardedCount: 2,
+      lastDiagnosticsFailedRemovalCount: 1,
+      lastOutboxFailedWriteCount: 3,
+      lastDeadLetterCount: 3,
+      lastConflictExhaustedCount: 1,
+      lastStuckProcessingCount: 2,
+      lastOldestPendingAgeMs: 5_000,
+      lastPendingRowCount: 210,
+    });
+  });
+
+  it('persists a null oldest-pending age rather than fabricating zero when the queue is empty (D7)', () => {
+    const emptyQueueConvergence: OperationLogConvergence = {
+      deadLetterCount: 0,
+      conflictExhaustedCount: 0,
+      stuckProcessingCount: 0,
+      oldestPendingAgeMs: null,
+      pendingRowCount: 0,
+      hasMore: false,
+    };
+    const emptyFlush: SyncDiagnosticsFlushResult = {
+      attempted: 0,
+      delivered: 0,
+      discarded: 0,
+      failedRemovals: 0,
+    };
+
+    expect(
+      buildCycleBookkeepingPatch(0, emptyFlush, 0, emptyQueueConvergence).lastOldestPendingAgeMs,
+    ).toBeNull();
   });
 });

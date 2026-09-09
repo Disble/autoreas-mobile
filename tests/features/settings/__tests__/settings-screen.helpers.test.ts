@@ -2,10 +2,11 @@ import {
   buildBackgroundSyncSection,
   formatBackgroundSyncTimestamp,
 } from '../../../../src/features/settings/ui/SettingsScreen/settings-screen.helpers';
-import {
-  buildSettingsBridgeStatus,
-  buildSettingsSyncSummary,
-} from '../../../../src/features/settings/ui/SettingsScreen/settings-sync-status.helpers';
+
+/**
+ * `buildSettingsSyncSummary`/`buildSettingsBridgeStatus` tests moved to the sibling
+ * `settings-sync-status.helpers.test.ts` (CLAUDE.md #5, the 500-line rule).
+ */
 
 /**
  * The cycle post-mortem fields, which every snapshot in this file carries identically.
@@ -21,6 +22,14 @@ const CYCLE_POSTMORTEM_DEFAULTS = {
   consecutiveUnclosedCycles: 0,
   lastCycleStageAt: null,
   lastFailedCheckpointCount: 0,
+  lastDiagnosticsDiscardedCount: null,
+  lastDiagnosticsFailedRemovalCount: null,
+  lastOutboxFailedWriteCount: null,
+  lastDeadLetterCount: null,
+  lastConflictExhaustedCount: null,
+  lastStuckProcessingCount: null,
+  lastOldestPendingAgeMs: null,
+  lastPendingRowCount: null,
 } as const;
 
 describe('settings-screen.helpers', () => {
@@ -314,161 +323,124 @@ describe('settings-screen.helpers', () => {
     ]);
   });
 
-  it('builds a calm local-only summary with setup guidance when no bridge is paired', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: false,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'idle',
-        lastSyncAt: null,
-        pendingOpsCount: 0,
-        syncError: null,
-      },
-    });
-
-    expect(summary.tone).toBe('default');
-    expect(summary.chipLabel).toBe('Modo local');
-    expect(summary.title).toBe('Catálogo local listo');
-    expect(summary.description).toContain('No hay bridge emparejado');
-    expect(summary.bridgeStatusKind).toBe('unpaired');
-    expect(summary.actionKind).toBe('go_to_setup');
-    expect(summary.actionLabel).toBe('Emparejar bridge');
-  });
-
-  it('keeps phone-offline pending sync separate from bridge repair actions', () => {
-    const summary = buildSettingsSyncSummary({
+  it('omits every convergence tile when the counters were never measured', () => {
+    const section = buildBackgroundSyncSection({
       isConfigured: true,
-      isDeviceOnline: false,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
+      snapshot: {
+        registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775811900000,
+        lastFailureMessage: null,
+        lastTriggerSource: 'app_active',
+        lastSyncedCount: 12,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
       },
     });
 
-    expect(summary.tone).toBe('warning');
-    expect(summary.chipLabel).toBe('Sin conexión');
-    expect(summary.title).toBe('2 cambios esperando sync');
-    expect(summary.description).toContain('teléfono está sin internet');
-    expect(summary.bridgeStatusKind).toBe('phone_offline');
-    expect(summary.actionKind).toBeNull();
-    expect(summary.actionLabel).toBeNull();
+    const tileIds = section.tiles.map((tile) => tile.id);
+
+    // A NULL counter means "never measured" (design.md Decision 7), not zero -- so no tile
+    // renders at all, exactly like `lastAttempt`/`lastSuccess` when their timestamp is null.
+    expect(tileIds).not.toEqual(
+      expect.arrayContaining([
+        'diagnosticsDiscardedCount',
+        'diagnosticsFailedRemovalCount',
+        'outboxFailedWriteCount',
+        'deadLetterCount',
+        'conflictExhaustedCount',
+        'stuckProcessingCount',
+        'oldestPendingAgeMs',
+        'pendingRowCount',
+      ]),
+    );
   });
 
-  it('guides the user to repair the bridge when local backlog exists and the phone is online', () => {
-    const summary = buildSettingsSyncSummary({
+  it('renders every convergence tile once its counters have been measured', () => {
+    const section = buildBackgroundSyncSection({
       isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
-        pendingOpsCount: 3,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
+      snapshot: {
+        registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775811900000,
+        lastFailureMessage: null,
+        lastTriggerSource: 'app_active',
+        lastSyncedCount: 12,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
+        lastDiagnosticsDiscardedCount: 2,
+        lastDiagnosticsFailedRemovalCount: 1,
+        lastOutboxFailedWriteCount: 3,
+        lastDeadLetterCount: 4,
+        lastConflictExhaustedCount: 1,
+        lastStuckProcessingCount: 2,
+        lastOldestPendingAgeMs: 125_000,
+        lastPendingRowCount: 210,
       },
     });
 
-    expect(summary.tone).toBe('warning');
-    expect(summary.chipLabel).toBe('Sync pendiente');
-    expect(summary.title).toBe('3 cambios esperando sync');
-    expect(summary.bridgeStatusKind).toBe('bridge_unreachable');
-    expect(summary.actionKind).toBe('repair_bridge');
-    expect(summary.actionLabel).toBe('Re-emparejar bridge');
+    const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
+
+    expect(tileMap.diagnosticsDiscardedCount).toMatchObject({ value: '2', tone: 'danger' });
+    expect(tileMap.diagnosticsFailedRemovalCount).toMatchObject({ value: '1', tone: 'warning' });
+    expect(tileMap.outboxFailedWriteCount).toMatchObject({ value: '3', tone: 'danger' });
+    expect(tileMap.deadLetterCount).toMatchObject({ value: '4', tone: 'danger' });
+    expect(tileMap.conflictExhaustedCount).toMatchObject({ value: '1', tone: 'danger' });
+    expect(tileMap.stuckProcessingCount).toMatchObject({ value: '2', tone: 'warning' });
+    expect(tileMap.oldestPendingAgeMs).toMatchObject({ value: '2 min' });
+    // 210 > RECONCILE_BACKLOG_BATCH_LIMIT (200): `hasMore` is DERIVED here, never stored
+    // (design.md Decision 1), and drives this tile's tone and "+" suffix.
+    expect(tileMap.pendingRowCount).toMatchObject({ value: '210+', tone: 'warning' });
   });
 
-  it('flags bridge unreachability separately from calm local-only mode when no backlog exists', () => {
-    const summary = buildSettingsSyncSummary({
+  it('reports zero-valued convergence counters in a neutral tone once measured', () => {
+    const section = buildBackgroundSyncSection({
       isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
-        pendingOpsCount: 0,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
+      snapshot: {
+        registrationStatus: 'registered',
+        executionMode: 'best_effort_background_task',
+        isForegroundServiceRunning: false,
+        canShowPersistentNotification: false,
+        lastAttemptAt: 1775812200000,
+        lastSuccessAt: 1775811900000,
+        lastFailureMessage: null,
+        lastTriggerSource: 'app_active',
+        lastSyncedCount: 12,
+        isCycleActive: false,
+        lastBacklogReadCount: 0,
+        lastPrunedOperationsCount: 0,
+        isBackgroundTaskRegistered: true,
+        ...CYCLE_POSTMORTEM_DEFAULTS,
+        lastDiagnosticsDiscardedCount: 0,
+        lastDiagnosticsFailedRemovalCount: 0,
+        lastOutboxFailedWriteCount: 0,
+        lastDeadLetterCount: 0,
+        lastConflictExhaustedCount: 0,
+        lastStuckProcessingCount: 0,
+        lastOldestPendingAgeMs: null,
+        lastPendingRowCount: 12,
       },
     });
 
-    expect(summary.chipLabel).toBe('Catálogo local');
-    expect(summary.bridgeStatusKind).toBe('bridge_unreachable');
-    expect(summary.actionKind).toBeNull();
-  });
+    const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
 
-  it('presents a reachable sync rejection without blaming bridge connectivity', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'sync_error',
-        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Reconcile failed: 422',
-      },
-    });
-    const bridgeStatus = buildSettingsBridgeStatus(summary);
-
-    expect(summary.bridgeStatusKind).toBe('sync_error');
-    expect(summary.actionKind).toBeNull();
-    expect(bridgeStatus.chipLabel).toBe('Bridge disponible');
-    expect(bridgeStatus.title).toBe('El bridge rechazó el sync');
-    expect(bridgeStatus.description).toContain('respondió, pero no pudo completar');
-    expect(bridgeStatus.tone).toBe('danger');
-  });
-
-  it('marks old pending backlog as stale so the bridge card can escalate it', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'idle',
-        lastSyncAt: new Date('2026-04-05T10:00:00.000Z').getTime(),
-        pendingOpsCount: 4,
-        syncError: null,
-      },
-    });
-
-    expect(summary.bridgeStatusKind).toBe('stale_backlog');
-    expect(summary.description).toContain('Hace 4 días');
-  });
-
-  it('builds a bridge-card warning copy when the bridge is configured but unreachable', () => {
-    const bridgeStatus = buildSettingsBridgeStatus({
-      chipLabel: 'Catálogo local',
-      description:
-        'El último intento con el bridge falló, pero tu catálogo local sigue disponible en este dispositivo.',
-      title: 'Catálogo local listo',
-      tone: 'default',
-      bridgeStatusKind: 'bridge_unreachable',
-      actionKind: null,
-      actionLabel: null,
-    });
-
-    expect(bridgeStatus.chipLabel).toBe('Bridge no disponible');
-    expect(bridgeStatus.title).toBe('Bridge configurado pero inaccesible');
-    expect(bridgeStatus.description).toContain('último intento con el bridge falló');
-    expect(bridgeStatus.tone).toBe('warning');
-  });
-
-  it('builds bridge-card copy that blames phone connectivity when the device is offline', () => {
-    const bridgeStatus = buildSettingsBridgeStatus({
-      chipLabel: 'Sin conexión',
-      description:
-        'Este teléfono está sin internet. Tus cambios siguen guardados en este dispositivo y se van a reintentar cuando vuelva la conexión.',
-      title: '2 cambios esperando sync',
-      tone: 'warning',
-      bridgeStatusKind: 'phone_offline',
-      actionKind: null,
-      actionLabel: null,
-    });
-
-    expect(bridgeStatus.chipLabel).toBe('Sin conexión');
-    expect(bridgeStatus.title).toBe('Teléfono sin internet');
-    expect(bridgeStatus.description).toContain('teléfono está sin internet');
-    expect(bridgeStatus.tone).toBe('warning');
+    expect(tileMap.diagnosticsDiscardedCount).toMatchObject({ value: '0', tone: 'default' });
+    expect(tileMap.deadLetterCount).toMatchObject({ value: '0', tone: 'default' });
+    // A backlog at or under the batch limit reports `hasMore` false (spec: has_more boundary).
+    expect(tileMap.pendingRowCount).toMatchObject({ value: '12', tone: 'default' });
+    // Still null (an empty queue), so no tile renders for it.
+    expect(tileMap.oldestPendingAgeMs).toBeUndefined();
   });
 });

@@ -77,6 +77,14 @@ export const DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot = {
   consecutiveUnclosedCycles: 0,
   lastCycleStageAt: null,
   lastFailedCheckpointCount: 0,
+  lastDiagnosticsDiscardedCount: null,
+  lastDiagnosticsFailedRemovalCount: null,
+  lastOutboxFailedWriteCount: null,
+  lastDeadLetterCount: null,
+  lastConflictExhaustedCount: null,
+  lastStuckProcessingCount: null,
+  lastOldestPendingAgeMs: null,
+  lastPendingRowCount: null,
 };
 
 /** Provides the shared unsupported sync runtime status snapshot value. */
@@ -103,4 +111,12 @@ export const UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT: SyncRuntimeStatusSnapshot
   consecutiveUnclosedCycles: 0,
   lastCycleStageAt: null,
   lastFailedCheckpointCount: 0,
+  lastDiagnosticsDiscardedCount: null,
+  lastDiagnosticsFailedRemovalCount: null,
+  lastOutboxFailedWriteCount: null,
+  lastDeadLetterCount: null,
+  lastConflictExhaustedCount: null,
+  lastStuckProcessingCount: null,
+  lastOldestPendingAgeMs: null,
+  lastPendingRowCount: null,
 };

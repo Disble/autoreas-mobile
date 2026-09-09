@@ -2,147 +2,24 @@ import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { syncRuntimeStatus, type SyncRuntimeStatusRow } from '../../infrastructure/db/schema';
+import { SYNC_RUNTIME_STATUS_SINGLETON_ID } from './sync-runtime-status.constants';
 import {
-  DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
-  SYNC_RUNTIME_STATUS_SINGLETON_ID,
-} from './sync-runtime-status.constants';
+  buildCycleActivePatch,
+  buildCycleBookkeepingPatch,
+  buildPrunedOperationsCountPatch,
+  buildSyncAttemptFailedPatch,
+  buildSyncAttemptStartedPatch,
+  buildSyncAttemptSucceededPatch,
+  createEmptySyncRuntimeStatusSnapshot,
+} from './sync-runtime-status-patch.helpers';
+import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
+import type { OperationLogConvergence } from './operation-log-convergence.types';
 import type {
   SyncAttemptFailureDetail,
   SyncRuntimeStatusPatch,
   SyncRuntimeStatusSnapshot,
   SyncRuntimeTriggerSource,
 } from './sync-runtime-status.types';
-
-/**
- * Creates the neutral runtime snapshot used before any observable sync activity exists.
- * Tests and UI both rely on this to avoid duplicating default-state assumptions.
- */
-export function createEmptySyncRuntimeStatusSnapshot(): SyncRuntimeStatusSnapshot {
-  return DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT;
-}
-
-/**
- * Builds the snapshot patch for the start of a sync attempt.
- *
- * Starting a cycle always clears the previous failure and records the current trigger source,
- * and now also records this cycle's identity, marks its stage `attempt_started`, and CLEARS the
- * error triple to explicit `null` -- without that clear a three-cycle-old error would keep being
- * reported as the previous cycle's. `consecutiveUnclosedCycles` is derived purely from
- * `previous`: it increments when the prior cycle never released `isCycleActive` (it started but
- * never closed) and resets to zero otherwise. `cycleId` defaults to `null` because a caller
- * outside the headless cycle's stage machine has no cycle identity to correlate.
- */
-export function buildSyncAttemptStartedPatch(
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  previous: SyncRuntimeStatusSnapshot,
-  cycleId: string | null = null,
-): SyncRuntimeStatusPatch {
-  return {
-    lastAttemptAt: attemptedAt,
-    lastFailureMessage: null,
-    lastTriggerSource: triggerSource,
-    lastCycleId: cycleId,
-    lastCycleStage: 'attempt_started',
-    lastCycleStageAt: attemptedAt,
-    lastErrorName: null,
-    lastErrorStage: null,
-    lastNativeErrcodeByte: null,
-    consecutiveUnclosedCycles: previous.isCycleActive
-      ? previous.consecutiveUnclosedCycles + 1
-      : 0,
-  };
-}
-
-/**
- * Builds the snapshot patch for a successful sync cycle.
- *
- * Success records both the latest attempt timestamp and how many operations were confirmed, and
- * now also marks the stage `closed`, CLEARS the error triple to explicit `null` (Requirement:
- * "A succeeded cycle clears the previous error detail"), and resets `consecutiveUnclosedCycles`
- * -- a success closes the cycle it belongs to.
- */
-export function buildSyncAttemptSucceededPatch(
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  syncedCount: number,
-  cycleId: string | null = null,
-): SyncRuntimeStatusPatch {
-  return {
-    lastAttemptAt: attemptedAt,
-    lastSuccessAt: attemptedAt,
-    lastFailureMessage: null,
-    lastTriggerSource: triggerSource,
-    lastSyncedCount: syncedCount,
-    lastCycleId: cycleId,
-    lastCycleStage: 'closed',
-    lastCycleStageAt: attemptedAt,
-    lastErrorName: null,
-    lastErrorStage: null,
-    lastNativeErrcodeByte: null,
-    consecutiveUnclosedCycles: 0,
-  };
-}
-
-/**
- * Builds the snapshot patch for a failed sync cycle.
- *
- * Failures keep the last success intact while exposing the current error to Settings, and now
- * also record the stage and classified error the cycle failed with (Requirement: "A failed
- * cycle records the stage and error it failed with"). Every `detail` field defaults to `null`:
- * a caller that cannot classify where or why the cycle failed reports that honestly rather than
- * fabricating a stage or error class. A failure also closes the cycle, so
- * `consecutiveUnclosedCycles` resets to zero.
- */
-export function buildSyncAttemptFailedPatch(
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  message: string,
-  detail: SyncAttemptFailureDetail = {},
-): SyncRuntimeStatusPatch {
-  return {
-    lastAttemptAt: attemptedAt,
-    lastFailureMessage: message,
-    lastTriggerSource: triggerSource,
-    lastCycleId: detail.cycleId ?? null,
-    lastCycleStage: detail.stage ?? null,
-    lastCycleStageAt: attemptedAt,
-    lastErrorName: detail.errorName ?? null,
-    lastErrorStage: detail.errorStage ?? null,
-    lastNativeErrcodeByte: detail.nativeErrcodeByte ?? null,
-    consecutiveUnclosedCycles: 0,
-  };
-}
-
-/**
- * Builds the snapshot patch that marks a sync cycle as active or inactive.
- * This lets Settings distinguish an idle runtime from one that is mid-cycle.
- */
-function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch {
-  return {
-    isCycleActive: isActive,
-  };
-}
-
-/**
- * Builds the snapshot patch for the latest bounded backlog read size.
- * Bounded reads keep this metric honest without materializing the whole queue.
- */
-function buildBacklogReadCountPatch(count: number): SyncRuntimeStatusPatch {
-  return {
-    lastBacklogReadCount: count,
-  };
-}
-
-/**
- * Builds the snapshot patch for the latest operation-log prune result.
- * This exposes how much terminal history was reclaimed by TTL or max-count rules.
- */
-function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch {
-  return {
-    lastPrunedOperationsCount: count,
-  };
-}
 
 /**
  * Applies the neutral fallback for a persisted column value using nullish coalescing, so a
@@ -157,9 +34,11 @@ export function withColumnDefault<T>(value: T | null | undefined, fallback: T): 
 /**
  * Maps a persisted runtime-status row into its snapshot shape, applying the neutral default
  * for every optional column. Extracted from `getSyncRuntimeStatusSnapshot` so the per-column
- * default tail does not inflate that function's own complexity budget.
+ * default tail does not inflate that function's own complexity budget. Exported so
+ * `useBackgroundSyncStatus` maps its own live-query row through the SAME defaults instead of
+ * duplicating this per-column tail (`bun run audit` flagged the duplicate).
  */
-function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): SyncRuntimeStatusSnapshot {
+export function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): SyncRuntimeStatusSnapshot {
   return {
     registrationStatus: row.registrationStatus,
     executionMode: row.executionMode,
@@ -182,6 +61,19 @@ function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): SyncRunti
     consecutiveUnclosedCycles: withColumnDefault(row.consecutiveUnclosedCycles, 0),
     lastCycleStageAt: withColumnDefault(row.lastCycleStageAt, null),
     lastFailedCheckpointCount: withColumnDefault(row.lastFailedCheckpointCount, 0),
+    // `?? null`, not `?? 0`: a NULL here means "never measured", which is not the same fact as
+    // "measured zero" (design.md Decision 7).
+    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
+    lastDiagnosticsFailedRemovalCount: withColumnDefault(
+      row.lastDiagnosticsFailedRemovalCount,
+      null,
+    ),
+    lastOutboxFailedWriteCount: withColumnDefault(row.lastOutboxFailedWriteCount, null),
+    lastDeadLetterCount: withColumnDefault(row.lastDeadLetterCount, null),
+    lastConflictExhaustedCount: withColumnDefault(row.lastConflictExhaustedCount, null),
+    lastStuckProcessingCount: withColumnDefault(row.lastStuckProcessingCount, null),
+    lastOldestPendingAgeMs: withColumnDefault(row.lastOldestPendingAgeMs, null),
+    lastPendingRowCount: withColumnDefault(row.lastPendingRowCount, null),
   };
 }
 
@@ -264,6 +156,35 @@ function mergeSyncRuntimeStatusPatch(
       patch.lastFailedCheckpointCount,
       current.lastFailedCheckpointCount,
     ),
+    // `withPatchOverride`, not `withColumnDefault`: `lastOldestPendingAgeMs` in particular can be
+    // a legitimate `null` at write time (an empty queue), and `??` would silently fall back to
+    // the previous cycle's value instead of persisting that fresh, honest `null`.
+    lastDiagnosticsDiscardedCount: withPatchOverride(
+      patch.lastDiagnosticsDiscardedCount,
+      current.lastDiagnosticsDiscardedCount,
+    ),
+    lastDiagnosticsFailedRemovalCount: withPatchOverride(
+      patch.lastDiagnosticsFailedRemovalCount,
+      current.lastDiagnosticsFailedRemovalCount,
+    ),
+    lastOutboxFailedWriteCount: withPatchOverride(
+      patch.lastOutboxFailedWriteCount,
+      current.lastOutboxFailedWriteCount,
+    ),
+    lastDeadLetterCount: withPatchOverride(patch.lastDeadLetterCount, current.lastDeadLetterCount),
+    lastConflictExhaustedCount: withPatchOverride(
+      patch.lastConflictExhaustedCount,
+      current.lastConflictExhaustedCount,
+    ),
+    lastStuckProcessingCount: withPatchOverride(
+      patch.lastStuckProcessingCount,
+      current.lastStuckProcessingCount,
+    ),
+    lastOldestPendingAgeMs: withPatchOverride(
+      patch.lastOldestPendingAgeMs,
+      current.lastOldestPendingAgeMs,
+    ),
+    lastPendingRowCount: withPatchOverride(patch.lastPendingRowCount, current.lastPendingRowCount),
   };
 }
 
@@ -298,6 +219,14 @@ async function writeSyncRuntimeStatusRow(
     consecutiveUnclosedCycles: next.consecutiveUnclosedCycles,
     lastCycleStageAt: next.lastCycleStageAt,
     lastFailedCheckpointCount: next.lastFailedCheckpointCount,
+    lastDiagnosticsDiscardedCount: next.lastDiagnosticsDiscardedCount,
+    lastDiagnosticsFailedRemovalCount: next.lastDiagnosticsFailedRemovalCount,
+    lastOutboxFailedWriteCount: next.lastOutboxFailedWriteCount,
+    lastDeadLetterCount: next.lastDeadLetterCount,
+    lastConflictExhaustedCount: next.lastConflictExhaustedCount,
+    lastStuckProcessingCount: next.lastStuckProcessingCount,
+    lastOldestPendingAgeMs: next.lastOldestPendingAgeMs,
+    lastPendingRowCount: next.lastPendingRowCount,
   };
 
   await withLocalWrite(rawDb, async (db) => {
@@ -404,11 +333,23 @@ export async function recordCycleActive(rawDb: SQLiteDatabase, isActive: boolean
 }
 
 /**
- * Persists the size of the latest bounded backlog read.
- * This metric is updated before reconcile runs so it matches the actual batch size.
+ * Persists one cycle's post-reconcile bookkeeping: the bounded backlog read size, the
+ * diagnostics-outbox flush and write-failure counters, and the operation-log convergence
+ * projection, all folded into the SAME read-modify-write this function already performed before
+ * `2026-09-09-convergence-instrumentation` widened it (design.md Decision 6) -- the write door
+ * gains zero new transactions.
  */
-export async function recordBacklogReadCount(rawDb: SQLiteDatabase, count: number) {
-  await persistSyncRuntimeStatusPatch(rawDb, buildBacklogReadCountPatch(count));
+export async function recordBacklogReadCount(
+  rawDb: SQLiteDatabase,
+  backlogReadCount: number,
+  diagnosticsFlush: SyncDiagnosticsFlushResult,
+  outboxFailedWriteCount: number,
+  convergence: OperationLogConvergence,
+) {
+  await persistSyncRuntimeStatusPatch(
+    rawDb,
+    buildCycleBookkeepingPatch(backlogReadCount, diagnosticsFlush, outboxFailedWriteCount, convergence),
+  );
 }
 
 /**

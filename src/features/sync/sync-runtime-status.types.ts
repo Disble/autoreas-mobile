@@ -62,6 +62,26 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastCycleStageAt: number | null;
   /** Checkpoints that failed to persist. Non-zero marks `lastCycleStage` as degraded, not wrong. */
   readonly lastFailedCheckpointCount: number;
+  // Convergence-instrumentation fields (design.md `2026-09-09-convergence-instrumentation`
+  // Decision 6). All eight are `null` until the first cycle folds them into the bookkeeping
+  // write, and stay `null` for any cycle that never reaches it -- never a plausible zero, which
+  // would misreport "no lost edits" (Decision 7).
+  /** Diagnostics envelopes the bridge permanently rejected as malformed and this device destroyed. */
+  readonly lastDiagnosticsDiscardedCount: number | null;
+  /** Diagnostics envelopes that got a 2xx but whose outbox removal failed; they re-send next cycle. */
+  readonly lastDiagnosticsFailedRemovalCount: number | null;
+  /** Cumulative outbox writes that could not be persisted, as of this cycle's bookkeeping write. */
+  readonly lastOutboxFailedWriteCount: number | null;
+  /** `operation_log` rows in `dead_letter` status, counted before retention deletes them. */
+  readonly lastDeadLetterCount: number | null;
+  /** `operation_log` rows in `conflict_exhausted` status, counted before retention deletes them. */
+  readonly lastConflictExhaustedCount: number | null;
+  /** `operation_log` rows still `processing` when the projection ran -- orphaned, not in flight. */
+  readonly lastStuckProcessingCount: number | null;
+  /** Age of the oldest `pending`-or-`processing` row. `null` also when the queue was empty. */
+  readonly lastOldestPendingAgeMs: number | null;
+  /** TRUE backlog row depth, never the bounded per-cycle batch size. `hasMore` is derived from it. */
+  readonly lastPendingRowCount: number | null;
 }
 
 /** Defines the data contract for sync runtime status patch. */
@@ -91,6 +111,14 @@ export interface SyncRuntimeStatusPatch {
   readonly consecutiveUnclosedCycles?: number;
   readonly lastCycleStageAt?: number | null;
   readonly lastFailedCheckpointCount?: number;
+  readonly lastDiagnosticsDiscardedCount?: number | null;
+  readonly lastDiagnosticsFailedRemovalCount?: number | null;
+  readonly lastOutboxFailedWriteCount?: number | null;
+  readonly lastDeadLetterCount?: number | null;
+  readonly lastConflictExhaustedCount?: number | null;
+  readonly lastStuckProcessingCount?: number | null;
+  readonly lastOldestPendingAgeMs?: number | null;
+  readonly lastPendingRowCount?: number | null;
 }
 
 /**

@@ -68,9 +68,9 @@ phase closes that gap and must land before Phase 5.
 
 ## Phase 5: Single-Write Integration & Settings Surface
 
-- [ ] 5.1 `schema/database.schema.ts`: 8 additive nullable columns; generate migration `0013_*.sql` (hand-trim if stale, per `0010`); update `migrations.js` + `meta/_journal.json`; `sync-runtime-status.types.ts`/`.constants.ts`: 8 counter fields with defaults.
-- [ ] 5.2 RED+GREEN `sync-runtime-status.helpers.test.ts`/`.ts`: widen `recordBacklogReadCount` into one cycle-bookkeeping patch carrying flush counters + projection.
-- [ ] 5.3 RED+GREEN `headless-sync-cycle.helpers.test.ts`/`.ts`: one cycle folds the flush result and `readOperationLogConvergence` into that single write.
-- [ ] 5.4 `use-background-sync-status.ts`: map the 8 columns with `?? 0`/`?? null`; RED+GREEN `settings-screen.helpers.test.ts`/`.{helpers,types}.ts`: tiles beside `backlogReadCount`; fix `dharness/*` findings.
-- [ ] 5.5 MUTATE `settings-screen.helpers.ts`: delete the `hasMore`-driven tone branch; confirm test fails; restore via checkout.
-- [ ] 5.6 Run `npm run validate` and `npx react-doctor@latest . --verbose --diff` until 100/100.
+- [x] 5.1 `schema/database.schema.ts`: 8 additive nullable columns; generate migration `0013_*.sql` (hand-trim if stale, per `0010`); update `migrations.js` + `meta/_journal.json`; `sync-runtime-status.types.ts`/`.constants.ts`: 8 counter fields with defaults.
+- [x] 5.2 RED+GREEN `sync-runtime-status.helpers.test.ts`/`.ts`: widen `recordBacklogReadCount` into one cycle-bookkeeping patch carrying flush counters + projection.
+- [x] 5.3 RED+GREEN `headless-sync-cycle.helpers.test.ts`/`.ts`: one cycle folds the flush result and `readOperationLogConvergence` into that single write.
+- [x] 5.4 `use-background-sync-status.ts`: map the 8 columns with `?? 0`/`?? null`; RED+GREEN `settings-screen.helpers.test.ts`/`.{helpers,types}.ts`: tiles beside `backlogReadCount`; fix `dharness/*` findings.
+- [x] 5.5 MUTATE `settings-screen.helpers.ts`: delete the `hasMore`-driven tone branch; confirm test fails; restore via checkout.
+- [x] 5.6 Run `npm run validate` and `npx react-doctor@latest . --verbose --diff` until 100/100.

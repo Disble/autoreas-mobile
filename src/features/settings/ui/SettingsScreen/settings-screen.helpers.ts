@@ -7,6 +7,7 @@ import type {
   ResolvedToneColors,
 } from './settings-screen.types';
 import type { SyncRuntimeRegistrationStatus } from '../../../sync/sync-runtime-status.types';
+import { RECONCILE_BACKLOG_BATCH_LIMIT } from '../../../sync/reconcile.constants';
 import {
   BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
   BACKGROUND_SYNC_REGISTRATION_LABELS,
@@ -31,6 +32,7 @@ export function formatBackgroundSyncTimestamp(timestamp: number | null) {
   ).padStart(2, '0')} UTC`;
 }
 
+/** Resolves the tone and icon for the registration-status tile from the runtime's status value. */
 function resolveRegistrationTile(
   status: SyncRuntimeRegistrationStatus,
 ): { readonly tone: BackgroundSyncSectionTone; readonly iconName: MetricTileIconName } {
@@ -44,6 +46,10 @@ function resolveRegistrationTile(
   }
 }
 
+/**
+ * Appends the timestamp/trigger tiles that only render once their underlying value is known.
+ * Each is omitted, not zero-filled, while its snapshot field is still `null`.
+ */
 function appendOptionalRuntimeTiles(
   tiles: MetricTile[],
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
@@ -57,6 +63,120 @@ function appendOptionalRuntimeTiles(
   if (snapshot.lastTriggerSource) {
     tiles.push({ id: 'lastTrigger', label: 'Último origen', value: BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS[snapshot.lastTriggerSource], tone: 'accent', iconName: 'flash-outline' });
   }
+}
+
+/**
+ * Formats an age in milliseconds into a compact, human-readable duration. `null` -- an empty
+ * queue has no oldest row -- renders the same "no data" copy every other optional tile uses.
+ */
+function formatOldestPendingAge(ms: number | null): string {
+  if (ms === null) {
+    return 'Sin datos';
+  }
+  if (ms < 60_000) {
+    return `${Math.round(ms / 1_000)} s`;
+  }
+  if (ms < 3_600_000) {
+    return `${Math.round(ms / 60_000)} min`;
+  }
+  return `${Math.round(ms / 3_600_000)} h`;
+}
+
+/** Static shape shared by every count-only convergence tile: id, label, icon, and the tone it escalates to once the count is non-zero. */
+interface CountTileConfig {
+  readonly id: string;
+  readonly label: string;
+  readonly iconName: MetricTileIconName;
+  readonly nonZeroTone: BackgroundSyncSectionTone;
+}
+
+/**
+ * Pushes one count-based convergence tile, ONLY when `count` is not `null`: a `null` counter
+ * means "never measured" (Decision 7), not zero, so omitting the tile is the honest choice --
+ * exactly how `appendOptionalRuntimeTiles` already treats `lastAttempt`/`lastSuccess`. Factored
+ * out so `appendConvergenceMetricTiles` reads as a flat list of calls instead of six near-
+ * identical `if` blocks inflating its own complexity budget.
+ */
+function pushCountTile(tiles: MetricTile[], count: number | null, config: CountTileConfig): void {
+  if (count === null) {
+    return;
+  }
+  tiles.push({
+    id: config.id,
+    label: config.label,
+    value: String(count),
+    tone: count > 0 ? config.nonZeroTone : 'default',
+    iconName: config.iconName,
+  });
+}
+
+/**
+ * Appends the true-backlog-depth tile. `hasMore` is DERIVED here rather than read from a stored
+ * flag (Decision 1): storing it would let it go stale against the count beside it.
+ */
+function appendPendingRowCountTile(tiles: MetricTile[], count: number | null): void {
+  if (count === null) {
+    return;
+  }
+  const hasMore = count > RECONCILE_BACKLOG_BATCH_LIMIT;
+  tiles.push({
+    id: 'pendingRowCount',
+    label: 'Backlog total',
+    value: hasMore ? `${count}+` : String(count),
+    tone: hasMore ? 'warning' : 'default',
+    iconName: 'layers-outline',
+  });
+}
+
+/**
+ * Appends the eight convergence-instrumentation tiles (design.md
+ * `2026-09-09-convergence-instrumentation` Decision 6), one per counter, beside
+ * `backlogReadCount`. Each renders ONLY when its counter is not `null` (Decision 7).
+ */
+function appendConvergenceMetricTiles(
+  tiles: MetricTile[],
+  snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+): void {
+  pushCountTile(tiles, snapshot.lastDiagnosticsDiscardedCount, {
+    id: 'diagnosticsDiscardedCount',
+    label: 'Diagnósticos descartados',
+    iconName: 'close-circle-outline',
+    nonZeroTone: 'danger',
+  });
+  pushCountTile(tiles, snapshot.lastDiagnosticsFailedRemovalCount, {
+    id: 'diagnosticsFailedRemovalCount',
+    label: 'Diagnósticos a reintentar',
+    iconName: 'repeat-outline',
+    nonZeroTone: 'warning',
+  });
+  pushCountTile(tiles, snapshot.lastOutboxFailedWriteCount, {
+    id: 'outboxFailedWriteCount',
+    label: 'Escrituras de outbox fallidas',
+    iconName: 'warning-outline',
+    nonZeroTone: 'danger',
+  });
+  pushCountTile(tiles, snapshot.lastDeadLetterCount, {
+    id: 'deadLetterCount',
+    label: 'Operaciones bloqueadas',
+    iconName: 'ban-outline',
+    nonZeroTone: 'danger',
+  });
+  pushCountTile(tiles, snapshot.lastConflictExhaustedCount, {
+    id: 'conflictExhaustedCount',
+    label: 'Conflictos sin resolver',
+    iconName: 'alert-outline',
+    nonZeroTone: 'danger',
+  });
+  pushCountTile(tiles, snapshot.lastStuckProcessingCount, {
+    id: 'stuckProcessingCount',
+    label: 'Operaciones atascadas',
+    iconName: 'hourglass-outline',
+    nonZeroTone: 'warning',
+  });
+  if (snapshot.lastOldestPendingAgeMs !== null) {
+    tiles.push({ id: 'oldestPendingAgeMs', label: 'Antigüedad máxima pendiente', value: formatOldestPendingAge(snapshot.lastOldestPendingAgeMs), tone: 'default', iconName: 'time-outline' });
+  }
+  appendPendingRowCountTile(tiles, snapshot.lastPendingRowCount);
 }
 
 /**
@@ -94,6 +214,7 @@ function buildRegistrationPathTiles(
   ];
 }
 
+/** Builds the full ordered tile list the Settings background-sync card renders. */
 function buildRuntimeMetricTiles(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
 ): MetricTile[] {
@@ -128,12 +249,15 @@ function buildRuntimeMetricTiles(
     ...buildRegistrationPathTiles(snapshot),
   );
 
+  appendConvergenceMetricTiles(tiles, snapshot);
+
   if (snapshot.lastFailureMessage) {
     tiles.push({ id: 'lastFailure', label: 'Último fallo', value: snapshot.lastFailureMessage, tone: 'danger', iconName: 'alert-circle-outline', span: 'full' });
   }
   return tiles;
 }
 
+/** Builds the section copy and status tone for a bridge that IS configured (paired). */
 function buildConfiguredBackgroundSyncSection(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
 ): BackgroundSyncSection {

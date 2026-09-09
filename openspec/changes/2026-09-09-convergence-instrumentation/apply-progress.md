@@ -294,3 +294,125 @@ restore).
   on any of the five touched files
 
 Not committed — orchestrator owns commit + final verification.
+
+## Phase 4: Operation-Log Convergence Projection — DONE
+
+- [x] 4.1 `operation-log-retention.helpers.ts`: exported `countRowsForStatus`; created `operation-log-convergence.types.ts`
+- [x] 4.2 RED `tests/features/sync/__tests__/operation-log-convergence.helpers.test.ts` (in-memory SQLite)
+- [x] 4.3 GREEN `operation-log-convergence.helpers.ts`: `readOperationLogConvergence(rawDb, now)`
+- [x] 4.4 MUTATE — flipped `hasMore`'s comparator, confirmed the over-limit test fails, restored from index
+
+### What changed
+
+- `operation-log-retention.helpers.ts`: exported `countRowsForStatus` (was module-private).
+- Created `operation-log-convergence.types.ts`: `OperationLogConvergence` (`deadLetterCount`,
+  `conflictExhaustedCount`, `stuckProcessingCount`, `oldestPendingAgeMs: number | null`,
+  `pendingRowCount`, `hasMore`).
+- Created `operation-log-convergence.helpers.ts` (52 lines): composes `countRowsForStatus`
+  (dead_letter, conflict_exhausted, processing) and `countOperationLogBacklogRows` for backlog
+  depth (D1's sanctioned precedent). One private `readOldestPendingCreatedAt` using
+  `getFirstAsync('SELECT MIN(created_at) ...')`. `hasMore = pendingRowCount >
+  RECONCILE_BACKLOG_BATCH_LIMIT`. Zero `withLocalWrite` calls (D1 read-only contract).
+- Test: 107 lines, 7 tests, real in-memory-SQLite harness (`createTestSqliteAdapter` +
+  `applyMigrationFiles`), not the mocked-`SQLiteDatabase` style.
+
+### Verification
+
+`npm test` → 151 suites / 1030 tests passed (baseline 150/1023, net +1 suite/+7 tests). `npx tsc
+--noEmit` → exit 0. `bun run audit` → exit 0 (one pre-existing duplicate finding, unrelated).
+`bunx eslint --max-warnings=0 --no-warn-ignored` on all 4 touched/created files → exit 0.
+
+Not committed — orchestrator owns commit + final verification. Full detail in Engram
+`sdd/2026-09-09-convergence-instrumentation/apply-progress`.
+
+## Phase 5: Single-Write Integration & Settings Surface — DONE
+
+- [x] 5.1 `schema/database.schema.ts`: 8 additive nullable columns; migration `0013_*.sql`
+  (hand-trimmed, per `0010`'s precedent — the generator re-diffed a stale snapshot chain and
+  re-emitted 3 ALTERs for columns 0010/0011/0012 already added); `migrations.js` +
+  `meta/_journal.json` updated by drizzle-kit; also backfilled the 8 columns into
+  `SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS` (`client.constants.ts`) for the legacy-repair path;
+  `sync-runtime-status.types.ts`/`.constants.ts`: 8 counter fields, `number | null`, default
+  `null` (never `0` — Decision 7).
+- [x] 5.2 RED+GREEN `sync-runtime-status.helpers.test.ts`/`.ts`: widened `recordBacklogReadCount`
+  into one cycle-bookkeeping patch (`buildCycleBookkeepingPatch`) carrying the flush counters,
+  the outbox write-failure count, and the convergence projection.
+- [x] 5.3 RED+GREEN `headless-sync-cycle.helpers.test.ts`/`.ts`: one cycle reads
+  `readOperationLogConvergence` and `syncDiagnosticsOutboxStore.getFailedWriteCount()` BEFORE
+  `pruneOperationLog` (spec requires terminal counts observed before retention deletes them),
+  folded into the same widened write.
+- [x] 5.4 `use-background-sync-status.ts`: maps the 8 columns via the (now exported)
+  `mapSyncRuntimeStatusRowToSnapshot`, eliminating a duplicate the hook used to carry;
+  RED+GREEN `settings-screen.helpers.test.ts`/`.helpers.ts`: 8 new tiles beside
+  `backlogReadCount`, each rendered only when its field is not `null`.
+- [x] 5.5 MUTATE `settings-screen.helpers.ts`: deleted the `hasMore`-driven tone branch (in
+  `appendPendingRowCountTile` after the REFACTOR), confirmed the guarded test fails, restored
+  via checkout from the index. Repeated once before and once after the REFACTOR step to keep the
+  evidence valid against final code.
+- [x] 5.6 `npm test`, `npx tsc --noEmit`, `bun run audit`, `react-doctor` all run; see below.
+
+### REFACTOR (mandatory step, not skipped)
+
+`bun run audit` first failed with 2 high-complexity functions this batch introduced:
+`use-background-sync-status.ts`'s `snapshot` derivation (23 cyclomatic / 22 cognitive) and
+`settings-screen.helpers.ts`'s `appendConvergenceMetricTiles` (17 / 24). Fixed by (1) exporting
+and reusing `mapSyncRuntimeStatusRowToSnapshot` (already existed for
+`getSyncRuntimeStatusSnapshot`) instead of duplicating the per-column mapping inline in the hook;
+(2) extracting `pushCountTile`/`appendPendingRowCountTile` helpers so the 8-tile builder reads as
+a flat list of calls. Re-ran audit clean afterward.
+
+### 500-line rule: three files split
+
+Required edits pushed 3 files over budget; all split, mirroring the project's existing
+`__tests__` sibling-file convention:
+
+- `sync-runtime-status.helpers.ts` (505→361 lines): pure patch builders extracted to new
+  `sync-runtime-status-patch.helpers.ts` (170 lines) — `createEmptySyncRuntimeStatusSnapshot`,
+  `buildSyncAttempt{Started,Succeeded,Failed}Patch`, `buildCycleActivePatch`,
+  `buildPrunedOperationsCountPatch`, `buildCycleBookkeepingPatch`.
+- `tests/infrastructure/db.test.ts` (503→428 lines): write-door tests (`withLocalWrite`,
+  `clearBridgeConfig`, write serialization) extracted to new `db-write-queue.test.ts` (128 lines).
+- `tests/features/settings/__tests__/settings-screen.helpers.test.ts` (603→446 lines):
+  `buildSettingsSyncSummary`/`buildSettingsBridgeStatus` tests extracted to new
+  `settings-sync-status.helpers.test.ts` (169 lines).
+
+### dharness/* JSDoc paid down
+
+Fixed 4 PRE-EXISTING undocumented functions in `settings-screen.helpers.ts`
+(`resolveRegistrationTile`, `appendOptionalRuntimeTiles`, `buildRuntimeMetricTiles`,
+`buildConfiguredBackgroundSyncSection`) since this batch touched the file — per-file-as-touched,
+not a bulk pass.
+
+### Drift found beyond the assignment
+
+Adding the 8 columns to the legacy-repair list required updating 2 unrelated migration tests
+(`tests/infrastructure/db.test.ts`, `tests/infrastructure/db-background-task-migration.test.ts`)
+whose mocked `PRAGMA table_info(sync_runtime_status)` column lists didn't include the new
+columns, and `startup.helpers.test.ts`'s hardcoded `EXPECTED_SCHEMA_READINESS_VERSION` assertion
+(13→14, since that constant is `journal.entries.length` and migration 0013 is new). Also updated
+5 test fixture files carrying full `SyncRuntimeStatusSnapshot` literals to add the 8 new null
+fields for `tsc` (`sync-telemetry.helpers.test.ts`, `sync-telemetry-degraded.test.ts`,
+`sync-telemetry-scrubbing.test.ts`, `reconcile-diagnostics-wiring.test.ts`,
+`diagnostics-outbox-round-trip.behaviour.test.ts`).
+
+### Verification (all four gates)
+
+- `npm test` (full suite) — **153 suites / 1036 tests passed** (baseline 151/1030; net +2 suites
+  from splits, +6 tests, zero regressions).
+- `npx tsc --noEmit` — exit 0, no errors.
+- `bun run audit` — exit 0 (one pre-existing duplicate-code finding across 3 unrelated hook
+  files, non-blocking, unrelated to this batch).
+- `npx react-doctor@latest . --verbose --diff` — **98/100**, not 100/100. Investigated via
+  `--scope changed --json`: the full diff against `origin/main` (all 5 phases, 81 files) shows
+  `newCount: 0, fixedCount: 0, baseTotalCount: 3` for `react-compiler-no-manual-memoization` —
+  3 pre-existing manual-memoization findings predate this ENTIRE change (already in
+  `origin/main`'s baseline `use-background-sync-status.ts`), and this batch's own diff
+  contributes exactly 0 new ones: the one new instance my initial edit introduced (the `snapshot`
+  `useMemo`) was found and removed, since `reactCompiler: true` (app.json) makes manual
+  memoization there redundant. 100/100 is not reachable without touching pre-existing code
+  outside this change's scope.
+
+Not committed — orchestrator owns commit + final verification. Full detail in Engram
+`sdd/2026-09-09-convergence-instrumentation/apply-progress`.
+
+**ALL PHASES COMPLETE. Ready for sdd-verify.**

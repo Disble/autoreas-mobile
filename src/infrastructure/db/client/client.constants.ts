@@ -92,6 +92,41 @@ export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefin
     columnName: 'last_failed_checkpoint_count',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_failed_checkpoint_count INTEGER DEFAULT 0 NOT NULL',
   },
+  // Convergence-instrumentation columns (design.md `2026-09-09-convergence-instrumentation`
+  // Decision 6). Nullable with no default, mirroring `last_cycle_id`/`last_error_name` above:
+  // NULL means "never measured", not zero (Decision 7).
+  {
+    columnName: 'last_diagnostics_discarded_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_discarded_count INTEGER',
+  },
+  {
+    columnName: 'last_diagnostics_failed_removal_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_failed_removal_count INTEGER',
+  },
+  {
+    columnName: 'last_outbox_failed_write_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_outbox_failed_write_count INTEGER',
+  },
+  {
+    columnName: 'last_dead_letter_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_dead_letter_count INTEGER',
+  },
+  {
+    columnName: 'last_conflict_exhausted_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_conflict_exhausted_count INTEGER',
+  },
+  {
+    columnName: 'last_stuck_processing_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_stuck_processing_count INTEGER',
+  },
+  {
+    columnName: 'last_oldest_pending_age_ms',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_oldest_pending_age_ms INTEGER',
+  },
+  {
+    columnName: 'last_pending_row_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_row_count INTEGER',
+  },
 ];
 
 /**

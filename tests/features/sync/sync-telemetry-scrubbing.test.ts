@@ -38,6 +38,14 @@ function buildSnapshot(
     consecutiveUnclosedCycles: 0,
     lastCycleStageAt: null,
     lastFailedCheckpointCount: 0,
+    lastDiagnosticsDiscardedCount: null,
+    lastDiagnosticsFailedRemovalCount: null,
+    lastOutboxFailedWriteCount: null,
+    lastDeadLetterCount: null,
+    lastConflictExhaustedCount: null,
+    lastStuckProcessingCount: null,
+    lastOldestPendingAgeMs: null,
+    lastPendingRowCount: null,
     ...overrides,
   };
 }

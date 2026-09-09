@@ -288,7 +288,7 @@ describe('database startup helpers', () => {
     );
   });
 
-  it('reports ready at version 13 when bridge_modified_at and conflict_attempt_count are present', async () => {
+  it('reports ready at version 14 when bridge_modified_at and conflict_attempt_count are present', async () => {
     const rawDb = {
       execAsync: jest.fn().mockResolvedValue(undefined),
       getFirstAsync: jest
@@ -310,7 +310,7 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(13);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(14);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });

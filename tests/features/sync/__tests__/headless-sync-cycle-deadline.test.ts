@@ -2,6 +2,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import * as dbClient from '../../../../src/infrastructure/db/client/client.helpers';
 import * as retentionModule from '../../../../src/features/sync/operation-log-retention.helpers';
 import * as syncModule from '../../../../src/features/sync/reconcile.helpers';
+import * as convergenceModule from '../../../../src/features/sync/operation-log-convergence.helpers';
+import { syncDiagnosticsOutboxStore } from '../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import {
   buildAbandonedCycleMessage,
   runHeadlessSyncCycle,
@@ -40,6 +42,17 @@ jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
 jest.mock('../../../../src/features/sync/operation-log-retention.helpers', () => ({
   pruneOperationLog: jest.fn(),
 }));
+
+jest.mock('../../../../src/features/sync/operation-log-convergence.helpers', () => ({
+  readOperationLogConvergence: jest.fn(),
+}));
+
+jest.mock(
+  '../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants',
+  () => ({
+    syncDiagnosticsOutboxStore: { getFailedWriteCount: jest.fn() },
+  }),
+);
 
 jest.mock('../../../../src/features/sync/sync-runtime-status.helpers', () => ({
   // The cycle reads the PREVIOUS cycle's snapshot before it records its own attempt, so the
@@ -106,12 +119,22 @@ describe('headless-sync-cycle helpers', () => {
       syncedCount: 3,
       backlogReadCount: 5,
       hasMorePending: false,
+      diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 },
     });
     (retentionModule.pruneOperationLog as jest.Mock).mockResolvedValue({
       prunedCount: 7,
       deletedSyncedCount: 4,
       deletedDeadLetterCount: 3,
     });
+    (convergenceModule.readOperationLogConvergence as jest.Mock).mockResolvedValue({
+      deadLetterCount: 0,
+      conflictExhaustedCount: 0,
+      stuckProcessingCount: 0,
+      oldestPendingAgeMs: null,
+      pendingRowCount: 0,
+      hasMore: false,
+    });
+    (syncDiagnosticsOutboxStore.getFailedWriteCount as jest.Mock).mockReturnValue(0);
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);

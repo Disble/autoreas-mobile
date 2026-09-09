@@ -3,6 +3,8 @@ import * as dbClient from '../../../../src/infrastructure/db/client/client.helpe
 import { LocalWriteError } from '../../../../src/infrastructure/db/client/client.errors';
 import * as retentionModule from '../../../../src/features/sync/operation-log-retention.helpers';
 import * as syncModule from '../../../../src/features/sync/reconcile.helpers';
+import * as convergenceModule from '../../../../src/features/sync/operation-log-convergence.helpers';
+import { syncDiagnosticsOutboxStore } from '../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import { runHeadlessSyncCycle } from '../../../../src/features/sync/headless-sync-cycle.helpers';
 import * as runtimeStatusModule from '../../../../src/features/sync/sync-runtime-status.helpers';
 import * as syncTelemetryModule from '../../../../src/features/sync/sync-telemetry.helpers';
@@ -10,6 +12,19 @@ import type { SyncSQLiteRuntime } from '../../../../src/features/sync/sqlite-syn
 
 /** Pinned so a single cycle's mint can be asserted to reappear, byte-for-byte, at every write. */
 const FIXED_CYCLE_ID = 'cycle-fixed-id';
+
+/** The diagnostics-flush result `syncPendingOperations` returns on a successful cycle. */
+const DIAGNOSTICS_FLUSH = { attempted: 4, delivered: 1, discarded: 2, failedRemovals: 1 };
+
+/** The operation-log convergence projection `readOperationLogConvergence` returns. */
+const CONVERGENCE = {
+  deadLetterCount: 3,
+  conflictExhaustedCount: 1,
+  stuckProcessingCount: 2,
+  oldestPendingAgeMs: 5_000,
+  pendingRowCount: 210,
+  hasMore: true,
+};
 
 jest.mock('../../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
@@ -33,6 +48,17 @@ jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
 jest.mock('../../../../src/features/sync/operation-log-retention.helpers', () => ({
   pruneOperationLog: jest.fn(),
 }));
+
+jest.mock('../../../../src/features/sync/operation-log-convergence.helpers', () => ({
+  readOperationLogConvergence: jest.fn(),
+}));
+
+jest.mock(
+  '../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants',
+  () => ({
+    syncDiagnosticsOutboxStore: { getFailedWriteCount: jest.fn() },
+  }),
+);
 
 jest.mock('../../../../src/features/sync/sync-runtime-status.helpers', () => ({
   // The cycle reads the PREVIOUS cycle's snapshot before it records its own attempt, so the
@@ -99,12 +125,15 @@ describe('headless-sync-cycle helpers', () => {
       syncedCount: 3,
       backlogReadCount: 5,
       hasMorePending: false,
+      diagnosticsFlush: DIAGNOSTICS_FLUSH,
     });
     (retentionModule.pruneOperationLog as jest.Mock).mockResolvedValue({
       prunedCount: 7,
       deletedSyncedCount: 4,
       deletedDeadLetterCount: 3,
     });
+    (convergenceModule.readOperationLogConvergence as jest.Mock).mockResolvedValue(CONVERGENCE);
+    (syncDiagnosticsOutboxStore.getFailedWriteCount as jest.Mock).mockReturnValue(2);
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
@@ -143,7 +172,17 @@ describe('headless-sync-cycle helpers', () => {
     );
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb, 'deferred');
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordBacklogReadCount).toHaveBeenCalledWith(rawDb, 5);
+    // The convergence projection is read BEFORE prune runs (spec: terminal counts must be
+    // observed before retention deletes the rows they count) and folded into the SAME
+    // bookkeeping write the backlog read count already used (design.md Decision 6).
+    expect(convergenceModule.readOperationLogConvergence).toHaveBeenCalledWith(rawDb);
+    expect(runtimeStatusModule.recordBacklogReadCount).toHaveBeenCalledWith(
+      rawDb,
+      5,
+      DIAGNOSTICS_FLUSH,
+      2,
+      CONVERGENCE,
+    );
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalledWith(
       rawDb,
       'foreground_service',
@@ -158,6 +197,25 @@ describe('headless-sync-cycle helpers', () => {
     // The cycle mints its correlation id exactly once and threads that SAME value into both
     // writes -- not a fresh id per write, which would make the two records uncorrelatable.
     expect(syncTelemetryModule.createSyncCycleId).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the convergence projection before pruning deletes the terminal rows it counts', async () => {
+    const callOrder: string[] = [];
+    (convergenceModule.readOperationLogConvergence as jest.Mock).mockImplementation(async () => {
+      callOrder.push('convergence');
+      return CONVERGENCE;
+    });
+    (retentionModule.pruneOperationLog as jest.Mock).mockImplementation(async () => {
+      callOrder.push('prune');
+      return { prunedCount: 7, deletedSyncedCount: 4, deletedDeadLetterCount: 3 };
+    });
+
+    await runHeadlessSyncCycle({
+      runtime: buildRuntime(),
+      triggerSource: 'foreground_service',
+    });
+
+    expect(callOrder).toEqual(['convergence', 'prune']);
   });
 
   it('still threads the cycle id into recordSyncAttemptStarted when the previous cycle never closed', async () => {

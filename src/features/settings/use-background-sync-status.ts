@@ -9,6 +9,7 @@ import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
   UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT,
 } from '../sync/sync-runtime-status.constants';
+import { mapSyncRuntimeStatusRowToSnapshot } from '../sync/sync-runtime-status.helpers';
 import type { UseBackgroundSyncStatusResult } from './background-sync-status.types';
 
 /** Coordinates background sync status state and actions. */
@@ -32,41 +33,17 @@ export function useBackgroundSyncStatus(): UseBackgroundSyncStatusResult {
   const { data: snapshots } = useOptionalLiveQuery<SyncRuntimeStatusRow[]>(query, []);
 
   // 5. Derived State (`useMemo`)
-  const snapshot = useMemo(() => {
-    if (!rawDb) {
-      return UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT;
-    }
-
-    const latestSnapshot = snapshots[0];
-
-    if (!latestSnapshot) {
-      return DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT;
-    }
-
-    return {
-      registrationStatus: latestSnapshot.registrationStatus,
-      executionMode: latestSnapshot.executionMode,
-      isForegroundServiceRunning: latestSnapshot.isForegroundServiceRunning,
-      canShowPersistentNotification: latestSnapshot.canShowPersistentNotification,
-      lastAttemptAt: latestSnapshot.lastAttemptAt,
-      lastSuccessAt: latestSnapshot.lastSuccessAt,
-      lastFailureMessage: latestSnapshot.lastFailureMessage,
-      lastTriggerSource: latestSnapshot.lastTriggerSource,
-      lastSyncedCount: latestSnapshot.lastSyncedCount,
-      isCycleActive: latestSnapshot.isCycleActive ?? false,
-      lastBacklogReadCount: latestSnapshot.lastBacklogReadCount ?? 0,
-      lastPrunedOperationsCount: latestSnapshot.lastPrunedOperationsCount ?? 0,
-      isBackgroundTaskRegistered: latestSnapshot.isBackgroundTaskRegistered ?? false,
-      lastCycleId: latestSnapshot.lastCycleId ?? null,
-      lastCycleStage: latestSnapshot.lastCycleStage ?? null,
-      lastErrorName: latestSnapshot.lastErrorName ?? null,
-      lastNativeErrcodeByte: latestSnapshot.lastNativeErrcodeByte ?? null,
-      lastErrorStage: latestSnapshot.lastErrorStage ?? null,
-      consecutiveUnclosedCycles: latestSnapshot.consecutiveUnclosedCycles ?? 0,
-      lastCycleStageAt: latestSnapshot.lastCycleStageAt ?? null,
-      lastFailedCheckpointCount: latestSnapshot.lastFailedCheckpointCount ?? 0,
-    };
-  }, [rawDb, snapshots]);
+  // Delegates the per-column default-filling to `mapSyncRuntimeStatusRowToSnapshot` -- the SAME
+  // mapping `getSyncRuntimeStatusSnapshot` uses -- instead of duplicating that tail here (D7's
+  // `?? null` rule for the eight convergence counters lives in exactly one place this way).
+  // No manual `useMemo` here: the React Compiler (`reactCompiler: true`, app.json) memoizes this
+  // derivation on its own (react-doctor: `react-compiler-no-manual-memoization`).
+  const latestSnapshot = snapshots[0];
+  const snapshot = !rawDb
+    ? UNSUPPORTED_SYNC_RUNTIME_STATUS_SNAPSHOT
+    : latestSnapshot
+      ? mapSyncRuntimeStatusRowToSnapshot(latestSnapshot)
+      : DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT;
 
   // 6. Callbacks (`useCallback` calling pure helpers)
 
