@@ -351,6 +351,7 @@ async function performSyncPendingOperations(
           snapshot: telemetryContext.snapshot,
           pendingOpsCount: pendingOps.length,
           cursor: lastChangelogId,
+          now: Date.now(),
           recentEvents: telemetryContext.recentEvents,
         }),
         config,

@@ -4,8 +4,8 @@ import {
   derivePreviousCycleOutcome,
   resolveClientTelemetry,
   toWireSyncCycleTelemetry,
-} from '../../../src/features/sync/sync-telemetry.helpers';
-import type { SyncRuntimeStatusSnapshot } from '../../../src/features/sync/sync-runtime-status.types';
+} from '../../../../src/features/sync/sync-telemetry.helpers';
+import type { SyncRuntimeStatusSnapshot } from '../../../../src/features/sync/sync-runtime-status.types';
 
 /** Builds a neutral runtime snapshot so each test only states the fields it actually exercises. */
 function buildSnapshot(
@@ -92,6 +92,7 @@ describe('buildSyncCycleTelemetry', () => {
       snapshot: buildSnapshot(),
       pendingOpsCount: 0,
       cursor: 0,
+      now: 1710000000000,
     });
 
     expect(telemetry.previousCycle).toBeNull();
@@ -141,7 +142,11 @@ describe('buildSyncCycleTelemetry', () => {
     });
   });
 
-  it('deja elapsedMs en null cuando no puede calcularlo', () => {
+  it('elapsed_ms es no-negativo cuando existe un timestamp de intento previo y se provee now', () => {
+    // Requirement: "Elapsed Time Is Reported When A Previous Attempt Timestamp Exists" --
+    // Scenario "elapsed_ms is present following a prior attempt". `now` es OBLIGATORIO desde
+    // D5, así que este test ya no puede omitirlo: hacerlo opcional es precisamente lo que
+    // mantenía `elapsed_ms` en null durante toda la vida de la funcionalidad.
     const telemetry = buildSyncCycleTelemetry({
       cycleId: 'cycle-3',
       triggerSource: 'manual',
@@ -149,9 +154,28 @@ describe('buildSyncCycleTelemetry', () => {
       snapshot: buildSnapshot({ lastAttemptAt: 1710000000000, isCycleActive: true }),
       pendingOpsCount: 0,
       cursor: 10,
+      now: 1710000003000,
     });
 
-    expect(telemetry.previousCycle?.elapsedMs).toBeNull();
+    expect(telemetry.previousCycle?.elapsedMs).not.toBeNull();
+    expect(telemetry.previousCycle?.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('no reporta elapsed_ms cuando nunca hubo un intento previo', () => {
+    // Requirement: "Elapsed Time Is Reported When A Previous Attempt Timestamp Exists" --
+    // Scenario "elapsed_ms stays null with no prior attempt": sin historial, `previousCycle`
+    // entero es null y por lo tanto no hay `elapsed_ms` que reportar.
+    const telemetry = buildSyncCycleTelemetry({
+      cycleId: 'cycle-3b',
+      triggerSource: 'manual',
+      appState: 'foreground',
+      snapshot: buildSnapshot(),
+      pendingOpsCount: 0,
+      cursor: 10,
+      now: 1710000003000,
+    });
+
+    expect(telemetry.previousCycle).toBeNull();
   });
 
   it('nunca deja elapsedMs negativo si el reloj retrocede', () => {
@@ -229,6 +253,7 @@ describe('toWireSyncCycleTelemetry', () => {
         snapshot: buildSnapshot(),
         pendingOpsCount: 0,
         cursor: 0,
+        now: 1710000000000,
       }),
     );
 
@@ -366,6 +391,7 @@ describe('eventos de diagnóstico en el payload', () => {
         snapshot: buildSnapshot({ lastAttemptAt: 1710000000000, isCycleActive: true }),
         pendingOpsCount: 0,
         cursor: 2259,
+        now: 1710000005000,
         recentEvents: events,
       }),
     );
@@ -384,6 +410,7 @@ describe('eventos de diagnóstico en el payload', () => {
         snapshot: buildSnapshot(),
         pendingOpsCount: 0,
         cursor: 0,
+        now: 1710000000000,
       }),
     );
 
@@ -401,6 +428,7 @@ describe('eventos de diagnóstico en el payload', () => {
         snapshot: buildSnapshot({ lastAttemptAt: 1710000000000, isCycleActive: true }),
         pendingOpsCount: 0,
         cursor: 2259,
+        now: 1710000005000,
         recentEvents: events,
       }),
     );

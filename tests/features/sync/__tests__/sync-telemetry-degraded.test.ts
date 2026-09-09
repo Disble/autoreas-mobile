@@ -81,6 +81,7 @@ describe('degraded tier reporting', () => {
         snapshot: buildSnapshot(),
         pendingOpsCount: 0,
         cursor: 0,
+        now: 1710000000000,
       }),
     );
 

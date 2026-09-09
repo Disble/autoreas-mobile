@@ -47,9 +47,9 @@ phase closes that gap and must land before Phase 5.
 
 ## Phase 2: Elapsed Time Correctness
 
-- [ ] 2.1 RED `sync-telemetry.helpers.test.ts`: `elapsed_ms` non-null given a prior attempt timestamp and `now`; stays null with no prior attempt.
-- [ ] 2.2 GREEN `sync-telemetry.types.ts`: `now: number` required; `reconcile.helpers.ts`: pass `now: Date.now()` (~line 347); delete `deriveElapsedMs`'s unreachable branch; migrate every fixture `tsc` flags; fix `dharness/*` findings.
-- [ ] 2.3 MUTATE `sync-telemetry.helpers.ts`: reinstate the deleted branch; confirm test fails; restore via checkout.
+- [x] 2.1 RED `sync-telemetry.helpers.test.ts`: `elapsed_ms` non-null given a prior attempt timestamp and `now`; stays null with no prior attempt.
+- [x] 2.2 GREEN `sync-telemetry.types.ts`: `now: number` required; `reconcile.helpers.ts`: pass `now: Date.now()` (~line 347); delete `deriveElapsedMs`'s unreachable branch; migrate every fixture `tsc` flags; fix `dharness/*` findings.
+- [x] 2.3 MUTATE `sync-telemetry.helpers.ts`: reinstate the deleted branch; confirm test fails; restore via checkout.
 
 ## Phase 3: Diagnostics Delivery Outcome
 

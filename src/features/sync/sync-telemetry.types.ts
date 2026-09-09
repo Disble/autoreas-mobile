@@ -84,7 +84,14 @@ export interface SyncCycleTelemetry {
   readonly recentEvents: readonly SyncDiagnosticEvent[];
 }
 
-/** Inputs `buildSyncCycleTelemetry` needs; `now` omitted means elapsed time is unknowable. */
+/**
+ * Inputs `buildSyncCycleTelemetry` needs.
+ *
+ * `now` is REQUIRED (design.md Decision D5): making it optional was precisely the mechanism
+ * that kept `previous_cycle.elapsed_ms` null for the feature's whole life, because the sole
+ * production caller never supplied it. A missing clock reading is now a compile error a caller
+ * must fix, not a silent runtime null this type quietly tolerated.
+ */
 export interface BuildSyncCycleTelemetryInput {
   readonly cycleId: string;
   readonly triggerSource: SyncRuntimeTriggerSource;
@@ -92,7 +99,7 @@ export interface BuildSyncCycleTelemetryInput {
   readonly snapshot: SyncRuntimeStatusSnapshot;
   readonly pendingOpsCount: number;
   readonly cursor: number;
-  readonly now?: number;
+  readonly now: number;
   readonly recentEvents?: readonly SyncDiagnosticEvent[];
 }
 

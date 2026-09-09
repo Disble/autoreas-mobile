@@ -126,9 +126,13 @@ export function derivePreviousCycleOutcome(
  * Derives how long the previous cycle ran before its last observable checkpoint.
  * Clamped at zero so a device clock that moved backwards reports an unknown-but-sane duration
  * instead of a negative one that would read as a corrupt measurement upstream.
+ *
+ * `now` is required (design.md Decision D5): the caller always has a clock reading, so the
+ * `now === undefined` branch this used to carry was unreachable and has been deleted rather
+ * than mutation-tested, per the same decision.
  */
-function deriveElapsedMs(startedAt: number | null, now: number | undefined): number | null {
-  if (startedAt === null || now === undefined) {
+function deriveElapsedMs(startedAt: number | null, now: number): number | null {
+  if (startedAt === null) {
     return null;
   }
 
@@ -140,7 +144,7 @@ function deriveElapsedMs(startedAt: number | null, now: number | undefined): num
  */
 function buildPreviousCycleTelemetry(
   snapshot: SyncRuntimeStatusSnapshot,
-  now: number | undefined,
+  now: number,
 ): PreviousCycleTelemetry | null {
   const outcome = derivePreviousCycleOutcome(snapshot);
 

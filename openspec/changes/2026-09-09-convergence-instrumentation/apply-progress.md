@@ -135,3 +135,75 @@ cycle-id parameter); this phase only added a regression guard proving that behav
 by the new argument.
 
 Not committed — orchestrator owns commit + final verification.
+
+## Phase 2: Elapsed Time Correctness — DONE
+
+- [x] 2.1 RED `tests/features/sync/__tests__/sync-telemetry.helpers.test.ts`
+- [x] 2.2 GREEN `sync-telemetry.types.ts` + `sync-telemetry.helpers.ts` + `reconcile.helpers.ts`
+- [x] 2.3 MUTATE — reinstated the deleted `now === undefined` branch; empirically confirmed
+  uncatchable (see below); restored from index
+
+### What changed
+
+- `sync-telemetry.types.ts`: `BuildSyncCycleTelemetryInput.now` is now `number` (was `number?`),
+  per design.md Decision D5. Doc comment rewritten to explain why optionality was the defect.
+- `sync-telemetry.helpers.ts`: `deriveElapsedMs(startedAt, now: number)` — dropped the
+  `now: number | undefined` widening and the `|| now === undefined` disjunct in its guard, so it
+  now only short-circuits on `startedAt === null`. `buildPreviousCycleTelemetry`'s `now` parameter
+  narrowed the same way.
+- `reconcile.helpers.ts:347-357` (the sole production caller): added `now: Date.now()` to the
+  `buildSyncCycleTelemetry(...)` call. This is the actual production gap the phase exists to
+  close — `previous_cycle.elapsed_ms` was unreachable on the wire before this line existed.
+- Fixture migration: `npx tsc --noEmit` was clean both before and after the type tightening,
+  because every bare `buildSyncCycleTelemetry({...})` call site missing `now` was found and fixed
+  by grep first (7 total across `tests/features/sync/__tests__/sync-telemetry.helpers.test.ts` and
+  `tests/features/sync/__tests__/sync-telemetry-degraded.test.ts`), not discovered after the fact
+  by a red `tsc` run.
+- Test file convention: moved `tests/features/sync/sync-telemetry.helpers.test.ts` to
+  `tests/features/sync/__tests__/sync-telemetry.helpers.test.ts` (same pre-existing `__tests__`
+  violation Phases 1/1b fixed for the files they were required to touch — not a bulk pass).
+  Replaced the one test that asserted the now-deleted branch's behavior (`elapsedMs` null when
+  `now` is omitted despite a prior attempt existing — a scenario that can no longer be constructed
+  under the tightened type) with two tests named directly after the spec's two GIVEN/WHEN/THEN
+  scenarios: elapsed_ms non-null and non-negative given a prior attempt + `now`, and
+  `previousCycle` (hence no `elapsed_ms`) staying null with no prior attempt.
+
+### Honest disclosure: this phase's RED was a type contract, not a jest failure
+
+Before touching source, I ran the migrated test file against the UNCHANGED implementation: all 52
+tests in the three affected suites passed. The pure builder's null/non-null computation was never
+actually wrong when `now` was supplied — the defect was entirely the missing argument at the one
+production call site, which no jest fixture exercises (tasks.md scopes 2.1 to the pure-builder
+test file only; the reconcile-level wiring test does not assert on `elapsed_ms`). So "RED" here is
+the compile-time contract design.md D5 describes ("required turns a silent runtime null into a
+compile error"), not a failing assertion.
+
+### Mutation (2.3): confirmed uncatchable, exactly as design.md predicts
+
+Staged the green `sync-telemetry.helpers.ts`, then reinstated `|| now === undefined` in
+`deriveElapsedMs`'s guard. Checked all three mechanisms that could catch it:
+- `npx tsc --noEmit`: clean. TypeScript does not flag `x === undefined` as an unintentional
+  comparison (TS2367) even when `x`'s declared type excludes `undefined` — it special-cases
+  comparisons against `null`/`undefined` to allow defensive runtime checks.
+- `npx eslint --max-warnings=0 --no-warn-ignored src/features/sync/sync-telemetry.helpers.ts`:
+  clean (no `no-unnecessary-condition`-style rule active here).
+- Full `npm test`: 150/150 suites, 1021/1021 tests, still green — no real caller can ever supply
+  `undefined` for a typed `number` parameter, so the branch has zero observable effect.
+This matches design.md Decision D5 verbatim: "(mutation-tdd: unreachable code is removed, not
+tested)." Restored via `git checkout -- src/features/sync/sync-telemetry.helpers.ts` (index
+restore).
+
+### Verification
+
+- `npx jest tests/features/sync/__tests__/sync-telemetry.helpers.test.ts
+  tests/features/sync/__tests__/sync-telemetry-degraded.test.ts
+  tests/features/sync/sync-telemetry-scrubbing.test.ts
+  tests/features/sync/reconcile-diagnostics-wiring.test.ts
+  tests/features/sync/reconcile.helpers.test.ts` — 69/69 passed
+- `npm test` (full suite) — 150 suites / 1021 tests passed (baseline 150/1020; net +1 from
+  replacing 1 test with 2)
+- `npx tsc --noEmit` — exit 0, no errors
+- `npx eslint --max-warnings=0 --no-warn-ignored <touched files>` — clean, no `dharness/*` findings
+  on any of the five touched files
+
+Not committed — orchestrator owns commit + final verification.
