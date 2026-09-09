@@ -27,6 +27,12 @@ export type HeadlessSyncCycleStage =
 export interface HeadlessSyncCycleProgress {
   stage: HeadlessSyncCycleStage;
   attemptedAt: number;
+  /**
+   * This cycle's own correlation id, set once `runCycleBody` mints it. Stays `null` until then,
+   * so an abandoned cycle killed before that point reports honestly that it has none to
+   * correlate, rather than fabricating one.
+   */
+  cycleId: string | null;
 }
 
 /** Defines the data contract for run headless sync cycle params. */

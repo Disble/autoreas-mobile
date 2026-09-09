@@ -1,33 +1,47 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
-import * as retentionModule from '../../../src/features/sync/operation-log-retention.helpers';
-import * as syncModule from '../../../src/features/sync/reconcile.helpers';
+import * as dbClient from '../../../../src/infrastructure/db/client/client.helpers';
+import * as retentionModule from '../../../../src/features/sync/operation-log-retention.helpers';
+import * as syncModule from '../../../../src/features/sync/reconcile.helpers';
 import {
   buildAbandonedCycleMessage,
   runHeadlessSyncCycle,
-} from '../../../src/features/sync/headless-sync-cycle.helpers';
+} from '../../../../src/features/sync/headless-sync-cycle.helpers';
 import {
   HEADLESS_SYNC_CYCLE_DEADLINE_MS,
   HEADLESS_SYNC_CYCLE_RECOVERY_DEADLINE_MS,
-} from '../../../src/features/sync/headless-sync-cycle.constants';
-import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
-import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
+} from '../../../../src/features/sync/headless-sync-cycle.constants';
+import * as runtimeStatusModule from '../../../../src/features/sync/sync-runtime-status.helpers';
+import type { SyncSQLiteRuntime } from '../../../../src/features/sync/sqlite-sync-runtime.types';
 
-jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
+/**
+ * Split from `headless-sync-cycle.helpers.test.ts` (CLAUDE.md #5, the 500-line rule): this file
+ * owns the hard-deadline/abandoned-cycle behavior and `buildAbandonedCycleMessage`; the sibling
+ * file owns the happy-path, no-op, and failure-classification behavior.
+ */
+
+/** Pinned so the abandoned-cycle assertion can match the exact id the cycle minted. */
+const FIXED_CYCLE_ID = 'cycle-fixed-id';
+
+jest.mock('../../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   openAppDatabaseSync: jest.fn(),
   runMigrations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
+jest.mock('../../../../src/features/sync/sync-telemetry.helpers', () => ({
+  ...jest.requireActual('../../../../src/features/sync/sync-telemetry.helpers'),
+  createSyncCycleId: jest.fn(() => FIXED_CYCLE_ID),
+}));
+
+jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
+jest.mock('../../../../src/features/sync/operation-log-retention.helpers', () => ({
   pruneOperationLog: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
+jest.mock('../../../../src/features/sync/sync-runtime-status.helpers', () => ({
   // The cycle reads the PREVIOUS cycle's snapshot before it records its own attempt, so the
   // telemetry post-mortem describes the run that died rather than the one starting now.
   getSyncRuntimeStatusSnapshot: jest.fn().mockResolvedValue({
@@ -106,117 +120,6 @@ describe('headless-sync-cycle helpers', () => {
     (runtimeStatusModule.recordPrunedOperationsCount as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('persists attempt and success for a foreground service cycle, applying in staged mode (never deferred)', async () => {
-    const runtime = buildRuntime();
-    const result = await runHeadlessSyncCycle({
-      runtime,
-      triggerSource: 'foreground_service',
-    });
-
-    expect(result).toEqual({ kind: 'success', syncedCount: 3 });
-    expect(runtime.open).toHaveBeenCalled();
-    expect(dbClient.getBridgeConfigSnapshot).toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordSyncAttemptStarted).toHaveBeenCalledWith(
-      rawDb,
-      'foreground_service',
-      expect.any(Number),
-    );
-    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, true);
-    // The headless/background runtime owns an isolated, non-reactive connection
-    // (enableChangeListener:false). It MUST pass 'staged' so the reconcile apply step never
-    // writes `animes` directly on this connection -- a mis-set 'deferred' here would
-    // silently reintroduce the non-reactive-write regression with no UI feedback.
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(
-      rawDb,
-      'staged',
-      // The telemetry context rides along on the same call: it is assembled here, before the
-      // status writes, because only this caller can see the previous cycle's snapshot intact.
-      expect.objectContaining({ appState: 'background' }),
-    );
-    expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb, 'deferred');
-    expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordBacklogReadCount).toHaveBeenCalledWith(rawDb, 5);
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalledWith(
-      rawDb,
-      'foreground_service',
-      expect.any(Number),
-      3,
-    );
-    expect(retentionModule.pruneOperationLog).toHaveBeenCalledWith(rawDb);
-    expect(runtimeStatusModule.recordPrunedOperationsCount).toHaveBeenCalledWith(rawDb, 7);
-    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, false);
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-  });
-
-  it('returns no-op without pairing and avoids fake success', async () => {
-    (dbClient.getBridgeConfigSnapshot as jest.Mock).mockResolvedValue({
-      id: 1,
-      ip: '192.168.1.9',
-      port: 3000,
-      token: 'secret',
-      deviceId: null,
-      deviceName: 'Bridge Casa',
-      lastChangelogId: 0,
-    });
-
-    const result = await runHeadlessSyncCycle({
-      runtime: buildRuntime(),
-      triggerSource: 'foreground_service',
-    });
-
-    expect(result).toEqual({ kind: 'no_op', syncedCount: 0 });
-    expect(syncModule.syncPendingOperations).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptStarted).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordCycleActive).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-  });
-
-  it('persists a failed foreground service cycle without fabricating success', async () => {
-    (syncModule.syncPendingOperations as jest.Mock).mockRejectedValue(new Error('Network Error'));
-
-    const result = await runHeadlessSyncCycle({
-      runtime: buildRuntime(),
-      triggerSource: 'foreground_service',
-    });
-
-    expect(result).toEqual({ kind: 'failed', syncedCount: 0 });
-    expect(runtimeStatusModule.recordSyncAttemptStarted).toHaveBeenCalledWith(
-      rawDb,
-      'foreground_service',
-      expect.any(Number),
-    );
-    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, true);
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'foreground_service',
-      expect.any(Number),
-      'Network Error',
-    );
-    expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, false);
-  });
-
-  it('returns success when pruning fails after a successful sync', async () => {
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    (retentionModule.pruneOperationLog as jest.Mock).mockRejectedValue(new Error('prune failed'));
-
-    const result = await runHeadlessSyncCycle({
-      runtime: buildRuntime(),
-      triggerSource: 'foreground_service',
-    });
-
-    expect(result).toEqual({ kind: 'success', syncedCount: 3 });
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      '[runHeadlessSyncCycle] Operation-log pruning failed',
-      expect.any(Error),
-    );
-
-    consoleWarnSpy.mockRestore();
-  });
-
   describe('hard cycle deadline', () => {
     beforeEach(() => {
       jest.useFakeTimers();
@@ -261,6 +164,10 @@ describe('headless-sync-cycle helpers', () => {
         'background_task',
         expect.any(Number),
         expect.stringContaining('reconcile'),
+        // No JS error was ever caught for an abandoned cycle, only its identity; the mapped
+        // stage is `null` too, since 'reconcile' has no exact `SyncCycleStage` correspondence,
+        // and the error triple stays unset rather than fabricating a class it never saw.
+        { cycleId: FIXED_CYCLE_ID, stage: null },
       );
     });
 

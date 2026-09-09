@@ -1,3 +1,6 @@
+import type { HeadlessSyncCycleStage } from './headless-sync-cycle.types';
+import type { SyncCycleStage } from './sync-runtime-status.types';
+
 /**
  * Budget for one whole headless sync cycle, enforced from INSIDE the cycle so the cycle itself
  * settles rather than being abandoned by an outer bound.
@@ -27,3 +30,35 @@ export const HEADLESS_SYNC_CYCLE_DEADLINE_MS = 35_000;
  * fires first.
  */
 export const HEADLESS_SYNC_CYCLE_RECOVERY_DEADLINE_MS = 8_000;
+
+/**
+ * Maps this module's own stage checkpoints onto the bridge's closed `SyncCycleStage` vocabulary,
+ * reporting `null` rather than a guess wherever there is no EXACT correspondence.
+ *
+ * The two vocabularies are not the same set: `HeadlessSyncCycleStage` names what
+ * `headless-sync-cycle.helpers.ts` can observe on its own, while `SyncCycleStage` additionally
+ * distinguishes the checkpoints inside `reconcile.helpers.ts` (`backlog_read`, `claim_ops`,
+ * `http`, `parse_response`, `apply_write` -- which includes local SQLite writes through
+ * `withLocalWrite`), and that module does not yet publish its own progress. `open`, `config`,
+ * `attempt_started`, `cycle_activated`, and `prune` translate directly. `reconcile` and
+ * `result_bookkeeping` report `null`: collapsing either one onto a single member such as `http`
+ * would misreport a local write-door jam inside reconcile as a transport failure, which is
+ * exactly the false-positive class this instrumentation exists to eliminate (design.md,
+ * "`last_stage` reports only exact correspondences"). The error triple
+ * (`error_name`/`error_stage`/`error_cause`) still carries the discriminating diagnosis for a
+ * failure on either of those two checkpoints; only the stage label itself stays honest about
+ * what it does not know. Splitting them further requires `reconcile.helpers.ts` to publish its
+ * own checkpoints, which is out of this module's scope (see design.md's open follow-up).
+ */
+export const HEADLESS_STAGE_TO_SYNC_CYCLE_STAGE: Record<
+  HeadlessSyncCycleStage,
+  SyncCycleStage | null
+> = {
+  open: 'open',
+  bridge_config: 'config',
+  attempt_started: 'attempt_started',
+  cycle_activated: 'cycle_activated',
+  reconcile: null,
+  result_bookkeeping: null,
+  prune: 'prune',
+};

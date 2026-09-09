@@ -2,6 +2,7 @@ import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.h
 import { withDeadline } from '../../infrastructure/async/deadline.helpers';
 import { DeadlineExceededError } from '../../infrastructure/async/deadline.errors';
 import {
+  HEADLESS_STAGE_TO_SYNC_CYCLE_STAGE,
   HEADLESS_SYNC_CYCLE_DEADLINE_MS,
   HEADLESS_SYNC_CYCLE_RECOVERY_DEADLINE_MS,
 } from './headless-sync-cycle.constants';
@@ -12,7 +13,13 @@ import {
   drainDiagnosticEvents,
   recordDiagnosticEvent,
 } from './sync-diagnostic-store/sync-diagnostic-store.helpers';
-import { causeFromError, createSyncCycleId } from './sync-telemetry.helpers';
+import {
+  causeFromError,
+  createSyncCycleId,
+  normalizeNativeErrcodeByte,
+  normalizeSyncCycleErrorName,
+  normalizeSyncCycleErrorStage,
+} from './sync-telemetry.helpers';
 import {
   getSyncRuntimeStatusSnapshot,
   recordBacklogReadCount,
@@ -28,6 +35,7 @@ import type {
   HeadlessSyncCycleStage,
   RunHeadlessSyncCycleParams,
 } from './headless-sync-cycle.types';
+import type { SyncAttemptFailureDetail, SyncCycleStage } from './sync-runtime-status.types';
 
 /**
  * Builds the failure message persisted for a cycle that never came back.
@@ -42,6 +50,49 @@ export function buildAbandonedCycleMessage(
   timeoutMs: number,
 ): string {
   return `Background sync cycle abandoned after ${timeoutMs}ms at stage '${stage}'`;
+}
+
+/** Translates one checkpoint via {@link HEADLESS_STAGE_TO_SYNC_CYCLE_STAGE}. */
+function toSyncCycleStage(stage: HeadlessSyncCycleStage): SyncCycleStage | null {
+  return HEADLESS_STAGE_TO_SYNC_CYCLE_STAGE[stage];
+}
+
+/**
+ * Reads one field off a thrown value without assuming its shape.
+ * Errors this module catches are not guaranteed to be a specific class (`LocalWriteError`,
+ * a bridge client error, or a bare `Error`), so every field is read defensively rather than
+ * through `instanceof` -- matching `anime-mutation-failure.helpers.ts`'s duck-typed reader, and
+ * keeping this module decoupled from a concrete error export a test's mock module might omit.
+ */
+function readErrorShapeField(error: unknown, field: string): unknown {
+  return typeof error === 'object' && error !== null && field in error
+    ? (error as Record<string, unknown>)[field]
+    : null;
+}
+
+/**
+ * Classifies a caught cycle failure into the closed vocabularies `previous_cycle.*` reports.
+ *
+ * Reuses `sync-telemetry.helpers`'s normalizers rather than inventing a second taxonomy: an
+ * out-of-vocabulary value collapses to the same `unknown`/`null` the read-side normalization
+ * would already produce, instead of drifting into a value the bridge rejects with a `400`.
+ */
+function buildSyncAttemptFailureDetail(
+  error: unknown,
+  stage: HeadlessSyncCycleStage,
+  cycleId: string | null,
+): SyncAttemptFailureDetail {
+  const rawErrorStage = readErrorShapeField(error, 'stage');
+
+  return {
+    cycleId,
+    stage: toSyncCycleStage(stage),
+    errorName: normalizeSyncCycleErrorName(error instanceof Error ? error.name : null),
+    errorStage: normalizeSyncCycleErrorStage(
+      typeof rawErrorStage === 'string' ? rawErrorStage : null,
+    ),
+    nativeErrcodeByte: normalizeNativeErrcodeByte(readErrorShapeField(error, 'errcode')),
+  };
 }
 
 /**
@@ -77,11 +128,21 @@ async function runCycleBody(
     recentEvents: drainDiagnosticEvents(),
   };
 
+  // Stashed on `progress` (not only read from `telemetryContext` here) so `recordAbandonedCycle`
+  // -- a separate function with no access to this closure -- can still correlate an abandoned
+  // cycle with the request the bridge captured for it.
+  progress.cycleId = telemetryContext.cycleId;
+
   const attemptedAt = Date.now();
   progress.attemptedAt = attemptedAt;
 
   progress.stage = 'attempt_started';
-  await recordSyncAttemptStarted(rawDb, params.triggerSource, attemptedAt);
+  await recordSyncAttemptStarted(
+    rawDb,
+    params.triggerSource,
+    attemptedAt,
+    telemetryContext.cycleId,
+  );
 
   progress.stage = 'cycle_activated';
   await recordCycleActive(rawDb, true);
@@ -106,6 +167,7 @@ async function runCycleBody(
       params.triggerSource,
       attemptedAt,
       syncedCount,
+      telemetryContext.cycleId,
     );
 
     try {
@@ -130,7 +192,13 @@ async function runCycleBody(
       at: Date.now(),
     });
 
-    await recordSyncAttemptFailed(rawDb, params.triggerSource, attemptedAt, message);
+    await recordSyncAttemptFailed(
+      rawDb,
+      params.triggerSource,
+      attemptedAt,
+      message,
+      buildSyncAttemptFailureDetail(error, progress.stage, telemetryContext.cycleId),
+    );
 
     try {
       const pruneResult = await pruneOperationLog(rawDb);
@@ -176,6 +244,10 @@ async function recordAbandonedCycle(
           params.triggerSource,
           progress.attemptedAt,
           buildAbandonedCycleMessage(progress.stage, timeoutMs),
+          // No JS error was ever caught here -- the cycle simply never came back -- so only the
+          // identity and stage are known; the error triple stays `null` rather than fabricating
+          // a class or phase the abandoned cycle never actually reported.
+          { cycleId: progress.cycleId, stage: toSyncCycleStage(progress.stage) },
         );
         await recordCycleActive(rawDb, false);
       },
@@ -206,6 +278,7 @@ export async function runHeadlessSyncCycle(
   const progress: HeadlessSyncCycleProgress = {
     stage: 'open',
     attemptedAt: Date.now(),
+    cycleId: null,
   };
 
   // Timer-liveness probe. A zero-delay timer must fire during the cycle's very first await; if

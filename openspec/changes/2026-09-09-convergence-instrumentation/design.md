@@ -67,6 +67,19 @@ Additive nullable columns, read with `?? 0` / `?? null` in `use-background-sync-
 
 **Write-door decision**: these do NOT get their own write. `recordBacklogReadCount` (`headless-sync-cycle.helpers.ts:103`) already performs one full read-modify-write per cycle; it is extended into a single cycle-bookkeeping patch carrying the flush counters and the projection. The flush result reaches it by widening `SyncPendingOperationsResult` (which already returns `{ syncedCount, backlogReadCount }`). Rejected: persisting at `reconcile.helpers.ts:381` — that site is deliberately outside every `withLocalWrite`, and adding a write there puts the shared door on the diagnostics path the surrounding comment exists to keep off it.
 
+
+### D7 — Headless stage maps to the wire vocabulary only where the correspondence is exact
+
+`HeadlessSyncCycleStage` (7 members: `open`, `bridge_config`, `attempt_started`, `cycle_activated`, `reconcile`, `result_bookkeeping`, `prune`) and the wire's `SYNC_CYCLE_STAGES` (11 members) are genuinely different sets, and nothing in the earlier decisions reconciled them. The wire vocabulary has **no `unknown` member**, so `null` is the only way to say "not known".
+
+**Chosen**: `HEADLESS_STAGE_TO_SYNC_CYCLE_STAGE` maps the five exact correspondences (`open`, `bridge_config`->`config`, `attempt_started`, `cycle_activated`, `prune`) and returns `null` for `reconcile` and `result_bookkeeping`.
+
+**Rejected**: approximating them as `reconcile`->`http` and `result_bookkeeping`->`apply_write`. The `reconcile` leg spans `backlog_read`, `claim_ops`, `http`, `parse_response` **and** `apply_write`, including local SQLite writes through `withLocalWrite`. Reporting `http` for it would describe a write-door jam as a transport failure -- collapsing precisely the distinction this change exists to make. It is also the defect class this change was built to remove: a field that answers falsely is worse than one that answers nothing, exactly as `consecutive_unclosed_cycles` reading `0` beside three `never_closed` outcomes was. At fleet scale it would be worse still, since `last_stage` would cluster on `http` as an artefact of the mapping rather than of reality.
+
+The diagnosis the approximation was protecting is not lost: on that same failure path the error triple fires, and it is the surface actually designed to discriminate -- `error_name` separates `LocalWriteError` from `BridgeTimeoutError` from `ReconcileHttpError`, `error_stage` gives `begin`/`task`/`commit`/`rollback`/`deadline`, and `error_cause` separates `closed_resource` from `lock_contention`.
+
+**Documented follow-up, not scheduled here**: publishing real stage checkpoints from `reconcile.helpers.ts` would let those two stages report an exact sub-stage instead of `null`. That touches a file outside this change's scope.
+
 ## Data Flow
 
 ```

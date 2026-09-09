@@ -41,9 +41,9 @@ passes real values, so production still writes null and `previous_cycle.*` stays
 unreachable on the wire -- the outcome this whole change exists to produce. This
 phase closes that gap and must land before Phase 5.
 
-- [ ] 1b.1 RED `tests/features/sync/__tests__/headless-sync-cycle.helpers.test.ts`: a cycle records its minted `cycleId` and its current stage on start; a failed cycle records the classified error name, stage and native errcode byte; `consecutiveUnclosedCycles` advances when the previous cycle never closed.
-- [ ] 1b.2 GREEN `src/features/sync/headless-sync-cycle.helpers.ts`: thread the cycle's own `createSyncCycleId()` value, its stage checkpoints and the classified failure detail into `recordSyncAttemptStarted` / `recordSyncAttemptSucceeded` / `recordSyncAttemptFailed`. Reuse the existing classifiers in `sync-telemetry.helpers.ts`; do not invent a second taxonomy. Pay the `dharness/*` JSDoc findings on every file touched.
-- [ ] 1b.3 MUTATE `src/features/sync/headless-sync-cycle.helpers.ts`: drop the `cycleId` argument at the start call site; confirm the Phase 1b RED test fails; restore via `git checkout --` from the index.
+- [x] 1b.1 RED `tests/features/sync/__tests__/headless-sync-cycle.helpers.test.ts`: a cycle records its minted `cycleId` and its current stage on start; a failed cycle records the classified error name, stage and native errcode byte; `consecutiveUnclosedCycles` advances when the previous cycle never closed.
+- [x] 1b.2 GREEN `src/features/sync/headless-sync-cycle.helpers.ts`: thread the cycle's own `createSyncCycleId()` value, its stage checkpoints and the classified failure detail into `recordSyncAttemptStarted` / `recordSyncAttemptSucceeded` / `recordSyncAttemptFailed`. Reuse the existing classifiers in `sync-telemetry.helpers.ts`; do not invent a second taxonomy. Pay the `dharness/*` JSDoc findings on every file touched.
+- [x] 1b.3 MUTATE `src/features/sync/headless-sync-cycle.helpers.ts`: drop the `cycleId` argument at the start call site; confirm the Phase 1b RED test fails; restore via `git checkout --` from the index.
 
 ## Phase 2: Elapsed Time Correctness
 
