@@ -16,6 +16,21 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-09-09
+
+**No new Bridge version is required.**
+
+### Fixed
+
+- The app still would not open after 1.2.1. That release fixed one way the local database could get stuck at startup, but not the one this device was actually in, so the screen and the failure were identical. This build removes the cause rather than one of its shapes: on any device that already has the app installed, the database upgrade step no longer re-runs work it cannot prove was left undone, which is what was failing. Your catalogue, your pairing and your unsent changes stay where they are, and there is still no need to clear the app's data or reinstall it.
+
+### Internal
+
+- The startup failure screen reported `code: null, classification: unknown` on the device, which is all the redacted diagnostic can say for a native SQLite error whose message carries no recognised token. The cause was found instead by replaying the real migration files through the migration engine's own selection rule against real SQLite, across eight different device states.
+- Two of those states still failed under 1.2.1, and one of them matched the device: a ledger whose newest entry sits at migration 0010, which re-runs migration 0011 and is rejected. 1.2.1 assumed ledger position identified the migration it recorded; that is false on any device that ever skipped a migration, because later entries were appended after the gap.
+- The migration engine is now a fresh-install bootstrapper only. An installed device converges through the idempotent repair steps alone, which is already how devices with a skipped migration have been repaired for several releases. A new test holds the contract that makes this safe: every column a migration adds must have a repair twin, and every table it creates must be in the required-schema set.
+- That contract surfaced an unrelated, latent defect: the migration engine executes only the first statement of each chunk and silently discards the rest, so the later statements in migrations 0003, 0004 and 0009 have never run on any device. The repair twins are why nothing broke, and the new test proves that is by construction rather than by luck.
+
 ## [1.2.1] — 2026-09-09
 
 **No new Bridge version is required.**

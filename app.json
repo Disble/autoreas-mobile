@@ -2,7 +2,7 @@
   "expo": {
     "name": "Autoreas Mobile",
     "slug": "autoreas-mobile",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "autoreas-mobile",
