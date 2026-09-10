@@ -16,6 +16,19 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-09-09
+
+**No new Bridge version is required.**
+
+### Fixed
+
+- The app would not open at all after updating to 1.2.0. It stopped on "No pudimos iniciar la app" on every single launch, on any device that already had a previous version installed — a fresh install was unaffected, which is why it was not caught before publishing. Installing this build repairs it in place: your catalogue, your pairing and your unsent changes are all still there, and there is no need to clear the app's data or reinstall it.
+
+### Internal
+
+- The startup step that repairs the local database's migration ledger no longer rewrites entries for migrations the device has already applied. Rewriting them made the migration engine re-run work already done, SQLite refused it, and that refusal is what stopped startup. The step now only corrects an entry that is provably wrong, and never drags a correct one backwards.
+- The test that covered that repair step mocked the migration engine away and only asserted the SQL statement the step emitted, so it passed throughout while the app was unbootable. It is replaced by one that replays the real migration files through the engine's own selection rule.
+
 ## [1.2.0] — 2026-09-09
 
 **No new Bridge version is required.** This release works against every Bridge that 1.1.0 worked against. It fills in fields the Bridge already had columns for and adds nothing new to the wire, so an older Bridge sees exactly the shape it saw before.
