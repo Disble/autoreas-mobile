@@ -1,8 +1,5 @@
 import journal from "../../../src/infrastructure/db/migrations/meta/_journal.json";
-import {
-  MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
-  MIGRATION_JOURNAL_TIMESTAMPS_MS,
-} from "../../../src/infrastructure/db/client/client.constants";
+import { MAX_JOURNAL_MIGRATION_TIMESTAMP_MS } from "../../../src/infrastructure/db/client/client.constants";
 
 /**
  * H0Xx root cause: entry idx 6 (0006) carried a hand-typed future `when` (2026-09-20) that was
@@ -28,17 +25,6 @@ describe("migration journal timestamp order", () => {
     expect(entry5).toBeDefined();
     expect(entry6).toBeDefined();
     expect(entry6?.when).toBe((entry5?.when ?? 0) + 1);
-  });
-
-  /**
-   * The ledger repair identifies a stored row by its ordinal position, so the derived timestamp
-   * list must stay a faithful, journal-ordered copy. A drifted copy would rewrite rows to the
-   * wrong migration's `when` and hand the migrator a gate that re-runs work already applied.
-   */
-  it("mirrors every journal entry in idx order", () => {
-    expect(MIGRATION_JOURNAL_TIMESTAMPS_MS).toEqual(
-      [...journal.entries].sort((left, right) => left.idx - right.idx).map((entry) => entry.when),
-    );
   });
 
   /**

@@ -4,11 +4,7 @@ import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import journal from "../../../src/infrastructure/db/migrations/meta/_journal.json";
 import { runMigrations } from "../../../src/infrastructure/db/client";
-import { resolveMigrationLedgerTimestamp } from "../../../src/infrastructure/db/client/client.helpers";
-import {
-  MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
-  MIGRATION_JOURNAL_TIMESTAMPS_MS,
-} from "../../../src/infrastructure/db/client/client.constants";
+import { MAX_JOURNAL_MIGRATION_TIMESTAMP_MS } from "../../../src/infrastructure/db/client/client.constants";
 import * as nativeRuntime from "../../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 jest.mock("drizzle-orm", () => ({
@@ -49,25 +45,35 @@ const PREVIOUS_RELEASE_JOURNAL_INDEX = 12;
 /** Journal index of the migration whose hand-typed future `when` poisoned the gate (H0Xx). */
 const POISONED_JOURNAL_INDEX = 6;
 
-/**
- * The value `0006` actually stored on poisoned devices: its original hand-typed `when`
- * (2026-09-20), higher than every real journal entry and therefore impossible to have been
- * written by any current journal.
- */
+/** `0006`'s original hand-typed `when` (2026-09-20), above every real journal entry. */
 const POISONED_CREATED_AT_MS = 1_789_862_400_000;
 
-/**
- * The clamp target the previous repair step used: migration `0010`'s own `when`. Devices bricked
- * by that step carry it on every ledger row recorded after `0010`.
- */
+/** Migration `0010`'s own `when`: the target the previous, defective clamp pinned rows to. */
 const PREVIOUS_CLAMP_TARGET_MS = 1_788_546_067_501;
+
+/** Matches the `ALTER TABLE ... ADD COLUMN` shape every migration and repair step emits. */
+const ALTER_COLUMN_PATTERN = /^ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/u;
+
+/** Matches a `CREATE TABLE` and captures its body, so declared columns can be registered. */
+const CREATE_TABLE_PATTERN = /^CREATE TABLE (?:IF NOT EXISTS )?`?(\w+)`?\s*\(([\s\S]*)$/u;
+
+/** Table-level constraint keywords a `CREATE TABLE` body carries instead of a column name. */
+const TABLE_CONSTRAINT_KEYWORD = /^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)$/iu;
 
 /** One row of the migrator's `__drizzle_migrations` ledger. */
 type LedgerRow = { rowid: number; created_at: number };
 
-/** Reads one migration file and splits it into the statements the migrator would execute. */
+/**
+ * Chunks as drizzle reads them, reduced to the ONE statement expo actually executes.
+ *
+ * The migrator splits a file on `--> statement-breakpoint` and hands each chunk to expo's
+ * `prepareSync`, which compiles a single statement and silently discards the tail. Migrations
+ * 0003, 0004 and 0009 each pack several statements into one chunk, so their tails have never run
+ * on any device — the repair steps are what actually created those columns.
+ */
 function readMigrationStatements(tag: string): readonly string[] {
   return readFileSync(join(MIGRATIONS_DIRECTORY, `${tag}.sql`), "utf8")
+    .replace(/\r\n/gu, "\n")
     .split("--> statement-breakpoint")
     .map((chunk) =>
       chunk
@@ -76,13 +82,14 @@ function readMigrationStatements(tag: string): readonly string[] {
         .join("\n")
         .trim(),
     )
-    .filter((statement) => statement.length > 0);
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => `${chunk.split(";")[0]};`);
 }
 
 /**
- * Builds an in-memory stand-in for the SQLite connection that models only the two facts this bug
- * turns on: what `__drizzle_migrations` holds, and that `ALTER TABLE ... ADD COLUMN` fails when
- * the column already exists. Everything else is a tolerated no-op.
+ * Builds an in-memory stand-in for the SQLite connection that models only the facts this defect
+ * turns on: whether the application schema exists, what `__drizzle_migrations` holds, and that
+ * `ALTER TABLE ... ADD COLUMN` fails when the column already exists.
  */
 function createFakeDatabase() {
   let ledger: LedgerRow[] | null = null;
@@ -101,56 +108,100 @@ function createFakeDatabase() {
     return created;
   };
 
+  /** Applies one `ALTER TABLE ... ADD COLUMN`, refusing a duplicate exactly as SQLite does. */
+  const applyAlter = (table: string, column: string) => {
+    const tableColumns = columnsOf(table);
+
+    if (tableColumns.has(column)) {
+      throw new Error(`Error code 1: duplicate column name: ${column}`);
+    }
+
+    tableColumns.add(column);
+    return { changes: 1 };
+  };
+
+  /** Registers the columns a `CREATE TABLE` body declares, ignoring table-level constraints. */
+  const applyCreate = (table: string, body: string) => {
+    const tableColumns = columnsOf(table);
+
+    for (const line of body.split(",")) {
+      const column = /`?(\w+)`?/u.exec(line.trim());
+
+      if (column && !TABLE_CONSTRAINT_KEYWORD.test(column[1])) {
+        tableColumns.add(column[1]);
+      }
+    }
+
+    return { changes: 0 };
+  };
+
+  /** Rewrites every ledger row that does not already hold the pinned value. */
+  const applyPin = (createdAt: number) => {
+    let changes = 0;
+
+    for (const row of ledger ?? []) {
+      if (row.created_at !== createdAt) {
+        row.created_at = createdAt;
+        changes += 1;
+      }
+    }
+
+    return { changes };
+  };
+
   const runAsync = jest.fn(async (sql: string, ...params: readonly unknown[]) => {
-    const alter = /^ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/.exec(sql.trim());
+    const statement = sql.trim();
+    const alter = ALTER_COLUMN_PATTERN.exec(statement);
 
     if (alter) {
-      const [, table, column] = alter;
-      const tableColumns = columnsOf(table);
+      return applyAlter(alter[1], alter[2]);
+    }
 
-      if (tableColumns.has(column)) {
-        throw new Error(`Error code 1: duplicate column name: ${column}`);
-      }
+    if (statement.startsWith("CREATE TABLE") && statement.includes("__drizzle_migrations")) {
+      ledger ??= [];
+      return { changes: 0 };
+    }
 
-      tableColumns.add(column);
+    const create = CREATE_TABLE_PATTERN.exec(statement);
+
+    if (create) {
+      return applyCreate(create[1], create[2]);
+    }
+
+    if (statement.startsWith("INSERT INTO __drizzle_migrations")) {
+      ledger ??= [];
+      ledger.push({ rowid: ledger.length + 1, created_at: Number(params[params.length - 1]) });
       return { changes: 1 };
     }
 
-    if (sql.startsWith("UPDATE __drizzle_migrations")) {
-      const [createdAt, rowid] = params as readonly [number, number];
-      const row = ledger?.find((candidate) => candidate.rowid === rowid);
-
-      if (row) {
-        row.created_at = createdAt;
-      }
-
-      return { changes: row ? 1 : 0 };
+    if (statement.startsWith("UPDATE __drizzle_migrations")) {
+      return applyPin(Number(params[0]));
     }
 
     return { changes: 0 };
   });
 
   const getAllAsync = jest.fn(async (sql: string) => {
-    const tableInfo = /^PRAGMA table_info\((\w+)\)$/.exec(sql.trim());
+    const tableInfo = /^PRAGMA table_info\((\w+)\)$/u.exec(sql.trim());
 
     if (tableInfo) {
       return [...columnsOf(tableInfo[1])].map((name) => ({ name }));
-    }
-
-    if (sql.includes("FROM __drizzle_migrations")) {
-      if (!ledger) {
-        throw new Error("Error code 1: no such table: __drizzle_migrations");
-      }
-
-      return ledger.map((row) => ({ ...row }));
     }
 
     return [];
   });
 
   const getFirstAsync = jest.fn(async (sql: string) => {
-    if (sql.includes("sqlite_master") && sql.includes("__drizzle_migrations")) {
-      return ledger ? { name: "__drizzle_migrations" } : null;
+    if (sql.includes("sqlite_master") && sql.includes("animes")) {
+      return columnsByTable.has("animes") ? { name: "animes" } : null;
+    }
+
+    if (sql.includes("COUNT(*)") && sql.includes("__drizzle_migrations")) {
+      if (!ledger) {
+        throw new Error("Error code 1: no such table: __drizzle_migrations");
+      }
+
+      return { count: ledger.length };
     }
 
     return null;
@@ -180,20 +231,20 @@ function createFakeDatabase() {
     }
   };
 
-  /** Leaves the fake in the state a device carries after installing the release through `index`. */
-  const seedThroughJournalIndex = async (index: number) => {
+  /** Applies the given journal entries, leaving the schema and ledger a real device would carry. */
+  const seedJournalIndexes = async (indexes: readonly number[]) => {
     ledger ??= [];
 
-    for (const entry of JOURNAL_ENTRIES.slice(0, index + 1)) {
-      for (const statement of readMigrationStatements(entry.tag)) {
+    for (const index of indexes) {
+      for (const statement of readMigrationStatements(JOURNAL_ENTRIES[index].tag)) {
         await runAsync(statement);
       }
 
-      ledger.push({ rowid: ledger.length + 1, created_at: entry.when });
+      ledger.push({ rowid: ledger.length + 1, created_at: JOURNAL_ENTRIES[index].when });
     }
   };
 
-  /** Applies the previous repair step's clamp, which is what bricked already-upgraded devices. */
+  /** Applies the previous release's clamp, which is what bricked already-upgraded devices. */
   const applyPreviousClamp = () => {
     for (const row of ledger ?? []) {
       if (row.created_at > PREVIOUS_CLAMP_TARGET_MS) {
@@ -211,26 +262,39 @@ function createFakeDatabase() {
     }
   };
 
+  /** Removes the ledger while keeping the application schema, as a very old install would be. */
+  const dropLedger = () => {
+    ledger = null;
+  };
+
   return {
     appliedTags,
     applyPendingMigrations,
     applyPreviousClamp,
+    dropLedger,
     getAllAsync,
     getFirstAsync,
     poisonLedgerRow,
     readLedger: () => (ledger ?? []).map((row) => ({ ...row })),
     runAsync,
-    seedThroughJournalIndex,
+    seedJournalIndexes,
   };
 }
 
+/** Every journal index, for a device that applied the full set in order. */
+const ALL_JOURNAL_INDEXES = JOURNAL_ENTRIES.map((_entry, index) => index);
+
+/** Indexes through the release before `0013`. */
+const PREVIOUS_RELEASE_INDEXES = ALL_JOURNAL_INDEXES.slice(0, PREVIOUS_RELEASE_JOURNAL_INDEX + 1);
+
 /**
- * `runMigrations` must never let drizzle's migrator re-execute a migration the device already
- * applied. The migrator gates on ONE scalar -- the highest `created_at` stored in
- * `__drizzle_migrations` -- so any repair step that drags a stored row backwards makes every
- * later migration run a second time, and `ALTER TABLE ... ADD COLUMN` is not idempotent: the
- * second run aborts the whole migration transaction with `duplicate column name`, which surfaces
- * as the `database_preparation` startup failure and bricks the app on every launch.
+ * The drizzle migrator bootstraps a FRESH install and nothing else. On a device that already
+ * carries the application schema it must apply NOTHING, because ledger contents cannot identify
+ * which migrations ran: the migrator writes an empty `hash`, and any device that ever skipped a
+ * migration (the H0Xx poisoned gate did exactly that) has a ledger whose row order no longer
+ * matches the journal. Re-running one `ALTER TABLE ... ADD COLUMN` aborts the migration and
+ * leaves startup permanently failing, so convergence on an installed device belongs entirely to
+ * the idempotent repair steps that follow.
  */
 describe("migration ledger reconciliation", () => {
   beforeEach(() => {
@@ -240,56 +304,7 @@ describe("migration ledger reconciliation", () => {
     (nativeRuntime.getDrizzleMigrator as jest.Mock).mockReturnValue(migrate);
   });
 
-  it("applies only the new migration when a device upgrades from the previous release", async () => {
-    const fake = createFakeDatabase();
-    await fake.seedThroughJournalIndex(PREVIOUS_RELEASE_JOURNAL_INDEX);
-    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
-
-    await expect(runMigrations(fake as never)).resolves.toBeDefined();
-
-    expect(fake.appliedTags).toEqual([JOURNAL_ENTRIES[PREVIOUS_RELEASE_JOURNAL_INDEX + 1].tag]);
-    expect(fake.runAsync).not.toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE __drizzle_migrations"),
-      expect.anything(),
-      expect.anything(),
-    );
-  });
-
-  it("recovers a device whose ledger the previous clamp already dragged backwards", async () => {
-    const fake = createFakeDatabase();
-    await fake.seedThroughJournalIndex(PREVIOUS_RELEASE_JOURNAL_INDEX);
-    fake.applyPreviousClamp();
-    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
-
-    await expect(runMigrations(fake as never)).resolves.toBeDefined();
-
-    expect(fake.appliedTags).toEqual([JOURNAL_ENTRIES[PREVIOUS_RELEASE_JOURNAL_INDEX + 1].tag]);
-  });
-
-  it("keeps a poisoned 0006 gate from re-running migrations the repair steps already cover", async () => {
-    const fake = createFakeDatabase();
-    await fake.seedThroughJournalIndex(POISONED_JOURNAL_INDEX);
-    fake.poisonLedgerRow(POISONED_JOURNAL_INDEX, POISONED_CREATED_AT_MS);
-    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
-
-    await expect(runMigrations(fake as never)).resolves.toBeDefined();
-
-    expect(fake.appliedTags).toEqual([]);
-  });
-
-  it("stays green on the launch after a poisoned device has already been repaired", async () => {
-    const fake = createFakeDatabase();
-    await fake.seedThroughJournalIndex(POISONED_JOURNAL_INDEX);
-    fake.poisonLedgerRow(POISONED_JOURNAL_INDEX, POISONED_CREATED_AT_MS);
-    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
-
-    await runMigrations(fake as never);
-
-    await expect(runMigrations(fake as never)).resolves.toBeDefined();
-    expect(fake.appliedTags).toEqual([]);
-  });
-
-  it("applies every migration on a fresh install with no ledger yet", async () => {
+  it("applies every migration on a fresh install with no application schema yet", async () => {
     const fake = createFakeDatabase();
     (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
 
@@ -298,53 +313,111 @@ describe("migration ledger reconciliation", () => {
     expect(fake.appliedTags).toEqual(JOURNAL_ENTRIES.map((entry) => entry.tag));
   });
 
-  it("never touches the ledger on a fresh install where the table does not exist yet", async () => {
+  it("applies nothing on a device upgrading from the previous release", async () => {
     const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
+  });
+
+  it("recovers a device the previous clamp already bricked", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    fake.applyPreviousClamp();
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
+  });
+
+  it("recovers a device whose ledger order no longer matches the journal", async () => {
+    const fake = createFakeDatabase();
+    // The H0Xx survivor: 0000-0006 applied, 0007-0010 skipped by the poisoned gate, then 0011 and
+    // 0012 appended once the old clamp unblocked them. Ledger position 7 holds 0011, not 0007.
+    await fake.seedJournalIndexes([0, 1, 2, 3, 4, 5, 6, 11, 12]);
+    fake.applyPreviousClamp();
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
+  });
+
+  it("applies nothing on a device still carrying the poisoned 0006 gate", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes([0, 1, 2, 3, 4, 5, 6]);
+    fake.poisonLedgerRow(POISONED_JOURNAL_INDEX, POISONED_CREATED_AT_MS);
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
+    // The poisoned row must be pinned DOWN too. Leaving it above the journal is what silently
+    // skipped 0007-0010 in the first place, and it would skip the next migration the same way.
+    expect(fake.readLedger().map((row) => row.created_at)).not.toContain(POISONED_CREATED_AT_MS);
+  });
+
+  it("pins every ledger row to the journal maximum so the gate cannot reopen", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    fake.applyPreviousClamp();
     (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
 
     await runMigrations(fake as never);
 
-    expect(fake.runAsync).not.toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE __drizzle_migrations"),
-      expect.anything(),
-      expect.anything(),
-    );
-  });
-});
-
-/**
- * The pure decision behind the repair. It may only ever RAISE a stored value to the journal `when`
- * of the migration that ledger position records, and may only lower a value that no current
- * journal could have produced -- lowering anything else is exactly what bricked the release.
- */
-describe("resolveMigrationLedgerTimestamp", () => {
-  it("leaves a row that already matches its journal entry untouched", () => {
-    expect(resolveMigrationLedgerTimestamp(3, MIGRATION_JOURNAL_TIMESTAMPS_MS[3])).toBe(
-      MIGRATION_JOURNAL_TIMESTAMPS_MS[3],
-    );
+    for (const row of fake.readLedger()) {
+      expect(row.created_at).toBe(MAX_JOURNAL_MIGRATION_TIMESTAMP_MS);
+    }
   });
 
-  it("raises a row a previous clamp dragged below its journal entry", () => {
-    expect(resolveMigrationLedgerTimestamp(11, PREVIOUS_CLAMP_TARGET_MS)).toBe(
-      MIGRATION_JOURNAL_TIMESTAMPS_MS[11],
-    );
+  it("stays green on the launch after an installed device has been reconciled once", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    fake.applyPreviousClamp();
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await runMigrations(fake as never);
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
   });
 
-  it("pins a value no current journal could have produced to the journal maximum", () => {
-    expect(resolveMigrationLedgerTimestamp(POISONED_JOURNAL_INDEX, POISONED_CREATED_AT_MS)).toBe(
-      MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
-    );
+  it("seeds a gate for an installed device carrying no ledger at all", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    fake.dropLedger();
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+
+    await expect(runMigrations(fake as never)).resolves.toBeDefined();
+
+    expect(fake.appliedTags).toEqual([]);
+    expect(fake.readLedger()).toEqual([
+      { rowid: 1, created_at: MAX_JOURNAL_MIGRATION_TIMESTAMP_MS },
+    ]);
   });
 
-  it("never lowers a row that already sits above its own journal entry", () => {
-    expect(
-      resolveMigrationLedgerTimestamp(POISONED_JOURNAL_INDEX, MAX_JOURNAL_MIGRATION_TIMESTAMP_MS),
-    ).toBe(MAX_JOURNAL_MIGRATION_TIMESTAMP_MS);
-  });
+  it("guards the pin so an already-pinned row is never rewritten", async () => {
+    const fake = createFakeDatabase();
+    await fake.seedJournalIndexes(PREVIOUS_RELEASE_INDEXES);
+    (migrate as jest.Mock).mockImplementation(fake.applyPendingMigrations);
+    await runMigrations(fake as never);
 
-  it("leaves a row with no journal entry of its own untouched", () => {
-    expect(resolveMigrationLedgerTimestamp(JOURNAL_ENTRIES.length, PREVIOUS_CLAMP_TARGET_MS)).toBe(
-      PREVIOUS_CLAMP_TARGET_MS,
+    fake.runAsync.mockClear();
+    await runMigrations(fake as never);
+
+    // The skip is SQLite's, not ours: the statement carries its own `<>` guard, so a second launch
+    // touches no row. Asserting the statement is absent would be wrong -- it is always issued.
+    const [pinSql] = fake.runAsync.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.startsWith("UPDATE __drizzle_migrations"));
+
+    expect(pinSql).toContain("WHERE created_at <> ?");
+    expect(fake.readLedger().every((row) => row.created_at === MAX_JOURNAL_MIGRATION_TIMESTAMP_MS)).toBe(
+      true,
     );
   });
 });

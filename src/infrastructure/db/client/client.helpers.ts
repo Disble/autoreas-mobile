@@ -19,10 +19,11 @@ import {
   LOCAL_WRITE_DEADLINE_MS,
   ERRCODE_PREFIX_PATTERN,
   MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
-  MIGRATION_JOURNAL_TIMESTAMPS_MS,
-  MIGRATION_LEDGER_SELECT_SQL,
-  MIGRATION_LEDGER_TABLE_LOOKUP_SQL,
-  MIGRATION_LEDGER_UPDATE_SQL,
+  MIGRATION_BOOTSTRAP_TABLE_LOOKUP_SQL,
+  MIGRATION_LEDGER_COUNT_SQL,
+  MIGRATION_LEDGER_CREATE_SQL,
+  MIGRATION_LEDGER_PIN_SQL,
+  MIGRATION_LEDGER_SEED_SQL,
   OPERATION_LOG_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
@@ -30,7 +31,6 @@ import {
 import type {
   AppDatabase,
   LocalWriteFailureStage,
-  MigrationLedgerRow,
   MissingColumnDefinition,
   OpenAppDatabaseSyncParams,
   OpenTelemetryDatabaseSyncParams,
@@ -285,68 +285,48 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 }
 
 /**
- * Resolves what one `__drizzle_migrations` row's `created_at` MUST hold, given its ledger position
- * and what it currently holds.
+ * Pins drizzle's migration gate on any device that already carries the application schema, so
+ * `migrate()` applies NOTHING there and the idempotent repair steps below own convergence.
  *
- * `drizzle-orm`'s migrator (`sqlite-core/dialect.cjs`) decides what to apply with ONE scalar
- * comparison against the single MAXIMUM `created_at` already stored -- it tracks neither tag nor
- * hash. That makes the stored maximum a load-bearing value in both directions:
+ * The migrator decides what to apply from ONE scalar -- the maximum `created_at` in
+ * `__drizzle_migrations`, read once before its loop. It tracks neither tag nor hash (the expo
+ * build writes an empty `hash`), so nothing in that ledger can say WHICH migrations a device
+ * actually ran. Row order cannot stand in for it either: a device whose gate was ever poisoned
+ * skipped migrations and then appended later ones, leaving position 7 holding `0011` rather than
+ * `0007`. Any rule that infers identity from the ledger is therefore guessing, and a wrong guess
+ * re-runs an `ALTER TABLE ... ADD COLUMN`, which SQLite refuses as `duplicate column name`. That
+ * refusal aborts the migration, `user_version` is never stamped, and startup fails identically on
+ * every launch afterwards.
  *
- * - Dragging it DOWN re-runs every migration above it, and `ALTER TABLE ... ADD COLUMN` is not
- *   idempotent, so the re-run aborts the whole migration transaction with `duplicate column name`
- *   and bricks startup on every launch. A stored value below its own journal entry can only be
- *   damage, so this RAISES it back.
- * - Leaving a value ABOVE every journal entry skips every migration silently. No journal could
- *   have written such a value, so it is migration 0006's hand-typed future `when` (2026-09-20)
- *   still sitting on the device; this pins it to the journal maximum, which parks the gate instead
- *   of re-running migrations whose columns the idempotent repair steps below have long since
- *   created.
+ * So this stops guessing. `animes` ships in `0000`, so its presence proves the schema exists;
+ * from there the gate is pinned to the journal maximum and every migration is treated as applied
+ * in effect -- true, because each one has an idempotent repair twin below and
+ * `validatePreparedSchema` proves the result before readiness is stamped. A fresh install has no
+ * `animes` table, so the migrator still bootstraps the whole schema there, untouched.
  *
- * Never lowers anything else: a row already at or above its journal entry is left exactly as it is.
- */
-export function resolveMigrationLedgerTimestamp(
-  ledgerIndex: number,
-  storedCreatedAt: number,
-): number {
-  if (storedCreatedAt > MAX_JOURNAL_MIGRATION_TIMESTAMP_MS) {
-    return MAX_JOURNAL_MIGRATION_TIMESTAMP_MS;
-  }
-
-  const journalTimestamp = MIGRATION_JOURNAL_TIMESTAMPS_MS[ledgerIndex];
-
-  if (journalTimestamp === undefined || journalTimestamp <= storedCreatedAt) {
-    return storedCreatedAt;
-  }
-
-  return journalTimestamp;
-}
-
-/**
- * Reconciles the migrator's ledger with the journal before `migrate()` reads its gate, one row at
- * a time by insertion ordinal. Guarded on `sqlite_master` so a fresh install with no
- * `__drizzle_migrations` table yet is a clean no-op, and it writes only the rows that actually
- * disagree with the journal.
+ * The consequence is a standing contract, enforced by `migration-repair-parity.test.ts`: a new
+ * migration reaches installed devices ONLY through its repair twin, never through its `.sql`.
  */
 async function reconcileMigrationLedger(rawDb: SQLiteDatabase): Promise<void> {
-  const migrationsTable = await rawDb.getFirstAsync<{ name: string }>(
-    MIGRATION_LEDGER_TABLE_LOOKUP_SQL
+  const bootstrapped = await rawDb.getFirstAsync<{ name: string }>(
+    MIGRATION_BOOTSTRAP_TABLE_LOOKUP_SQL
   );
 
-  if (!migrationsTable) return;
+  if (!bootstrapped) return;
 
-  const rows = await rawDb.getAllAsync<MigrationLedgerRow>(MIGRATION_LEDGER_SELECT_SQL);
+  await rawDb.runAsync(MIGRATION_LEDGER_CREATE_SQL);
 
-  await rows.reduce<Promise<void>>(
-    (previousRow, row, ledgerIndex) =>
-      previousRow.then(async () => {
-        const storedCreatedAt = Number(row.created_at);
-        const resolved = resolveMigrationLedgerTimestamp(ledgerIndex, storedCreatedAt);
+  const ledger = await rawDb.getFirstAsync<{ count: number }>(MIGRATION_LEDGER_COUNT_SQL);
 
-        if (resolved === storedCreatedAt) return;
+  if (Number(ledger?.count) === 0) {
+    await rawDb.runAsync(MIGRATION_LEDGER_SEED_SQL, '', MAX_JOURNAL_MIGRATION_TIMESTAMP_MS);
+    return;
+  }
 
-        await rawDb.runAsync(MIGRATION_LEDGER_UPDATE_SQL, resolved, row.rowid);
-      }),
-    Promise.resolve(),
+  await rawDb.runAsync(
+    MIGRATION_LEDGER_PIN_SQL,
+    MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
+    MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
   );
 }
 

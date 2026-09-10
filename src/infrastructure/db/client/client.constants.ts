@@ -175,36 +175,40 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
 ];
 
 /**
- * Every migration's `when` from `_journal.json`, in the exact order the drizzle migrator applies
- * and records them. The migrator appends one `__drizzle_migrations` row per applied migration in
- * journal order and never reorders or deletes, so ledger position N always records journal entry
- * N -- that ordinal mapping is the only way to tell what a stored `created_at` was SUPPOSED to be,
- * because the expo migrator writes an empty `hash` for every row.
+ * The newest `when` any journal entry carries, and therefore the highest `created_at` the
+ * migrator could ever write. Used as the pin for an installed device's ledger so drizzle's gate
+ * reports "everything applied" and the migrator becomes a fresh-install bootstrapper only.
  */
-export const MIGRATION_JOURNAL_TIMESTAMPS_MS: readonly number[] = migrationJournal.entries
-  .map((entry) => ({ idx: entry.idx, when: entry.when }))
-  .sort((left, right) => left.idx - right.idx)
-  .map((entry) => entry.when);
+export const MAX_JOURNAL_MIGRATION_TIMESTAMP_MS = Math.max(
+  ...migrationJournal.entries.map((entry) => entry.when),
+);
 
 /**
- * The highest `when` any current journal entry carries, and therefore the highest `created_at`
- * value the migrator could possibly have written. Anything ABOVE it is a value no journal could
- * have produced -- the signature of migration 0006's hand-typed future `when` (2026-09-20), which
- * silently skipped every migration after it on devices that stored it.
+ * Proves the application schema already exists. `animes` ships in migration `0000`, so its
+ * presence is the one reliable "this is not a fresh install" signal -- far more reliable than the
+ * ledger, whose rows carry an empty `hash` and cannot say WHICH migrations they record.
  */
-export const MAX_JOURNAL_MIGRATION_TIMESTAMP_MS = Math.max(...MIGRATION_JOURNAL_TIMESTAMPS_MS);
+export const MIGRATION_BOOTSTRAP_TABLE_LOOKUP_SQL =
+  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'animes'";
 
-/** Detects the migrator's ledger before touching it, so a fresh install stays a clean no-op. */
-export const MIGRATION_LEDGER_TABLE_LOOKUP_SQL =
-  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'";
+/**
+ * The migrator's own ledger DDL, duplicated verbatim from `drizzle-orm/sqlite-core/dialect.cjs`
+ * so an installed device missing the table can be given a gate before `migrate()` reads one.
+ */
+export const MIGRATION_LEDGER_CREATE_SQL =
+  'CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)';
 
-/** Reads the ledger in insertion order, which is the journal order the ordinal mapping needs. */
-export const MIGRATION_LEDGER_SELECT_SQL =
-  'SELECT rowid, created_at FROM __drizzle_migrations ORDER BY rowid';
+/** Counts ledger rows, to tell a pinnable ledger from an empty one that must be seeded. */
+export const MIGRATION_LEDGER_COUNT_SQL =
+  'SELECT COUNT(*) AS count FROM __drizzle_migrations';
 
-/** Rewrites one ledger row addressed by its stable insertion ordinal. */
-export const MIGRATION_LEDGER_UPDATE_SQL =
-  'UPDATE __drizzle_migrations SET created_at = ? WHERE rowid = ?';
+/** Seeds a gate row on an installed device whose ledger holds nothing to pin. */
+export const MIGRATION_LEDGER_SEED_SQL =
+  'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES(?, ?)';
+
+/** Pins every ledger row to the journal maximum, skipping rows already there. */
+export const MIGRATION_LEDGER_PIN_SQL =
+  'UPDATE __drizzle_migrations SET created_at = ? WHERE created_at <> ?';
 
 /**
  * Budget for one queued local write, measured from the moment it is QUEUED rather than from the
