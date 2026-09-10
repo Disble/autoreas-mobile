@@ -18,7 +18,11 @@ import {
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
   ERRCODE_PREFIX_PATTERN,
-  MIGRATION_0010_TIMESTAMP_MS,
+  MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
+  MIGRATION_JOURNAL_TIMESTAMPS_MS,
+  MIGRATION_LEDGER_SELECT_SQL,
+  MIGRATION_LEDGER_TABLE_LOOKUP_SQL,
+  MIGRATION_LEDGER_UPDATE_SQL,
   OPERATION_LOG_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
@@ -26,6 +30,7 @@ import {
 import type {
   AppDatabase,
   LocalWriteFailureStage,
+  MigrationLedgerRow,
   MissingColumnDefinition,
   OpenAppDatabaseSyncParams,
   OpenTelemetryDatabaseSyncParams,
@@ -280,28 +285,68 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 }
 
 /**
- * Clamps an already-stored poisoned `__drizzle_migrations.created_at` back down to
- * `MIGRATION_0010_TIMESTAMP_MS` before `migrate()` runs.
+ * Resolves what one `__drizzle_migrations` row's `created_at` MUST hold, given its ledger position
+ * and what it currently holds.
  *
  * `drizzle-orm`'s migrator (`sqlite-core/dialect.cjs`) decides what to apply with ONE scalar
- * comparison against the single MAXIMUM `created_at` already stored -- it does not track by tag
- * or hash. Migration 0006's journal entry once carried a hand-typed future `when`
- * (2026-09-20, sixteen days ahead of every other entry and the highest value in the whole
- * journal); on any device that had already applied 0006, every migration after it failed that
- * gate SILENTLY. The journal entry itself is fixed (see `_journal.json`), but fixing the journal
- * does nothing for a device that already stored the poisoned row -- this repair step is what
- * un-poisons it. Guarded on `sqlite_master` so a fresh install with no `__drizzle_migrations`
- * table yet is a clean no-op.
+ * comparison against the single MAXIMUM `created_at` already stored -- it tracks neither tag nor
+ * hash. That makes the stored maximum a load-bearing value in both directions:
+ *
+ * - Dragging it DOWN re-runs every migration above it, and `ALTER TABLE ... ADD COLUMN` is not
+ *   idempotent, so the re-run aborts the whole migration transaction with `duplicate column name`
+ *   and bricks startup on every launch. A stored value below its own journal entry can only be
+ *   damage, so this RAISES it back.
+ * - Leaving a value ABOVE every journal entry skips every migration silently. No journal could
+ *   have written such a value, so it is migration 0006's hand-typed future `when` (2026-09-20)
+ *   still sitting on the device; this pins it to the journal maximum, which parks the gate instead
+ *   of re-running migrations whose columns the idempotent repair steps below have long since
+ *   created.
+ *
+ * Never lowers anything else: a row already at or above its journal entry is left exactly as it is.
  */
-async function clampPoisonedMigrationTimestamp(rawDb: SQLiteDatabase): Promise<void> {
+export function resolveMigrationLedgerTimestamp(
+  ledgerIndex: number,
+  storedCreatedAt: number,
+): number {
+  if (storedCreatedAt > MAX_JOURNAL_MIGRATION_TIMESTAMP_MS) {
+    return MAX_JOURNAL_MIGRATION_TIMESTAMP_MS;
+  }
+
+  const journalTimestamp = MIGRATION_JOURNAL_TIMESTAMPS_MS[ledgerIndex];
+
+  if (journalTimestamp === undefined || journalTimestamp <= storedCreatedAt) {
+    return storedCreatedAt;
+  }
+
+  return journalTimestamp;
+}
+
+/**
+ * Reconciles the migrator's ledger with the journal before `migrate()` reads its gate, one row at
+ * a time by insertion ordinal. Guarded on `sqlite_master` so a fresh install with no
+ * `__drizzle_migrations` table yet is a clean no-op, and it writes only the rows that actually
+ * disagree with the journal.
+ */
+async function reconcileMigrationLedger(rawDb: SQLiteDatabase): Promise<void> {
   const migrationsTable = await rawDb.getFirstAsync<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'"
+    MIGRATION_LEDGER_TABLE_LOOKUP_SQL
   );
 
   if (!migrationsTable) return;
 
-  await rawDb.runAsync(
-    `UPDATE __drizzle_migrations SET created_at = ${MIGRATION_0010_TIMESTAMP_MS} WHERE created_at > ${MIGRATION_0010_TIMESTAMP_MS}`
+  const rows = await rawDb.getAllAsync<MigrationLedgerRow>(MIGRATION_LEDGER_SELECT_SQL);
+
+  await rows.reduce<Promise<void>>(
+    (previousRow, row, ledgerIndex) =>
+      previousRow.then(async () => {
+        const storedCreatedAt = Number(row.created_at);
+        const resolved = resolveMigrationLedgerTimestamp(ledgerIndex, storedCreatedAt);
+
+        if (resolved === storedCreatedAt) return;
+
+        await rawDb.runAsync(MIGRATION_LEDGER_UPDATE_SQL, resolved, row.rowid);
+      }),
+    Promise.resolve(),
   );
 }
 
@@ -314,7 +359,7 @@ async function clampPoisonedMigrationTimestamp(rawDb: SQLiteDatabase): Promise<v
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
   const migrate = getDrizzleMigrator();
-  await clampPoisonedMigrationTimestamp(rawDb);
+  await reconcileMigrationLedger(rawDb);
   await migrate(db, migrations);
   await ensureBridgeConfigLastChangelogId(rawDb);
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);

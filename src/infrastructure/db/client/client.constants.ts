@@ -1,3 +1,4 @@
+import migrationJournal from '../migrations/meta/_journal.json';
 import type { MissingColumnDefinition } from './client.types';
 
 /** Names the SQLite database opened by the application. */
@@ -174,18 +175,36 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
 ];
 
 /**
- * Migration 0010's own `when` from `_journal.json`, duplicated here as a HARDCODED literal rather
- * than derived from the journal at runtime. This is the clamp target for
- * `clampPoisonedMigrationTimestamp`, and deriving it from `max(journal.entries[].when)` would
- * defeat the whole repair: as soon as a migration after 0010 is added, that derived maximum rises
- * to the NEW migration's timestamp, and the clamp would then poison that migration exactly the
- * way migration 0006's hand-typed future `when` (2026-09-20, `_journal.json` idx 6) poisoned
- * every migration after it on a device that had already stored the poisoned row. Holding this
- * value fixed says "everything through 0010 is applied in effect" -- true, because
- * `ensureSyncRuntimeStatusExecutionColumns` and the `bridge_config` repair above create every
- * column 0007-0010 would have created -- and lets 0011+ apply normally once they exist.
+ * Every migration's `when` from `_journal.json`, in the exact order the drizzle migrator applies
+ * and records them. The migrator appends one `__drizzle_migrations` row per applied migration in
+ * journal order and never reorders or deletes, so ledger position N always records journal entry
+ * N -- that ordinal mapping is the only way to tell what a stored `created_at` was SUPPOSED to be,
+ * because the expo migrator writes an empty `hash` for every row.
  */
-export const MIGRATION_0010_TIMESTAMP_MS = 1788546067501;
+export const MIGRATION_JOURNAL_TIMESTAMPS_MS: readonly number[] = migrationJournal.entries
+  .map((entry) => ({ idx: entry.idx, when: entry.when }))
+  .sort((left, right) => left.idx - right.idx)
+  .map((entry) => entry.when);
+
+/**
+ * The highest `when` any current journal entry carries, and therefore the highest `created_at`
+ * value the migrator could possibly have written. Anything ABOVE it is a value no journal could
+ * have produced -- the signature of migration 0006's hand-typed future `when` (2026-09-20), which
+ * silently skipped every migration after it on devices that stored it.
+ */
+export const MAX_JOURNAL_MIGRATION_TIMESTAMP_MS = Math.max(...MIGRATION_JOURNAL_TIMESTAMPS_MS);
+
+/** Detects the migrator's ledger before touching it, so a fresh install stays a clean no-op. */
+export const MIGRATION_LEDGER_TABLE_LOOKUP_SQL =
+  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'";
+
+/** Reads the ledger in insertion order, which is the journal order the ordinal mapping needs. */
+export const MIGRATION_LEDGER_SELECT_SQL =
+  'SELECT rowid, created_at FROM __drizzle_migrations ORDER BY rowid';
+
+/** Rewrites one ledger row addressed by its stable insertion ordinal. */
+export const MIGRATION_LEDGER_UPDATE_SQL =
+  'UPDATE __drizzle_migrations SET created_at = ? WHERE rowid = ?';
 
 /**
  * Budget for one queued local write, measured from the moment it is QUEUED rather than from the

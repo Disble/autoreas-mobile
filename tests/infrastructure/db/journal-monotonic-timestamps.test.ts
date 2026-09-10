@@ -1,5 +1,8 @@
 import journal from "../../../src/infrastructure/db/migrations/meta/_journal.json";
-import { MIGRATION_0010_TIMESTAMP_MS } from "../../../src/infrastructure/db/client/client.constants";
+import {
+  MAX_JOURNAL_MIGRATION_TIMESTAMP_MS,
+  MIGRATION_JOURNAL_TIMESTAMPS_MS,
+} from "../../../src/infrastructure/db/client/client.constants";
 
 /**
  * H0Xx root cause: entry idx 6 (0006) carried a hand-typed future `when` (2026-09-20) that was
@@ -28,30 +31,28 @@ describe("migration journal timestamp order", () => {
   });
 
   /**
-   * 0011's `when` must clear the clamp target or `clampPoisonedMigrationTimestamp` un-poisons it
-   * right back down before it ever gets to run (see design.md Decision 5). The constant itself
-   * must stay put -- deriving or bumping it to the newest migration would poison THAT one next.
+   * The ledger repair identifies a stored row by its ordinal position, so the derived timestamp
+   * list must stay a faithful, journal-ordered copy. A drifted copy would rewrite rows to the
+   * wrong migration's `when` and hand the migrator a gate that re-runs work already applied.
    */
-  it("keeps entry 0011 strictly after MIGRATION_0010_TIMESTAMP_MS", () => {
-    const entry11 = journal.entries.find((entry) => entry.tag.startsWith("0011_"));
-
-    expect(entry11).toBeDefined();
-    expect(entry11?.when).toBeGreaterThan(MIGRATION_0010_TIMESTAMP_MS);
-    expect(MIGRATION_0010_TIMESTAMP_MS).toBe(1788546067501);
+  it("mirrors every journal entry in idx order", () => {
+    expect(MIGRATION_JOURNAL_TIMESTAMPS_MS).toEqual(
+      [...journal.entries].sort((left, right) => left.idx - right.idx).map((entry) => entry.when),
+    );
   });
 
   /**
-   * Same clamp concern as 0011: 0012's `when` must clear the clamp target, and
-   * MIGRATION_0010_TIMESTAMP_MS must stay the fixed 0010 literal, never derived or bumped to the
-   * newest migration (that would poison 0012 next).
+   * The clamp ceiling must be the journal MAXIMUM, never a fixed older migration's `when`. A
+   * ceiling below the newest entry drags every legitimately applied row above it backwards, and
+   * the migrator then re-runs those migrations into a `duplicate column name` startup brick.
    */
-  it("keeps entry 0012 strictly after MIGRATION_0010_TIMESTAMP_MS and after entry 0011", () => {
-    const entry11 = journal.entries.find((entry) => entry.tag.startsWith("0011_"));
-    const entry12 = journal.entries.find((entry) => entry.tag.startsWith("0012_"));
+  it("keeps the poison ceiling at or above every entry's when", () => {
+    for (const entry of journal.entries) {
+      expect(entry.when).toBeLessThanOrEqual(MAX_JOURNAL_MIGRATION_TIMESTAMP_MS);
+    }
 
-    expect(entry12).toBeDefined();
-    expect(entry12?.when).toBeGreaterThan(MIGRATION_0010_TIMESTAMP_MS);
-    expect(entry12?.when).toBeGreaterThan(entry11?.when ?? 0);
-    expect(MIGRATION_0010_TIMESTAMP_MS).toBe(1788546067501);
+    expect(MAX_JOURNAL_MIGRATION_TIMESTAMP_MS).toBe(
+      Math.max(...journal.entries.map((entry) => entry.when)),
+    );
   });
 });

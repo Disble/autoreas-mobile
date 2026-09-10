@@ -40,3 +40,13 @@ export interface MissingColumnDefinition {
   readonly columnName: string;
   readonly sql: string;
 }
+
+/**
+ * One row of the drizzle migrator's `__drizzle_migrations` ledger. `rowid` is the insertion
+ * ordinal -- the migrator appends in journal order and the expo build writes an empty `hash`, so
+ * position is the only thing that identifies which migration a row records.
+ */
+export interface MigrationLedgerRow {
+  readonly rowid: number;
+  readonly created_at: number;
+}
