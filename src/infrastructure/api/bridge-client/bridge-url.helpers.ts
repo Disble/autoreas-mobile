@@ -7,9 +7,16 @@ import {
 import type {
   ActiveSeasonCandidateSnapshot,
   ActiveSeasonSnapshot,
+  BridgeAnimeCoverResult,
   BridgeConnection,
   PostActiveSeasonRatingRequest,
 } from './bridge-client.types';
+
+/** Classification of a bridge cover response, before the (possibly large) image bytes are attached. */
+export type BridgeAnimeCoverClassification = Exclude<BridgeAnimeCoverResult, { kind: 'image' }> | {
+  readonly kind: 'image';
+  readonly etag: string | null;
+};
 
 /**
  * Builds the `http://ip:port` origin for a bridge connection.
@@ -180,4 +187,49 @@ function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnap
     bridgeRating: typeof grade === 'number' ? grade : null,
     bridgeRatingSource: gradeSource === 'bridge' ? 'bridge' : null,
   };
+}
+
+/**
+ * Builds the `/api/animes/{id}/cover` path for one anime, URL-encoding the id so an id carrying
+ * a `/` or space cannot corrupt the request path.
+ */
+export function buildAnimeCoverPath(animeId: string): string {
+  return `/api/animes/${encodeURIComponent(animeId)}/cover`;
+}
+
+/**
+ * Classifies a bridge cover HTTP response by status and body length, per the evaluation order in
+ * the bridge cover contract (401 -> unauthorized, 404 -> unknown, 204 -> absent, 304 ->
+ * not_modified, 200 with bytes -> image, everything else including a 200 with an empty body ->
+ * transient). The caller attaches the decoded image bytes for the `image` kind.
+ */
+export function classifyAnimeCoverResponse(input: {
+  readonly status: number;
+  readonly etag: string | null;
+  readonly retryAfterMs: number | null;
+  readonly byteLength: number;
+}): BridgeAnimeCoverClassification {
+  const { status, etag, retryAfterMs, byteLength } = input;
+
+  if (status === 401) {
+    return { kind: 'unauthorized' };
+  }
+
+  if (status === 404) {
+    return { kind: 'unknown' };
+  }
+
+  if (status === 204) {
+    return { kind: 'absent' };
+  }
+
+  if (status === 304) {
+    return { kind: 'not_modified', etag };
+  }
+
+  if (status === 200 && byteLength > 0) {
+    return { kind: 'image', etag };
+  }
+
+  return { kind: 'transient', status, retryAfterMs };
 }

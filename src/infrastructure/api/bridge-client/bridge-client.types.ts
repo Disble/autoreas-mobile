@@ -53,6 +53,24 @@ export interface BridgeRequestOptions {
   readonly timeoutMs?: number;
 }
 
+/** Per-call options for `getAnimeCover`. */
+export interface GetAnimeCoverOptions {
+  readonly ifNoneMatch?: string | null;
+}
+
+/**
+ * Outcome of one bridge cover request, classified from its HTTP response. `image` carries the
+ * decoded JPEG bytes and the verbatim quoted ETag; every other kind carries only what the caller
+ * needs to decide the next manifest state (see `resolveCoverManifestEntry`).
+ */
+export type BridgeAnimeCoverResult =
+  | { readonly kind: 'image'; readonly bytes: Uint8Array; readonly etag: string | null }
+  | { readonly kind: 'not_modified'; readonly etag: string | null }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'unauthorized' }
+  | { readonly kind: 'transient'; readonly status: number; readonly retryAfterMs: number | null };
+
 /** Normalized result of a bridge HTTP request, body read exactly once. */
 export interface BridgeHttpResult {
   readonly ok: boolean;
@@ -104,4 +122,13 @@ export interface BridgeClient {
     options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly openWebSocket: (connection: BridgeConnection) => WebSocket;
+  /**
+   * Fetches one anime's cover thumbnail. Never issues HEAD; a caller with a stored ETag should
+   * pass it as `ifNoneMatch` to let the bridge answer 304 without re-sending the image bytes.
+   */
+  readonly getAnimeCover: (
+    connection: BridgeConnection,
+    animeId: string,
+    options?: GetAnimeCoverOptions,
+  ) => Promise<BridgeAnimeCoverResult>;
 }

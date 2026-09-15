@@ -2,6 +2,8 @@ export {
   BridgeTimeoutError,
   BridgeUnreachableError,
   bridgeClient,
+  buildAnimeCoverPath,
+  classifyAnimeCoverResponse,
   createBridgeClient,
   extractActiveSeasonSnapshot,
 } from './bridge-client';
@@ -9,6 +11,7 @@ export type {
   ActiveSeasonCandidateSnapshot,
   ActiveSeasonRatingSource,
   ActiveSeasonSnapshot,
+  BridgeAnimeCoverResult,
   BridgeClient,
   BridgeClientDependencies,
   BridgeClientLogger,
@@ -17,5 +20,6 @@ export type {
   BridgeHttpResult,
   BridgePairDeviceRequest,
   BridgeRequestOptions,
+  GetAnimeCoverOptions,
   PostActiveSeasonRatingRequest,
 } from './bridge-client';
