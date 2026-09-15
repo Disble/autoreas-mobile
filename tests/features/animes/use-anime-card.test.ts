@@ -3,7 +3,21 @@ import { useAnimeCard } from '../../../src/features/animes/ui/AnimeCard/use-anim
 import type { AnimeCardProps } from '../../../src/features/animes/ui/AnimeCard/anime-card.types';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
 
+/** Chapter tap callbacks that vary across rerenders in the "latest callback" tests. */
 type MutableAnimeCardCallbackProps = Pick<AnimeCardProps, 'onCapPlus' | 'onCapMinus'>;
+
+/** Chapter half-cap long-press callbacks that vary across rerenders in the "latest callback" tests. */
+type MutableAnimeCardHalfCallbackProps = Pick<AnimeCardProps, 'onCapPlusHalf' | 'onCapMinusHalf'>;
+
+/** State-sheet callback and anime state that vary across rerenders in the "latest callback" test. */
+type MutableAnimeCardStateSheetProps = Pick<AnimeCardProps, 'onOpenStateSheet'> & {
+  readonly estado: number;
+};
+
+/** Season-rating callback and anime id that vary across rerenders in the "latest callback" test. */
+type MutableAnimeCardSeasonRatingProps = Pick<AnimeCardProps, 'onOpenSeasonRatingSheet'> & {
+  readonly animeId: string;
+};
 
 describe('useAnimeCard', () => {
   const baseAnime: Anime = {
@@ -283,5 +297,112 @@ describe('useAnimeCard', () => {
     expect(firstOnCapMinus).not.toHaveBeenCalled();
     expect(secondOnCapPlus).toHaveBeenCalledTimes(1);
     expect(secondOnCapMinus).toHaveBeenCalledTimes(1);
+  });
+
+  it('usa siempre los callbacks de half-cap más recientes después de un rerender', () => {
+    const firstOnCapPlusHalf = jest.fn();
+    const firstOnCapMinusHalf = jest.fn();
+    const secondOnCapPlusHalf = jest.fn();
+    const secondOnCapMinusHalf = jest.fn();
+    const { result, rerender } = renderHook(
+      ({ onCapPlusHalf, onCapMinusHalf }: MutableAnimeCardHalfCallbackProps) =>
+        useAnimeCard({
+          anime: baseAnime,
+          onCapMinus: jest.fn(),
+          onCapPlus: jest.fn(),
+          onCapPlusHalf,
+          onCapMinusHalf,
+          isMutating: false,
+        }),
+      {
+        initialProps: {
+          onCapPlusHalf: firstOnCapPlusHalf,
+          onCapMinusHalf: firstOnCapMinusHalf,
+        },
+      },
+    );
+
+    rerender({
+      onCapPlusHalf: secondOnCapPlusHalf,
+      onCapMinusHalf: secondOnCapMinusHalf,
+    });
+
+    act(() => {
+      result.current.handleCapPlusLongPress();
+      result.current.handleCapMinusLongPress();
+    });
+
+    expect(firstOnCapPlusHalf).not.toHaveBeenCalled();
+    expect(firstOnCapMinusHalf).not.toHaveBeenCalled();
+    expect(secondOnCapPlusHalf).toHaveBeenCalledTimes(1);
+    expect(secondOnCapMinusHalf).toHaveBeenCalledTimes(1);
+  });
+
+  it('usa siempre el callback y el estado más recientes de onOpenStateSheet después de un rerender', () => {
+    const firstOnOpenStateSheet = jest.fn();
+    const secondOnOpenStateSheet = jest.fn();
+    const { result, rerender } = renderHook(
+      ({ onOpenStateSheet, estado }: MutableAnimeCardStateSheetProps) =>
+        useAnimeCard({
+          anime: { ...baseAnime, estado },
+          onCapMinus: jest.fn(),
+          onCapPlus: jest.fn(),
+          onOpenStateSheet,
+          isMutating: false,
+        }),
+      {
+        initialProps: {
+          onOpenStateSheet: firstOnOpenStateSheet,
+          estado: 0,
+        },
+      },
+    );
+
+    rerender({
+      onOpenStateSheet: secondOnOpenStateSheet,
+      estado: 3,
+    });
+
+    act(() => {
+      result.current.handleStateBadgePress();
+    });
+
+    expect(firstOnOpenStateSheet).not.toHaveBeenCalled();
+    expect(secondOnOpenStateSheet).toHaveBeenCalledTimes(1);
+    expect(secondOnOpenStateSheet).toHaveBeenCalledWith(baseAnime._id, 3);
+  });
+
+  it('usa siempre el callback y el id más recientes de onOpenSeasonRatingSheet después de un rerender', () => {
+    const firstOnOpenSeasonRatingSheet = jest.fn();
+    const secondOnOpenSeasonRatingSheet = jest.fn();
+    const { result, rerender } = renderHook(
+      ({ onOpenSeasonRatingSheet, animeId }: MutableAnimeCardSeasonRatingProps) =>
+        useAnimeCard({
+          anime: { ...baseAnime, _id: animeId },
+          onCapMinus: jest.fn(),
+          onCapPlus: jest.fn(),
+          onOpenSeasonRatingSheet,
+          isMutating: false,
+        }),
+      {
+        initialProps: {
+          onOpenSeasonRatingSheet: firstOnOpenSeasonRatingSheet,
+          animeId: 'anime-1',
+        },
+      },
+    );
+
+    rerender({
+      onOpenSeasonRatingSheet: secondOnOpenSeasonRatingSheet,
+      animeId: 'anime-2',
+    });
+
+    act(() => {
+      result.current.handleOpenSeasonRatingSheet();
+    });
+
+    expect(firstOnOpenSeasonRatingSheet).not.toHaveBeenCalled();
+    expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledTimes(1);
+    expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledWith('anime-2');
   });
 });
