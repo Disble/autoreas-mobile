@@ -219,8 +219,27 @@ describe('resolveCoverManifestEntry', () => {
     expect(entry.nextAttemptAt).toBe(NOW);
   });
 
-  it('absent: clears the file name and etag, schedules 7 days out', () => {
+  it('absent with the SAME sourceKey keeps the last good file and etag, schedules 7 days out', () => {
+    // The bridge answers 204 when the user's original cover file was moved or deleted on the PC.
+    // Nothing about the anime's cover changed, so a good local copy must keep loading.
     const previous = buildEntry();
+
+    const entry = resolveCoverManifestEntry(previous, { kind: 'absent' }, NOW, 'unused.jpg', SOURCE_KEY);
+
+    expect(entry).toEqual({
+      status: 'absent',
+      fileName: 'anime-1-abc.jpg',
+      etag: '"abc"',
+      checkedAt: NOW,
+      nextAttemptAt: NOW + COVER_REVALIDATE_MS,
+      failureCount: 0,
+      sourceKey: SOURCE_KEY,
+    });
+  });
+
+  it('absent after a sourceKey change clears the file name and etag, schedules 7 days out', () => {
+    // A changed portada means the cover itself was edited (or removed), so the old file is stale.
+    const previous = buildEntry({ sourceKey: 'https://cdn.example.com/old-cover.jpg' });
 
     const entry = resolveCoverManifestEntry(previous, { kind: 'absent' }, NOW, 'unused.jpg', SOURCE_KEY);
 

@@ -293,10 +293,10 @@ describe('runCoverSweep', () => {
     expect(deleteOldFileIndex).toBeGreaterThan(lastWriteManifestIndex);
   });
 
-  it('a 204 deletes the file in cleanup, after writeManifest', async () => {
+  it('a 204 after the cover source changed deletes the file in cleanup, after writeManifest', async () => {
     const manifest: CoverManifest = {
       version: 1,
-      entries: { a1: buildEntry({ fileName: 'a1.jpg' }) },
+      entries: { a1: buildEntry({ fileName: 'a1.jpg', sourceKey: 'source-a1-before-edit' }) },
     };
     const { deps, getManifest, files, callLog } = buildFakeDeps(
       {

@@ -76,12 +76,23 @@ function resolveNotModifiedEntry(
   };
 }
 
-/** `absent`: the bridge confirmed no cover exists; the file reference is cleared. */
-function resolveAbsentEntry(now: number, sourceKey: string | null): CoverManifestEntry {
+/**
+ * `absent`: the bridge has no cover to serve. When the anime's cover source is unchanged, the last
+ * good file and etag are KEPT: the bridge serves the user's original local path, so a file moved or
+ * deleted on the PC becomes a permanent 204 although nobody edited the cover, and a cover must
+ * never stop loading. Only a changed source (the cover was edited or removed) clears the file.
+ */
+function resolveAbsentEntry(
+  previous: CoverManifestEntry | null,
+  now: number,
+  sourceKey: string | null,
+): CoverManifestEntry {
+  const lastGoodFileName = previous?.sourceKey === sourceKey ? (previous?.fileName ?? null) : null;
+
   return {
     status: 'absent',
-    fileName: null,
-    etag: null,
+    fileName: lastGoodFileName,
+    etag: lastGoodFileName ? (previous?.etag ?? null) : null,
     checkedAt: now,
     nextAttemptAt: now + COVER_REVALIDATE_MS,
     failureCount: 0,
@@ -164,7 +175,7 @@ export function resolveCoverManifestEntry(
     case 'not_modified':
       return resolveNotModifiedEntry(previous, result.etag, now, sourceKey);
     case 'absent':
-      return resolveAbsentEntry(now, sourceKey);
+      return resolveAbsentEntry(previous, now, sourceKey);
     case 'unknown':
       return resolveUnknownEntry(previous, now, sourceKey);
     case 'transient':

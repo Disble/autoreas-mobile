@@ -132,3 +132,42 @@ describe('runCoverSweep: a changed portada invalidates a stale absent/nextAttemp
     expect(secondSummary.fetched).toBe(0);
   });
 });
+
+/**
+ * "A cover must never stop loading": the bridge serves the user's original local cover path, so a
+ * file moved or deleted on the PC turns into a permanent 204 even though nobody edited the cover.
+ */
+describe('runCoverSweep: a 204 for an unchanged source keeps the last good cover', () => {
+  it('keeps the JPEG on disk and still publishes its uri when the bridge answers 204 for the same source', async () => {
+    const ANIME_ID = 'Gmi386XNGisZWL3F';
+    const SOURCE_KEY = 'D:/Users/me/Downloads/cover.jpg';
+    const manifest: CoverManifest = {
+      version: 1,
+      entries: {
+        [ANIME_ID]: buildEntry({
+          status: 'image',
+          fileName: 'Gmi386XNGisZWL3F-1251ac061f6b4d68.jpg',
+          etag: '"1251ac061f6b4d68"',
+          sourceKey: SOURCE_KEY,
+        }),
+      },
+    };
+    const publishCoverUris = jest.fn((_map: Readonly<Record<string, string>>) => undefined);
+    const { deps, getManifest } = buildFakeDeps(
+      {
+        readActiveAnimeCoverSources: jest.fn(async () => [{ animeId: ANIME_ID, sourceKey: SOURCE_KEY }]),
+        bridgeClient: { getAnimeCover: jest.fn(async () => ({ kind: 'absent' }) as BridgeAnimeCoverResult) },
+        publishCoverUris,
+      },
+      { manifest, files: ['Gmi386XNGisZWL3F-1251ac061f6b4d68.jpg'] },
+    );
+
+    await runCoverSweep(FAKE_DB, deps);
+
+    expect(deps.deleteCoverFile).not.toHaveBeenCalled();
+    expect(getManifest().entries[ANIME_ID].fileName).toBe('Gmi386XNGisZWL3F-1251ac061f6b4d68.jpg');
+    expect(publishCoverUris).toHaveBeenLastCalledWith({
+      [ANIME_ID]: 'file:///covers/Gmi386XNGisZWL3F-1251ac061f6b4d68.jpg',
+    });
+  });
+});
