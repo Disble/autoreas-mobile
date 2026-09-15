@@ -14,7 +14,7 @@ export function AnimeCardCover({ coverUri }: Readonly<AnimeCardCoverProps>) {
       <StyledImage
         source={coverUri}
         contentFit="cover"
-        className="w-20 self-stretch rounded-l-2xl"
+        className="w-20 self-stretch rounded-l-3xl"
       />
     );
   }
@@ -23,7 +23,7 @@ export function AnimeCardCover({ coverUri }: Readonly<AnimeCardCoverProps>) {
   // decides the row height, and the art crops to fill it (an in-flow 100%-height Svg stretched
   // the whole card).
   return (
-    <View className="w-20 self-stretch overflow-hidden rounded-l-2xl">
+    <View className="w-20 self-stretch overflow-hidden rounded-l-3xl">
       <View className="absolute inset-0">
         <CoverPlaceholderScene />
       </View>
