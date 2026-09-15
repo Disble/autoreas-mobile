@@ -33,7 +33,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     restantesShown && restantesLabel ? restantesLabel : defaultMeta;
 
   return (
-    <Card className="mb-3 overflow-hidden p-0">
+    <Card className="mb-3 overflow-hidden rounded-2xl p-0">
       <Card.Body className="flex-row">
         <AnimeCardCover coverUri={coverUri} />
         <AnimeCardContent
