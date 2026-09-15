@@ -60,6 +60,26 @@ export function buildCoverFileName(
   return `${sanitizedId}-${etagToken}.jpg`;
 }
 
+/**
+ * Normalizes a raw `portada` value into the manifest's `sourceKey` shape, mirroring the bridge's
+ * own absent rule: an empty or whitespace-only string, or the literal string `"null"`, counts as
+ * no cover, exactly like `null`/`undefined`. Anything else is trimmed and kept verbatim, so the
+ * same URL trimmed differently across reads never looks like a source change.
+ */
+export function normalizeCoverSourceKey(portada: string | null | undefined): string | null {
+  if (portada === null || portada === undefined) {
+    return null;
+  }
+
+  const trimmed = portada.trim();
+
+  if (trimmed.length === 0 || trimmed === 'null') {
+    return null;
+  }
+
+  return trimmed;
+}
+
 /** Parses a persisted cover manifest, returning an empty v1 manifest for missing/invalid/wrong-version input. */
 export function parseCoverManifest(raw: unknown): CoverManifest {
   const result = CoverManifestSchema.safeParse(raw);

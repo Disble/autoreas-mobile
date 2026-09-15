@@ -4,12 +4,14 @@ import {
   deleteCoverFile,
   getCoverFileUri,
   listCoverFileNames,
+  normalizeCoverSourceKey,
   readCoverManifest,
   writeCoverImage,
   writeCoverManifest,
 } from '../../../infrastructure/cover-files/cover-files.helpers';
 import { getBridgeConfigSnapshot } from '../../../infrastructure/db/client/client.helpers';
 import { useCoverUriStore } from '../../../infrastructure/store/cover-uri-store/cover-uri-store.constants';
+import type { SyncRuntimeTriggerSource } from '../sync-runtime-status.types';
 import type { CoverSweepDependencies } from './cover-sweep.types';
 
 /** Revalidation horizon after a conclusive image/not_modified/absent answer (7 days). */
@@ -28,10 +30,26 @@ export const COVER_TRANSIENT_MAX_DELAY_MS = 6 * 60 * 60 * 1000;
 export const COVER_SWEEP_CONCURRENCY = 2;
 
 /**
+ * Foreground sync trigger sources whose settled cycle also starts a (non-awaited) cover sweep, from
+ * `runCoordinatedForegroundSyncCycle`: a manual pull, a bridge-pushed `anime_changed` over
+ * WebSocket, and connectivity just regained (so a due or transient cover retries immediately
+ * instead of waiting for the next foreground transition). Every other source is deliberately
+ * excluded -- `app_active` already has its own path via `runForegroundResyncCycle`, and
+ * `bootstrap`/`local_mutation`/`local_mutation_write`/`foreground_service`/`background_task` must
+ * never start image work from this cycle (the background task's timers are paused, and a chapter
+ * mutation is not a cover change).
+ */
+export const COVER_SWEEP_TRIGGER_SOURCES: ReadonlySet<SyncRuntimeTriggerSource> = new Set([
+  'manual',
+  'ws_sync_required',
+  'network_regained',
+]);
+
+/**
  * Production collaborators for `hydrateCoverUris` / `runCoverSweep`: the real bridge client, the
  * `expo-file-system`-backed disk adapter, the real `cover-uri-store`, and a plain (non-write-door)
- * read of the active anime ids -- reads never need `withLocalWrite` (see `getBridgeConfigSnapshot`
- * precedent in `client.helpers.ts`).
+ * read of the active anime ids and their cover sources -- reads never need `withLocalWrite` (see
+ * `getBridgeConfigSnapshot` precedent in `client.helpers.ts`).
  */
 export const DEFAULT_COVER_SWEEP_DEPENDENCIES: CoverSweepDependencies = {
   clock: { now: Date.now },
@@ -46,12 +64,15 @@ export const DEFAULT_COVER_SWEEP_DEPENDENCIES: CoverSweepDependencies = {
   publishCoverUris: (coverUriByAnimeId) => {
     useCoverUriStore.getState().setCoverUris(coverUriByAnimeId);
   },
-  readActiveAnimeIds: async (rawDb) => {
-    const rows = await rawDb.getAllAsync<{ _id: string }>(
-      'SELECT _id FROM animes WHERE activo = 1',
+  readActiveAnimeCoverSources: async (rawDb) => {
+    const rows = await rawDb.getAllAsync<{ _id: string; portada: string | null }>(
+      'SELECT _id, portada FROM animes WHERE activo = 1',
     );
 
-    return rows.map((row) => row._id);
+    return rows.map((row) => ({
+      animeId: row._id,
+      sourceKey: normalizeCoverSourceKey(row.portada),
+    }));
   },
   getBridgeConfigSnapshot,
 };

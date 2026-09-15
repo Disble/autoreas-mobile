@@ -41,13 +41,27 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptSucceeded: jest.fn(),
 }));
 
+// Two cases below call `runCoordinatedForegroundSyncCycle` with `source: 'manual'`, which now also
+// starts a (non-awaited) cover sweep -- see `tests/features/sync/__tests__/sync-facade.helpers.test.ts`
+// for that behavior's own coverage. Mocked here purely so this file's fake `rawDb` never reaches the
+// real `DEFAULT_COVER_SWEEP_DEPENDENCIES` in the background.
+jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
+  runCoverSweep: jest.fn().mockResolvedValue({
+    fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+  }),
+}));
+
+/** Shape of the fake drizzle transaction handle `withLocalWrite`'s task callback receives. */
 type MockTxDb = {
   update: jest.Mock;
   insert: jest.Mock;
 };
 
+/** Fixed clock reading every case in this file computes its expected timestamps relative to. */
 const now = 1_710_000_000_000;
+/** A dummy raw DB handle: every dependency that would read it is mocked above. */
 const rawDb = { name: 'raw-db' };
+/** One `animes` row fixture `buildSelectMock` resolves with, for `applyAnimeMutationPatch`'s own read. */
 const baseAnimeRow: Record<string, unknown> = {
   _id: 'anime-1',
   nombre: 'One Piece',
@@ -71,6 +85,7 @@ const baseAnimeRow: Record<string, unknown> = {
   tipo: null,
 };
 
+/** Builds the fake drizzle `select` chain `createDrizzleDb` returns, resolving `baseAnimeRow`. */
 function buildSelectMock() {
   const limit = jest.fn().mockResolvedValue([baseAnimeRow]);
   const where = jest.fn(() => ({ limit }));
@@ -79,6 +94,7 @@ function buildSelectMock() {
   return { select };
 }
 
+/** Builds the fake `update`/`insert` transaction handle mocks `configureMutationWrite` wires up. */
 function createTxDbMocks() {
   const where = jest.fn().mockResolvedValue(undefined);
   const set = jest.fn(() => ({ where }));
@@ -92,6 +108,7 @@ function createTxDbMocks() {
   };
 }
 
+/** Wires `createDrizzleDb`/`withLocalWrite` so a mutation write runs against the fake tx handle. */
 function configureMutationWrite(): { readonly values: jest.Mock } {
   const txMocks = createTxDbMocks();
   (createDrizzleDb as jest.Mock).mockReturnValue(buildSelectMock());
@@ -101,6 +118,7 @@ function configureMutationWrite(): { readonly values: jest.Mock } {
   return txMocks;
 }
 
+/** Applies one chapter-increment mutation patch to `anime-1`, exercising the real mutation pipeline. */
 async function applyChapterIncrement(): Promise<void> {
   await applyAnimeMutationPatch(
     rawDb as never,
@@ -110,6 +128,7 @@ async function applyChapterIncrement(): Promise<void> {
   );
 }
 
+/** Polls a jest mock until it has received at least `expectedCalls` calls, or throws after 20 ticks. */
 async function waitForCalls(mock: jest.Mock, expectedCalls: number): Promise<void> {
   for (let index = 0; index < 20; index += 1) {
     if (mock.mock.calls.length >= expectedCalls) {
@@ -122,6 +141,7 @@ async function waitForCalls(mock: jest.Mock, expectedCalls: number): Promise<voi
   throw new Error(`Expected ${expectedCalls} calls, received ${mock.mock.calls.length}`);
 }
 
+/** Polls the shared sync connection snapshot until it reaches `expectedKind`, or throws after 20 ticks. */
 async function waitForConnectionKind(expectedKind: string): Promise<void> {
   for (let index = 0; index < 20; index += 1) {
     if (getSyncConnectionSnapshot().kind === expectedKind) {

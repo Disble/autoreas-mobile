@@ -4,187 +4,47 @@ import type { BridgeAnimeCoverResult, BridgeConnection } from '../../../infrastr
 import { runWithConcurrency } from '../../../infrastructure/async/run-with-concurrency.helpers';
 import { buildCoverFileName } from '../../../infrastructure/cover-files/cover-files.helpers';
 import type { CoverManifest, CoverManifestEntry } from '../../../infrastructure/cover-files';
+import { resolveCoverManifestEntry } from './cover-sweep-entry.helpers';
 import {
   getInFlightCoverSweep,
   runCoverStoreExclusive,
   trackInFlightCoverSweep,
 } from './cover-sweep-lock';
-import {
-  COVER_REVALIDATE_MS,
-  COVER_SWEEP_CONCURRENCY,
-  COVER_TRANSIENT_BASE_DELAY_MS,
-  COVER_TRANSIENT_MAX_DELAY_MS,
-  COVER_UNKNOWN_RECHECK_MS,
-  DEFAULT_COVER_SWEEP_DEPENDENCIES,
-} from './cover-sweep.constants';
+import { COVER_SWEEP_CONCURRENCY, DEFAULT_COVER_SWEEP_DEPENDENCIES } from './cover-sweep.constants';
 import type {
+  CoverActiveAnimeSource,
   CoverSweepDependencies,
   CoverSweepOutcome,
   CoverSweepSummary,
 } from './cover-sweep.types';
 
+export { computeTransientDelayMs, resolveCoverManifestEntry } from './cover-sweep-entry.helpers';
+
 /**
- * Selects the active anime ids whose cover entry is missing or due (`now >= nextAttemptAt`),
- * preserving `activeAnimeIds`' order so the sweep's request order stays deterministic run to run.
+ * Selects the active anime ids whose cover entry is missing, due (`now >= nextAttemptAt`), or
+ * resolved against a DIFFERENT `sourceKey` than the anime's current `portada` -- a changed cover
+ * must never wait out a 7-day (or longer) `nextAttemptAt` set for the old one. A legacy entry with
+ * no `sourceKey` at all (persisted before this field existed) always counts as a mismatch, so it is
+ * re-asked exactly once regardless of what the current source is. Preserves `activeSources`' order
+ * so the sweep's request order stays deterministic run to run.
  */
 export function selectCoverSweepTargets(
-  activeAnimeIds: readonly string[],
+  activeSources: readonly CoverActiveAnimeSource[],
   manifest: CoverManifest,
   now: number,
 ): readonly string[] {
-  return activeAnimeIds.filter((animeId) => {
+  const targets: string[] = [];
+
+  for (const { animeId, sourceKey } of activeSources) {
     const entry = manifest.entries[animeId];
+    const isDue = !entry || now >= entry.nextAttemptAt || entry.sourceKey !== sourceKey;
 
-    return !entry || now >= entry.nextAttemptAt;
-  });
-}
-
-/**
- * Computes the next transient-failure delay: the bridge's own `Retry-After` when it gave one,
- * otherwise exponential backoff from `COVER_TRANSIENT_BASE_DELAY_MS`, doubling per failure and
- * clamped at `COVER_TRANSIENT_MAX_DELAY_MS`. `failureCount` is the NEW (post-increment) count, so
- * the first failure (1) yields exactly the base delay.
- */
-export function computeTransientDelayMs(failureCount: number, retryAfterMs: number | null): number {
-  if (retryAfterMs !== null) {
-    return retryAfterMs;
+    if (isDue) {
+      targets.push(animeId);
+    }
   }
 
-  const exponent = Math.max(failureCount - 1, 0);
-  const backoffMs = COVER_TRANSIENT_BASE_DELAY_MS * 2 ** exponent;
-
-  return Math.min(backoffMs, COVER_TRANSIENT_MAX_DELAY_MS);
-}
-
-/** `image`: the new file replaces the entry outright (fresh etag, 7-day revalidation, failures cleared). */
-function resolveImageEntry(newFileName: string, etag: string | null, now: number): CoverManifestEntry {
-  return {
-    status: 'image',
-    fileName: newFileName,
-    etag,
-    checkedAt: now,
-    nextAttemptAt: now + COVER_REVALIDATE_MS,
-    failureCount: 0,
-  };
-}
-
-/**
- * `not_modified`: the existing file is still current, so only its etag/checkedAt/nextAttemptAt
- * move forward -- UNLESS there is no previous file, in which case the answer cannot be trusted
- * (nothing to keep) and the entry is downgraded to `transient` with an immediate retry.
- */
-function resolveNotModifiedEntry(
-  previous: CoverManifestEntry | null,
-  etag: string | null,
-  now: number,
-): CoverManifestEntry {
-  if (!previous?.fileName) {
-    return {
-      status: 'transient',
-      fileName: null,
-      etag: null,
-      checkedAt: previous?.checkedAt ?? null,
-      nextAttemptAt: now,
-      failureCount: 0,
-    };
-  }
-
-  return {
-    status: 'image',
-    fileName: previous.fileName,
-    etag: etag ?? previous.etag,
-    checkedAt: now,
-    nextAttemptAt: now + COVER_REVALIDATE_MS,
-    failureCount: 0,
-  };
-}
-
-/** `absent`: the bridge confirmed no cover exists; the file reference is cleared. */
-function resolveAbsentEntry(now: number): CoverManifestEntry {
-  return {
-    status: 'absent',
-    fileName: null,
-    etag: null,
-    checkedAt: now,
-    nextAttemptAt: now + COVER_REVALIDATE_MS,
-    failureCount: 0,
-  };
-}
-
-/**
- * `unknown`: a 404 never wipes an offline-safe file or etag -- a downgraded or stale bridge must
- * not erase what is already on disk.
- */
-function resolveUnknownEntry(previous: CoverManifestEntry | null, now: number): CoverManifestEntry {
-  return {
-    status: 'unknown',
-    fileName: previous?.fileName ?? null,
-    etag: previous?.etag ?? null,
-    checkedAt: now,
-    nextAttemptAt: now + COVER_UNKNOWN_RECHECK_MS,
-    failureCount: 0,
-  };
-}
-
-/**
- * `transient` (and the unreachable-in-practice `unauthorized` fallback, see the caller):
- * nothing about the file changes; only the failure bookkeeping advances.
- */
-function resolveTransientEntry(
-  previous: CoverManifestEntry | null,
-  retryAfterMs: number | null,
-  now: number,
-): CoverManifestEntry {
-  const nextFailureCount = (previous?.failureCount ?? 0) + 1;
-
-  return {
-    status: previous?.status ?? 'transient',
-    fileName: previous?.fileName ?? null,
-    etag: previous?.etag ?? null,
-    checkedAt: previous?.checkedAt ?? null,
-    nextAttemptAt: now + computeTransientDelayMs(nextFailureCount, retryAfterMs),
-    failureCount: nextFailureCount,
-  };
-}
-
-/**
- * Folds one bridge cover result into the next manifest entry for an anime. `newFileName` is only
- * meaningful for the `image` kind (the caller -- `applyCoverFileChange` -- always supplies a real
- * name there); every other kind either clears or preserves the previous file name and ignores it.
- * Dispatches to one small `resolve*Entry` helper per kind -- see each helper's own doc comment
- * for its contract.
- */
-export function resolveCoverManifestEntry(
-  previous: CoverManifestEntry | null,
-  result: BridgeAnimeCoverResult,
-  now: number,
-  newFileName: string | null,
-): CoverManifestEntry {
-  switch (result.kind) {
-    case 'image':
-      if (newFileName === null) {
-        // Defensive only: an `image` result is always paired with a real file name by
-        // `applyCoverFileChange`. This branch exists so the parameter can be honestly typed
-        // `string | null` (it is meaningless for every other kind) without an unsafe non-null
-        // assertion here. Falls back to a retry rather than fabricating a file reference.
-        return resolveTransientEntry(previous, null, now);
-      }
-      return resolveImageEntry(newFileName, result.etag, now);
-    case 'not_modified':
-      return resolveNotModifiedEntry(previous, result.etag, now);
-    case 'absent':
-      return resolveAbsentEntry(now);
-    case 'unknown':
-      return resolveUnknownEntry(previous, now);
-    case 'transient':
-      return resolveTransientEntry(previous, result.retryAfterMs, now);
-    case 'unauthorized':
-    default:
-      // Never actually reaches here -- the worker checks `shouldStopCoverSweep` first and never
-      // resolves an entry for `unauthorized` -- but the parameter type is the full
-      // `BridgeAnimeCoverResult` union, so every member needs a branch.
-      return resolveTransientEntry(previous, null, now);
-  }
+  return targets;
 }
 
 /** Drops every manifest entry whose anime id is no longer active, reporting each dropped file for deletion. */
@@ -389,13 +249,16 @@ function bumpCoverSweepSummary(summary: CoverSweepCounters, kind: BridgeAnimeCov
 /**
  * Builds the per-anime worker `runWithConcurrency` drives: fetch (or stop), apply the file
  * change, fold the result into `entries`, and bump `summary`. Both `entries` and `summary` are
- * shared, mutated accumulators owned by `executeCoverSweep`.
+ * shared, mutated accumulators owned by `executeCoverSweep`. `sourceByAnimeId` supplies the
+ * normalized `portada` each request is made for, so `resolveCoverManifestEntry` can stamp the
+ * resulting entry with the `sourceKey` it was resolved against.
  */
 function buildCoverSweepWorker(
   deps: CoverSweepDependencies,
   connection: BridgeConnection,
   entries: Record<string, CoverManifestEntry>,
   summary: CoverSweepCounters,
+  sourceByAnimeId: ReadonlyMap<string, string | null>,
 ) {
   return async (animeId: string): Promise<'continue' | 'stop'> => {
     const previous = entries[animeId] ?? null;
@@ -406,8 +269,9 @@ function buildCoverSweepWorker(
     }
 
     const fileName = await applyCoverFileChange(deps, animeId, previous, result);
+    const sourceKey = sourceByAnimeId.get(animeId) ?? null;
 
-    entries[animeId] = resolveCoverManifestEntry(previous, result, deps.clock.now(), fileName);
+    entries[animeId] = resolveCoverManifestEntry(previous, result, deps.clock.now(), fileName, sourceKey);
     bumpCoverSweepSummary(summary, result.kind);
 
     return 'continue';
@@ -432,7 +296,8 @@ async function executeCoverSweep(
 
   const manifest = await deps.readManifest();
   const connection: BridgeConnection = { ip: config.ip, port: config.port, token: config.token };
-  const activeAnimeIds = await deps.readActiveAnimeIds(rawDb);
+  const activeSources = await deps.readActiveAnimeCoverSources(rawDb);
+  const activeAnimeIds = activeSources.map((source) => source.animeId);
   const { manifest: prunedManifest, fileNamesToDelete: prunedFileNames } = pruneInactiveCoverEntries(
     manifest,
     activeAnimeIds,
@@ -440,10 +305,11 @@ async function executeCoverSweep(
 
   const entries: Record<string, CoverManifestEntry> = { ...prunedManifest.entries };
   const summary = { fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0 };
+  const sourceByAnimeId = new Map(activeSources.map((source) => [source.animeId, source.sourceKey]));
 
   try {
-    const targets = selectCoverSweepTargets(activeAnimeIds, prunedManifest, deps.clock.now());
-    const worker = buildCoverSweepWorker(deps, connection, entries, summary);
+    const targets = selectCoverSweepTargets(activeSources, prunedManifest, deps.clock.now());
+    const worker = buildCoverSweepWorker(deps, connection, entries, summary, sourceByAnimeId);
 
     const { stopped } = await runWithConcurrency(targets, COVER_SWEEP_CONCURRENCY, worker);
 

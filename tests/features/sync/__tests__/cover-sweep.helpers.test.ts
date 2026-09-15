@@ -13,10 +13,14 @@ import {
   COVER_TRANSIENT_MAX_DELAY_MS,
   COVER_UNKNOWN_RECHECK_MS,
 } from '../../../../src/features/sync/cover-sweep/cover-sweep.constants';
+import type { CoverActiveAnimeSource } from '../../../../src/features/sync/cover-sweep/cover-sweep.types';
 import type { CoverManifest, CoverManifestEntry } from '../../../../src/infrastructure/cover-files';
 
 /** Fixed clock reading every case in this file computes its expected timestamps relative to. */
 const NOW = 1_700_000_000_000;
+
+/** The `sourceKey` every fixture entry/source uses by default, unless a case cares about a mismatch. */
+const SOURCE_KEY = 'https://cdn.example.com/anime-1.jpg';
 
 /** Builds one manifest entry fixture, overriding only the fields a case cares about. */
 function buildEntry(overrides: Partial<CoverManifestEntry> = {}): CoverManifestEntry {
@@ -27,15 +31,27 @@ function buildEntry(overrides: Partial<CoverManifestEntry> = {}): CoverManifestE
     checkedAt: NOW - 1_000,
     nextAttemptAt: NOW - 1_000,
     failureCount: 0,
+    sourceKey: SOURCE_KEY,
     ...overrides,
   };
+}
+
+/** Builds one active anime source fixture, overriding only the fields a case cares about. */
+function buildSource(overrides: Partial<CoverActiveAnimeSource> = {}): CoverActiveAnimeSource {
+  return { animeId: 'a1', sourceKey: SOURCE_KEY, ...overrides };
 }
 
 describe('selectCoverSweepTargets', () => {
   it('selects ids with no manifest entry', () => {
     const manifest: CoverManifest = { version: 1, entries: {} };
 
-    expect(selectCoverSweepTargets(['a1', 'a2'], manifest, NOW)).toEqual(['a1', 'a2']);
+    expect(
+      selectCoverSweepTargets(
+        [buildSource({ animeId: 'a1' }), buildSource({ animeId: 'a2' })],
+        manifest,
+        NOW,
+      ),
+    ).toEqual(['a1', 'a2']);
   });
 
   it('selects ids whose nextAttemptAt has elapsed', () => {
@@ -44,16 +60,16 @@ describe('selectCoverSweepTargets', () => {
       entries: { a1: buildEntry({ nextAttemptAt: NOW - 1 }) },
     };
 
-    expect(selectCoverSweepTargets(['a1'], manifest, NOW)).toEqual(['a1']);
+    expect(selectCoverSweepTargets([buildSource()], manifest, NOW)).toEqual(['a1']);
   });
 
-  it('excludes ids whose nextAttemptAt is still in the future', () => {
+  it('excludes ids whose nextAttemptAt is still in the future and whose sourceKey matches', () => {
     const manifest: CoverManifest = {
       version: 1,
       entries: { a1: buildEntry({ nextAttemptAt: NOW + 1_000 }) },
     };
 
-    expect(selectCoverSweepTargets(['a1'], manifest, NOW)).toEqual([]);
+    expect(selectCoverSweepTargets([buildSource()], manifest, NOW)).toEqual([]);
   });
 
   it('selects an id exactly at its nextAttemptAt (inclusive boundary)', () => {
@@ -62,13 +78,51 @@ describe('selectCoverSweepTargets', () => {
       entries: { a1: buildEntry({ nextAttemptAt: NOW }) },
     };
 
-    expect(selectCoverSweepTargets(['a1'], manifest, NOW)).toEqual(['a1']);
+    expect(selectCoverSweepTargets([buildSource()], manifest, NOW)).toEqual(['a1']);
   });
 
   it('preserves the input order (stable order)', () => {
     const manifest: CoverManifest = { version: 1, entries: {} };
 
-    expect(selectCoverSweepTargets(['c', 'a', 'b'], manifest, NOW)).toEqual(['c', 'a', 'b']);
+    expect(
+      selectCoverSweepTargets(
+        [buildSource({ animeId: 'c' }), buildSource({ animeId: 'a' }), buildSource({ animeId: 'b' })],
+        manifest,
+        NOW,
+      ),
+    ).toEqual(['c', 'a', 'b']);
+  });
+
+  it('selects an id whose entry has a future nextAttemptAt but a different sourceKey (a changed portada)', () => {
+    const manifest: CoverManifest = {
+      version: 1,
+      entries: { a1: buildEntry({ nextAttemptAt: NOW + 999_999, sourceKey: 'https://old.example.com/a1.jpg' }) },
+    };
+
+    expect(
+      selectCoverSweepTargets(
+        [buildSource({ sourceKey: 'https://new.example.com/a1.jpg' })],
+        manifest,
+        NOW,
+      ),
+    ).toEqual(['a1']);
+  });
+
+  it('does NOT select an id whose entry has a future nextAttemptAt and the SAME sourceKey', () => {
+    const manifest: CoverManifest = {
+      version: 1,
+      entries: { a1: buildEntry({ nextAttemptAt: NOW + 999_999, sourceKey: SOURCE_KEY }) },
+    };
+
+    expect(selectCoverSweepTargets([buildSource({ sourceKey: SOURCE_KEY })], manifest, NOW)).toEqual([]);
+  });
+
+  it('selects a legacy entry with no sourceKey even though nextAttemptAt is still in the future', () => {
+    const legacyEntry = buildEntry({ nextAttemptAt: NOW + 999_999 });
+    delete (legacyEntry as { sourceKey?: string | null }).sourceKey;
+    const manifest: CoverManifest = { version: 1, entries: { a1: legacyEntry } };
+
+    expect(selectCoverSweepTargets([buildSource({ sourceKey: SOURCE_KEY })], manifest, NOW)).toEqual(['a1']);
   });
 });
 
@@ -98,6 +152,7 @@ describe('resolveCoverManifestEntry', () => {
       { kind: 'image', bytes: new Uint8Array([1]), etag: '"new-etag"' },
       NOW,
       'anime-1-newetag.jpg',
+      SOURCE_KEY,
     );
 
     expect(entry).toEqual({
@@ -107,6 +162,7 @@ describe('resolveCoverManifestEntry', () => {
       checkedAt: NOW,
       nextAttemptAt: NOW + COVER_REVALIDATE_MS,
       failureCount: 0,
+      sourceKey: SOURCE_KEY,
     });
   });
 
@@ -118,6 +174,7 @@ describe('resolveCoverManifestEntry', () => {
       { kind: 'not_modified', etag: '"abc"' },
       NOW,
       'unused.jpg',
+      SOURCE_KEY,
     );
 
     expect(entry).toEqual({
@@ -127,13 +184,20 @@ describe('resolveCoverManifestEntry', () => {
       checkedAt: NOW,
       nextAttemptAt: NOW + COVER_REVALIDATE_MS,
       failureCount: 0,
+      sourceKey: SOURCE_KEY,
     });
   });
 
   it('not_modified: falls back to the previous etag when the response carries none', () => {
     const previous = buildEntry({ etag: '"abc"' });
 
-    const entry = resolveCoverManifestEntry(previous, { kind: 'not_modified', etag: null }, NOW, 'unused.jpg');
+    const entry = resolveCoverManifestEntry(
+      previous,
+      { kind: 'not_modified', etag: null },
+      NOW,
+      'unused.jpg',
+      SOURCE_KEY,
+    );
 
     expect(entry.etag).toBe('"abc"');
   });
@@ -146,6 +210,7 @@ describe('resolveCoverManifestEntry', () => {
       { kind: 'not_modified', etag: '"abc"' },
       NOW,
       'unused.jpg',
+      SOURCE_KEY,
     );
 
     expect(entry.status).toBe('transient');
@@ -157,7 +222,7 @@ describe('resolveCoverManifestEntry', () => {
   it('absent: clears the file name and etag, schedules 7 days out', () => {
     const previous = buildEntry();
 
-    const entry = resolveCoverManifestEntry(previous, { kind: 'absent' }, NOW, 'unused.jpg');
+    const entry = resolveCoverManifestEntry(previous, { kind: 'absent' }, NOW, 'unused.jpg', SOURCE_KEY);
 
     expect(entry).toEqual({
       status: 'absent',
@@ -166,13 +231,14 @@ describe('resolveCoverManifestEntry', () => {
       checkedAt: NOW,
       nextAttemptAt: NOW + COVER_REVALIDATE_MS,
       failureCount: 0,
+      sourceKey: SOURCE_KEY,
     });
   });
 
   it('unknown: KEEPS the previous fileName and etag, schedules 24h out', () => {
     const previous = buildEntry({ status: 'image', fileName: 'anime-1-abc.jpg', etag: '"abc"' });
 
-    const entry = resolveCoverManifestEntry(previous, { kind: 'unknown' }, NOW, 'unused.jpg');
+    const entry = resolveCoverManifestEntry(previous, { kind: 'unknown' }, NOW, 'unused.jpg', SOURCE_KEY);
 
     expect(entry).toEqual({
       status: 'unknown',
@@ -181,11 +247,12 @@ describe('resolveCoverManifestEntry', () => {
       checkedAt: NOW,
       nextAttemptAt: NOW + COVER_UNKNOWN_RECHECK_MS,
       failureCount: 0,
+      sourceKey: SOURCE_KEY,
     });
   });
 
   it('unknown: tolerates no previous entry', () => {
-    const entry = resolveCoverManifestEntry(null, { kind: 'unknown' }, NOW, 'unused.jpg');
+    const entry = resolveCoverManifestEntry(null, { kind: 'unknown' }, NOW, 'unused.jpg', SOURCE_KEY);
 
     expect(entry.fileName).toBeNull();
     expect(entry.etag).toBeNull();
@@ -199,6 +266,7 @@ describe('resolveCoverManifestEntry', () => {
       { kind: 'transient', status: 503, retryAfterMs: null },
       NOW,
       'unused.jpg',
+      SOURCE_KEY,
     );
 
     expect(entry.status).toBe('image');
@@ -215,12 +283,86 @@ describe('resolveCoverManifestEntry', () => {
       { kind: 'transient', status: 503, retryAfterMs: 5_000 },
       NOW,
       'unused.jpg',
+      SOURCE_KEY,
     );
 
     expect(entry.status).toBe('transient');
     expect(entry.fileName).toBeNull();
     expect(entry.failureCount).toBe(1);
     expect(entry.nextAttemptAt).toBe(NOW + 5_000);
+  });
+
+  describe('sourceKey bookkeeping (every kind stores the sourceKey the request was made for)', () => {
+    const NEW_SOURCE_KEY = 'https://cdn.example.com/anime-1-new.jpg';
+
+    it('image', () => {
+      const entry = resolveCoverManifestEntry(
+        null,
+        { kind: 'image', bytes: new Uint8Array([1]), etag: '"etag"' },
+        NOW,
+        'anime-1.jpg',
+        NEW_SOURCE_KEY,
+      );
+
+      expect(entry.sourceKey).toBe(NEW_SOURCE_KEY);
+    });
+
+    it('not_modified (with a previous file)', () => {
+      const previous = buildEntry({ sourceKey: 'https://old.example.com/a1.jpg' });
+
+      const entry = resolveCoverManifestEntry(
+        previous,
+        { kind: 'not_modified', etag: '"abc"' },
+        NOW,
+        'unused.jpg',
+        NEW_SOURCE_KEY,
+      );
+
+      expect(entry.sourceKey).toBe(NEW_SOURCE_KEY);
+    });
+
+    it('absent', () => {
+      const entry = resolveCoverManifestEntry(null, { kind: 'absent' }, NOW, 'unused.jpg', null);
+
+      expect(entry.sourceKey).toBeNull();
+    });
+
+    it('unknown', () => {
+      const entry = resolveCoverManifestEntry(null, { kind: 'unknown' }, NOW, 'unused.jpg', NEW_SOURCE_KEY);
+
+      expect(entry.sourceKey).toBe(NEW_SOURCE_KEY);
+    });
+
+    it('transient', () => {
+      const entry = resolveCoverManifestEntry(
+        null,
+        { kind: 'transient', status: 503, retryAfterMs: null },
+        NOW,
+        'unused.jpg',
+        NEW_SOURCE_KEY,
+      );
+
+      expect(entry.sourceKey).toBe(NEW_SOURCE_KEY);
+    });
+
+    it('transient after a source change keeps the NEW key (so backoff applies instead of re-asking every pass)', () => {
+      const previous = buildEntry({
+        status: 'transient',
+        failureCount: 1,
+        sourceKey: 'https://old.example.com/a1.jpg',
+      });
+
+      const entry = resolveCoverManifestEntry(
+        previous,
+        { kind: 'transient', status: 503, retryAfterMs: null },
+        NOW,
+        'unused.jpg',
+        NEW_SOURCE_KEY,
+      );
+
+      expect(entry.sourceKey).toBe(NEW_SOURCE_KEY);
+      expect(entry.failureCount).toBe(2);
+    });
   });
 });
 

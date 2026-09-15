@@ -43,6 +43,11 @@ function buildEntry(overrides: Partial<CoverManifestEntry> = {}): CoverManifestE
   };
 }
 
+/** Builds `readActiveAnimeCoverSources`-shaped fixtures from plain ids, each with its own distinct `sourceKey`. */
+function toSources(animeIds: readonly string[]): readonly { animeId: string; sourceKey: string | null }[] {
+  return animeIds.map((animeId) => ({ animeId, sourceKey: `source-${animeId}` }));
+}
+
 /**
  * Builds a full fake `CoverSweepDependencies`, backed by an in-memory manifest and file set that
  * behave like disk: `writeManifest`/`writeCoverImage`/`deleteCoverFile` mutate the same state
@@ -84,7 +89,7 @@ function buildFakeDeps(
     publishCoverUris: jest.fn((map: Readonly<Record<string, string>>) => {
       publishCalls.push(map);
     }),
-    readActiveAnimeIds: jest.fn(async () => []),
+    readActiveAnimeCoverSources: jest.fn(async () => []),
     getBridgeConfigSnapshot: jest.fn(async () => ({
       id: 1,
       ip: '192.168.0.10',
@@ -175,7 +180,7 @@ describe('runCoverSweep', () => {
 
     await runCoverSweep(FAKE_DB, deps);
 
-    expect(deps.readActiveAnimeIds).not.toHaveBeenCalled();
+    expect(deps.readActiveAnimeCoverSources).not.toHaveBeenCalled();
   });
 
   it("removes an inactive anime's entry and file", async () => {
@@ -184,7 +189,7 @@ describe('runCoverSweep', () => {
       entries: { inactive: buildEntry({ fileName: 'inactive.jpg' }) },
     };
     const { deps, getManifest, files } = buildFakeDeps(
-      { readActiveAnimeIds: jest.fn(async () => []) },
+      { readActiveAnimeCoverSources: jest.fn(async () => []) },
       { manifest, files: ['inactive.jpg'] },
     );
 
@@ -196,7 +201,7 @@ describe('runCoverSweep', () => {
 
   it('a 200 writes a file and sets a 7-day next attempt', async () => {
     const { deps, getManifest, files } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: {
         getAnimeCover: jest.fn(async () => ({
           kind: 'image', bytes: new Uint8Array([1, 2, 3]), etag: '"abc"',
@@ -219,7 +224,7 @@ describe('runCoverSweep', () => {
       kind: 'image', bytes: new Uint8Array([1]), etag: '"abc"',
     }));
     const { deps } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -235,7 +240,7 @@ describe('runCoverSweep', () => {
       kind: 'image', bytes: new Uint8Array([1]), etag: '"abc"',
     }));
     const { deps, getManifest, setNow } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -260,7 +265,7 @@ describe('runCoverSweep', () => {
       kind: 'image' as const, bytes: new Uint8Array([1]), etag: '"aaaaaaaaaaaaaaaa"',
     }));
     const { deps, getManifest, files, setNow, callLog } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -295,7 +300,7 @@ describe('runCoverSweep', () => {
     };
     const { deps, getManifest, files, callLog } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
         bridgeClient: { getAnimeCover: jest.fn(async () => ({ kind: 'absent' }) as BridgeAnimeCoverResult) },
       },
       { manifest, files: ['a1.jpg'] },
@@ -330,7 +335,7 @@ describe('runCoverSweep', () => {
     });
     const { deps, files, callLog } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1', 'a2']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2'])),
         bridgeClient: { getAnimeCover },
       },
       { manifest, files: ['a1-old.jpg', 'a2.jpg'] },
@@ -354,7 +359,7 @@ describe('runCoverSweep', () => {
     };
     const { deps, getManifest, files } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
         bridgeClient: { getAnimeCover: jest.fn(async () => ({ kind: 'unknown' }) as BridgeAnimeCoverResult) },
       },
       { manifest, files: ['a1.jpg'] },
@@ -370,7 +375,7 @@ describe('runCoverSweep', () => {
 
   it('a 503 with Retry-After schedules exactly that delay', async () => {
     const { deps, getManifest } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: {
         getAnimeCover: jest.fn(
           async () => ({ kind: 'transient', status: 503, retryAfterMs: 5_000 }) as BridgeAnimeCoverResult,
@@ -386,7 +391,7 @@ describe('runCoverSweep', () => {
   it('a 401 stops the pass and starts no requests beyond the initial concurrent batch, leaving entries untouched', async () => {
     const getAnimeCover = jest.fn(async () => ({ kind: 'unauthorized' }) as BridgeAnimeCoverResult);
     const { deps, getManifest } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1', 'a2', 'a3']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2', 'a3'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -404,7 +409,7 @@ describe('runCoverSweep', () => {
       throw new BridgeUnreachableError('http://bridge/cover', new Error('down'));
     });
     const { deps } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -424,7 +429,7 @@ describe('runCoverSweep', () => {
       return { kind: 'absent' } as BridgeAnimeCoverResult;
     });
     const { deps } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1', 'a2', 'a3', 'a4', 'a5']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2', 'a3', 'a4', 'a5'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -438,7 +443,7 @@ describe('runCoverSweep', () => {
     const deferred = createDeferred<BridgeAnimeCoverResult>();
     const getAnimeCover = jest.fn(() => deferred.promise);
     const { deps } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 
@@ -459,7 +464,7 @@ describe('runCoverSweep', () => {
       throw new Error('boom');
     });
     const { deps, writeManifestCalls } = buildFakeDeps({
-      readActiveAnimeIds: jest.fn(async () => ['a1']),
+      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: { getAnimeCover },
     });
 

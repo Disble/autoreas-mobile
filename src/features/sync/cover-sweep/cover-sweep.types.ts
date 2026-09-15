@@ -9,6 +9,17 @@ export interface CoverSweepClock {
 }
 
 /**
+ * One active anime's identity plus the normalized `portada` (see `normalizeCoverSourceKey`) its
+ * cover manifest entry must be resolved against. `selectCoverSweepTargets` compares this
+ * `sourceKey` against each entry's own to detect a changed cover that a stale `nextAttemptAt`
+ * would otherwise hide.
+ */
+export interface CoverActiveAnimeSource {
+  readonly animeId: string;
+  readonly sourceKey: string | null;
+}
+
+/**
  * Outcome fed into `shouldStopCoverSweep`: either a classified bridge cover result, or a caught
  * error from the `getAnimeCover` call (so a network failure can be judged by the same function
  * as a normal HTTP outcome).
@@ -34,7 +45,9 @@ export interface CoverSweepDependencies {
   readonly listCoverFileNames: () => Promise<readonly string[]>;
   readonly getCoverFileUri: (fileName: string) => string;
   readonly publishCoverUris: (coverUriByAnimeId: Readonly<Record<string, string>>) => void;
-  readonly readActiveAnimeIds: (rawDb: SQLiteDatabase) => Promise<readonly string[]>;
+  readonly readActiveAnimeCoverSources: (
+    rawDb: SQLiteDatabase,
+  ) => Promise<readonly CoverActiveAnimeSource[]>;
   readonly getBridgeConfigSnapshot: (rawDb: SQLiteDatabase) => Promise<BridgeConfig | null>;
 }
 

@@ -49,6 +49,11 @@ function buildEntry(overrides: Partial<CoverManifestEntry> = {}): CoverManifestE
   };
 }
 
+/** Builds `readActiveAnimeCoverSources`-shaped fixtures from plain ids, each with its own distinct `sourceKey`. */
+function toSources(animeIds: readonly string[]): readonly { animeId: string; sourceKey: string | null }[] {
+  return animeIds.map((animeId) => ({ animeId, sourceKey: `source-${animeId}` }));
+}
+
 /**
  * Builds a full fake `CoverSweepDependencies`, backed by an in-memory manifest and file set that
  * behave like disk: `writeManifest`/`writeCoverImage`/`deleteCoverFile` mutate the same state
@@ -80,7 +85,7 @@ function buildFakeDeps(
     listCoverFileNames: jest.fn(async () => Array.from(files)),
     getCoverFileUri: jest.fn((fileName: string) => `file:///covers/${fileName}`),
     publishCoverUris: jest.fn((_map: Readonly<Record<string, string>>) => undefined),
-    readActiveAnimeIds: jest.fn(async () => []),
+    readActiveAnimeCoverSources: jest.fn(async () => []),
     getBridgeConfigSnapshot: jest.fn(async () => ({
       id: 1,
       ip: '192.168.0.10',
@@ -118,7 +123,7 @@ describe('hydrateCoverUris / runCoverSweep concurrency (the cover-store lock)', 
     };
     const { deps, getManifest } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
         bridgeClient: { getAnimeCover: jest.fn(() => networkDeferred.promise) },
       },
       { manifest, files: [] },
@@ -151,7 +156,7 @@ describe('hydrateCoverUris / runCoverSweep concurrency (the cover-store lock)', 
   });
 
   it('does not deadlock: runCoverSweep resolves even though it awaits its own internal hydrate step', async () => {
-    const { deps } = buildFakeDeps({ readActiveAnimeIds: jest.fn(async () => ['a1']) });
+    const { deps } = buildFakeDeps({ readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])) });
     let timeoutHandle: ReturnType<typeof setTimeout>;
     const timeout = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(
@@ -177,7 +182,7 @@ describe('hydrateCoverUris / runCoverSweep concurrency (the cover-store lock)', 
     };
     const { deps } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
         bridgeClient: { getAnimeCover },
       },
       { manifest, files: ['a1.jpg'] },
@@ -200,7 +205,7 @@ describe('hydrateCoverUris / runCoverSweep concurrency (the cover-store lock)', 
     };
     const { deps: baseDeps, files, getManifest } = buildFakeDeps(
       {
-        readActiveAnimeIds: jest.fn(async () => ['a1']),
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
         bridgeClient: { getAnimeCover: jest.fn(() => networkDeferred.promise) },
       },
       { manifest, files: ['a1-old.jpg'] },

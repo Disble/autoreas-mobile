@@ -4,6 +4,7 @@ export {
   deleteCoverFile,
   getCoverFileUri,
   listCoverFileNames,
+  normalizeCoverSourceKey,
   parseCoverManifest,
   readCoverManifest,
   writeCoverImage,

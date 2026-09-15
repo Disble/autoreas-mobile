@@ -1,6 +1,9 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
 import { inArray } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import { operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
+import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
+import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
@@ -10,6 +13,7 @@ import {
   recordSyncAttemptStarted,
   recordSyncAttemptSucceeded,
 } from './sync-runtime-status.helpers';
+import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 import {
   beginSyncConnectionAttempt,
   markSyncConnectionFailed,
@@ -22,6 +26,23 @@ import type {
   RunCoordinatedForegroundSyncCycleInput,
   SyncPrerequisiteVerdict,
 } from './sync-facade.types';
+
+/**
+ * Starts a cover sweep once a foreground sync cycle's own attempt has settled -- success, the
+ * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`.
+ * Never awaited: image downloads must never hold the caller's returned promise (the manual refresh
+ * spinner included). `runCoverSweep` is single-flight, so this safely joins an already-running
+ * sweep instead of starting a second one.
+ */
+function triggerCoverSweepForSource(rawDb: SQLiteDatabase, source: SyncRuntimeTriggerSource): void {
+  if (!COVER_SWEEP_TRIGGER_SOURCES.has(source)) {
+    return;
+  }
+
+  void runCoverSweep(rawDb).catch((error: unknown) => {
+    console.warn('[useSyncFacade] Cover sweep failed', error);
+  });
+}
 
 /**
  * Resolves whether this facade may sync, must publish local mode, or knows nothing yet.
@@ -91,6 +112,7 @@ export async function runCoordinatedForegroundSyncCycle({
 
     if (result.hasMorePending) {
       markSyncConnectionPending(attempt);
+      triggerCoverSweepForSource(rawDb, source);
       return result.syncedCount;
     }
 
@@ -102,10 +124,12 @@ export async function runCoordinatedForegroundSyncCycle({
       publishConnection: () => markSyncConnectionSucceeded(attempt, syncedAt),
     });
 
+    triggerCoverSweepForSource(rawDb, source);
     return result.syncedCount;
   } catch (error) {
     const failure = error instanceof Error ? error : new Error('Sync failed');
 
+    triggerCoverSweepForSource(rawDb, source);
     await publishSyncConnectionAttempt({
       attempt,
       persistTelemetry: () =>

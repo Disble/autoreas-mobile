@@ -44,6 +44,16 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptSucceeded: jest.fn(),
 }));
 
+// `requestSync('manual')` below now also starts a (non-awaited) cover sweep -- see
+// `tests/features/sync/__tests__/sync-facade.helpers.test.ts` for that behavior's own coverage.
+// Mocked here purely so this file's fully-mocked `client.helpers` (no real
+// `getBridgeConfigSnapshot`) never reaches the real cover-sweep dependencies in the background.
+jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
+  runCoverSweep: jest.fn().mockResolvedValue({
+    fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+  }),
+}));
+
 describe('useSyncFacade shared connection truth', () => {
   const rawDb = { name: 'raw-db' };
 

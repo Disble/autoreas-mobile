@@ -1,5 +1,6 @@
 import {
   buildCoverFileName,
+  normalizeCoverSourceKey,
   parseCoverManifest,
 } from '../../../../src/infrastructure/cover-files/cover-files.helpers';
 
@@ -114,5 +115,82 @@ describe('parseCoverManifest', () => {
 
   it('returns an empty manifest for the wrong version', () => {
     expect(parseCoverManifest({ version: 2, entries: {} })).toEqual({ version: 1, entries: {} });
+  });
+
+  it('accepts a legacy v1 entry with no sourceKey, without dropping it to the empty manifest', () => {
+    const raw = {
+      version: 1,
+      entries: {
+        'anime-1': {
+          status: 'absent',
+          fileName: null,
+          etag: null,
+          checkedAt: 1000,
+          nextAttemptAt: 2000,
+          failureCount: 0,
+        },
+      },
+    };
+
+    const parsed = parseCoverManifest(raw);
+
+    expect(parsed.entries['anime-1']).toEqual(raw.entries['anime-1']);
+    expect(parsed.entries['anime-1'].sourceKey).toBeUndefined();
+  });
+
+  it('parses a v1 entry carrying a sourceKey (image and absent shapes)', () => {
+    const raw = {
+      version: 1,
+      entries: {
+        'anime-1': {
+          status: 'image',
+          fileName: 'anime-1-abc.jpg',
+          etag: '"abc"',
+          checkedAt: 1000,
+          nextAttemptAt: 2000,
+          failureCount: 0,
+          sourceKey: 'https://cdn.example.com/anime-1.jpg',
+        },
+        'anime-2': {
+          status: 'absent',
+          fileName: null,
+          etag: null,
+          checkedAt: 1000,
+          nextAttemptAt: 2000,
+          failureCount: 0,
+          sourceKey: null,
+        },
+      },
+    };
+
+    expect(parseCoverManifest(raw)).toEqual(raw);
+  });
+});
+
+describe('normalizeCoverSourceKey', () => {
+  it('normalizes an empty string to null', () => {
+    expect(normalizeCoverSourceKey('')).toBeNull();
+  });
+
+  it('normalizes a whitespace-only string to null', () => {
+    expect(normalizeCoverSourceKey('  ')).toBeNull();
+  });
+
+  it('normalizes the literal string "null" to null', () => {
+    expect(normalizeCoverSourceKey('null')).toBeNull();
+  });
+
+  it('normalizes a null value to null', () => {
+    expect(normalizeCoverSourceKey(null)).toBeNull();
+  });
+
+  it('normalizes an undefined value to null', () => {
+    expect(normalizeCoverSourceKey(undefined)).toBeNull();
+  });
+
+  it('trims and keeps a real URL', () => {
+    expect(normalizeCoverSourceKey('  https://cdn.example.com/anime-1.jpg  ')).toBe(
+      'https://cdn.example.com/anime-1.jpg',
+    );
   });
 });
