@@ -25,7 +25,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   } = props;
 
   return (
-    <View className="flex-1 p-3">
+    <View className="flex-1 gap-3 p-4">
       <View className="flex-row items-start gap-2">
         <AnimeCardInfo
           title={title}

@@ -7,7 +7,24 @@ import { AnimeListScreenHeaderRight } from '../../../../src/features/animes/ui/A
 import { AnimeListScreenStatusSection } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection';
 import type { AnimeListScreenRenderModel } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 
+/** Narrows the render model's item type down to a single anime fixture shape. */
 type AnimeListItem = AnimeListScreenRenderModel['animes'][number];
+
+/** Fixture contextual header for the status section test, hoisted so the prop is not a fresh object per render. */
+const STATUS_SECTION_CONTEXTUAL_HEADER = {
+  title: 'Martes',
+  subtitle: '1 anime para ver',
+  isToday: true,
+};
+
+/** Fixture sync status for the status section test, hoisted so the prop is not a fresh object per render. */
+const STATUS_SECTION_SYNC_STATUS: AnimeListScreenRenderModel['syncStatus'] = {
+  actionLabel: null,
+  chipLabel: 'Catálogo local',
+  description: 'La copia local sigue disponible.',
+  title: 'Catálogo local listo',
+  tone: 'default',
+};
 
 jest.mock('expo-router', () => ({
   Stack: {
@@ -23,12 +40,13 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
 }));
 
-jest.mock('../../../../src/features/animes/ui/AnimeCard', () => ({
+jest.mock('../../../../src/features/animes/ui/AnimeCard/AnimeCard', () => ({
   AnimeCard: jest.fn(() => null),
 }));
 
+/** Mocks `AnimeCard`, capturing the props AnimeListScreenContent passes down to each rendered card. */
 const mockAnimeCard = jest.requireMock(
-  '../../../../src/features/animes/ui/AnimeCard',
+  '../../../../src/features/animes/ui/AnimeCard/AnimeCard',
 ).AnimeCard as jest.Mock;
 
 jest.mock('../../../../src/features/animes/ui/AnimeEmptyState', () => ({
@@ -43,6 +61,7 @@ jest.mock('../../../../src/features/animes/ui/AnimeStateSheet', () => ({
   AnimeStateSheet: () => null,
 }));
 
+/** Builds a minimal anime list item fixture identified by the given id. */
 function buildAnime(id: string): AnimeListItem {
     return {
       _id: id,
@@ -69,6 +88,7 @@ function buildAnime(id: string): AnimeListItem {
     };
   }
 
+/** Builds a full AnimeListScreenView render-model fixture, with per-test override seams. */
 function buildProps(
   overrides: Partial<AnimeListScreenRenderModel> = {},
 ): AnimeListScreenRenderModel {
@@ -161,19 +181,9 @@ describe('AnimeListScreenView', () => {
     const handleOpenSettings = jest.fn();
     const { getByText, queryByText } = render(
       <AnimeListScreenStatusSection
-        contextualHeader={{
-          title: 'Martes',
-          subtitle: '1 anime para ver',
-          isToday: true,
-        }}
+        contextualHeader={STATUS_SECTION_CONTEXTUAL_HEADER}
         isSeasonMode
-        syncStatus={{
-          actionLabel: null,
-          chipLabel: 'Catálogo local',
-          description: 'La copia local sigue disponible.',
-          title: 'Catálogo local listo',
-          tone: 'default',
-        }}
+        syncStatus={STATUS_SECTION_SYNC_STATUS}
         handleOpenSettings={handleOpenSettings}
       />,
     );
@@ -184,22 +194,77 @@ describe('AnimeListScreenView', () => {
     expect(handleOpenSettings).not.toHaveBeenCalled();
   });
 
-  it('uses three columns in tablet landscape layout', () => {
+  it('uses two columns in tablet landscape layout so each card keeps room for its cover, title and actions', () => {
     const { UNSAFE_getByType } = render(<AnimeListScreenView model={buildProps()} />);
 
     const list = UNSAFE_getByType(FlatList);
 
-    expect(list.props.numColumns).toBe(3);
+    expect(list.props.numColumns).toBe(2);
   });
 
-  it('wraps landscape grid items so each card fills its column width', () => {
+  it('gives each landscape grid cell a fixed half of the row plus its own gap padding so a lone last card keeps the column width', () => {
     const props = buildProps();
     const { UNSAFE_getByType } = render(<AnimeListScreenView model={props} />);
 
     const list = UNSAFE_getByType(FlatList);
     const row = list.props.renderItem({ item: props.animes[0] });
 
-    expect(row.props.className).toContain('flex-1');
+    // flex-1 would let the only card of an odd last row grow to the full row width.
+    // px-2 replaces columnWrapperClassName="gap-4" so a lone last-row card still gets its own inset.
+    expect(row.props.className).toContain('flex-[0.5]');
+    expect(row.props.className).toContain('px-2');
+    expect(row.props.className).not.toContain('flex-1');
+  });
+
+  it('does not use a column wrapper gap, since each cell now carries its own px-2 inset', () => {
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={buildProps()} />);
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.columnWrapperClassName).toBeUndefined();
+  });
+
+  it('insets the tablet-landscape content container by px-3 so 12dp plus the cell px-2 aligns with the status banner', () => {
+    const { UNSAFE_getByType } = render(
+      <AnimeListScreenView model={buildProps({ layoutMode: 'tablet-landscape' })} />,
+    );
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.contentContainerClassName).toContain('px-3');
+    expect(list.props.contentContainerClassName).not.toContain('px-5');
+  });
+
+  it('keeps the phone content container at px-5, matching the status banner inset', () => {
+    const { UNSAFE_getByType } = render(
+      <AnimeListScreenView model={buildProps({ layoutMode: 'phone' })} />,
+    );
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.contentContainerClassName).toContain('px-5');
+    expect(list.props.contentContainerClassName).not.toContain('px-3');
+  });
+
+  it('triggers the same handleRefresh from pull-to-refresh as the header refresh button', () => {
+    const handleRefresh = jest.fn().mockResolvedValue(undefined);
+    const { UNSAFE_getByType } = render(
+      <AnimeListScreenView model={buildProps({ handleRefresh })} />,
+    );
+
+    const list = UNSAFE_getByType(FlatList);
+    list.props.refreshControl.props.onRefresh();
+
+    expect(handleRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('keys each row by the anime `_id`', () => {
+    const props = buildProps();
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={props} />);
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.keyExtractor(props.animes[0])).toBe(props.animes[0]._id);
   });
 
   it('passes mutation state as extraData so visible rows rerender on button lock changes', () => {

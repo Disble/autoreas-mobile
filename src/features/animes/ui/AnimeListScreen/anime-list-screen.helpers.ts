@@ -1,5 +1,7 @@
 import type { ReactElement } from "react";
 import { createElement } from "react";
+import type { ListRenderItemInfo, RefreshControlProps } from "react-native";
+import { RefreshControl, View } from "react-native";
 import type { Anime } from "../../../../infrastructure/validation/anime-schema";
 import {
   ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL,
@@ -14,6 +16,9 @@ import {
 } from "../../anime.constants";
 import { matchesAnimeDayFilter } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
+import type { AnimeListItem } from "../../anime-season.types";
+import { AnimeCard } from "../AnimeCard/AnimeCard";
+import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
 import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
 import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import {
@@ -70,6 +75,7 @@ export function formatTodayLabel(date: Date): string {
   return `${weekday} ${day} ${month}`;
 }
 
+/** Formats the Spanish singular/plural count subtitle, e.g. "1 anime para ver" vs "3 animes para ver". */
 function buildCountSubtitle(count: number): string {
   if (count === 1) {
     return "1 anime para ver";
@@ -77,6 +83,7 @@ function buildCountSubtitle(count: number): string {
   return `${count} animes para ver`;
 }
 
+/** Builds the Spanish empty-state subtitle copy for a given day filter and today-ness. */
 function buildEmptySubtitle(filter: AnimeDayFilter, isToday: boolean): string {
   if (filter === "Ver hoy") {
     return "Al día. Nada pendiente para hoy.";
@@ -201,4 +208,46 @@ export function buildHeaderRightRenderer(
   return function renderHeaderRight() {
     return createElement(AnimeListScreenHeaderRight, props);
   };
+}
+
+/** Extracts the FlatList key for an anime list item from its persisted `_id`. */
+export function getAnimeListItemKey(item: AnimeListItem): string {
+  return item._id;
+}
+
+/**
+ * Builds the stable FlatList renderItem function outside the screen component.
+ * This avoids redefining a JSX-producing function (and the inline-FlatList-renderItem
+ * perf trap) on every AnimeListScreenContent render.
+ */
+export function buildAnimeListItemRenderer(
+  getAnimeCardProps: (item: AnimeListItem) => AnimeCardProps,
+  cellClassName: string | undefined,
+): (info: ListRenderItemInfo<AnimeListItem>) => ReactElement {
+  return function renderAnimeListItem({ item }: ListRenderItemInfo<AnimeListItem>) {
+    return createElement(
+      View,
+      { className: cellClassName },
+      createElement(AnimeCard, getAnimeCardProps(item)),
+    );
+  };
+}
+
+/**
+ * Builds the stable pull-to-refresh control outside the screen component.
+ * Keeping the element factory in helpers clears the JSX-as-prop and inline-handler
+ * findings while the screen itself stays a dumb view.
+ */
+export function buildAnimeListRefreshControl(
+  enabled: boolean,
+  refreshing: boolean,
+  handleRefresh: () => Promise<void>,
+): ReactElement<RefreshControlProps> {
+  return createElement(RefreshControl, {
+    enabled,
+    refreshing,
+    onRefresh: () => {
+      void handleRefresh();
+    },
+  });
 }

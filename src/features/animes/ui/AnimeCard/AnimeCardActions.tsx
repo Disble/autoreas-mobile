@@ -21,7 +21,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   } = props;
 
   return (
-    <View className="flex-row items-center justify-end gap-2 pt-1">
+    <View className="flex-row items-center justify-end gap-2">
       {seasonStatus?.showRatingCta ? (
         <Button
           accessibilityLabel="Abrir calificación de temporada"
