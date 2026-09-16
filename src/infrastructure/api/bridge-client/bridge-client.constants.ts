@@ -31,6 +31,13 @@ export const NOOP_BRIDGE_LOGGER: BridgeClientLogger = {
 export const BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
+ * Budget for the bridge cover endpoint specifically. Wider than `BRIDGE_REQUEST_TIMEOUT_MS`
+ * because the bridge's own origin fetch for a cover can take up to 10s, plus on-demand thumbnail
+ * generation, before it answers.
+ */
+export const BRIDGE_COVER_REQUEST_TIMEOUT_MS = 20_000;
+
+/**
  * Upper bound on a `Retry-After`-derived not-before delay. The not-before is PERSISTED, so
  * without a clamp one wrong header or one wrong device clock wedges diagnostics delivery for
  * years, surviving a restart. One hour is far above any plausible bridge backoff and far below

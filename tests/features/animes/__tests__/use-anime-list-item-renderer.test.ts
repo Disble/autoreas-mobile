@@ -1,8 +1,15 @@
 import { act, renderHook } from "@testing-library/react-native";
 import { useAnimeListItemRenderer } from "../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-item-renderer";
+import { useCoverUriStore } from "../../../../src/infrastructure/store/cover-uri-store";
 import { buildAnimeListItemFixture } from "./use-anime-list-item-renderer.helpers";
 
 describe("useAnimeListItemRenderer", () => {
+  afterEach(() => {
+    act(() => {
+      useCoverUriStore.setState({ coverUriByAnimeId: {} });
+    });
+  });
+
   it("builds AnimeCard props and forwards mutation state", () => {
     const item = buildAnimeListItemFixture("anime-1");
     const handleCapMinus = jest.fn().mockResolvedValue(undefined);
@@ -69,5 +76,39 @@ describe("useAnimeListItemRenderer", () => {
     expect(handleCapPlusHalf).toHaveBeenCalledWith("anime-2");
     expect(handleOpenSeasonRatingSheet).toHaveBeenCalledWith("anime-2");
     expect(handleOpenStateSheet).toHaveBeenCalledWith("anime-2", 2);
+  });
+
+  it("resolves coverUri from the cover-uri-store, reacting to a store update", () => {
+    const item = buildAnimeListItemFixture("anime-1");
+    const noop = jest.fn();
+    const noopAsync = jest.fn().mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useAnimeListItemRenderer({}, noopAsync, noopAsync, noopAsync, noopAsync, noop, noop),
+    );
+
+    expect(result.current.getAnimeCardProps(item).coverUri).toBeNull();
+
+    act(() => {
+      useCoverUriStore.getState().setCoverUris({ "anime-1": "file:///covers/anime-1.jpg" });
+    });
+
+    expect(result.current.getAnimeCardProps(item).coverUri).toBe("file:///covers/anime-1.jpg");
+  });
+
+  it("returns null for an anime id with no entry in the cover-uri-store", () => {
+    const item = buildAnimeListItemFixture("anime-unknown");
+    const noop = jest.fn();
+    const noopAsync = jest.fn().mockResolvedValue(undefined);
+
+    act(() => {
+      useCoverUriStore.getState().setCoverUris({ "anime-1": "file:///covers/anime-1.jpg" });
+    });
+
+    const { result } = renderHook(() =>
+      useAnimeListItemRenderer({}, noopAsync, noopAsync, noopAsync, noopAsync, noop, noop),
+    );
+
+    expect(result.current.getAnimeCardProps(item).coverUri).toBeNull();
   });
 });

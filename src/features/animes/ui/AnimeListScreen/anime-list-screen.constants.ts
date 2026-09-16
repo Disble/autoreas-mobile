@@ -3,7 +3,17 @@ import type { AnimeListScreenSyncTone } from './anime-list-screen.types';
 /** Provides the shared anime list screen refresh label value. */
 export const ANIME_LIST_SCREEN_REFRESH_LABEL = 'Refrescar Mis Animes';
 /** Provides the shared anime list screen tablet landscape columns value. */
-export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS = 3;
+export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS = 2;
+/**
+ * Grid cell share for the tablet landscape columns: exactly 1 / ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS.
+ * A fixed share (not flex-1) keeps the lone card of an odd last row at column width instead of
+ * stretching it across the whole row. The `px-2` replaces `columnWrapperClassName="gap-4"`: two
+ * neighboring cells each contribute 8dp toward the gap between them (reproducing the old 16dp),
+ * while a lone last-row cell still gets its own 8dp inset instead of sitting flush against the
+ * row edge -- that inset is what kept an odd last card 8dp wider than its paired siblings.
+ * Change it together with the column count.
+ */
+export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME = 'flex-[0.5] px-2';
 /** Provides the shared anime list screen sync settings action label value. */
 export const ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL = 'Revisar bridge';
 /** Provides the shared anime list screen sync pair action label value. */

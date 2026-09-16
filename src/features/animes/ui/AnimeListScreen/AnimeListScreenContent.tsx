@@ -1,7 +1,14 @@
-import { FlatList, RefreshControl, View } from 'react-native';
-import { AnimeCard } from '../AnimeCard';
+import { FlatList } from 'react-native';
 import { AnimeEmptyState } from '../AnimeEmptyState';
-import { ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS } from './anime-list-screen.constants';
+import {
+  ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME,
+  ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS,
+} from './anime-list-screen.constants';
+import {
+  buildAnimeListItemRenderer,
+  buildAnimeListRefreshControl,
+  getAnimeListItemKey,
+} from './anime-list-screen.helpers';
 import type { AnimeListScreenContentProps } from './anime-list-screen.types';
 
 /** Renders either the empty state or the responsive anime grid. */
@@ -21,6 +28,14 @@ export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentPro
     layoutMode === 'tablet-landscape'
       ? ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS
       : 1;
+  const cellClassName =
+    numColumns > 1 ? ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME : undefined;
+  const renderItem = buildAnimeListItemRenderer(getAnimeCardProps, cellClassName);
+  const refreshControl = buildAnimeListRefreshControl(
+    isManualSyncEnabled,
+    isRefreshing,
+    handleRefresh,
+  );
 
   if (isEmpty) {
     return <AnimeEmptyState filter={selectedFilter} />;
@@ -28,27 +43,18 @@ export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentPro
 
   return (
     <FlatList
-      contentContainerClassName="mx-auto w-full max-w-5xl px-5 pb-12"
+      contentContainerClassName={
+        numColumns > 1
+          ? 'mx-auto w-full max-w-5xl px-3 pb-12'
+          : 'mx-auto w-full max-w-5xl px-5 pb-12'
+      }
       data={animes}
       extraData={isMutatingAnimeById}
       key={`anime-list-${numColumns}`}
-      keyExtractor={(item) => item._id}
+      keyExtractor={getAnimeListItemKey}
       numColumns={numColumns}
-      columnWrapperClassName={numColumns > 1 ? 'gap-4' : undefined}
-      refreshControl={
-        <RefreshControl
-          enabled={isManualSyncEnabled}
-          refreshing={isRefreshing}
-          onRefresh={() => {
-            void handleRefresh();
-          }}
-        />
-      }
-      renderItem={({ item }) => (
-        <View className={numColumns > 1 ? 'flex-1' : undefined}>
-          <AnimeCard {...getAnimeCardProps(item)} />
-        </View>
-      )}
+      refreshControl={refreshControl}
+      renderItem={renderItem}
       showsVerticalScrollIndicator={false}
     />
   );

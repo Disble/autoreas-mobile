@@ -20,6 +20,7 @@
         "expo-constants": "~55.0.17",
         "expo-crypto": "~55.0.19",
         "expo-dev-client": "~55.0.37",
+        "expo-file-system": "~55.0.26",
         "expo-font": "~55.0.8",
         "expo-haptics": "~55.0.16",
         "expo-image": "~55.0.11",
@@ -1220,7 +1221,7 @@
 
     "expo-eas-client": ["expo-eas-client@55.0.5", "", {}, "sha512-wRagCeSbSnSGVXgP7V+qiGfXzZ9hTVKWvKIOP7lwrX3MIEenNmNlO4D3RVC3aNU2GhmO3ZCZIIEre80KZoUUHA=="],
 
-    "expo-file-system": ["expo-file-system@55.0.24", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-7/HJdvaaf3kP5T3atd+6Q0/QexrGio4Fs2GVtp7G8d/xQCSu01yeGReu7tGQo9VAM67Snq+ujGlL8q2wbMXLkQ=="],
+    "expo-file-system": ["expo-file-system@55.0.26", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-KBOQWqxumCxJBN29Lu13QpccwAhcjsgDYCJSVVjfGydaK/UbEkH/1rT/WZmdfoZ4G8mUJlfRbWfnJtfHUXxsdw=="],
 
     "expo-font": ["expo-font@55.0.8", "", { "dependencies": { "fontfaceobserver": "^2.1.0" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-WyP75pnKqhLNktYwDn3xKAUNt5rLihRDv8XWGhhz6VEhVqypixpT86NA3uGtiDTlM3gGjhrYCY7o7ypXgCUOZg=="],
 
@@ -2543,6 +2544,8 @@
     "eslint-plugin-react/minimatch": ["minimatch@3.1.5", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w=="],
 
     "expect/jest-matcher-utils": ["jest-matcher-utils@29.7.0", "", { "dependencies": { "chalk": "^4.0.0", "jest-diff": "^29.7.0", "jest-get-type": "^29.6.3", "pretty-format": "^29.7.0" } }, "sha512-sBkD+Xi9DtcChsI3L3u0+N0opgPYnCRPtGcQYrgXmR+hmt/fYfWAL0xRXYU8eWOdfuLgBe0YCW3AFtnRLagq/g=="],
+
+    "expo/expo-file-system": ["expo-file-system@55.0.24", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-7/HJdvaaf3kP5T3atd+6Q0/QexrGio4Fs2GVtp7G8d/xQCSu01yeGReu7tGQo9VAM67Snq+ujGlL8q2wbMXLkQ=="],
 
     "expo/pretty-format": ["pretty-format@29.7.0", "", { "dependencies": { "@jest/schemas": "^29.6.3", "ansi-styles": "^5.0.0", "react-is": "^18.0.0" } }, "sha512-Pdlw/oPxN+aXdmM9R00JVC9WVFoCLTKJvDVLgmJ+qAffBMxsV85l/Lu7sNx4zSzPyoL2euImuEwHhOXdEgNFZQ=="],
 

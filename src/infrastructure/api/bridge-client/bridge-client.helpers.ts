@@ -4,24 +4,30 @@ import {
 } from './bridge-client.errors';
 import {
   BRIDGE_API_PATHS,
+  BRIDGE_COVER_REQUEST_TIMEOUT_MS,
   BRIDGE_REQUEST_TIMEOUT_MS,
   NOOP_BRIDGE_LOGGER,
 } from './bridge-client.constants';
 import {
+  buildAnimeCoverPath,
   buildPostActiveSeasonRatingBody,
   buildBridgeHeaders,
   buildBridgeUrl,
   buildBridgeWebSocketUrl,
+  classifyAnimeCoverResponse,
   parseBridgeResponseBody,
   parseRetryAfterMs,
 } from './bridge-url.helpers';
 import type {
+  BridgeAnimeCoverResult,
   BridgeClient,
   BridgeClientDependencies,
   BridgeConnection,
+  BridgeHttpMethod,
   BridgeHttpResult,
   BridgePairDeviceRequest,
   PostActiveSeasonRatingRequest,
+  GetAnimeCoverOptions,
   BridgeRequestOptions,
   BridgeRequestSpec,
 } from './bridge-client.types';
@@ -53,6 +59,45 @@ export function createBridgeClient(
   const createWebSocket = dependencies.createWebSocket ?? defaultCreateWebSocket;
   const resolveFetch = (): typeof fetch => dependencies.fetchFn ?? globalThis.fetch;
 
+  /**
+   * Shared fetch executor for every bridge HTTP call. Owns the AbortController timeout and the
+   * network-failure -> typed-error mapping (`BridgeTimeoutError` / `BridgeUnreachableError`) so
+   * `request()` and `getAnimeCover()` cannot drift apart on either concern. Body reading stays
+   * with each caller because `request()` always reads text/JSON while `getAnimeCover()` reads
+   * raw bytes only for a 200.
+   *
+   * A request with no bound is the first half of H06h: nothing below it can report, and the host
+   * job is killed at its runtime limit rather than completing. The controller and the timer are
+   * owned here (not `AbortSignal.timeout()`) so fake timers can drive them in a test.
+   */
+  async function executeBridgeFetch(
+    url: string,
+    init: RequestInit,
+    method: BridgeHttpMethod,
+    timeoutMs: number,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    let didTimeout = false;
+    const timer = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      return await resolveFetch()(url, { ...init, signal: controller.signal });
+    } catch (reason) {
+      if (didTimeout) {
+        logger.warn('[BridgeClient] request exceeded its budget', { url, method, timeoutMs });
+        throw new BridgeTimeoutError(url, timeoutMs);
+      }
+
+      logger.warn('[BridgeClient] request did not reach the bridge', { url, method });
+      throw new BridgeUnreachableError(url, reason);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function request(
     connection: BridgeConnection,
     spec: BridgeRequestSpec,
@@ -68,40 +113,8 @@ export function createBridgeClient(
       init.body = JSON.stringify(spec.body);
     }
 
-    // A request with no bound is the first half of H06h: nothing below it can report, and the
-    // host job is killed at its runtime limit rather than completing. The controller and the
-    // timer are owned here (not `AbortSignal.timeout()`) so fake timers can drive them in a test.
     const timeoutMs = spec.timeoutMs ?? BRIDGE_REQUEST_TIMEOUT_MS;
-    const controller = new AbortController();
-    let didTimeout = false;
-    const timer = setTimeout(() => {
-      didTimeout = true;
-      controller.abort();
-    }, timeoutMs);
-
-    init.signal = controller.signal;
-
-    let response: Response;
-    try {
-      response = await resolveFetch()(url, init);
-    } catch (reason) {
-      if (didTimeout) {
-        logger.warn('[BridgeClient] request exceeded its budget', {
-          url,
-          method: spec.method,
-          timeoutMs,
-        });
-        throw new BridgeTimeoutError(url, timeoutMs);
-      }
-
-      logger.warn('[BridgeClient] request did not reach the bridge', {
-        url,
-        method: spec.method,
-      });
-      throw new BridgeUnreachableError(url, reason);
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await executeBridgeFetch(url, init, spec.method, timeoutMs);
 
     const rawBody = typeof response.text === 'function' ? await response.text() : null;
     const data = parseBridgeResponseBody(rawBody);
@@ -126,6 +139,54 @@ export function createBridgeClient(
       url,
       retryAfterMs,
     };
+  }
+
+  /**
+   * Fetches one anime's cover thumbnail via GET (never HEAD). Reads `response.arrayBuffer()`
+   * only for a 200 -- every other status is a zero-byte outcome -- and reads `ETag` /
+   * `Retry-After` defensively through `response.headers?.get`, matching `request()`'s guard
+   * against header-less test doubles.
+   */
+  async function getAnimeCover(
+    connection: BridgeConnection,
+    animeId: string,
+    options?: GetAnimeCoverOptions,
+  ): Promise<BridgeAnimeCoverResult> {
+    const url = buildBridgeUrl(connection, buildAnimeCoverPath(animeId));
+    const headers = buildBridgeHeaders({ token: connection.token, hasBody: false });
+
+    if (options?.ifNoneMatch) {
+      headers['If-None-Match'] = options.ifNoneMatch;
+    }
+
+    const init: RequestInit = { method: 'GET', headers };
+    const response = await executeBridgeFetch(url, init, 'GET', BRIDGE_COVER_REQUEST_TIMEOUT_MS);
+
+    let bytes = new Uint8Array(0);
+    if (response.status === 200 && typeof response.arrayBuffer === 'function') {
+      bytes = new Uint8Array(await response.arrayBuffer());
+    }
+
+    const etag =
+      typeof response.headers?.get === 'function' ? response.headers.get('ETag') : null;
+    const retryAfterHeader =
+      typeof response.headers?.get === 'function' ? response.headers.get('Retry-After') : null;
+    const retryAfterMs = parseRetryAfterMs(retryAfterHeader, Date.now());
+
+    logger.debug('[BridgeClient] cover response', { url, status: response.status });
+
+    const classification = classifyAnimeCoverResponse({
+      status: response.status,
+      etag,
+      retryAfterMs,
+      byteLength: bytes.byteLength,
+    });
+
+    if (classification.kind === 'image') {
+      return { kind: 'image', bytes, etag: classification.etag };
+    }
+
+    return classification;
   }
 
   return {
@@ -178,5 +239,6 @@ export function createBridgeClient(
       }),
     openWebSocket: (connection) =>
       createWebSocket(buildBridgeWebSocketUrl(connection), connection.token),
+    getAnimeCover: (connection, animeId, options) => getAnimeCover(connection, animeId, options),
   };
 }

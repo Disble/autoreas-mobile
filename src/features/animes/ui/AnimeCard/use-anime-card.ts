@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
@@ -12,17 +12,6 @@ import {
 /** Coordinates anime card state and actions. */
 export function useAnimeCard(props: AnimeCardProps) {
   // 1. Refs
-  const onCapMinusRef = useRef(props.onCapMinus);
-  const onCapPlusRef = useRef(props.onCapPlus);
-  const onCapMinusHalfRef = useRef(props.onCapMinusHalf);
-  const onCapPlusHalfRef = useRef(props.onCapPlusHalf);
-  const onOpenStateSheetRef = useRef(props.onOpenStateSheet);
-  // Keep refs in sync during render so rapid alternating taps never see a callback from the prior commit.
-  onCapMinusRef.current = props.onCapMinus;
-  onCapPlusRef.current = props.onCapPlus;
-  onCapMinusHalfRef.current = props.onCapMinusHalf;
-  onCapPlusHalfRef.current = props.onCapPlusHalf;
-  onOpenStateSheetRef.current = props.onOpenStateSheet;
 
   // 2. State
   const [restantesShown, setRestantesShown] = useState(false);
@@ -31,66 +20,49 @@ export function useAnimeCard(props: AnimeCardProps) {
   // 4. Mutations/Queries
 
   // 5. Derived state
-  const isMutationLocked = useMemo(
-    () => isAnimeMutationLocked(props.anime.estado),
-    [props.anime.estado]
-  );
+  const isMutationLocked = isAnimeMutationLocked(props.anime.estado);
 
-  const disableDecrease = useMemo(
-    () => props.isMutating || isMutationLocked || !canDecrease(props.anime.nrocapvisto),
-    [props.anime.nrocapvisto, props.isMutating, isMutationLocked]
-  );
+  const disableDecrease =
+    props.isMutating || isMutationLocked || !canDecrease(props.anime.nrocapvisto);
 
-  const disableIncrease = useMemo(
-    () =>
-      props.isMutating ||
-      isMutationLocked ||
-      !canIncrease(props.anime.nrocapvisto, props.anime.totalcap),
-    [props.anime.nrocapvisto, props.anime.totalcap, props.isMutating, isMutationLocked]
-  );
+  const disableIncrease =
+    props.isMutating ||
+    isMutationLocked ||
+    !canIncrease(props.anime.nrocapvisto, props.anime.totalcap);
 
-  const stateChip = useMemo(
-    () => getStateChip(props.anime.estado),
-    [props.anime.estado]
-  );
+  const stateChip = getStateChip(props.anime.estado);
 
-  const restantesLabel = useMemo(
-    () => getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap),
-    [props.anime.nrocapvisto, props.anime.totalcap]
-  );
-  const seasonStatus = useMemo(
-    () => getAnimeSeasonStatus(props.anime.seasonProjection),
-    [props.anime.seasonProjection],
-  );
+  const restantesLabel = getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap);
+  const seasonStatus = getAnimeSeasonStatus(props.anime.seasonProjection);
 
   // 6. Callbacks
-  const toggleRestantesShown = useCallback(() => {
+  const toggleRestantesShown = () => {
     setRestantesShown((current) => !current);
-  }, []);
+  };
 
-  const handleCapMinusPress = useCallback(() => {
-    onCapMinusRef.current();
-  }, []);
+  const handleCapMinusPress = () => {
+    props.onCapMinus();
+  };
 
-  const handleCapPlusPress = useCallback(() => {
-    onCapPlusRef.current();
-  }, []);
+  const handleCapPlusPress = () => {
+    props.onCapPlus();
+  };
 
-  const handleStateBadgePress = useCallback(() => {
-    onOpenStateSheetRef.current?.(props.anime._id, props.anime.estado);
-  }, [props.anime._id, props.anime.estado]);
+  const handleStateBadgePress = () => {
+    props.onOpenStateSheet?.(props.anime._id, props.anime.estado);
+  };
 
-  const handleCapPlusLongPress = useCallback(() => {
-    onCapPlusHalfRef.current?.();
-  }, []);
+  const handleCapPlusLongPress = () => {
+    props.onCapPlusHalf?.();
+  };
 
-  const handleCapMinusLongPress = useCallback(() => {
-    onCapMinusHalfRef.current?.();
-  }, []);
+  const handleCapMinusLongPress = () => {
+    props.onCapMinusHalf?.();
+  };
 
-  const handleOpenSeasonRatingSheet = useCallback(() => {
+  const handleOpenSeasonRatingSheet = () => {
     props.onOpenSeasonRatingSheet?.(props.anime._id);
-  }, [props]);
+  };
 
   // 7. Effects
 

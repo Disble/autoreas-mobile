@@ -35,6 +35,16 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptSucceeded: jest.fn(),
 }));
 
+// Both cases below use `source: 'manual'`, which now also starts a (non-awaited) cover sweep --
+// see `tests/features/sync/__tests__/sync-facade.helpers.test.ts` for that behavior's own
+// coverage. Mocked here purely so this file's real-DB-shaped `rawDb` fixture never reaches the
+// real `DEFAULT_COVER_SWEEP_DEPENDENCIES` in the background.
+jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
+  runCoverSweep: jest.fn().mockResolvedValue({
+    fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+  }),
+}));
+
 describe('foreground sync failure precedence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
