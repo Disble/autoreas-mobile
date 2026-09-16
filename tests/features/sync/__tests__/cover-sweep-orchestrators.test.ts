@@ -199,7 +199,7 @@ describe('runCoverSweep', () => {
     expect(files.has('inactive.jpg')).toBe(false);
   });
 
-  it('a 200 writes a file and sets a 7-day next attempt', async () => {
+  it('a 200 writes a file and sets the revalidation horizon as next attempt', async () => {
     const { deps, getManifest, files } = buildFakeDeps({
       readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
       bridgeClient: {

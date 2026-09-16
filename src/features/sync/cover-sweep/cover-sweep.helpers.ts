@@ -24,7 +24,7 @@ export { computeTransientDelayMs, resolveCoverManifestEntry } from './cover-swee
 /**
  * Selects the active anime ids whose cover entry is missing, due (`now >= nextAttemptAt`), or
  * resolved against a DIFFERENT `sourceKey` than the anime's current `portada` -- a changed cover
- * must never wait out a 7-day (or longer) `nextAttemptAt` set for the old one. A legacy entry with
+ * must never wait out the `nextAttemptAt` set for the old one. A legacy entry with
  * no `sourceKey` at all (persisted before this field existed) always counts as a mismatch, so it is
  * re-asked exactly once regardless of what the current source is. Preserves `activeSources`' order
  * so the sweep's request order stays deterministic run to run.
@@ -33,7 +33,7 @@ export { computeTransientDelayMs, resolveCoverManifestEntry } from './cover-swee
  * target, regardless of `nextAttemptAt` or `sourceKey`. This is what a manual refresh needs -- the
  * bridge answers an unchanged cover with a cheap 304 (round-tripping its stored etag as
  * `ifNoneMatch`), so revalidating everything costs little and catches a cover replaced at the SAME
- * source path, which an unforced sweep would otherwise skip for up to 7 days.
+ * source path, which an unforced sweep would otherwise skip until its next revalidation horizon.
  */
 export function selectCoverSweepTargets(
   activeSources: readonly CoverActiveAnimeSource[],

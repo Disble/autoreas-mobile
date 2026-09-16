@@ -54,7 +54,7 @@ export interface CoverSweepDependencies {
 /**
  * Options threaded through `runCoverSweep` into `selectCoverSweepTargets`. `force` (default
  * `false`) makes every active source a target regardless of `nextAttemptAt` or `sourceKey` -- what
- * a manual refresh needs, since an unforced sweep can wait out a 7-day TTL even after the user's own
+ * a manual refresh needs, since an unforced sweep waits out the revalidation TTL even after the user's own
  * PC file changed at the same source path.
  */
 export interface CoverSweepOptions {

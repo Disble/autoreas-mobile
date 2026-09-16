@@ -14,10 +14,16 @@ import { useCoverUriStore } from '../../../infrastructure/store/cover-uri-store/
 import type { SyncRuntimeTriggerSource } from '../sync-runtime-status.types';
 import type { CoverSweepDependencies } from './cover-sweep.types';
 
-/** Revalidation horizon after a conclusive image/not_modified/absent answer (7 days). */
-export const COVER_REVALIDATE_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Revalidation horizon after a conclusive image/not_modified/absent answer (1 day). A cover
+ * replaced at the SAME source path keeps its `sourceKey`, so nothing invalidates its entry: this
+ * horizon, or a manual refresh (which forces), is what brings the new image in. One day keeps the
+ * automatic traffic negligible -- an unchanged cover answers 304 in a few ms -- while bounding how
+ * long a replaced image can look stale.
+ */
+export const COVER_REVALIDATE_MS = 24 * 60 * 60 * 1000;
 
-/** Recheck horizon after a 404 (unknown anime), shorter than the image horizon so a since-added cover is found sooner. */
+/** Recheck horizon after a 404 (unknown anime), matching the image horizon so an old bridge or a since-added cover is found within a day. */
 export const COVER_UNKNOWN_RECHECK_MS = 24 * 60 * 60 * 1000;
 
 /** Base backoff delay applied to the first transient failure, absent a server `Retry-After`. */

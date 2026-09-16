@@ -150,6 +150,14 @@ describe('selectCoverSweepTargets', () => {
   });
 });
 
+describe('revalidation horizons', () => {
+  it('revalidates a conclusive answer one day later, the product decision for covers replaced in place', () => {
+    // A cover replaced at the same path keeps its sourceKey, so only this horizon (or a manual
+    // refresh, which forces) brings it in. One day is the agreed middle ground.
+    expect(COVER_REVALIDATE_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
 describe('computeTransientDelayMs', () => {
   it('uses retryAfterMs verbatim when provided', () => {
     expect(computeTransientDelayMs(1, 12_345)).toBe(12_345);
@@ -168,7 +176,7 @@ describe('computeTransientDelayMs', () => {
 });
 
 describe('resolveCoverManifestEntry', () => {
-  it('image: writes the new file name, etag, checkedAt, a 7-day nextAttemptAt, and resets failureCount', () => {
+  it('image: writes the new file name, etag, checkedAt, a one-day nextAttemptAt, and resets failureCount', () => {
     const previous = buildEntry({ failureCount: 3 });
 
     const entry = resolveCoverManifestEntry(
@@ -190,7 +198,7 @@ describe('resolveCoverManifestEntry', () => {
     });
   });
 
-  it('not_modified: keeps the file name, updates etag/checkedAt, schedules 7 days out', () => {
+  it('not_modified: keeps the file name, updates etag/checkedAt, schedules the revalidation horizon out', () => {
     const previous = buildEntry({ etag: '"abc"' });
 
     const entry = resolveCoverManifestEntry(
@@ -243,7 +251,7 @@ describe('resolveCoverManifestEntry', () => {
     expect(entry.nextAttemptAt).toBe(NOW);
   });
 
-  it('absent with the SAME sourceKey keeps the last good file and etag, schedules 7 days out', () => {
+  it('absent with the SAME sourceKey keeps the last good file and etag, schedules the revalidation horizon out', () => {
     // The bridge answers 204 when the user's original cover file was moved or deleted on the PC.
     // Nothing about the anime's cover changed, so a good local copy must keep loading.
     const previous = buildEntry();
@@ -261,7 +269,7 @@ describe('resolveCoverManifestEntry', () => {
     });
   });
 
-  it('absent after a sourceKey change clears the file name and etag, schedules 7 days out', () => {
+  it('absent after a sourceKey change clears the file name and etag, schedules the revalidation horizon out', () => {
     // A changed portada means the cover itself was edited (or removed), so the old file is stale.
     const previous = buildEntry({ sourceKey: 'https://cdn.example.com/old-cover.jpg' });
 

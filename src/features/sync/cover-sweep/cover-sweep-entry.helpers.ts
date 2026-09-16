@@ -24,7 +24,7 @@ export function computeTransientDelayMs(failureCount: number, retryAfterMs: numb
   return Math.min(backoffMs, COVER_TRANSIENT_MAX_DELAY_MS);
 }
 
-/** `image`: the new file replaces the entry outright (fresh etag, 7-day revalidation, failures cleared). */
+/** `image`: the new file replaces the entry outright (fresh etag, one-day revalidation, failures cleared). */
 function resolveImageEntry(
   newFileName: string,
   etag: string | null,

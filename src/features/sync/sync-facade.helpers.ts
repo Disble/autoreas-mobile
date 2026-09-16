@@ -35,7 +35,7 @@ import type {
  *
  * A `manual` pull forces every active cover to revalidate (`runCoverSweep`'s `force` option): the
  * bridge answers an unchanged cover with a cheap 304, so the user's own pull-to-refresh always
- * checks for a cover replaced at the same source path instead of waiting out its 7-day
+ * checks for a cover replaced at the same source path instead of waiting out its
  * `nextAttemptAt`. `ws_sync_required` and `network_regained` stay unforced, honoring the normal TTL.
  * `runCoverSweep` is single-flight for an unforced call, so this safely joins an already-running
  * unforced sweep instead of starting a second one; a forced call never joins one running unforced
