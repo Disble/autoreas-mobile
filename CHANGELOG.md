@@ -16,6 +16,31 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-09-15
+
+**Cover art requires Bridge 1.13.0 or newer.** Everything else in this release works against an older Bridge; covers simply stay as the placeholder illustration until you update it.
+
+### Added
+
+- Anime cards now show cover art. Each cover is downloaded once and kept on the device, so your list looks the same with or without a connection — covers are there when you open the app on the bus, on a plane, or with the Bridge PC turned off. An anime with no cover shows the same night-scene illustration the Bridge desktop app uses in that spot.
+- Covers keep themselves current without you doing anything. When you change an anime's cover in the Bridge, the new one arrives within seconds. If you replace the image file on your PC keeping the same name, the app picks it up within a day, or immediately if you pull down to refresh.
+- Pulling down to refresh now also checks every cover, not just your anime list. That is the quickest way to bring in an image you just changed on the PC.
+
+### Changed
+
+- The anime card was rebuilt around its cover: the image sits flush on the left, with the title, the progress and the chapter buttons to its right, and more breathing room between the text and the buttons.
+- Tablets in landscape now show two cards per row instead of three, so long titles are readable instead of being cut off, and every card in a row is the same width.
+- Corners are slightly less rounded across the whole app, cards, sheets, chips and fields alike.
+
+### Fixed
+
+- A cover no longer disappears when its image file is moved or deleted on the PC. The app keeps the copy it already downloaded and keeps showing it.
+
+### Internal
+
+- Covers are fetched through the Bridge's cover endpoint with conditional requests, so a cover that has not changed costs a few milliseconds and downloads nothing. At most two covers are fetched at a time, only while the app is in the foreground, and never during background sync.
+- Cover state lives in a small file next to the images rather than in the app's database, so a cover can never interfere with the local catalogue or its migrations.
+
 ## [1.2.2] — 2026-09-09
 
 **No new Bridge version is required.**
