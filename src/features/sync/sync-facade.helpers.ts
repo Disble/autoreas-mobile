@@ -31,15 +31,22 @@ import type {
  * Starts a cover sweep once a foreground sync cycle's own attempt has settled -- success, the
  * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`.
  * Never awaited: image downloads must never hold the caller's returned promise (the manual refresh
- * spinner included). `runCoverSweep` is single-flight, so this safely joins an already-running
- * sweep instead of starting a second one.
+ * spinner included).
+ *
+ * A `manual` pull forces every active cover to revalidate (`runCoverSweep`'s `force` option): the
+ * bridge answers an unchanged cover with a cheap 304, so the user's own pull-to-refresh always
+ * checks for a cover replaced at the same source path instead of waiting out its 7-day
+ * `nextAttemptAt`. `ws_sync_required` and `network_regained` stay unforced, honoring the normal TTL.
+ * `runCoverSweep` is single-flight for an unforced call, so this safely joins an already-running
+ * unforced sweep instead of starting a second one; a forced call never joins one running unforced
+ * (see `runCoverSweep`'s own doc comment).
  */
 function triggerCoverSweepForSource(rawDb: SQLiteDatabase, source: SyncRuntimeTriggerSource): void {
   if (!COVER_SWEEP_TRIGGER_SOURCES.has(source)) {
     return;
   }
 
-  void runCoverSweep(rawDb).catch((error: unknown) => {
+  void runCoverSweep(rawDb, undefined, { force: source === 'manual' }).catch((error: unknown) => {
     console.warn('[useSyncFacade] Cover sweep failed', error);
   });
 }

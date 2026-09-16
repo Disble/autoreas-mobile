@@ -124,6 +124,30 @@ describe('selectCoverSweepTargets', () => {
 
     expect(selectCoverSweepTargets([buildSource({ sourceKey: SOURCE_KEY })], manifest, NOW)).toEqual(['a1']);
   });
+
+  describe('force', () => {
+    it('forced: selects an entry that is not due and whose sourceKey matches', () => {
+      const manifest: CoverManifest = {
+        version: 1,
+        entries: { a1: buildEntry({ nextAttemptAt: NOW + 999_999, sourceKey: SOURCE_KEY }) },
+      };
+
+      expect(
+        selectCoverSweepTargets([buildSource({ sourceKey: SOURCE_KEY })], manifest, NOW, true),
+      ).toEqual(['a1']);
+    });
+
+    it('unforced (the default): the same input selects nothing', () => {
+      const manifest: CoverManifest = {
+        version: 1,
+        entries: { a1: buildEntry({ nextAttemptAt: NOW + 999_999, sourceKey: SOURCE_KEY }) },
+      };
+
+      expect(
+        selectCoverSweepTargets([buildSource({ sourceKey: SOURCE_KEY })], manifest, NOW),
+      ).toEqual([]);
+    });
+  });
 });
 
 describe('computeTransientDelayMs', () => {

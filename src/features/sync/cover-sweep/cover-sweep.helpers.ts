@@ -14,6 +14,7 @@ import { COVER_SWEEP_CONCURRENCY, DEFAULT_COVER_SWEEP_DEPENDENCIES } from './cov
 import type {
   CoverActiveAnimeSource,
   CoverSweepDependencies,
+  CoverSweepOptions,
   CoverSweepOutcome,
   CoverSweepSummary,
 } from './cover-sweep.types';
@@ -27,17 +28,24 @@ export { computeTransientDelayMs, resolveCoverManifestEntry } from './cover-swee
  * no `sourceKey` at all (persisted before this field existed) always counts as a mismatch, so it is
  * re-asked exactly once regardless of what the current source is. Preserves `activeSources`' order
  * so the sweep's request order stays deterministic run to run.
+ *
+ * `force` (default `false`) bypasses every one of those checks: EVERY active source becomes a
+ * target, regardless of `nextAttemptAt` or `sourceKey`. This is what a manual refresh needs -- the
+ * bridge answers an unchanged cover with a cheap 304 (round-tripping its stored etag as
+ * `ifNoneMatch`), so revalidating everything costs little and catches a cover replaced at the SAME
+ * source path, which an unforced sweep would otherwise skip for up to 7 days.
  */
 export function selectCoverSweepTargets(
   activeSources: readonly CoverActiveAnimeSource[],
   manifest: CoverManifest,
   now: number,
+  force = false,
 ): readonly string[] {
   const targets: string[] = [];
 
   for (const { animeId, sourceKey } of activeSources) {
     const entry = manifest.entries[animeId];
-    const isDue = !entry || now >= entry.nextAttemptAt || entry.sourceKey !== sourceKey;
+    const isDue = force || !entry || now >= entry.nextAttemptAt || entry.sourceKey !== sourceKey;
 
     if (isDue) {
       targets.push(animeId);
@@ -282,6 +290,7 @@ function buildCoverSweepWorker(
 async function executeCoverSweep(
   rawDb: SQLiteDatabase,
   deps: CoverSweepDependencies,
+  options: CoverSweepOptions,
 ): Promise<CoverSweepSummary> {
   // Step 1: hydrate/publish from whatever is already on disk BEFORE touching the network. UNLOCKED:
   // this function already runs inside `runCoverStoreExclusive` (see `runCoverSweep`), so the locked
@@ -308,7 +317,12 @@ async function executeCoverSweep(
   const sourceByAnimeId = new Map(activeSources.map((source) => [source.animeId, source.sourceKey]));
 
   try {
-    const targets = selectCoverSweepTargets(activeSources, prunedManifest, deps.clock.now());
+    const targets = selectCoverSweepTargets(
+      activeSources,
+      prunedManifest,
+      deps.clock.now(),
+      options.force ?? false,
+    );
     const worker = buildCoverSweepWorker(deps, connection, entries, summary, sourceByAnimeId);
 
     const { stopped } = await runWithConcurrency(targets, COVER_SWEEP_CONCURRENCY, worker);
@@ -341,19 +355,30 @@ async function executeCoverSweep(
 /**
  * Runs one pass of the offline cover pipeline: hydrates/publishes from the manifest, then (bridge
  * config permitting) fetches every due active-anime cover with bounded concurrency, persists the
- * manifest, deletes orphan JPEGs, and republishes the URI map. Single-flight: a call made while a
- * previous one is still running returns that SAME promise. Also runs inside `runCoverStoreExclusive`,
- * so a `hydrateCoverUris` call made mid-pass queues behind it instead of racing the manifest.
+ * manifest, deletes orphan JPEGs, and republishes the URI map. Also runs inside
+ * `runCoverStoreExclusive`, so a `hydrateCoverUris` call made mid-pass queues behind it instead of
+ * racing the manifest.
+ *
+ * Single-flight for an UNFORCED call: it returns the SAME promise as a previous pass still running.
+ * A FORCED call (`{ force: true }`) never joins an in-flight pass -- silently joining one already
+ * running unforced would let a manual refresh do nothing, exactly the bug `force` exists to fix.
+ * Instead it always queues its OWN pass through `runCoverStoreExclusive`'s FIFO mutex (so it starts
+ * only once whatever pass is already in flight settles) and becomes the new tracked in-flight sweep
+ * for any later joiner, forced or not (see `trackInFlightCoverSweep`'s compare-and-clear).
  */
 export function runCoverSweep(
   rawDb: SQLiteDatabase,
   deps: CoverSweepDependencies = DEFAULT_COVER_SWEEP_DEPENDENCIES,
+  options: CoverSweepOptions = {},
 ): Promise<CoverSweepSummary> {
+  const force = options.force ?? false;
   const inFlight = getInFlightCoverSweep();
 
-  if (inFlight) {
+  if (inFlight && !force) {
     return inFlight;
   }
 
-  return trackInFlightCoverSweep(runCoverStoreExclusive(() => executeCoverSweep(rawDb, deps)));
+  return trackInFlightCoverSweep(
+    runCoverStoreExclusive(() => executeCoverSweep(rawDb, deps, { force })),
+  );
 }

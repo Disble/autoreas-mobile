@@ -8,15 +8,26 @@ export function getInFlightCoverSweep(): Promise<CoverSweepSummary> | null {
   return inFlightSweep;
 }
 
-/** Registers `sweep` as the in-flight cover sweep and clears the guard once it settles. */
+/**
+ * Registers `sweep` as the in-flight cover sweep and clears the guard once it settles -- but ONLY if
+ * `sweep` is still the tracked promise at that point (compare-and-clear). A forced `runCoverSweep`
+ * call started while an unforced pass is still running overwrites `inFlightSweep` with its OWN
+ * promise before that first pass settles; without this guard, the first pass's `finally` would
+ * unconditionally null out the guard while the forced pass is still in flight, so a third caller
+ * would fail to join it and start a redundant pass instead.
+ */
 export function trackInFlightCoverSweep(
   sweep: Promise<CoverSweepSummary>,
 ): Promise<CoverSweepSummary> {
-  inFlightSweep = sweep.finally(() => {
-    inFlightSweep = null;
+  const tracked: Promise<CoverSweepSummary> = sweep.finally(() => {
+    if (inFlightSweep === tracked) {
+      inFlightSweep = null;
+    }
   });
 
-  return inFlightSweep;
+  inFlightSweep = tracked;
+
+  return tracked;
 }
 
 /**

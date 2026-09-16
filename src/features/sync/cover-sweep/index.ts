@@ -21,6 +21,7 @@ export type {
   CoverActiveAnimeSource,
   CoverSweepClock,
   CoverSweepDependencies,
+  CoverSweepOptions,
   CoverSweepOutcome,
   CoverSweepSummary,
 } from './cover-sweep.types';

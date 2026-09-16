@@ -67,7 +67,10 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
   });
 
   describe.each(TRIGGER_SOURCES)('source: %s', (source) => {
-    it('starts runCoverSweep(rawDb) after a successful sync', async () => {
+    /** Only a manual pull forces every active cover to revalidate; the other two triggers keep the TTL. */
+    const expectedForce = source === 'manual';
+
+    it('starts runCoverSweep(rawDb, undefined, { force }) after a successful sync', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
       });
@@ -82,10 +85,10 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       });
 
       expect(runCoverSweep).toHaveBeenCalledTimes(1);
-      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB);
+      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB, undefined, { force: expectedForce });
     });
 
-    it('starts runCoverSweep(rawDb) on the hasMorePending early return', async () => {
+    it('starts runCoverSweep(rawDb, undefined, { force }) on the hasMorePending early return', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 0, backlogReadCount: 5, hasMorePending: true,
       });
@@ -100,10 +103,10 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       });
 
       expect(runCoverSweep).toHaveBeenCalledTimes(1);
-      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB);
+      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB, undefined, { force: expectedForce });
     });
 
-    it('starts runCoverSweep(rawDb) after a rejected sync', async () => {
+    it('starts runCoverSweep(rawDb, undefined, { force }) after a rejected sync', async () => {
       const failure = new Error('season rating delivery failed');
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 0, backlogReadCount: 0, hasMorePending: false,
@@ -121,7 +124,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       ).rejects.toBe(failure);
 
       expect(runCoverSweep).toHaveBeenCalledTimes(1);
-      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB);
+      expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB, undefined, { force: expectedForce });
     });
   });
 
@@ -180,7 +183,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
     });
 
     expect(result).toBe(1);
-    expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB);
+    expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB, undefined, { force: true });
   });
 
   it('swallows a rejected cover sweep instead of throwing out of the cycle', async () => {
