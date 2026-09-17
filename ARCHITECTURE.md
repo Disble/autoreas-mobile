@@ -116,9 +116,8 @@ If ANY file (`.ts` or `.tsx`) exceeds 500 lines, it violates the Single Responsi
 * **`.tsx` > 500 lines:** The UI has too many parts. Extract sub-components into a local `components/` folder.
 * **`.ts` > 500 lines:** The hook does too much. Apply the **Facade Hook** pattern (split into `useFeatureState`, `useFeatureMutations`, etc., and combine them in the main hook).
 
-## 9. Testing Policy (TDD + SDD)
+## 9. Testing Policy (TDD)
 
-* **Spec-Driven Development (SDD):** Write specs in `openspec/specs/` before coding.
 * **Test-Driven Development (TDD):** Write the test (Red), write the code (Green), refactor.
 * **Coverage:**
   * **100%** for `*.helpers.ts` and `*.schema.ts` (Pure logic).

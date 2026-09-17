@@ -294,7 +294,7 @@ autoreas-mobile/
 ├── tests/                            # Jest suites — mirrors src/features/**
 ├── scripts/                          # feature scaffolding, staged mutation runner
 ├── docs/                             # ADRs · specs · postmortems · images
-└── openspec/                         # spec-driven-development artifacts
+└── openspec/                         # historical specifications and change evidence (not an execution contract)
 ```
 
 ### Feature anatomy
@@ -392,7 +392,7 @@ incrementally instead of never.
 | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | The complete, enforced ruleset |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
-| [`docs/specs/`](docs/specs/) | Functional specs (SDD-00 → SDD-07) |
+| [`docs/specs/`](docs/specs/) | Historical functional specifications (SDD-00 → SDD-07) |
 | [`docs/deployment.md`](docs/deployment.md) | How a release ships: version bump, tag, CI pipeline and its guards |
 | [`docs/build-and-release.md`](docs/build-and-release.md) | EAS and Docker builds, Git hooks, local build paths |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Native module, cleartext HTTP and Expo Router issues |
