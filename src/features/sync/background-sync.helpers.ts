@@ -12,16 +12,72 @@ import type {
   BackgroundTaskOutcome,
   ResolveBackgroundTaskOutcomeParams,
 } from './background-sync.types';
+import { BACKGROUND_SYNC_ENGINE_TRIGGER_SOURCE } from './native-sync-engine/native-sync-engine.constants';
+import { createNativeSyncEngine } from './native-sync-engine/native-sync-engine.helpers';
+import type {
+  NativeSyncEngineResult,
+  NativeSyncEngineOutcome,
+} from './native-sync-engine/native-sync-engine.types';
 
 /**
- * Runs one headless-safe background sync cycle using a dedicated SQLite runtime.
+ * Maps one native engine attempt outcome onto the headless cycle result vocabulary the
+ * background task already consumes. `closed` is the only success; `not_applicable` — no config,
+ * or the lease held elsewhere — is the cycle's existing no-op; every failure shape, including
+ * the watchdog's `abandoned`, collapses to `failed` because the host has only two answers.
+ */
+function mapNativeEngineResultToCycleResult(
+  result: NativeSyncEngineResult,
+): HeadlessSyncCycleResult {
+  const outcome: NativeSyncEngineOutcome = result.outcome;
+
+  switch (outcome) {
+    case 'closed':
+      return { kind: 'success', syncedCount: result.syncedCount };
+    case 'not_applicable':
+      return { kind: 'no_op', syncedCount: 0 };
+    case 'failed':
+    case 'abandoned':
+    case 'unavailable':
+      return { kind: 'failed', syncedCount: 0 };
+  }
+}
+
+/**
+ * Runs one background sync attempt, routed through the native engine when it is available and
+ * through the existing JS cycle when it is not. This is a migration, not a removal: the JS path
+ * below stays fully intact until the native engine is observable on device (ODD T8 removes it).
+ *
+ * The native engine owns its own SQLite connections, its own lease claim (`native_engine` on
+ * `sync_cycle_lock`, mutually exclusive with this path's owner) and its own 30 s watchdog, so no
+ * JS timer participates in an engine attempt and `runOnce` always resolves. The fallback
+ * triggers on both degradation points: a missing module (`isAvailable()` false, the migration
+ * case) and an `unavailable` outcome from an engine that reported available (defence in depth
+ * against a race between lookup and call).
+ */
+export async function runBackgroundSyncCycle(): Promise<HeadlessSyncCycleResult> {
+  const engine = createNativeSyncEngine();
+
+  if (engine.isAvailable()) {
+    const engineResult = await engine.runOnce(BACKGROUND_SYNC_ENGINE_TRIGGER_SOURCE);
+
+    if (engineResult.outcome !== 'unavailable') {
+      return mapNativeEngineResultToCycleResult(engineResult);
+    }
+  }
+
+  return runJsBackgroundSyncCycle();
+}
+
+/**
+ * Runs one headless-safe background sync cycle using a dedicated SQLite runtime (the JS path
+ * the native engine is migrating away from; kept intact until ODD T8 retires it).
  * The runtime is opened for the cycle and closed in a finally block so the shared UI connection
  * does not accumulate native pressure during repeated background work. The cycle is guarded by
  * `withExclusiveSyncCycle` so it never overlaps a concurrently in-flight FGS tick cycle on the
  * same database; when the lock is already held, this reports a no-op instead of running a
  * redundant reconcile pass.
  */
-export async function runBackgroundSyncCycle(): Promise<HeadlessSyncCycleResult> {
+async function runJsBackgroundSyncCycle(): Promise<HeadlessSyncCycleResult> {
   const runtime = createSyncSQLiteRuntime({ owner: 'headless_cycle' });
 
   try {
