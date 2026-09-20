@@ -8,6 +8,11 @@ import {
 } from './headless-sync-cycle.constants';
 import { pruneOperationLog } from './operation-log-retention.helpers';
 import { readOperationLogConvergence } from './operation-log-convergence.helpers';
+import {
+  createJournalRecordingCheckpointRecorder,
+  createSyncJournal,
+} from './sync-journal/sync-journal.helpers';
+import type { JournalRecordingCheckpointRecorder, SyncJournal } from './sync-journal/sync-journal.types';
 import { syncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import { syncPendingOperations } from './reconcile.helpers';
 import type {
@@ -42,6 +47,16 @@ import type {
   RunHeadlessSyncCycleParams,
 } from './headless-sync-cycle.types';
 import type { SyncAttemptFailureDetail, SyncCycleStage } from './sync-runtime-status.types';
+
+/**
+ * Slot through which `runCycleBody` hands its journal recorder back to `runHeadlessSyncCycle`,
+ * so the abandoned-cycle path -- which lives outside the body -- can still mark the journal
+ * `abandoned` with the state the body actually tracked. `current` stays null only if the body
+ * never started, in which case there is no state to report and the record is rightly skipped.
+ */
+interface JournalRecorderSlot {
+  current: JournalRecordingCheckpointRecorder | null;
+}
 
 /**
  * Builds the failure message persisted for a cycle that never came back.
@@ -110,6 +125,8 @@ function buildSyncAttemptFailureDetail(
 async function runCycleBody(
   params: RunHeadlessSyncCycleParams,
   progress: HeadlessSyncCycleProgress,
+  journal: SyncJournal,
+  journalRecorderSlot: JournalRecorderSlot,
 ): Promise<HeadlessSyncCycleResult> {
   // Minted BEFORE the first await so the checkpoint instrument covers `open` and `bridge_config`
   // too: a cycle that dies inside `runtime.open()` still reports under its own correlation id.
@@ -122,11 +139,24 @@ async function runCycleBody(
   // next to each `progress.stage` write below cannot change the cycle's behaviour.
   const startedAt = Date.now();
   const checkpointStore = createSyncCycleCheckpointStore({ cycleId, startedAt });
+  // The journal is an instrument, not a participant: wrapping the checkpoint recorder means
+  // every published stage is ALSO appended, fire-and-forget, to `sync-journal.db` -- a file on
+  // its own connection whose writes cannot queue behind the app database's write door (spec:
+  // mobile-sync-architecture 6.3). A `false` from the journal changes nothing the cycle does:
+  // the wrapped recorder still runs first and unchanged, and the append is never awaited where
+  // it could alter control flow. The recorder is stashed in `journalRecorderSlot` so the
+  // abandoned-cycle path, which lives outside this function, can mark the journal `abandoned`.
+  const journalRecorder = createJournalRecordingCheckpointRecorder({
+    journal,
+    cycleId,
+    recorder: (stage) => {
+      checkpointStore.record(stage);
+    },
+  });
+  journalRecorderSlot.current = journalRecorder;
   // The feature layer owns the closed stage vocabulary; the store takes an opaque label. This
   // one binding is where the two meet.
-  const recordCheckpoint: SyncCycleCheckpointRecorder = (stage) => {
-    checkpointStore.record(stage);
-  };
+  const recordCheckpoint: SyncCycleCheckpointRecorder = journalRecorder;
 
   progress.stage = 'open';
   recordCheckpoint('open');
@@ -230,6 +260,11 @@ async function runCycleBody(
     return { kind: 'success', syncedCount };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Background sync failed';
+
+    // Recorded FIRST and fire-and-forget: the journal lives outside the write door, so this
+    // row survives even when the durable failure write below jams -- exactly the situation the
+    // journal exists to describe. `failed` is reached only here, never through a stage.
+    journalRecorder.recordFailure(message);
 
     // Recorded in memory first: the durable write below goes through the same door whose
     // jamming is the most common reason we are in this catch at all.
@@ -340,9 +375,16 @@ export async function runHeadlessSyncCycle(
     didTimerFire = true;
   }, 0);
 
+  // The journal connection is created here (not inside the body) because the abandoned-cycle
+  // path below -- which lives outside the body -- needs the same instrument. It performs no
+  // I/O until its first use, so creating it for a cycle that ends up not writing anything
+  // costs nothing.
+  const journal = createSyncJournal();
+  const journalRecorderSlot: JournalRecorderSlot = { current: null };
+
   try {
     return await withDeadline({
-      operation: () => runCycleBody(params, progress),
+      operation: () => runCycleBody(params, progress, journal, journalRecorderSlot),
       timeoutMs,
       label: 'headless_sync_cycle',
     });
@@ -353,6 +395,12 @@ export async function runHeadlessSyncCycle(
     if (!(error instanceof DeadlineExceededError)) {
       throw error;
     }
+
+    // The journal is an instrument, not a participant: recorded fire-and-forget before the
+    // recovery writes, so a cycle that parked reports `abandoned` from the state it actually
+    // reached even when every write-door write below jams. `abandoned` is reached only here,
+    // never through a stage.
+    journalRecorderSlot.current?.recordAbandoned(buildAbandonedCycleMessage(progress.stage, timeoutMs));
 
     await recordAbandonedCycle(params, progress, timeoutMs);
 

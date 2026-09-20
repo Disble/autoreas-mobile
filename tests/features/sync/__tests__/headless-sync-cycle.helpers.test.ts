@@ -414,5 +414,6 @@ describe('headless-sync-cycle helpers', () => {
   });
 
   // Hard-deadline / abandoned-cycle behavior and `buildAbandonedCycleMessage` moved to the
-  // sibling `headless-sync-cycle-deadline.test.ts` (CLAUDE.md #5, the 500-line rule).
+  // sibling `headless-sync-cycle-deadline.test.ts` (CLAUDE.md #5, the 500-line rule); the sync
+  // journal wiring tests moved to the sibling `headless-sync-cycle-journal.test.ts`.
 });
