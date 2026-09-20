@@ -46,6 +46,10 @@ private const val LOG_TAG = "SyncEngine"
  * `BEGIN IMMEDIATE` and a matching `COMMIT`/`ROLLBACK`. Its journal lives in the shared
  * `sync-journal.db` whose schema is OWNED by `modules/sync-journal`; see
  * {@link SyncEngineJournal} for the two-writers contract that T5 unifies.
+ *
+ * Observability contract: `runAttempt` logs a `Log.i` invocation line (trigger source and cycle
+ * id) before anything else and a `Log.i` completion line on the worker's successful return, so
+ * logcat can always tell an invocation that parked from pure silence.
  */
 class SyncEngineModule : Module() {
   private val worker: ExecutorService = Executors.newSingleThreadExecutor()
@@ -93,13 +97,20 @@ class SyncEngineModule : Module() {
    * watchdog callback is cleaned up on normal completion (and again in `OnDestroy`).
    */
   private fun runAttempt(triggerSource: String, promise: Promise) {
+    val cycleId = UUID.randomUUID().toString()
+    val startMs = System.currentTimeMillis()
+
+    // The invocation line fires before anything else so logcat distinguishes "runOnce was called
+    // and then parked" from "runOnce was never invoked".
+    Log.i(LOG_TAG, "runOnce invoked (triggerSource='$triggerSource', cycleId=$cycleId)")
+
     val context = appContext.reactContext
 
     if (context == null) {
       // No runtime to even open a database against: resolve, never reject or throw.
       promise.resolve(
         CycleOutcome("failed", "idle", 0, 0, "MissingReactContext").toMap(
-          UUID.randomUUID().toString(),
+          cycleId,
         ),
       )
       return
@@ -112,7 +123,6 @@ class SyncEngineModule : Module() {
       journal = SyncEngineJournal(context)
     }
 
-    val cycleId = UUID.randomUUID().toString()
     settled.set(false)
     lastState.set("idle")
 
@@ -141,6 +151,11 @@ class SyncEngineModule : Module() {
         val outcome = cycle.run(triggerSource, cycleId, lastState::set)
         if (settled.compareAndSet(false, true)) {
           watchdogHandler?.removeCallbacks(watchdog)
+          Log.i(
+            LOG_TAG,
+            "attempt $cycleId completed outcome='${outcome.outcome}' stage='${outcome.stage}' " +
+              "in ${System.currentTimeMillis() - startMs}ms",
+          )
           promise.resolve(outcome.toMap(cycleId))
         }
       } catch (error: Throwable) {

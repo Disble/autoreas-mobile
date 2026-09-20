@@ -101,6 +101,41 @@ export function normalizeNativeSyncEngineResult(
 }
 
 /**
+ * Process-wide flag slot backing the engine-unavailable warning. The flag lives on `globalThis`
+ * rather than in a module-level binding because this repo's role-file-shape rule allows a
+ * `.helpers` file to declare only types and functions; a `globalThis` key still guarantees the
+ * warning fires at most once per JS runtime (a background task runs in the app's own runtime).
+ */
+type NativeEngineWarningFlags = Record<string, boolean | undefined>;
+
+/**
+ * Emits a single per-process `console.warn` naming that the native engine is unavailable and the
+ * caller falls back to the JS cycle. Background tasks can construct the seam repeatedly, so the
+ * flag is checked and set on `globalThis` before warning; the emit itself is wrapped in try/catch
+ * because this runs inside a background task in environments (headless JS runtimes, test
+ * sandboxes) where the console surface may be missing or partial — a diagnostic must never be
+ * able to throw into the caller.
+ */
+function warnNativeEngineUnavailable(): void {
+  const flagKey = '__autoreasNativeSyncEngineUnavailableWarned';
+  const flags = globalThis as unknown as NativeEngineWarningFlags;
+
+  if (flags[flagKey]) {
+    return;
+  }
+
+  flags[flagKey] = true;
+
+  try {
+    console.warn(
+      '[sync-engine] Native SyncEngine module is unavailable; falling back to the JS sync cycle.',
+    );
+  } catch {
+    // Swallowing is intentional: this warning is best-effort diagnostics only.
+  }
+}
+
+/**
  * Builds the result the seam reports whenever no native engine exists on the host: outcome
  * `unavailable`, nothing synced, nothing claimed, no diagnostics — the exact shape callers
  * already handle, so the degraded path needs no second result type.
@@ -132,6 +167,8 @@ export function createNativeSyncEngine(
   const nativeModule = loadNativeSyncEngineModule(loadModule);
 
   if (!nativeModule) {
+    warnNativeEngineUnavailable();
+
     return {
       runOnce: () => Promise.resolve(createUnavailableNativeSyncEngineResult()),
       isAvailable: () => false,
