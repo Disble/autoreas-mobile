@@ -129,7 +129,7 @@ and held until the maintainer confirms, per `AGENTS.md`.
 
 | Task | Status | Evidence |
 | --- | --- | --- |
-| T1 | pending | |
+| T1 | done | `docs/adr/008-native-sync-engine-and-single-owner-writes.md` — accepted 2026-09-20; amends ADR 007 by keeping its decisions 1, 2, 3, 4 and 6 while changing the substrate and the ownership mechanism, records the device evidence that closed 007's own gate, and puts four invariants in force. |
 | T2 | pending | |
 | T3 | pending | |
 | T4 | pending | Ground truth for the sweep: 2 orphan rows in `processing`, `sync_cycle_lock` owner `headless_cycle` expired, `is_cycle_active = 1` (§3.5 of the architecture doc). |
