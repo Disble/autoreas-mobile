@@ -169,6 +169,10 @@ describe('headless-sync-cycle helpers', () => {
       // The telemetry context rides along on the same call: it is assembled here, before the
       // status writes, because only this caller can see the previous cycle's snapshot intact.
       expect.objectContaining({ appState: 'background' }),
+      // ...and this cycle's checkpoint recorder rides along with it, so a hang inside the
+      // reconcile pass reports its own fine-grained stage (`backlog_read`..`apply_write`) on
+      // the instrument that survives a jammed write door and paused JS timers.
+      expect.any(Function),
     );
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb, 'deferred');
     expect(syncModule.syncPendingOperations).not.toHaveBeenCalledWith(rawDb);

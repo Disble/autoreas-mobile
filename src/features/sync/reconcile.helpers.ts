@@ -18,7 +18,6 @@ import {
 } from '../../infrastructure/db/anime-repository';
 import { bridgeConfig, operationLog } from '../../infrastructure/db/schema';
 import type { OperationLogRow } from '../../infrastructure/db/schema';
-import type { ConfirmedAnimeToken } from './applied-operation-token.helpers';
 import { collectConfirmedAnimeTokens } from './applied-operation-token.helpers';
 import {
   getLastChangelogId,
@@ -33,7 +32,6 @@ import {
 } from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
-import type { ConflictOutcome } from './reconcile-conflict.helpers';
 import { classifyUnconfirmedOperations } from './reconcile-conflict.helpers';
 import { buildReconcileRequestBody } from './reconcile-request.helpers';
 import {
@@ -43,8 +41,10 @@ import {
 import { ReconcileHttpError } from './reconcile.errors';
 import { ReconcileResponseSchema, type ReconcileAnimeChange } from './reconcile.schema';
 import type {
+  ApplyReconcileResponseWritesParams,
   ReconcileApplyMode,
   ReconcileTelemetryContext,
+  SyncCycleCheckpointRecorder,
   SyncPendingOperationsResult,
 } from './reconcile.types';
 import {
@@ -52,6 +52,7 @@ import {
   flushSyncDiagnosticsOutbox,
 } from './sync-diagnostics-flush.helpers';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
+import type { SyncCycleStage } from './sync-runtime-status.types';
 import {
   buildSyncCycleTelemetry,
   resolveClientTelemetry,
@@ -66,6 +67,18 @@ import {
  */
 function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {
   return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
+}
+
+/** Publishes one ENTRY checkpoint; missing recorder no-ops, raising recorder is swallowed. */
+function publishCheckpoint(
+  checkpoint: SyncCycleCheckpointRecorder | undefined,
+  stage: SyncCycleStage,
+): void {
+  try {
+    checkpoint?.(stage);
+  } catch {
+    // Swallowed by contract: see the JSDoc above.
+  }
 }
 
 /**
@@ -98,11 +111,16 @@ function logReconcileHttpError(
  * non-reactive background connection (the headless sync cycle). Passing the wrong mode for
  * a background connection silently reintroduces the non-reactive-write regression, so
  * callers must derive it explicitly rather than relying on the default.
+ *
+ * `checkpointRecorder` publishes an ENTRY checkpoint per fine-grained stage of the pass --
+ * `backlog_read`, `claim_ops`, `http`, `parse_response`, `apply_write` -- per
+ * {@link SyncCycleCheckpointRecorder}'s entry/never-throws contract.
  */
 export async function syncPendingOperations(
   rawDb: SQLiteDatabase,
   applyMode: ReconcileApplyMode = 'deferred',
   telemetryContext?: ReconcileTelemetryContext,
+  checkpointRecorder?: SyncCycleCheckpointRecorder,
 ): Promise<SyncPendingOperationsResult> {
   const syncKey = rawDb as object;
   const syncState = syncStateByDatabase.get(syncKey) ?? {
@@ -126,7 +144,12 @@ export async function syncPendingOperations(
 
     do {
       syncState.rerunRequested = false;
-      const batch = await performSyncPendingOperations(rawDb, applyMode, telemetryContext);
+      const batch = await performSyncPendingOperations(
+        rawDb,
+        applyMode,
+        telemetryContext,
+        checkpointRecorder,
+      );
 
       totalConfirmed += batch.syncedCount;
       totalBacklogRead += batch.backlogReadCount;
@@ -163,20 +186,6 @@ function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange 
     snapshot: change.snapshot ? mapWireAnimeToLegacyAnime(change.snapshot) : undefined,
     timestamp: change.timestamp,
   };
-}
-
-/** Input to `applyReconcileResponseWrites`, one field per write source this cycle produced. */
-interface ApplyReconcileResponseWritesParams {
-  readonly applyMode: ReconcileApplyMode;
-  readonly normalizedChanges: readonly RemoteAnimeChange[];
-  readonly confirmedAnimeTokens: readonly ConfirmedAnimeToken[];
-  readonly conflictOutcomes: readonly ConflictOutcome[];
-  readonly deadLetterIds: readonly number[];
-  readonly confirmedIds: readonly number[];
-  readonly remainingUnconfirmedIds: readonly number[];
-  readonly lastChangelogId: number;
-  readonly nextLastChangelogId: number;
-  readonly bridgeConfigId: number;
 }
 
 /**
@@ -303,6 +312,7 @@ async function performSyncPendingOperations(
   rawDb: SQLiteDatabase,
   applyMode: ReconcileApplyMode,
   telemetryContext?: ReconcileTelemetryContext,
+  checkpointRecorder?: SyncCycleCheckpointRecorder,
 ): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
@@ -318,6 +328,8 @@ async function performSyncPendingOperations(
   // `dedupeBy: 'anime_id'` (design.md Decision 9, Requirement 10) caps the batch at one queued
   // operation per anime -- the oldest by `created_at`/`id` -- so `limit` bounds distinct animes
   // rather than rows here.
+  // ENTRY semantics: published BEFORE the step is awaited, so a hang reports THAT step.
+  publishCheckpoint(checkpointRecorder, 'backlog_read');
   const pendingOps = await readOperationLogBacklog(rawDb, {
     status: ['pending', 'processing'],
     limit: RECONCILE_BACKLOG_BATCH_LIMIT,
@@ -335,6 +347,7 @@ async function performSyncPendingOperations(
     : 0;
 
   if (pendingOps.length > 0) {
+    publishCheckpoint(checkpointRecorder, 'claim_ops');
     await withLocalWrite(rawDb, async (writeDb) => {
       await writeDb
         .update(operationLog)
@@ -388,6 +401,7 @@ async function performSyncPendingOperations(
   const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection });
 
   try {
+    publishCheckpoint(checkpointRecorder, 'http');
     const result = await bridgeClient.reconcile(connection, requestBody);
 
     if (!result.ok) {
@@ -397,6 +411,7 @@ async function performSyncPendingOperations(
       throw error;
     }
 
+    publishCheckpoint(checkpointRecorder, 'parse_response');
     const parsed = ReconcileResponseSchema.safeParse(result.data);
 
     if (!parsed.success) {
@@ -454,6 +469,7 @@ async function performSyncPendingOperations(
     //   false`), not from a different transaction path here (design.md Decision 4).
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
+    publishCheckpoint(checkpointRecorder, 'apply_write');
     await withLocalWrite(rawDb, (writeDb) =>
       applyReconcileResponseWrites(writeDb, {
         applyMode,
