@@ -15,6 +15,9 @@ import type { SyncExecutionStatus } from '../sync-execution-strategy.types';
 import type { SyncSQLiteRuntime } from '../sqlite-sync-runtime.types';
 import { SchemaNotReadyError } from '../../../infrastructure/db/startup/startup.errors';
 
+/**
+ * Builds the status reported when the foreground-service strategy cannot run (non-Android).
+ */
 function createUnsupportedStatus(): SyncExecutionStatus {
   return {
     registrationStatus: 'unsupported',
@@ -158,7 +161,13 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
           channelId: NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID,
           asForegroundService: true,
           ongoing: true,
-          foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_DATA_SYNC],
+          // The manifest (plugins/withAndroidForegroundSync.js) is what declares the foreground
+          // service type; the runtime type passed to startForeground must be a subset of the
+          // declared manifest attribute or Android throws IllegalArgumentException and the app
+          // crashes. Naming the type here (data_sync) is what caused that crash, so the manifest
+          // stays the single source of truth and we request the MANIFEST sentinel, which the
+          // native layer resolves from the declared service type.
+          foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_MANIFEST],
           pressAction: {
             id: 'open-settings',
           },

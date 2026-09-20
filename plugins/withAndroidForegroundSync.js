@@ -1,3 +1,4 @@
+/** Expo config-plugin helpers used to edit the generated Android manifest. */
 const {
   AndroidConfig,
   withAndroidManifest,
@@ -8,15 +9,41 @@ const {
 // the only source of that attribute, and Android 14+ refuses to start a foreground service without
 // it. `tools:replace` is retained deliberately: it is a no-op while nothing else declares the
 // attribute, and it keeps the app manifest authoritative if a future dependency does.
+//
+// The type is `specialUse` instead of `dataSync` because Android 15 caps `dataSync` and
+// `mediaProcessing` foreground services at 6 hours per 24 for apps targeting SDK 35+, after which
+// `Service.onTimeout()` fires and the system refuses to start another one until the app is brought
+// to the foreground. `specialUse` is the documented escape for services that fit no other type; it
+// requires the `android.permission.FOREGROUND_SERVICE_SPECIAL_USE` permission and a
+// `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` property child on the service element. The Play
+// Console declaration for `specialUse` applies only when submitting to Google Play; this app ships
+// sideloaded APKs.
+/** Android component name of the Notifee foreground service this plugin owns. */
 const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
-const FOREGROUND_SERVICE_TYPE = 'dataSync';
+
+/** The declared foreground-service type: `specialUse`, outside Android 15's capped `dataSync` list. */
+const FOREGROUND_SERVICE_TYPE = 'specialUse';
+
+/** The subtype property Android requires on a service that declares the `specialUse` type. */
+const SPECIAL_USE_FGS_SUBTYPE_PROPERTY = {
+  $: {
+    'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
+    'android:value':
+      'continuous background synchronisation of local operations with the paired bridge device',
+  },
+};
+
+/** Permissions the service needs, merged into the manifest when it does not declare them yet. */
 const REQUIRED_PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE',
+  // Kept until the merged manifest proves no other component still needs it.
   'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+  'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.WAKE_LOCK',
 ];
 
+/** Adds one `uses-permission` entry unless the manifest already declares it. */
 function ensureUsesPermission(androidManifest, permissionName) {
   const permissions = androidManifest.manifest['uses-permission'] ?? [];
   const alreadyExists = permissions.some(
@@ -32,6 +59,21 @@ function ensureUsesPermission(androidManifest, permissionName) {
   androidManifest.manifest['uses-permission'] = permissions;
 }
 
+/** Adds the `specialUse` subtype property to the service unless it is already present. */
+function ensureSpecialUseSubtypeProperty(service) {
+  const properties = service.property ?? [];
+  const alreadyExists = properties.some(
+    (property) => property.$?.['android:name'] === SPECIAL_USE_FGS_SUBTYPE_PROPERTY.$['android:name'],
+  );
+
+  if (!alreadyExists) {
+    properties.push(SPECIAL_USE_FGS_SUBTYPE_PROPERTY);
+  }
+
+  service.property = properties;
+}
+
+/** Points the Notifee service at the declared type, creating the service element when absent. */
 function ensureForegroundService(mainApplication) {
   const services = mainApplication.service ?? [];
   const existingService = services.find(
@@ -53,6 +95,12 @@ function ensureForegroundService(mainApplication) {
       },
     });
   }
+
+  services.forEach((service) => {
+    if (service.$?.['android:name'] === FOREGROUND_SERVICE_NAME) {
+      ensureSpecialUseSubtypeProperty(service);
+    }
+  });
 
   mainApplication.service = services;
 }

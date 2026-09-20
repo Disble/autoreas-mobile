@@ -1,4 +1,7 @@
-import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
+import notifee, {
+  AndroidForegroundServiceType,
+  AuthorizationStatus,
+} from 'react-native-notify-kit';
 import { Platform } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createNotifeeForegroundServiceAdapter } from '../../../src/features/sync/notifee-foreground-service-adapter';
@@ -9,16 +12,34 @@ import * as syncRuntimeStatusModule from '../../../src/features/sync/sync-runtim
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 import { SchemaNotReadyError } from '../../../src/infrastructure/db/startup';
 
+/** Mock for the foreground sync runner's start(), so tests decide what a started runner does. */
 const mockStart = jest.fn<Promise<void>, []>();
+/** Mock for the foreground sync runner's stop(). */
 const mockStop = jest.fn<Promise<void>, []>();
+/** Mock for the foreground sync runner's isRunning(). */
 const mockIsRunning = jest.fn<boolean, []>();
+/** Mock for the sync SQLite runtime's close(). */
 const mockRuntimeClose = jest.fn<Promise<void>, []>();
+/** Mock for the native ticker's start(); receives the tick interval in milliseconds. */
 const mockTickerStart = jest.fn<void, [number]>();
+/** Mock for the native ticker's stop(). */
 const mockTickerStop = jest.fn<void, []>();
+/** Mock for the native ticker's onTick(); returns the registered tick callback when called. */
 const mockTickerOnTick = jest.fn<() => void, [() => void]>();
+/** Mock for the native ticker's isRunning(). */
 const mockTickerIsRunning = jest.fn<boolean, []>();
 
+/** The jest.setup.ts mock of react-native-notify-kit predates the manifest sentinel in this
+ * repo's usage; mirror the real runtime value (FOREGROUND_SERVICE_TYPE_MANIFEST = -1 in
+ * react-native-notify-kit's AndroidForegroundServiceType) onto the shared mock object so the
+ * adapter under test and these assertions use the same production constant.
+ */
+const mockedServiceTypes = AndroidForegroundServiceType as unknown as Record<string, number>;
+mockedServiceTypes.FOREGROUND_SERVICE_TYPE_MANIFEST = -1;
+
+/** Captured runCycle from the mocked createForegroundSyncRunner, invoked directly by tests. */
 let capturedRunCycle: (() => Promise<void>) | null = null;
+/** Captured onCycleError from the mocked createForegroundSyncRunner, invoked directly by tests. */
 let capturedOnCycleError: ((error: unknown) => void | Promise<void>) | null = null;
 
 jest.mock('../../../src/features/sync/foreground-sync-runner.helpers', () => ({
@@ -124,6 +145,26 @@ describe('notifee-foreground-service-adapter', () => {
       canShowPersistentNotification: false,
       isBackgroundTaskRegistered: false,
     });
+  });
+
+  it('requests the manifest-declared foreground service type and never data_sync', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    const notificationInput = (notifee.displayNotification as jest.Mock).mock.calls[0]?.[0];
+
+    expect(notificationInput.android.foregroundServiceTypes).toEqual([
+      AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_MANIFEST,
+    ]);
+    expect(notificationInput.android.foregroundServiceTypes).not.toContain(
+      AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+    );
   });
 
   it('starts foreground notification and reports registered state on Android', async () => {
