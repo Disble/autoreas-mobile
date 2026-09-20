@@ -83,9 +83,15 @@ absence, however long — without the user opening the app, and no attempt can o
 ### T7 — S6: the native engine
 - Surface: the native module.
 - Requirement: read outbox → claim → HTTP → map the wire response → stage into
-  `pending_remote_changes` → advance cursor → prune → journal. No direct `animes` writes.
+  `pending_remote_changes` → advance cursor → prune → journal. No `bridge_changes` apply to domain
+  tables. In `staged` mode the background cycle DOES write `animes` through the OCC token path —
+  `persistConfirmedAnimeTokens` and, per conflict outcome, `applyAnimeBridgeToken`, each a single
+  `UPDATE animes SET bridge_modified_at = ?` on a column disjoint from the domain ones — so those
+  token writes are part of this task's scope: the engine must own them under the cycle lease
+  (perform, defer, or re-home them), never skip them.
 - Evidence: the wire mapping is diffed against the captured bodies before the JS path is retired
-  (architecture doc §10); on device, a closed app closes a cycle.
+  (architecture doc §10); on device, a closed app closes a cycle; on device, the engine's only
+  `animes` write is the `bridge_modified_at` token update.
 
 ### T8 — S6b: retire the JS background scaffolding
 - Surface: `src/features/sync/**`, `app.json`, `modules/foreground-sync-ticker`.
@@ -135,6 +141,6 @@ and held until the maintainer confirms, per `AGENTS.md`.
 | T4 | pending | Ground truth for the sweep: 2 orphan rows in `processing`, `sync_cycle_lock` owner `headless_cycle` expired, `is_cycle_active = 1` (§3.5 of the architecture doc). |
 | T5 | pending | |
 | T6 | pending | |
-| T7 | pending | Port bound verified in code: the background cycle does not write `animes` in `staged` mode. |
+| T7 | pending | Port bound verified in code, corrected 2026-09-20: in `staged` mode the background cycle applies no `bridge_changes` to `animes`, but its unconditional OCC token writes (`persistConfirmedAnimeTokens`/`applyAnimeBridgeToken`) DO write `animes.bridge_modified_at`. |
 | T8 | pending | |
 | T9 | pending | |
