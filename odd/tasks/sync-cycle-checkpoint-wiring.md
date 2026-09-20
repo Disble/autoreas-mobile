@@ -87,9 +87,28 @@ prepared and held until the maintainer confirms, per `AGENTS.md`.
 
 | Task | Status | Evidence |
 | --- | --- | --- |
-| T1 | pending | |
-| T2 | pending | |
+| T1 | done | `tests/features/sync/reconcile-checkpoint-wiring.test.ts` — 4 tests, RED observed before implementation, GREEN after. Asserts `backlog_read → claim_ops → http → parse_response → apply_write` for a clean pass, `http` as the last stage when the HTTP step throws, and that an omitted recorder still runs the pass. |
+| T2 | done | `tests/features/sync/headless-sync-cycle-checkpoint.test.ts` — 3 tests, RED observed before implementation, GREEN after. Asserts a healthy cycle ends at `closed`, a reconcile-pass throw leaves the last stage inside the reconcile vocabulary, and a failed `runtime.open()` still yields the store plus `open`. |
 | T3 | pending | |
+
+Gate run (staged, not committed): `npx lefthook run pre-commit` — `fallow`, `lint`, `typecheck`, `test` (169 suites / 1235 tests), `test:mutation:staged` all pass. `test:mutation:staged` reported its configured surface (`native-foreground-sync-ticker.helpers.ts`) as unstaged, so it mutated nothing by design rather than by accident.
+
+### Corrections found during validation
+
+1. **The delegated placement for `closed` was wrong and the worker pushed back correctly.** `recordSyncAttemptSucceeded` (which persists `lastCycleStage: 'closed'`) runs BEFORE the prune block, so recording `closed` there would have left a completed cycle's last checkpoint at `prune` — inverting the terminal signal the instrument exists to give. `closed` is recorded after pruning completes, immediately before the success return.
+2. **The catch-block prune is deliberately not checkpointed.** Recording it would overwrite the reconcile stage the cycle actually died in.
+3. **A pre-existing test asserted the old three-argument call signature** and was not in the original surface list. `npx lefthook run pre-commit` caught it (`tests/features/sync/__tests__/headless-sync-cycle.helpers.test.ts:166`); the assertion now expects the recorder as the fourth argument. The first gate run had reported every hook as skipped for "no matching staged files", which is a green result that measured nothing — the gate only means something with the files staged.
+4. **`ApplyReconcileResponseWritesParams` moved** from `reconcile.helpers.ts` to `reconcile.types.ts` to keep the file inside the 500-line limit. Verified contained: no module outside `reconcile.helpers.ts` referenced it.
+
+### Surface list (as actually edited)
+
+- `src/features/sync/reconcile.types.ts`
+- `src/features/sync/reconcile.helpers.ts`
+- `src/features/sync/headless-sync-cycle.helpers.ts`
+- `src/features/sync/headless-sync-cycle.types.ts`
+- `tests/features/sync/reconcile-checkpoint-wiring.test.ts` (new)
+- `tests/features/sync/headless-sync-cycle-checkpoint.test.ts` (new)
+- `tests/features/sync/__tests__/headless-sync-cycle.helpers.test.ts` (existing test updated)
 
 ## Checks
 

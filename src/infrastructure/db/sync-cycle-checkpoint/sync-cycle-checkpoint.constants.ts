@@ -18,9 +18,16 @@ export const SYNC_CYCLE_CHECKPOINT_DATABASE_NAME = 'autoreas-telemetry.db';
  * Best-effort saves the cycle from a checkpoint ERROR but not from a checkpoint that merely
  * waits, and a wait is paid out of the same job budget the instrument is measuring. Only this
  * process writes this file, so contention is near zero and the value is insurance rather than a
- * routine cost. It is also the ONLY bound available here: every JS timer bound is dead in the
- * background task (the HeadlessJsTask that keeps `setTimeout` alive is never registered), so
- * `busy_timeout` -- enforced natively inside SQLite -- is the one that actually fires.
+ * routine cost. It is also the only bound here that does not need the JS runtime to be able to run
+ * it: `busy_timeout` is enforced natively inside SQLite, whereas a JS timer needs a free JS thread
+ * to fire at all -- and this instrument exists for the cycles where something else has already gone
+ * wrong. An earlier revision of this comment claimed that every JS timer bound is "dead in the
+ * background task (the HeadlessJsTask that keeps `setTimeout` alive is never registered)". That is
+ * FALSE for this build: `expo-task-manager` registers with `HeadlessJsTaskContext`
+ * (`TaskService.maybeStartHeadlessTask` / `invokeStartHeadlessTask`, expo PR #43821, merged
+ * 2026-03-13, shipped in SDK 55), so JS timers keep firing during a background task. The design this
+ * comment justifies survives that correction -- a checkpoint must not depend on the runtime it is
+ * measuring -- but the premise did not, and it misled a full investigation before anyone checked it.
  */
 export const SYNC_CYCLE_CHECKPOINT_BUSY_TIMEOUT_MS = 250;
 
