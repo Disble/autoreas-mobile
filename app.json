@@ -27,6 +27,7 @@
     "plugins": [
       "./plugins/withAndroidForegroundSync",
       "./plugins/withAndroidGradleMemory",
+      "./plugins/withAndroidLabDebuggable",
       "expo-router",
       [
         "expo-splash-screen",

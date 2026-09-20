@@ -16,6 +16,15 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "lab": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "AUTOREAS_LAB_BUILD": "1"
+      }
     }
   },
   "submit": {

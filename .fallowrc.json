@@ -9,7 +9,8 @@
     "scripts/log-lesson.mjs"
   ],
   "dynamicallyLoaded": [
-    "plugins/withAndroidGradleMemory.js"
+    "plugins/withAndroidGradleMemory.js",
+    "plugins/withAndroidLabDebuggable.js"
   ],
   "ignorePatterns": [
     "android/**",

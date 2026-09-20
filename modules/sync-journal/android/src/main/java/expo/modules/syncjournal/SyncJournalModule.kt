@@ -2,6 +2,7 @@ package expo.modules.syncjournal
 
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -10,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 private const val JOURNAL_FILE_NAME = "sync-journal.db"
+private const val LOG_TAG = "SyncJournal"
 private const val BUSY_TIMEOUT_MS = 250L
 private const val MAX_ROWS = 500L
 
@@ -47,6 +49,11 @@ private const val PRUNE_BEYOND_CAPACITY_SQL =
  * everything that can fail resolves into a JS-facing default (`false` / `null` / empty / `0`)
  * rather than a rejected promise: a journal that cannot report must never take the cycle down
  * with it.
+ *
+ * Observability note: logcat is the fallback observation channel when the build is not debuggable
+ * (a `production` APK refuses `adb shell run-as`, so neither this file nor the app database can be
+ * pulled from outside). The append and open outcomes below are logged for exactly that reason, on
+ * every build; read paths stay silent.
  */
 class SyncJournalModule : Module() {
   private val journalExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -54,12 +61,17 @@ class SyncJournalModule : Module() {
 
   /**
    * Opens `sync-journal.db` once, lazily, on the module's own executor thread. The file has no
-   * migrations and no other tables: the schema is created idempotently and never altered.
+   * migrations and no other tables: the schema is created idempotently and never altered. Both
+   * outcomes are logged: on a non-debuggable build this log line is the only way to tell an
+   * unusable journal from a working one.
    */
   private fun openJournal(): SQLiteDatabase? {
     journalDb?.let { return it }
 
-    val context = appContext.reactContext ?: return null
+    val context = appContext.reactContext ?: run {
+      Log.w(LOG_TAG, "journal open failed: no react context")
+      return null
+    }
 
     return try {
       val db = SQLiteDatabase.openOrCreateDatabase(File(context.filesDir, JOURNAL_FILE_NAME), null)
@@ -67,13 +79,19 @@ class SyncJournalModule : Module() {
       db.compileStatement("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS").execute()
       db.execSQL(CREATE_JOURNAL_SQL)
       journalDb = db
+      Log.i(LOG_TAG, "journal opened at ${File(context.filesDir, JOURNAL_FILE_NAME)}")
       db
     } catch (error: Throwable) {
+      Log.w(LOG_TAG, "journal open failed", error)
       null
     }
   }
 
-  /** Appends one transition, prunes beyond capacity, and reports success as a plain boolean. */
+  /**
+   * Appends one transition, prunes beyond capacity, and reports success as a plain boolean.
+   * Success and failure are both logged: the append lines are the journal's observable trace on
+   * any build, including a release one where the database itself cannot be pulled.
+   */
   private fun insertTransition(
     cycleId: String,
     fromState: String?,
@@ -81,7 +99,10 @@ class SyncJournalModule : Module() {
     reason: String?,
     atMs: Long,
   ): Boolean {
-    val db = openJournal() ?: return false
+    val db = openJournal() ?: run {
+      Log.w(LOG_TAG, "append dropped for cycle=$cycleId: journal unreadable")
+      return false
+    }
 
     return try {
       db.compileStatement(INSERT_TRANSITION_SQL).apply {
@@ -93,8 +114,10 @@ class SyncJournalModule : Module() {
         executeInsert()
       }
       pruneBeyondCapacity(db)
+      Log.i(LOG_TAG, "appended cycle=$cycleId from=$fromState to=$toState reason=$reason")
       true
     } catch (error: Throwable) {
+      Log.w(LOG_TAG, "append failed for cycle=$cycleId", error)
       false
     }
   }
