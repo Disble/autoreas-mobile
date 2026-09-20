@@ -124,6 +124,25 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
     },
   });
 
+  /**
+   * Starts the foreground sync ticker and runner exactly once. Both start sites (the JS flow
+   * that starts the service in register(), and the Notifee cold-start callback) share this
+   * single definition of what starting means; the isRunning guards make a second call a no-op.
+   * Returns the runner start promise when this call started the runner, or null when the
+   * runner was already running.
+   */
+  function startForegroundSyncWork(): Promise<void> | null {
+    if (!foregroundSyncTicker.isRunning()) {
+      foregroundSyncTicker.start(FOREGROUND_SYNC_INTERVAL_MS);
+    }
+
+    if (foregroundSyncRunner.isRunning()) {
+      return null;
+    }
+
+    return foregroundSyncRunner.start();
+  }
+
   async function getAndroidPermissionState() {
     const result = await notifee.requestPermission();
 
@@ -161,9 +180,12 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
 
       notifee.registerForegroundService(() => {
         isForegroundServiceRunning = true;
-        foregroundSyncTicker.start(FOREGROUND_SYNC_INTERVAL_MS);
 
-        return foregroundSyncRunner.start();
+        // Cold start: when Notifee boots the service without a live JS caller, this callback is
+        // the only start site and its runner start promise keeps the service alive. When the
+        // runner was already started below by register(), return a never-resolving promise so
+        // Notifee keeps the service alive instead of starting the runner a second time.
+        return startForegroundSyncWork() ?? new Promise<void>(() => {});
       });
 
       await notifee.createChannel({
@@ -197,7 +219,17 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         },
       });
 
+      // Evidence (tablet): the callback above never ran in this build, leaving the foreground
+      // service alive with a silent ticker -- no ForegroundSyncTicker:ticking wake lock in
+      // `dumpsys power`, no journal rows, `last_attempt_at` frozen. The service is actually
+      // started by the displayNotification call above, so the ticker and the runner are started
+      // here, from the JS flow that starts the service; the callback stays for the cold-start
+      // case where Notifee boots the service without a live JS caller.
       isForegroundServiceRunning = true;
+      startForegroundSyncWork()?.catch(() => {
+        // The runner already surfaced the failure through onCycleError (and closed the runtime);
+        // this fire-and-forget start must not become an unhandled rejection inside register().
+      });
     },
 
     async unregister() {

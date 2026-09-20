@@ -5,6 +5,7 @@ import notifee, {
 import { Platform } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { createNotifeeForegroundServiceAdapter } from '../../../src/features/sync/notifee-foreground-service-adapter';
+import { FOREGROUND_SYNC_INTERVAL_MS } from '../../../src/features/sync/notifee-foreground-service-adapter/notifee-foreground-service-adapter.constants';
 import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
 import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
@@ -202,19 +203,24 @@ describe('notifee-foreground-service-adapter', () => {
 
     expect(notifee.registerForegroundService).toHaveBeenCalledTimes(1);
     expect(notifee.onBackgroundEvent).toHaveBeenCalledTimes(1);
-    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockTickerStart).toHaveBeenCalledWith(FOREGROUND_SYNC_INTERVAL_MS);
     expect(notifee.createChannel).toHaveBeenCalledWith({
       id: 'autoreas-sync-foreground',
       name: 'Sync continuo',
     });
     expect(notifee.displayNotification).toHaveBeenCalled();
 
+    // Simulate the real post-start state: a warm cold-start callback must not re-start anything.
+    mockIsRunning.mockReturnValue(true);
+    mockTickerIsRunning.mockReturnValue(true);
+
     const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
 
-    await foregroundServiceTask();
+    void foregroundServiceTask();
 
     expect(mockStart).toHaveBeenCalledTimes(1);
-    expect(mockTickerStart).toHaveBeenCalledWith(15_000);
+    expect(mockTickerStart).toHaveBeenCalledTimes(1);
     expect(sqliteSyncRuntimeModule.createSyncSQLiteRuntime).toHaveBeenCalledWith({
       owner: 'foreground_service',
     });
@@ -384,15 +390,13 @@ describe('notifee-foreground-service-adapter', () => {
       new Error('terminal'),
     );
 
+    // register() itself now starts the runner, so the terminal failure surfaces during
+    // register(); the runner's start promise rejects after closing the runtime. The rejection
+    // lands on a later microtask than register() resolving, so flush the queue before asserting.
     const adapter = createNotifeeForegroundServiceAdapter();
 
     await adapter.register();
-
-    const foregroundServiceTask = (notifee.registerForegroundService as jest.Mock).mock.calls[0]?.[0];
-
-    await foregroundServiceTask().catch(() => {
-      // The implementation rethrows the cycle error after closing the runtime.
-    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
   });
@@ -448,6 +452,28 @@ describe('notifee-foreground-service-adapter', () => {
     expect(mockTickerStop).toHaveBeenCalledTimes(1);
     expect(notifee.stopForegroundService).toHaveBeenCalledTimes(1);
     expect(mockRuntimeClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start the ticker or runner twice when register() runs a second time', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValue({
+      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+    });
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockTickerStart).toHaveBeenCalledWith(FOREGROUND_SYNC_INTERVAL_MS);
+
+    // Simulate that the first start took effect in the runner and the ticker.
+    mockIsRunning.mockReturnValue(true);
+    mockTickerIsRunning.mockReturnValue(true);
+    await adapter.register();
+
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockTickerStart).toHaveBeenCalledTimes(1);
   });
 
   it('does not mark the service as running when notification permission is denied', async () => {
