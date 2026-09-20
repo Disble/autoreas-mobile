@@ -9,6 +9,7 @@ import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sy
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
 import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
 import * as syncRuntimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
+import type { NativeSyncEngine } from '../../../src/features/sync/native-sync-engine/native-sync-engine.types';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 import { SchemaNotReadyError } from '../../../src/infrastructure/db/startup';
 
@@ -87,6 +88,26 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn(),
 }));
 
+/** Module path of the native sync engine helpers, shared by jest.mock and the stub loader. */
+const NATIVE_ENGINE_HELPERS = '../../../src/features/sync/native-sync-engine/native-sync-engine.helpers';
+
+jest.mock(NATIVE_ENGINE_HELPERS, () => ({ createNativeSyncEngine: jest.fn() }));
+
+/** The closed-vocabulary result a successful engine run reports; unavailable overrides it. */
+const ENGINE_CLOSED_RESULT = { outcome: 'closed', cycleId: 'cycle-1', syncedCount: 2, backlogReadCount: 0, stage: 'closed', errorName: null };
+
+/** Points the mocked createNativeSyncEngine at a stub engine; returns the stub for assertions. */
+function stubEngine(engine: Partial<NativeSyncEngine> = {}): NativeSyncEngine {
+  const stub = {
+    runOnce: jest.fn().mockResolvedValue(ENGINE_CLOSED_RESULT),
+    isAvailable: () => true,
+    ...engine,
+  } as NativeSyncEngine;
+  (jest.requireMock(NATIVE_ENGINE_HELPERS) as { createNativeSyncEngine: jest.Mock })
+    .createNativeSyncEngine.mockReturnValue(stub);
+  return stub;
+}
+
 describe('notifee-foreground-service-adapter', () => {
   const platformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
   const rawDb = { id: 'raw-db' } as unknown as SQLiteDatabase;
@@ -106,6 +127,8 @@ describe('notifee-foreground-service-adapter', () => {
     jest.clearAllMocks();
     capturedRunCycle = null;
     capturedOnCycleError = null;
+    // Default the native engine to unavailable so pre-existing cases exercise the JS cycle path.
+    stubEngine({ isAvailable: () => false, runOnce: jest.fn() });
     mockRuntimeClose.mockResolvedValue(undefined);
     mockTickerOnTick.mockReturnValue(jest.fn());
     mockTickerIsRunning.mockReturnValue(false);

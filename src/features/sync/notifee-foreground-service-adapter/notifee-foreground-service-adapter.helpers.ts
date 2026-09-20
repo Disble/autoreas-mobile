@@ -8,6 +8,7 @@ import { FOREGROUND_SYNC_INTERVAL_MS, NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID } from 
 import { createForegroundSyncRunner } from '../foreground-sync-runner.helpers';
 import { createNativeForegroundSyncTicker } from '../native-foreground-sync-ticker.helpers';
 import { createSyncSQLiteRuntime } from '../sqlite-sync-runtime.helpers';
+import { createNativeSyncEngine } from '../native-sync-engine/native-sync-engine.helpers';
 import { withExclusiveSyncCycle } from '../sync-cycle-lock.helpers';
 import { recordSyncAttemptFailed } from '../sync-runtime-status.helpers';
 import type { NotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter.types';
@@ -78,6 +79,22 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
     ticker: foregroundSyncTicker,
     onCycleError: recordForegroundCycleError,
     runCycle: async () => {
+      // The native engine is tried first because it removes the JS timer (runtime open, lock,
+      // JS cycle) from the attempt entirely: the engine owns its own connection and takes the
+      // cycle lease itself, so when it answers with any outcome other than `unavailable` this
+      // tick returns without touching the JS path. The JS cycle below stays fully intact as the
+      // fallback for a missing native module (or an `unavailable` outcome from an engine that
+      // reported available), mirroring the engine-first routing in `runBackgroundSyncCycle`.
+      const engine = createNativeSyncEngine();
+
+      if (engine.isAvailable()) {
+        const engineResult = await engine.runOnce('foreground_service');
+
+        if (engineResult.outcome !== 'unavailable') {
+          return;
+        }
+      }
+
       if (!serviceRuntime) {
         serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
       }
