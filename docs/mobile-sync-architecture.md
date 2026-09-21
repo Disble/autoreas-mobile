@@ -2,6 +2,9 @@
 
 **Status:** Proposal (design only — no production code changed by this document). **Four architecture
 decisions were taken on 2026-09-20 (§7)**, and the migration plan in §8 is re-sliced for them.
+**Superseded in part 2026-09-21:** parts of the design are now implemented and verified on device
+(§5.1, §9.1); §3 describes the pre-change build, and this document is no longer design-only for the
+verified behaviours.
 **Date:** 2026-09-20.
 **Owner:** team-mobile.
 **Scope:** synchronization between `autoreas-mobile` and `autoreas-bridge`. Nothing else.
@@ -239,6 +242,26 @@ A re-architecture that discards these would be paying twice for work that is alr
 | **The lease shape** of `sync_cycle_lock` | Correct primitive, wrong location (§4.4) |
 | `BridgeClient` as the only transport owner | Boundary discipline already enforced |
 
+### 5.1 What is verified on device (2026-09-21)
+
+Measured on the lab build carrying `671d38b` and `6b10bcd`, tablet SM-X800 on Android 16. One line per
+behaviour, with the commit that carries the change and the instrument that measured it:
+
+| Verified behaviour | Commit | Instrument |
+|---|---|---|
+| **Background delivery without opening the app.** The app had been backgrounded since 08:03:20, the bridge came up at 08:06:44, and at 08:17:59 the engine closed a full cycle in 296 ms delivering three real pending operations. Journal: `idle→checked→claimed→sent→applied→closed`, with an earlier abandoned attempt reclaimed first (`sent→abandoned (recovered by later attempt …)`). `operation_log` reached `synced=22` with nothing unsynced; the cursor advanced 2359 → 2362 on both the device and the bridge. | `671d38b` / `6b10bcd` | bridge capture + journal + `operation_log` |
+| **Both background triggers work.** The delivery above came from `triggerSource='background_task'` (WorkManager); a second measurement at 09:41:37 delivered a fresh pending operation from `triggerSource='foreground_service'` (the tick of the notification's foreground service), with the bridge capturing the push at 14:41:20 and the cursor advancing 2362 → 2365. | `671d38b` / `6b10bcd` | bridge capture + journal |
+| **The empty-outbox pull works.** The bridge captured a `POST /api/sync/reconcile` with `{"last_changelog_id":2362,"pending_operations":[]}` answered 202 — a pull-only attempt. | `2b70829` | bridge capture |
+| **The presence gate works.** With the bridge absent, no cycle ran at all across a 2.5-minute window while the foreground service and its tick alarm were verifiably alive (the alarm was scheduled; the service reported `isForeground=true`); the pre-change build would have produced roughly 15 failed attempts in that window. The probe itself was observed answering: `GET /api/status` returned HTTP 200 to the app's okhttp client. | — | service/alarm dump + bridge + okhttp observation |
+| **The attempt budget is wall-clock.** The watchdog budget is an absolute deadline on `SystemClock.elapsedRealtime`, and an attempt that cannot be armed is refused with an `abandoned` journal row rather than running unbounded. | `739fa8a` | journal |
+| **The ticker wake lock is scoped to the cycle.** Sampled every 20 s for 100 s while idle, `ForegroundSyncTicker:ticking` was never held; the previous design held a `PARTIAL_WAKE_LOCK` for the whole ticking lifetime (which the system tagged `LONG`). | — | wake-lock sampling |
+| **The acceptance instrument reports 11/11 PASS** with 0 execution-guard burns and the stand-by bucket at `10 EXEMPTED`. | — | acceptance instrument |
+
+Not verified on the same date, recorded plainly in §9.1: `consecutive_unclosed_cycles` does not stay 0,
+the exact cost of a refused attempt was not measured, the 24 h metrics were not measured, a
+watchdog-triggered abandon has not been observed, and the lease-expiry half of the recovery sweep has
+not been observed.
+
 ---
 
 ## 6. Target architecture
@@ -351,6 +374,11 @@ recovers it from durable state rather than from an in-memory promise.
 - **Presence is a persisted fact, not a foreground-only store.** The background must be able to read it;
   today the status line exists only inside the React tree `(source)`, which is why the background
   "asks" by doing the work.
+
+  **Superseded in part by measurement, 2026-09-21:** the implemented gate probes the bridge directly —
+  `GET /api/status` was observed answering HTTP 200 to the app's okhttp client (§5.1). The attempt is no
+  longer the only probe; the original "the attempt is the probe / no separate health request" claim is
+  superseded by the measurement.
 - **Backoff is ours, because the platform offers none**: `expo-background-task` exposes only
   `minimumInterval` `(source)`. A persisted `next_attempt_at`, with jitter, plus the existing network
   callback for `network_regained`.
@@ -418,7 +446,9 @@ previous owner's writes.
 **S5 — Presence gate and attempt policy.**
 Persisted presence, short-circuit at the head of the chain, our own backoff with jitter (the platform
 exposes none). *Acceptance:* with the bridge absent, an attempt costs `< 2 s` and writes nothing, for any
-availability profile.
+availability profile. **Note 2026-09-21, from measurement:** the "writes nothing / no cycles" half is
+verified on device (§5.1); the exact sub-2-second cost was **not** measured — the measurement supersedes
+any assumption that the acceptance figure has been demonstrated.
 
 **S6 — The native engine, and the retirement of the JS background scaffolding.**
 The Kotlin engine takes over background delivery; `expo-background-task`, the native ticker and the JS
@@ -442,6 +472,30 @@ foreground path is unchanged.
 A `SUCCESS` reported by a suppressed job is **not** evidence that sync ran; the primary metrics must be
 read from the outbox and the journal.
 
+### 9.1 As measured on device — 2026-09-21
+
+(Build carrying `671d38b` and `6b10bcd`; tablet SM-X800 on Android 16; measurements detailed in §5.1.)
+Verdict per metric above. The 24 h readings were **not** taken.
+
+| Metric | Verdict on 2026-09-21 |
+|---|---|
+| Catch-up after a night with the bridge off | **Holds.** Three pending operations delivered at 08:17:59 (296 ms) by the background task without the app being opened, and a fresh operation at 09:41:37 by the foreground-service tick; `operation_log` `synced=22` with nothing unsynced; cursor 2359 → 2362 → 2365. |
+| `consecutive_unclosed_cycles` = 0 | **Does not hold.** With the bridge unreachable, every failed cycle of the JS path leaves `is_cycle_active=1` and increments the counter (observed 0 → 1 → 2). The increment is in the JS cycle path, not the native engine, whose attempts always end in a terminal state. The 24 h measurement was not taken, and the threshold cannot hold while this is true. |
+| Terminal outcome per attempt | **Partially verified.** The observed journal is `idle→checked→claimed→sent→applied→closed`; the one `abandoned` row observed came from the recovery sweep. A watchdog-triggered abandon has not been observed. |
+| JobScheduler `Client timed out …` stops in 24 h | **Not measured** over a day. At measurement time the acceptance instrument reports 0 execution-guard burns. |
+| Stand-by bucket | **Holds at measurement time**: `10 EXEMPTED`. The 24 h reading was not taken. |
+| Background job time per day | **Not measured.** |
+| `sync_cycle_lock` staleness | **Not directly measured.** Closest evidence: the recovery sweep reclaimed the observed abandoned attempt. |
+
+Also recorded plainly, from the same session:
+
+- **The exact cost of a refused attempt was not measured.** The claim under test is "with the bridge
+  absent, an attempt costs < 2 s and writes nothing"; the "writes nothing / no cycles" half is verified
+  (presence gate, §5.1), the exact sub-2-second cost is not.
+- **The lease-expiry half of the recovery sweep was not observed.**
+- `consecutive_unclosed_cycles` is the one primary metric that **fails on measurement**, and the defect
+  is in the JS cycle path; the native engine's attempts always end in a terminal state.
+
 ---
 
 ## 10. Open questions
@@ -459,6 +513,7 @@ decisions opened.
 | **Does the foreground path share the park?** | Decides how much of §4.1 is theoretical, and it is the first thing to check because it is free | Open the app during a parked attempt and try a user write; check the UI write's latency |
 | **How much wire-schema semantics must the Kotlin engine reproduce?** (new) | The engine maps the reconcile response and stages it; the TS schema and mapper are the source of truth today, and two implementations of one contract drift | Diff the ported mapper against `ReconcileResponseSchema`/`mapWireAnimeToLegacyAnime` on the captured bodies the prior design already extracted, before the JS path is retired |
 | **Does staging keep the same guarantees in native hands?** (new, sharpened 2026-09-20) | **Staging itself is fine and stays the boundary; the coupling is the OCC token writes.** The staged/foreground-drain split for `bridge_changes` is what makes the port small, and it is unaffected. But the background path already writes `animes` through the token path today (`persistConfirmedAnimeTokens`/`applyAnimeBridgeToken`, one `bridge_modified_at` column update, sourced only from `applied_operations` — never `bridge_changes[].snapshot.modified_at`, which the bridge hardcodes to 0 — with `0` a real token, so presence, not truthiness, decides), and the engine must keep that write correct under its own lease | Assert on device that the engine's only `animes` write is the disjoint `bridge_modified_at` token update under the cycle lease, with `bridge_changes` still staged for the foreground drain |
+| **Does background sync survive a reboot?** (observed 2026-09-21; **resolved by maintainer decision — do not re-open**) | After a tablet reboot on 2026-09-21 the app had not started 4 minutes in: no process, no tick alarm, and zero registered jobs for the package. So a reboot leaves background sync stopped until the user opens the app. **The maintainer's decision is that this is out of scope**, on the grounds that many applications behave this way. It is consistent with the foreground service and its tick alarm both being started from the JS UI. | None — this row is closed by that decision. Re-open only if the maintainer revisits it. |
 
 ---
 
