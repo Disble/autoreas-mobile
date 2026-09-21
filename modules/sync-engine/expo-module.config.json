@@ -1,6 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modulesClassNames": ["expo.modules.syncengine.SyncEngineModule"]
+    "modules": ["expo.modules.syncengine.SyncEngineModule"]
   }
 }

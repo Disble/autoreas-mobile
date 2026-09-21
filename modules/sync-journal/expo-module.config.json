@@ -1,6 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modulesClassNames": ["expo.modules.syncjournal.SyncJournalModule"]
+    "modules": ["expo.modules.syncjournal.SyncJournalModule"]
   }
 }
