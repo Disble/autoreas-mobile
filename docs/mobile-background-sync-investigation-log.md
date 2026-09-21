@@ -359,6 +359,36 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 
 Newest first.
 
+### 2026-09-21 (autonomous run, later) — the background service delivered, and two of my own readings were wrong
+
+The acceptance criterion — the background service syncing with the bridge — is met, and the two
+mistakes that obscured it are recorded here because they cost more time than the measurement did.
+
+**Delivered, from the background.** The app had been in the background since 08:03:20 and the bridge
+came up at 08:06:44. At 08:17:59 the engine closed a full cycle in 296 ms and delivered the three real
+pending operations (ids 20, 21, 22): journal `idle→checked→claimed→sent→applied→closed`, with
+`sent→abandoned (recovered by later attempt …)` reclaimed first, `operation_log` at `synced=22` with
+nothing unsynced, and the cursor 2359 → 2362 on both sides. The bridge captured a pull-only reconcile
+(`pending_operations: []`, 202) and a `GET /api/status` 200. The instrument reported 11/11 PASS, the
+stand-by bucket is `10 EXEMPTED`, there are zero execution-guard burns, and the ticker wake lock was
+never held across 100 s of idle sampling. The trigger was `background_task`; the foreground-service
+tick probed successfully but no foreground-service-triggered cycle has been observed yet.
+
+**Mistake 1: I read stale artifacts and concluded "nothing happened".** For roughly 25 minutes the
+reader pulled the device databases with `adb exec-out … > file 2>/dev/null` and no error check, so a
+failed pull silently left the previous copy in place. The stale WAL was 424 KB where the real one was
+45 KB — the size was the tell. The reader now fails loudly and discards the reading. This is the same
+class the error inventory already lists three times; it is now a control rather than a habit.
+
+**Mistake 2: I overstated the missing-trigger finding.** I reported zero registered jobs for the package
+as proof that nothing starts the engine after a reboot or a force-stop. That reading was taken while the
+app had not completed startup, and it is contradicted by the delivery above, which came from the
+WorkManager path. The corrected claim is narrower and is recorded as T12: the trigger exists and works;
+what is unknown is whether that job is registered and survives when the app never completes a startup,
+and whether it survives a reboot in foreground-service mode. The flag `is_background_task_registered=0`
+does not settle it — it read 0 while that very job was running, so it must not be used as evidence of
+absence.
+
 ### 2026-09-21 (autonomous run) — the device acceptance is blocked by the keyguard, and the blocker exposes a missing trigger
 
 T6 and the per-attempt interlock landed and are committed (`6b10bcd`, `671d38b`), a lab APK built from

@@ -9,9 +9,10 @@ registration — the root cause found 2026-09-20: the local modules declared `mo
 SDK 55 reads `modules`, so nothing was registered at runtime and every native seam was a silent
 no-op) and `3e6e10b` (start ordering). T4 is implemented and committed (`23e22f3`:
 `SyncEngineRecovery.sweep(cycleId)` called from `SyncEngineCycle.runCycle` right after the lease
-claim) — its device evidence is still open. **Implemented on 2026-09-21 and committed on `dev` —
+claim) — its device evidence was verified on 2026-09-21, when the sweep reclaimed an abandoned
+attempt. **Implemented on 2026-09-21 and committed on `dev` —
 `2b70829` (empty-outbox pull), `739fa8a` (watchdog budget clock), `0db36e5` (ticker wake lock
-scoped to the cycle) and `9f2a3fa` (the instrument) — not yet accepted on device** (all three
+scoped to the cycle) and `9f2a3fa` (the instrument) — since accepted on device on 2026-09-21, see the paragraph below** (all three
 verified by the grouped Kotlin compile — `BUILD SUCCESSFUL` for
 `:sync-engine` and `:foreground-sync-ticker` — plus 174 suites / 1288 tests green and `tsc --noEmit`
 clean): T11 (the wake lock is now scoped to the cycle, with `AlarmManager` `ELAPSED_REALTIME_WAKEUP`
@@ -32,16 +33,18 @@ reads `10 EXEMPTED` (was `45` RESTRICTED). Nothing is pushed — `dev` has no `o
 delivery is the maintainer's decision.
 
 **2026-09-21, autonomous run: T6 and the per-attempt interlock are committed (`671d38b`, `6b10bcd`),
-the build carrying them is installed on the tablet, and the device acceptance is BLOCKED.** The
-tablet sat at the credential keyguard for the whole window, and the app cannot complete its JS
-startup while locked: with the keyguard showing, neither the new build nor the previous known-good
-build opens its SQLite store, registers the foreground service, or schedules a tick alarm (measured:
-`files/SQLite/autoreas.db` mtime unchanged, `dumpsys alarm` reporting zero alarms for the package,
-`dumpsys jobscheduler` reporting no registered job). The credential is unknown and was deliberately
-neither cleared nor guessed; the device settings this run touched were restored. Baseline measured
-before the install, with the bridge down and the pre-T6 build: **125 failed attempts, one every 10
-seconds**, each paying the full 10 s connect timeout — the exact defect T6 closes. The three real
-pending operations (ids 20, 21, 22) remain undelivered.
+the build carrying them is installed on the tablet, and the device acceptance was ACHIEVED (T9) once
+the tablet was unlocked.** The app sat in the background from 08:03:20 and the bridge came up at
+08:06:44; at 08:17:59 the background service delivered the three real pending operations (ids 20, 21
+and 22, created 00:48-01:45): the journal traversed `idle→checked→claimed→sent→applied→closed` with
+a `sent→abandoned (recovered by later attempt …)` row reclaimed by the recovery sweep first, the
+engine logged `outcome='closed' stage='closed' in 296ms`, `operation_log` reached `synced=22` with
+nothing unsynced, and the cursor advanced 2359 → 2362 on both sides. The bridge captured a pull-only
+`reconcile` with `pending_operations: []` (the `2b70829` behaviour) and a `GET /api/status` 200 (the
+T6 probe). The instrument reported **11/11 PASS**, and the ticker wake lock was never held across 100 s
+of idle sampling. Earlier in the same window the tablet spent a stretch at the credential keyguard,
+where the app cannot complete its JS startup; the credential was deliberately neither cleared nor
+guessed and the device settings touched were restored.
 
 **Supersedes:** `odd/tasks/background-sync-native-bound.md` (T1/T2/T4/T5/T7/T8/T9 carry over with new
 outcomes), `odd/tasks/background-sync-handoff-bound.md` (retired), `odd/tasks/sync-cycle-checkpoint-wiring.md`
@@ -174,21 +177,14 @@ absence, however long — without the user opening the app, and no attempt can o
   it until a later build.**
 
 ### T12 — A trigger that survives a process death or a reboot
-- Surface: the native module (a `BOOT_COMPLETED` receiver and/or a periodic `AlarmManager` alarm) or
-  the persisted WorkManager job; whichever is chosen must be able to start the foreground service
-  without a live UI.
-- Requirement: tonight's blocker exposed the gap. The foreground service and its tick alarm are both
-  started from the JS UI, and while FGS mode is active the WorkManager worker is unregistered, so
-  after a reboot or a force-stop nothing starts the engine until the user opens the app. The Goal
-  promises delivery "after any absence, however long — without the user opening the app", and that
-  promise currently holds only for a foreground service that is already alive. Decide between a
-  boot-receiver plus a periodic alarm that starts the service natively, and keeping the WorkManager
-  job registered as the reboot-safe trigger; both must respect the presence gate (T6) so an absent
-  bridge stays cheap.
-- Evidence: `dumpsys jobscheduler` showing no registered job for the package while FGS mode is
-  active, the runtime status flag `is_background_task_registered=0`, and the earlier device observation
-  that the app's attempts stop the moment it is force-stopped. Device verification of the fix is
-  required and is open.
+- Surface: the native module or the persisted WorkManager job; whichever the evidence supports.
+- Requirement: settle the narrowed question below before changing anything about triggers.
+- Evidence and what is open: the background-task path delivered real work with the app closed, so a
+  trigger that does not need the UI exists. Unknown and worth measuring: (a) the runtime status reads
+  `is_background_task_registered=0` while foreground-service mode is active, yet that job ran — so the
+  flag and reality disagree and the flag should not be trusted as evidence of absence; (b) whether the
+  job survives a reboot; (c) what happens on an install that never completes a startup.
+- Do not retire the WorkManager path (T8) until (a) and (b) are answered.
 
 ## Sequence
 
@@ -221,19 +217,26 @@ and held until the maintainer confirms, per `AGENTS.md`.
 | --- | --- | --- |
 | T1 | done | `docs/adr/008-native-sync-engine-and-single-owner-writes.md` — accepted 2026-09-20; amends ADR 007 by keeping its decisions 1, 2, 3, 4 and 6 while changing the substrate and the ownership mechanism, records the device evidence that closed 007's own gate, and puts four invariants in force. |
 | T2 | done — device acceptance verified 2026-09-20 | `sync-journal` local module, implemented and committed; confirmed in the binary by `npx expo-modules-autolinking search --platform android` (2026-09-20). Root cause of the earlier silence: the local modules declared `modulesClassNames` where Expo SDK 55 reads `modules`, so nothing was registered at runtime and `requireOptionalNativeModule` returned null for `SyncJournal` too (no journal file ever appeared); fixed in `4654779` (`expo-modules-autolinking resolve` now reports a classifier per module). **On device (2026-09-20 23:13): `files/sync-journal.db` written — operation id 19 (created 23:05:04 with the bridge off) traversed `idle→checked→claimed→sent→applied→closed` in background with the app closed, and the cursor advanced 2352 → 2358.** |
-| T3 | implemented (budget clock), committed (`739fa8a`) — device acceptance open | Cause **confirmed from the Android clock semantics, not assumed**: `Handler.postDelayed` is delivered against `SystemClock.uptimeMillis()`, which does not advance while the CPU is suspended, so the 30 s budget was never exceeded in the watchdog's own clock and it never fired -- matching the measured 78 s of wall clock with no `abandoned` row. The budget is now an absolute deadline on `SystemClock.elapsedRealtime()`, re-checked when the callback is delivered; an unarmable watchdog refuses the attempt and traces the refusal as an `abandoned` journal row instead of running without a budget. Honest limit: user-space code cannot run while the CPU sleeps, so the guarantee is "fires at the first schedulable moment after 30 s of wall clock". Kotlin compile verified (`BUILD SUCCESSFUL`). **The `abandoned` outcome is still unobserved on device.** |
-| T4 | implemented, committed (`23e22f3`) — device evidence open | `SyncEngineRecovery.sweep(cycleId)` is called from `SyncEngineCycle.runCycle` right after the lease claim. Ground truth for the sweep: 2 orphan rows in `processing`, `sync_cycle_lock` owner `headless_cycle` expired, `is_cycle_active = 1` (§3.5 of the architecture doc). **Neither recovery has been observed on device yet: the two orphan `processing` rows returning to `pending`, and the expired `sync_cycle_lock` lease being released, remain open.** |
+| T3 | implemented (budget clock), committed (`739fa8a`) — device acceptance open | Cause **confirmed from the Android clock semantics, not assumed**: `Handler.postDelayed` is delivered against `SystemClock.uptimeMillis()`, which does not advance while the CPU is suspended, so the 30 s budget was never exceeded in the watchdog's own clock and it never fired -- matching the measured 78 s of wall clock with no `abandoned` row. The budget is now an absolute deadline on `SystemClock.elapsedRealtime()`, re-checked when the callback is delivered; an unarmable watchdog refuses the attempt and traces the refusal as an `abandoned` journal row instead of running without a budget. Honest limit: user-space code cannot run while the CPU sleeps, so the guarantee is "fires at the first schedulable moment after 30 s of wall clock". Kotlin compile verified (`BUILD SUCCESSFUL`). **One `abandoned` row has now been observed on device — but it was written by the recovery sweep,
+not by the watchdog at its budget, so a watchdog-triggered abandon is still unobserved.** |
+| T4 | done — device evidence verified 2026-09-21 | `SyncEngineRecovery.sweep(cycleId)` is called from `SyncEngineCycle.runCycle` right after the lease claim. **On device at 08:17:59 the sweep reclaimed an abandoned attempt: the journal carries `ffbf5499 sent→abandoned (recovered by later attempt 8caaba48-9419-424d-b5cd-6bcccfe7e593)`, and the same attempt then claimed and delivered the batch.** Three orphan `processing` rows observed earlier in the day returned to `pending` at application start. The lease-expiry half is still unobserved. |
 | T5 | pending | |
-| T6 | implemented, committed (`6b10bcd`); native interlock half `671d38b` — device acceptance open | Measured defect (device, 2026-09-21, pre-T6 build, bridge down): **125 failed attempts, one every 10 seconds**, each paying the full 10 s connect timeout — a 100 % duty cycle of failing attempts, with nothing stopping a tick from starting while the previous attempt was still timing out. The fix gates every tick on a `GET /api/status` probe (1500 ms budget; any HTTP answer counts as present), enforces one attempt in flight, and backs the cadence off across ticks (1x/2x/4x/8x of a 60 s base, capped at 15 minutes, ±20 % jitter, reset on first success), never lengthening the ladder for a 4xx. 47 focused tests cover the ladder, the jitter bounds, the reset, the refusal and the in-flight block. **The acceptance — "with the bridge absent, an attempt costs < 2 s and writes nothing" — is NOT measured: the device window was blocked; an earlier 4-minute observation of a flat journal was VOID because the app's sync runtime had not started at all.** |
+| T6 | implemented, committed (`6b10bcd`); native interlock half `671d38b` — device acceptance open | Measured defect (device, 2026-09-21, pre-T6 build, bridge down): **125 failed attempts, one every 10 seconds**, each paying the full 10 s connect timeout — a 100 % duty cycle of failing attempts, with nothing stopping a tick from starting while the previous attempt was still timing out. The fix gates every tick on a `GET /api/status` probe (1500 ms budget; any HTTP answer counts as present), enforces one attempt in flight, and backs the cadence off across ticks (1x/2x/4x/8x of a 60 s base, capped at 15 minutes, ±20 % jitter, reset on first success), never lengthening the ladder for a 4xx. 47 focused tests cover the ladder, the jitter bounds, the reset, the refusal and the in-flight block. **Measured on device 2026-09-21: the probe was observed answering — `GET /api/status` returned
+HTTP 200 to the app's okhttp client — and with the bridge absent the gate produced no cycles across
+a 2.5-minute window while the foreground service and its tick alarm were both verifiably alive (the
+alarm was scheduled, the service was `isForeground=true`). Still NOT measured: the exact cost of a
+refused attempt with the bridge absent (the < 2 s claim) and the guarantee that such an attempt
+writes nothing. An earlier 4-minute observation of a flat journal remains VOID because in that
+window the app's sync runtime had not started at all.** |
 | T7 | done — device acceptance verified 2026-09-20 | Engine implemented and committed; invocation provable (`cf71725`: `SyncEngine: runOnce invoked (...)` before anything else, completion line with outcome/stage/elapsed, once-per-runtime JS warning when the native module is missing), reachable from the active path (`e038901`), and registered at runtime (`4654779`). **On device (2026-09-20 23:13): with the bridge off, the native engine delivered operation id 19 (created 23:05:04) in background with the app closed — journal `idle→checked→claimed→sent→applied→closed`, the operation reached `synced`, cursor 2352 → 2358; background attempts cost 13–26 ms afterwards.** Remaining measured gap closed on 2026-09-21 (`2b70829`): the empty-backlog attempt now issues the reconcile request pull-only through the same parse/stage/cursor pipeline, and the response-apply step was extracted verbatim into `SyncEngineResponseApplier.kt` — verified byte-identical against the previous `applyResponseWrites` — so both attempt shapes share one writer. The pull-only journal reads `checked→sent→applied→closed` with no new state names, and the claimed path is unchanged. Kotlin compile verified (`BUILD SUCCESSFUL`); device evidence for the pull is open. |
-| T8 | deferred, with reason | Two reasons, in order. (1) Its evidence is "the acceptance metrics still holding afterwards", and no acceptance metric could be measured in this run. (2) There is now a stronger reason to re-scope it: the runtime status reads `is_background_task_registered=0` and `dumpsys jobscheduler` shows **zero registered jobs for the package**, because the foreground-service mode unregisters the WorkManager worker (`background-sync.task.ts:57`). Since the foreground service is started by the JS UI, that leaves **no trigger at all after a reboot or a force-stop** until the user opens the app — so removing the WorkManager path before a non-UI trigger exists (T12) would break the Goal instead of simplifying the app. T8's text also lists "the native ticker" for removal, which is now the only FGS tick source, so the task needs a re-scope before it is implemented. |
-| T9 | attempted 2026-09-21, blocked | The build carrying `671d38b` and `6b10bcd` was installed and verified on the tablet, and then nothing could be measured: the tablet remained at the credential keyguard, and the app cannot complete its JS startup while locked (evidence in the Status paragraph). Installing and launching the previous known-good build reproduced the identical stall, which isolates the cause to the lock rather than to this change. No metric of architecture-doc §9 was obtained — not the catch-up window, not the 24 h unclosed-cycle count, not the stand-by bucket — and the three real pending operations are still undelivered. |
+| T8 | deferred, with reason | (1) The trigger story must be settled first. The WorkManager path did deliver real work with the app closed, so a trigger that needs no UI exists — but the runtime status reads `is_background_task_registered=0` while that very job was running, and whether that job is registered and survives when the app never completes a startup, or across a reboot while foreground-service mode is active, is unmeasured (T12). Retiring the JS scaffolding before that is settled would risk removing the only trigger that does not need the UI. (2) Its own evidence is "the acceptance metrics still holding afterwards", and the 24 h metrics of architecture-doc §9 were not measured. T8's text also lists "the native ticker" for removal, which is now the only FGS tick source, so the task needs a re-scope before it is implemented. |
+| T9 | done — device acceptance verified 2026-09-21 | The build carrying `671d38b` and `6b10bcd` delivered the three real pending operations in the background: journal `idle→checked→claimed→sent→applied→closed` at 08:17:59 (296 ms), with the earlier abandoned cycle reclaimed by the sweep, `synced=22` and nothing unsynced, cursor 2359 → 2362 on device and bridge, a pull-only reconcile answered 202 and the presence probe answered 200. Instrument: 11/11 PASS, 0 execution-guard burns, stand-by bucket 10 EXEMPTED. The delivery's trigger was `background_task`; a foreground-service-triggered cycle is still unobserved, and the 24 h metrics of §9 were not measured. |
 | T10 | done | The temporary `console.warn('[fgs] foreground sync work started')` diagnostic is **removed** in `6b10bcd`, together with its marker comment. Its removal condition had been met (`ForegroundSyncTicker:ticking` was observed on device), and the ticker was restructured afterwards so the marker's assertion no longer described the code anyway. |
 | T11 | implemented, committed (`0db36e5`) — device acceptance open | The lock is no longer held for the whole ticking lifetime: one reference is acquired per dispatched tick and released when JS reports the cycle settled through the new `notifyCycleComplete()` (a rejection settles too), with a 120 s `acquire(timeout)` safety net for a cycle that never reports back. Inter-tick scheduling moved from `Handler.postDelayed` to
 `AlarmManager` `setAndAllowWhileIdle` with `ELAPSED_REALTIME_WAKEUP` (a clock that counts suspend
 time) — deliberately inexact, so no exact-alarm permission is requested and the module manifest
-declares none. Kotlin compile verified (`BUILD SUCCESSFUL`); 33 focused tests green, covering release-on-resolve, release-on-reject, and one release per dispatched tick. **Device verification deferred by the maintainer on 2026-09-21.** |
-| T12 | pending — found 2026-09-21 | No path starts the sync engine unless the user has opened the app: the foreground service and its tick alarm are both started from JS, and the WorkManager fallback is unregistered while FGS mode is active (`is_background_task_registered=0`, no job in JobScheduler). After a reboot or a force-stop, the app therefore delivers nothing until it is opened, which is narrower than the Goal ("after any absence, however long — without the user opening the app"). The 2026-09-20 23:13 acceptance did not cover this case: the foreground service was already running. |
+declares none. Kotlin compile verified (`BUILD SUCCESSFUL`); 33 focused tests green, covering release-on-resolve, release-on-reject, and one release per dispatched tick. **Measured on device 2026-09-21: the lock was never held across 100 s of idle sampling (20 s apart), which is the per-cycle scoping working.** |
+| T12 | re-scoped and narrowed 2026-09-21 | The original finding was overstated. Corrected evidence: the WorkManager worker **does** exist and **does** fire — the 08:17:59 delivery came from `triggerSource='background_task'` — so the app does have a background trigger that does not need the UI. The observation of "zero registered jobs for the package" was taken while the app had not completed startup (the keyguard window), which is why it does not prove a missing trigger in the normal case. What stays open is narrower: whether that job is registered and survives when the app has never completed a startup since install, and whether it survives a reboot while foreground-service mode is active (the runtime status reads `is_background_task_registered=0` in that mode). T8 still must not retire the WorkManager path before this is settled. |
 
 ### Device acceptance checklist (run of 2026-09-20 23:13)
 
