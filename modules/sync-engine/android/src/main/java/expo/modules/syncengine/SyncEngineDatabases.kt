@@ -21,6 +21,12 @@ const val ENGINE_LEASE_MS = 60_000L
  * Hard budget for one engine attempt. The watchdog fires at this point, writes the `abandoned`
  * journal row and resolves the pending promise itself — an unresolved promise is what burns the
  * platform's 600 s job budget, so this value MUST stay comfortably under that limit.
+ *
+ * The budget is measured in WALL-CLOCK time: the watchdog compares against
+ * `SystemClock.elapsedRealtime()` (counts time spent in deep sleep, unlike the
+ * `uptimeMillis()` clock `Handler.postDelayed` delivers on), so a device suspension cannot
+ * push the attempt past 30 s of wall clock without the watchdog firing at its next
+ * schedulable moment.
  */
 const val ENGINE_BUDGET_MS = 30_000L
 
