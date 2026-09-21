@@ -36,8 +36,6 @@ private const val BACKLOG_QUERY =
     " ORDER BY createdAt ASC, id ASC" +
     " LIMIT ?"
 
-private const val UNSUPPORTED_OPERATION_REASON = "unsupported_operation"
-
 /** One terminal attempt result the module maps onto the JS-facing result dictionary. */
 data class CycleOutcome(
   val outcome: String,
@@ -71,7 +69,10 @@ data class CycleOutcome(
  *   probe, not a user-facing failure);
  * - the conflict-exhaustion policy (attempt caps and the token re-base), the diagnostics flush
  *   (`POST /api/sync/diagnostics`) and the full `client_telemetry` envelope are DEFERRED, not
- *   silently skipped: conflicts fall back to the generic "reset to pending" retry.
+ *   silently skipped: conflicts fall back to the generic "reset to pending" retry;
+ * - the empty-backlog attempt still reconciles: with nothing to claim or send, the reconcile
+ *   request is still issued pull-only, exactly like the JS no-op attempt (the JS cycle's
+ *   `syncPendingOperations` always runs, so remote changes arrive without anything to push).
  *
  * Journal discipline (docs/mobile-sync-architecture.md 6.2/6.3): every transition row is
  * appended BEFORE the effect it names, so an attempt parked inside a native call reports the
@@ -82,6 +83,13 @@ class SyncEngineCycle(
   private val journal: SyncEngineJournal,
 ) {
   private val lease = SyncCycleLease(appDb)
+
+  /**
+   * Shared response-apply step: the claimed path and the pull-only empty path both stage the
+   * parsed response through it, so the two paths cannot drift.
+   */
+  private val responseApplier =
+    SyncEngineResponseApplier(appDb, this::updateOperationStatus)
   private var cycleId: String = ""
   private var lastState: String = "idle"
   private var claimedRows: List<BacklogRow> = emptyList()
@@ -153,10 +161,9 @@ class SyncEngineCycle(
     val backlogReadCount = backlog.size
 
     if (backlog.isEmpty()) {
-      // Nothing to claim or send; prune and close, mirroring the JS no-op attempt.
-      OperationLogPruner.pruneSafely(appDb)
-      transition("closed", null)
-      return outcome("closed", lastState, 0, backlogReadCount, null)
+      // Nothing to claim, but the attempt must still PULL: the JS no-op attempt always issues
+      // the reconcile request, so remote changes reach the device even with nothing to push.
+      return runPullOnlyAttempt(config, deviceId, ip, port, token, triggerSource, backlogReadCount)
     }
 
     // Intent before effect, THEN the claim in one transaction (step 5).
@@ -214,7 +221,86 @@ class SyncEngineCycle(
     transition("applied", null)
     val syncedCount = inImmediateTransaction(appDb) {
       ensureStagingTable()
-      applyResponseWrites(config.id, parsed, backlog, lastChangelogId)
+      responseApplier.apply(config.id, parsed, backlog, lastChangelogId)
+    }
+
+    // Prune failure must not fail the attempt (step 9).
+    OperationLogPruner.pruneSafely(appDb)
+
+    transition("closed", null)
+    return outcome("closed", lastState, syncedCount, backlogReadCount, null)
+  }
+
+  /**
+   * Runs the attempt to a terminal outcome for an EMPTY backlog: nothing to claim or send,
+   * but the reconcile request is still issued — the JS cycle's no-op attempt always runs
+   * `syncPendingOperations`, so pulled `bridge_changes` reach the device even when there is
+   * nothing to push. The request is the claimed path's shape with an empty
+   * `pending_operations` array, and the response is parsed and staged by the exact same
+   * pipeline (`ReconcileResponseParser` + [SyncEngineResponseApplier]).
+   *
+   * Journal sequence mirrors the claimed path minus `claimed` (no rows exist to claim):
+   * `sent` before the POST, `applied` before the one response-write transaction, `closed`
+   * after pruning — or `failed` with the claimed path's error taxonomy (`ReconcileHttpError`,
+   * `ReconcileParseException`, or the transport error's class name). No rows were ever
+   * claimed, so the failure paths skip the batch revert ([revertClaimedRows] no-ops on an
+   * empty batch anyway).
+   */
+  private fun runPullOnlyAttempt(
+    config: BridgeConfigRow,
+    deviceId: String,
+    ip: String,
+    port: String,
+    token: String,
+    triggerSource: String,
+    backlogReadCount: Int,
+  ): CycleOutcome {
+    val lastChangelogId = getLastChangelogId(config.lastChangelogId)
+    val requestBody = ReconcileRequestBody.build(
+      deviceId = deviceId,
+      lastChangelogId = lastChangelogId,
+      rows = emptyList(),
+      tokensByAnimeId = emptyMap(),
+      cycleId = cycleId,
+      triggerSource = triggerSource,
+    )
+
+    // Intent before effect, THEN the pull request (step 6; no claim step without rows).
+    transition("sent", null)
+    val response = try {
+      SyncEngineHttp.postJson(
+        url = "http://$ip:$port/api/sync/reconcile",
+        token = token,
+        body = requestBody.toString(),
+        timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
+      )
+    } catch (error: Throwable) {
+      // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
+      transition("failed", error.message ?: error.javaClass.simpleName)
+      return outcome("failed", lastState, 0, backlogReadCount, error.javaClass.simpleName)
+    }
+
+    if (response.code !in 200..299) {
+      // The bridge rejected this exchange; nothing was claimed, so nothing to revert.
+      transition("failed", "bridge responded ${response.code}")
+      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileHttpError")
+    }
+
+    val parsed = try {
+      ReconcileResponseParser.parse(response.body)
+    } catch (error: ReconcileParseException) {
+      // Parse failure is retryable, never dead-lettered (step 7).
+      transition("failed", error.message ?: "invalid reconcile response")
+      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
+    }
+
+    // Intent before effect, THEN every response write in ONE transaction (step 8): the staging
+    // inserts and the cursor advance run even with zero claimed rows; the confirmation and
+    // status passes no-op over the empty backlog.
+    transition("applied", null)
+    val syncedCount = inImmediateTransaction(appDb) {
+      ensureStagingTable()
+      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId)
     }
 
     // Prune failure must not fail the attempt (step 9).
@@ -356,93 +442,9 @@ class SyncEngineCycle(
   }
 
   /**
-   * Applies every write the response produced, all inside the ONE transaction the caller
-   * opened (step 8), in the exact order the JS `applyReconcileResponseWrites` uses: staging
-   * first (it may be what creates the row), then the token writes that depend on row
-   * existence, then the status updates, then the cursor advance.
-   *
-   * Token source is `applied_operations` ONLY — never `bridge_changes[].snapshot.modified_at`,
-   * which the bridge hardcodes to 0. PRESENCE, not truthiness: an absent key contributes
-   * nothing; `0` is a real token. When one anime appears more than once, the LAST entry wins.
+   * Bulk status update over `operation_log`. The response applier receives this as a bound
+   * reference, so the claimed path and the pull-only path share one writer implementation.
    */
-  private fun applyResponseWrites(
-    configId: Long,
-    parsed: ParsedReconcileResponse,
-    backlog: List<BacklogRow>,
-    lastChangelogId: Long,
-  ): Int {
-    val normalizedChanges = parsed.bridgeChanges.map { WireAnimeMapper.normalize(it) }
-    val createdAt = System.currentTimeMillis()
-    for (change in normalizedChanges) {
-      appDb.compileStatement(
-        "INSERT INTO pending_remote_changes " +
-          "(record_id, change_type, changed_fields, snapshot, timestamp, created_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?)",
-      ).apply {
-        bindString(1, change.recordId)
-        bindString(2, change.changeType)
-        bindString(3, change.changedFieldsJson)
-        if (change.snapshotJson != null) bindString(4, change.snapshotJson) else bindNull(4)
-        bindLong(5, change.timestamp)
-        bindLong(6, createdAt)
-        executeInsert()
-      }
-    }
-
-    val tokenByAnimeId = LinkedHashMap<String, Long>()
-    for (entry in parsed.appliedOperations) {
-      if (entry.applied && entry.modifiedAt != null) {
-        tokenByAnimeId[entry.animeId] = entry.modifiedAt
-      }
-    }
-    for ((animeId, bridgeModifiedAt) in tokenByAnimeId) {
-      appDb.compileStatement(
-        "UPDATE animes SET bridge_modified_at = ? WHERE _id = ?",
-      ).apply {
-        bindLong(1, bridgeModifiedAt)
-        bindString(2, animeId)
-        executeUpdateDelete()
-      }
-    }
-
-    val confirmedIds = ReconcileConfirmation.getConfirmedOperationIds(backlog, parsed)
-    val confirmedIdSet = confirmedIds.toSet()
-
-    // Conflict-exhaustion policy is DEFERRED: only `unsupported_operation` reaches
-    // `dead_letter`; every other unconfirmed operation resets to `pending`.
-    val deadLetterIds = mutableListOf<Long>()
-    val pendingIds = mutableListOf<Long>()
-    for (row in backlog) {
-      if (row.id in confirmedIdSet) continue
-      val rejected = parsed.appliedOperations.firstOrNull {
-        it.animeId == row.animeId && it.operation == row.operation && !it.applied
-      }
-      if (rejected?.reason == UNSUPPORTED_OPERATION_REASON) {
-        deadLetterIds.add(row.id)
-      } else {
-        pendingIds.add(row.id)
-      }
-    }
-
-    if (deadLetterIds.isNotEmpty()) updateOperationStatus(deadLetterIds, "dead_letter")
-    if (confirmedIds.isNotEmpty()) updateOperationStatus(confirmedIds, "synced")
-    if (pendingIds.isNotEmpty()) updateOperationStatus(pendingIds, "pending")
-
-    val nextLastChangelogId = parsed.lastChangelogId ?: lastChangelogId
-    if (nextLastChangelogId > lastChangelogId) {
-      appDb.compileStatement(
-        "UPDATE bridge_config SET last_changelog_id = ? WHERE id = ?",
-      ).apply {
-        bindLong(1, nextLastChangelogId)
-        bindLong(2, configId)
-        executeUpdateDelete()
-      }
-    }
-
-    return confirmedIds.size
-  }
-
-  /** One status bulk update; the caller owns the transaction. */
   private fun updateOperationStatus(ids: List<Long>, status: String) {
     val placeholders = ids.joinToString(", ") { "?" }
     appDb.compileStatement(
