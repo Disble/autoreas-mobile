@@ -1,6 +1,7 @@
 # ODD — mobile sync: native engine and single-owner writes
 
-**Status:** Open. Design decisions taken 2026-09-20; no slice implemented yet.
+**Status:** Open. Design decisions taken 2026-09-20. T1 done; T2 and T7 implemented and committed —
+device acceptance still open, because until 2026-09-20 no attempt reached the engine.
 **Supersedes:** `odd/tasks/background-sync-native-bound.md` (T1/T2/T4/T5/T7/T8/T9 carry over with new
 outcomes), `odd/tasks/background-sync-handoff-bound.md` (retired), `odd/tasks/sync-cycle-checkpoint-wiring.md`
 (closed by the first commit of this feature).
@@ -136,11 +137,28 @@ and held until the maintainer confirms, per `AGENTS.md`.
 | Task | Status | Evidence |
 | --- | --- | --- |
 | T1 | done | `docs/adr/008-native-sync-engine-and-single-owner-writes.md` — accepted 2026-09-20; amends ADR 007 by keeping its decisions 1, 2, 3, 4 and 6 while changing the substrate and the ownership mechanism, records the device evidence that closed 007's own gate, and puts four invariants in force. |
-| T2 | pending | |
+| T2 | implemented, committed — device acceptance open | `sync-journal` local module, implemented and committed; confirmed in the binary by `npx expo-modules-autolinking search --platform android` (2026-09-20). **Device acceptance still open: until 2026-09-20 no attempt reached the engine, so no journal row has ever been written on device.** |
 | T3 | pending | |
 | T4 | pending | Ground truth for the sweep: 2 orphan rows in `processing`, `sync_cycle_lock` owner `headless_cycle` expired, `is_cycle_active = 1` (§3.5 of the architecture doc). |
 | T5 | pending | |
 | T6 | pending | |
-| T7 | pending | Port bound verified in code, corrected 2026-09-20: in `staged` mode the background cycle applies no `bridge_changes` to `animes`, but its unconditional OCC token writes (`persistConfirmedAnimeTokens`/`applyAnimeBridgeToken`) DO write `animes.bridge_modified_at`. |
+| T7 | implemented, committed — device acceptance open | Engine implemented and committed; invocation now provable (`cf71725`: `SyncEngine: runOnce invoked (...)` before anything else, completion line with outcome/stage/elapsed, once-per-runtime JS warning when the native module is missing) and reachable from the active path (`e038901`: the tick tries the engine first under `execution_mode = android_foreground_service`). **Device acceptance still open: until 2026-09-20 no attempt reached the engine.** |
 | T8 | pending | |
 | T9 | pending | |
+
+### Device acceptance checklist (next run)
+
+Until 2026-09-20 no attempt reached the engine, so none of these has ever been observed on device.
+The next device run must show, each with its instrument:
+
+- [ ] Ticker wake lock present — `dumpsys power` shows `ForegroundSyncTicker:ticking` while the
+      service is up.
+- [ ] `SyncEngine: runOnce invoked (...)` in logcat.
+- [ ] `files/sync-journal.db` created with transition rows.
+- [ ] `last_attempt_at` fresh.
+- [ ] The attempt bounded to 30 s instead of dying at 600.
+
+Trigger constraints, one line each: the `expo-background-task` worker only executes its task with the
+app in the background (a foreground run is skipped by the library's own guard and reschedules in
+15 minutes); the service ticker runs with the app alive. Note also that a `production`-profile build
+is not debuggable, so the device run must use the `lab` profile for `run-as` reads of the journal.

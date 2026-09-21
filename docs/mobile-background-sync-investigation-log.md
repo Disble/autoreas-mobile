@@ -62,7 +62,7 @@ simply absent.
 
 ## Where we are now
 
-*Last updated: 2026-09-20.*
+*Last updated: 2026-09-20, second session — the trigger chain below.*
 
 **Symptom.** With the app closed, mobile does not sync with the bridge. Opening the app syncs
 correctly, over the WebSocket (the WS is foreground-only), which is why the defect is invisible
@@ -104,6 +104,40 @@ while the app is open. Reproduced on a Samsung Galaxy Tab S8 (SM-X800, Android 1
    ANR. One `reason=9 / subreason=7 (EXCESSIVE CPU USAGE)` kill, one `TOO MANY EMPTY PROCS`, one user
    REMOVE TASK, one install-time EXIT_SELF.
 
+**The trigger chain (device-measured 2026-09-20, second session; full entry in the log).** The
+mechanism above is not the whole reason nothing syncs — today's second session found three more
+links, each measured on the tablet (Samsung SM-X800, Android 15), not inferred:
+
+- **The sync ticker never started.** `ForegroundSyncTicker` and the foreground runner were started
+  only inside the callback passed to `notifee.registerForegroundService(...)`, and that callback does
+  not run in this build. Instrument: `dumpsys power` — no `ForegroundSyncTicker:ticking` wake lock
+  while the service is up, and hours with zero attempts (`last_attempt_at` frozen, `sync_cycle_lock`
+  empty, no journal file). The service itself is started by
+  `notifee.displayNotification({ ..., asForegroundService: true })` in the same `register()` method.
+  Fixed in `f48f93b`.
+- **The engine was unreachable from the active path.** The device runs
+  `execution_mode = android_foreground_service`, and in that mode `use-sync-runtime.ts` unregisters
+  the background task, so the engine's wiring in `background-sync.task.ts` was dead code on this
+  device. The tick now tries the engine first (`e038901`), and the engine now logs its invocation and
+  outcome (`cf71725`: invocation line before anything else, completion line with outcome/stage/elapsed,
+  plus a once-per-runtime JS warning when the native module is missing), so "ran and parked" and
+  "never invoked" are no longer indistinguishable.
+- **`expo-background-task` skips the task in the foreground and parks in the background.** Measured:
+  at 17:50:46 the worker ran and logged `runTasks: number of consumers 1` followed by
+  `runTasks: App is in the foreground`, executed nothing and rescheduled in 15 minutes. With the app
+  in the background and the process alive, at 18:05:46 the same worker logged
+  `executing tasks for consumer of type expo-background-task` — and then produced nothing: no
+  `Worker result`, no journal row, no runtime-status write six minutes later. The 600 s park class
+  reproduced in this path.
+
+Also verified the same day: `npx expo-modules-autolinking search --platform android` lists all three
+local modules (`sync-journal`, `foreground-sync-ticker`, `sync-engine`) — the engine is in the binary,
+so the open question was invocation, not packaging. And a release APK cannot be inspected: the first
+build was made with the `production` profile, which is not debuggable, so `adb shell run-as` fails and
+neither the journal nor the app database can be read; the `lab` profile plus the gated
+`withAndroidLabDebuggable` plugin (`edb4607`, `3d2eb29`) exists for that reason. Separately,
+`com.docker.service` being stopped blocks the local build entirely.
+
 **Where the cycle dies (instrument-verified).** The `sync_cycle_checkpoint` instrument — own file, own
 connection, outside the shared write door, `failed_checkpoint_count = 0` — reports **`claim_ops`, 261 ms
 into the cycle**. The stage held there across three samples 45 s apart (169 s / 204 s / 272 s) while the
@@ -119,15 +153,18 @@ shared door and only then calls the bridge. With the bridge off — exactly when
 animes are recorded — the app pays local work to answer a question the status line already answers for
 free.
 
-**Next steps, in order.** Tracked as ODD feature `background-sync-native-bound`
-(`odd/tasks/background-sync-native-bound.md`). `background-sync-handoff-bound` is superseded, and its
-patch route was retracted on 2026-09-19: the module is consumed as a prebuilt Maven publication, so a
-source patch never reaches the compiler.
+**Next steps, in order.** Tracked as ODD feature `mobile-sync-native-engine`
+(`odd/tasks/mobile-sync-native-engine.md`), which supersedes `background-sync-native-bound`.
+`background-sync-handoff-bound` is superseded, and its patch route was retracted on 2026-09-19: the
+module is consumed as a prebuilt Maven publication, so a source patch never reaches the compiler.
 
-1. **Explain why the app's own bounds are inert** (T5). Until this is answered, no architecture reused
-   from here is safe, including a native one.
-2. **Bound the attempt in our own worker** (T2), so one park cannot burn the platform's budget and the
-   app's stand-by bucket — the restriction in item 5 above.
+1. **Run the device acceptance checklist** (`odd/tasks/mobile-sync-native-engine.md`): with the
+   2026-09-20 fixes in place (`f48f93b`, `cf71725`, `e038901`), confirm the ticker wake lock, the
+   `SyncEngine: runOnce invoked (...)` logcat line, `files/sync-journal.db` created with transition
+   rows, a fresh `last_attempt_at`, and the attempt bounded to 30 s instead of dying at 600.
+2. **Explain why the app's own bounds are inert** (T5). Unchanged by today's findings — the 600 s
+   park class reproduced again at 18:05:46 in the `expo-background-task` path. Until this is answered,
+   no architecture reused from here is safe, including a native one.
 3. **Give the cycle the reachability gate** the foreground already has, so a closed bridge costs
    nothing instead of a local read, a claim and a door write.
 4. **Then decide T9/T7** — where the loop lives, and whether a resident service is warranted at all.
@@ -276,6 +313,44 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 ## Log
 
 Newest first.
+
+### 2026-09-20 — the trigger chain
+
+Second session of the day, after the nine-hour window further down. Device: Samsung SM-X800,
+Android 15, `com.disble.autoreasmobile`. Everything in this entry was **measured on the tablet
+today**; commit hashes are cited only where the finding produced a fix, never as a substitute for the
+measurement.
+
+- **Verified: the sync ticker never starts.** `ForegroundSyncTicker` and the foreground runner were
+  started ONLY inside the callback passed to `notifee.registerForegroundService(...)`, and that
+  callback does not run in this build. Instruments: `dumpsys power` shows no
+  `ForegroundSyncTicker:ticking` wake lock while the service is up, and hours pass with zero attempts
+  (`last_attempt_at` frozen, `sync_cycle_lock` empty, no journal file). The service itself is started
+  by `notifee.displayNotification({ ..., asForegroundService: true })` in the same `register()`
+  method. Fixed in `f48f93b`.
+- **Verified: `expo-background-task` skips the task when the app is in the foreground.** Measured:
+  at 17:50:46 the worker ran and logged `runTasks: number of consumers 1` followed by
+  `runTasks: App is in the foreground`, executed nothing and rescheduled in 15 minutes. With the app
+  in the background and the process alive, at 18:05:46 the same worker logged
+  `executing tasks for consumer of type expo-background-task` — and then produced nothing: no
+  `Worker result`, no journal row, no runtime-status write six minutes later. The 600 s park class
+  reproduced in this path.
+- **Verified: the engine's invocation was unprovable.** A successful engine attempt logged nothing,
+  so "ran and parked" and "never invoked" were indistinguishable. Fixed by `cf71725`: an invocation
+  line before anything else, a completion line with outcome/stage/elapsed, plus a once-per-runtime JS
+  warning when the native module is missing.
+- **Verified: the engine was unreachable from the active path.** The device runs
+  `execution_mode = android_foreground_service`, and in that mode `use-sync-runtime.ts` unregisters
+  the background task, so the engine's wiring in `background-sync.task.ts` was dead code on this
+  device. The tick now tries the engine first (`e038901`).
+- **Verified: a release APK cannot be inspected.** The first build was made with the `production`
+  profile, which is not debuggable, so `adb shell run-as` fails and neither the journal nor the app
+  database can be read. The `lab` profile plus the gated `withAndroidLabDebuggable` plugin
+  (`edb4607`, `3d2eb29`) exists for that reason. Separately, `com.docker.service` being stopped
+  blocks the local build entirely.
+- **Verified locally: the engine is in the binary.** `npx expo-modules-autolinking search --platform
+  android` lists all three local modules (`sync-journal`, `foreground-sync-ticker`, `sync-engine`),
+  so the open question was invocation, not packaging.
 
 ### 2026-09-19
 
