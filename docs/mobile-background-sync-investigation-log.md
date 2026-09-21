@@ -359,6 +359,47 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 
 Newest first.
 
+### 2026-09-21 (autonomous run) — the device acceptance is blocked by the keyguard, and the blocker exposes a missing trigger
+
+T6 and the per-attempt interlock landed and are committed (`6b10bcd`, `671d38b`), a lab APK built from
+that tree was installed on the tablet, and the acceptance window was then lost to the credential
+keyguard. This entry records the measurements that survive, the blocker, and the architectural gap the
+blocker exposed.
+
+**Measured before the install (device, bridge down, pre-T6 build): the storm.** The device's
+`files/sync-journal.db` held **125 failed attempts, one every 10 seconds**, every one of them a
+`sent -> failed` on the 10 s connect timeout to `192.168.0.134:9876`, with the journal's per-state
+counts at `claimed=125 sent=125 failed=125 checked=125`. Nothing stopped a tick from starting while
+the previous attempt was still timing out. That is the defect T6 closes, and it is the baseline the
+gate has to beat.
+
+**Blocked: the app cannot complete its JS startup while the device is locked.** With the keyguard
+showing, the app reaches `ReactNativeJS: Running "main"` and stops there: no SQLite open
+(`files/SQLite/autoreas.db` mtime unchanged at 03:03), no foreground service, and `dumpsys alarm`
+reporting zero alarms for the package. Installing and launching the **previous known-good build**
+(`build-1789962052700.apk`, which had synced all night) reproduced the identical stall, so the cause
+is the lock and not this change. Attempts to dismiss the keyguard — wake, `wm dismiss-keyguard`,
+`cmd lock_settings set-disabled true`, a screen off/on cycle, swipes, `input keyevent 82`, and starting
+the activity with `FLAG_SHOW_WHEN_LOCKED` — all left the bouncer in focus. The credential is unknown;
+it was deliberately neither cleared nor guessed, and `set-disabled false` was restored together with
+`screen_off_timeout=120000` and `stay_on_while_plugged_in=15`.
+
+**Consequence: one earlier reading from this run is VOID.** A four-minute observation of a flat journal
+with the bridge down looked like the gate working; it was not. The app's sync runtime had never
+started, so there were no ticks to gate. The gate's acceptance stays unmeasured.
+
+**Found while investigating the blocker: there is no trigger after a process death or a reboot.** The
+runtime status reads `is_background_task_registered=0` and `dumpsys jobscheduler` lists **no registered
+job for the package**, because foreground-service mode unregisters the WorkManager worker
+(`background-sync.task.ts:57`). Both the foreground service and its tick alarm are started from the JS
+UI. So after a reboot or a force-stop the app delivers nothing until the user opens it — narrower than
+the Goal, and the reason the 2026-09-20 23:13 acceptance did not generalise: its foreground service was
+already running. Recorded as T12; T8 (retiring the JS background scaffolding) is deferred in part
+because removing the WorkManager path before that trigger exists would break the Goal.
+
+**Still open:** the three real pending operations (ids 20, 21 and 22, created 00:48-01:45 local) remain
+undelivered; the new build is installed and waiting for an unlock; no acceptance metric was measured.
+
 ### 2026-09-21 (later) — three fixes written, one regression caught by the compiler, two findings opened
 
 T11 (wake lock scoped to the cycle), the empty-outbox pull, and the watchdog budget clock were
