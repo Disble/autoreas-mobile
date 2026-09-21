@@ -45,6 +45,10 @@ data class CycleOutcome(
   val syncedCount: Int,
   val backlogReadCount: Int,
   val errorName: String?,
+  /** `processing` rows the recovery sweep returned to `pending`; 0 when none. */
+  val recoveredProcessingCount: Int = 0,
+  /** Cycle id the sweep marked `abandoned`, or `null` when there was nothing to abandon. */
+  val recoveredAbandonedCycleId: String? = null,
 ) {
   /** Builds the result dictionary the Expo bridge delivers to the JS seam. */
   fun toMap(cycleId: String): Map<String, Any?> = mapOf(
@@ -54,6 +58,8 @@ data class CycleOutcome(
     "backlogReadCount" to backlogReadCount,
     "stage" to stage,
     "errorName" to errorName,
+    "recoveredProcessingCount" to recoveredProcessingCount,
+    "recoveredAbandonedCycleId" to recoveredAbandonedCycleId,
   )
 }
 
@@ -82,6 +88,13 @@ class SyncEngineCycle(
   private var onState: (String) -> Unit = {}
 
   /**
+   * What this attempt's recovery sweep reclaimed, after the lease was held. Defaults to
+   * "nothing" so an outcome built before the sweep ran (no config, lease held elsewhere)
+   * reports zero reclaim instead of a stale value.
+   */
+  private var recovery = RecoveryResult(processingReturned = 0, abandonedCycleId = null)
+
+  /**
    * Runs the attempt to a terminal outcome. Never throws: every failure inside the pipeline is
    * classified into `failed` (with rows reverted). [onState] is invoked on every journal
    * transition so the watchdog (outside this class) always knows the state a parked attempt is
@@ -98,7 +111,7 @@ class SyncEngineCycle(
       // only the bridge's own 4xx classifies content as rejected), name the failure, terminal.
       revertClaimedRows(deadLetter = false)
       transition("failed", error.message ?: error.javaClass.simpleName)
-      CycleOutcome("failed", lastState, 0, 0, error.javaClass.simpleName)
+      outcome("failed", lastState, 0, 0, error.javaClass.simpleName)
     } finally {
       lease.release()
     }
@@ -131,6 +144,11 @@ class SyncEngineCycle(
       return CycleOutcome("not_applicable", lastState, 0, 0, null)
     }
 
+    // Recovery sweep (T4): with the lease held, every stale claim in the journal or in
+    // `processing` is an orphan from an attempt that died — reclaim it BEFORE reading the
+    // backlog. A sweep error never fails the attempt: it logs, reports, and continues.
+    recovery = SyncEngineRecovery(appDb, journal).sweep(cycleId)
+
     val backlog = readBacklog()
     val backlogReadCount = backlog.size
 
@@ -138,7 +156,7 @@ class SyncEngineCycle(
       // Nothing to claim or send; prune and close, mirroring the JS no-op attempt.
       OperationLogPruner.pruneSafely(appDb)
       transition("closed", null)
-      return CycleOutcome("closed", lastState, 0, backlogReadCount, null)
+      return outcome("closed", lastState, 0, backlogReadCount, null)
     }
 
     // Intent before effect, THEN the claim in one transaction (step 5).
@@ -172,7 +190,7 @@ class SyncEngineCycle(
       // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
       revertClaimedRows(deadLetter = false)
       transition("failed", error.message ?: error.javaClass.simpleName)
-      return CycleOutcome("failed", lastState, 0, backlogReadCount, error.javaClass.simpleName)
+      return outcome("failed", lastState, 0, backlogReadCount, error.javaClass.simpleName)
     }
 
     if (response.code !in 200..299) {
@@ -180,7 +198,7 @@ class SyncEngineCycle(
       // those rows go to `dead_letter`; anything else goes back to `pending` for retry.
       revertClaimedRows(deadLetter = response.code in 400..499)
       transition("failed", "bridge responded ${response.code}")
-      return CycleOutcome("failed", lastState, 0, backlogReadCount, "ReconcileHttpError")
+      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileHttpError")
     }
 
     val parsed = try {
@@ -189,7 +207,7 @@ class SyncEngineCycle(
       // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
       revertClaimedRows(deadLetter = false)
       transition("failed", error.message ?: "invalid reconcile response")
-      return CycleOutcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
+      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
     }
 
     // Intent before effect, THEN every response write in ONE transaction (step 8).
@@ -203,8 +221,28 @@ class SyncEngineCycle(
     OperationLogPruner.pruneSafely(appDb)
 
     transition("closed", null)
-    return CycleOutcome("closed", lastState, syncedCount, backlogReadCount, null)
+    return outcome("closed", lastState, syncedCount, backlogReadCount, null)
   }
+
+  /**
+   * Builds the attempt's terminal outcome with this attempt's recovery sweep result attached,
+   * so the JS seam can observe what the sweep reclaimed without a second bridge call.
+   */
+  private fun outcome(
+    outcome: String,
+    stage: String,
+    syncedCount: Int,
+    backlogReadCount: Int,
+    errorName: String?,
+  ): CycleOutcome = CycleOutcome(
+    outcome = outcome,
+    stage = stage,
+    syncedCount = syncedCount,
+    backlogReadCount = backlogReadCount,
+    errorName = errorName,
+    recoveredProcessingCount = recovery.processingReturned,
+    recoveredAbandonedCycleId = recovery.abandonedCycleId,
+  )
 
   /**
    * Reverts the claimed batch on failure: to `dead_letter` when the bridge's 4xx response said

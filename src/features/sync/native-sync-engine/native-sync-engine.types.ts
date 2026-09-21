@@ -27,6 +27,8 @@ export type NativeSyncEngineResultMap = {
   readonly backlogReadCount?: unknown;
   readonly stage?: unknown;
   readonly errorName?: unknown;
+  readonly recoveredProcessingCount?: unknown;
+  readonly recoveredAbandonedCycleId?: unknown;
 };
 
 /** Defines the normalized, closed-vocabulary result of one native engine attempt. */
@@ -43,6 +45,10 @@ export interface NativeSyncEngineResult {
   readonly stage: string | null;
   /** Error class name when the attempt failed, otherwise `null`. */
   readonly errorName: string | null;
+  /** Orphaned `processing` rows the attempt's recovery sweep returned to `pending`. */
+  readonly recoveredProcessingCount: number;
+  /** Cycle id the recovery sweep marked `abandoned`, or `null` when there was nothing to abandon. */
+  readonly recoveredAbandonedCycleId: string | null;
 }
 
 /**

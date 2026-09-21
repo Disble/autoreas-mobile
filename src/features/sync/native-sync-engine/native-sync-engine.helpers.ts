@@ -97,6 +97,8 @@ export function normalizeNativeSyncEngineResult(
     backlogReadCount: readCount(map.backlogReadCount),
     stage: readOptionalString(map.stage),
     errorName: readOptionalString(map.errorName),
+    recoveredProcessingCount: readCount(map.recoveredProcessingCount),
+    recoveredAbandonedCycleId: readOptionalString(map.recoveredAbandonedCycleId),
   };
 }
 
@@ -148,6 +150,8 @@ function createUnavailableNativeSyncEngineResult(): NativeSyncEngineResult {
     backlogReadCount: 0,
     stage: null,
     errorName: null,
+    recoveredProcessingCount: 0,
+    recoveredAbandonedCycleId: null,
   };
 }
 

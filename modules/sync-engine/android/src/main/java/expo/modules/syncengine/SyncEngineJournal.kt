@@ -28,6 +28,20 @@ private const val PRUNE_BEYOND_CAPACITY_SQL =
   "DELETE FROM journal WHERE id NOT IN " +
     "(SELECT id FROM journal ORDER BY id DESC LIMIT $JOURNAL_MAX_ROWS)"
 
+private const val READ_LATEST_TRANSITION_SQL =
+  "SELECT cycle_id, to_state, at_ms FROM journal WHERE cycle_id != ? ORDER BY id DESC LIMIT 1"
+
+/**
+ * One journal transition row read back by the recovery sweep: the cycle that wrote it, the
+ * state it transitioned INTO (a row's `to_state` IS the attempt's current state), and when it
+ * was appended.
+ */
+data class JournalTransition(
+  val cycleId: String,
+  val toState: String,
+  val atMs: Long,
+)
+
 /**
  * The engine's own writer for `sync-journal.db`, on its OWN connection — the same out-of-door
  * file the `SyncJournal` module (T2) created. Two writers share one file today:
@@ -89,6 +103,33 @@ class SyncEngineJournal(context: Context) {
     } catch (error: Throwable) {
       Log.w(JOURNAL_LOG_TAG, "append failed for cycle=$cycleId", error)
       false
+    }
+  }
+
+  /**
+   * Reads the newest transition row NOT belonging to [currentCycleId] — i.e. the previous
+   * attempt's last recorded state — or `null` when there is none or the journal is unreadable.
+   * The exclusion is what makes the recovery sweep meaningful: by the time the sweep runs, the
+   * current attempt has already appended its own `checked` row, so the absolute newest row is
+   * always the reader's own and must not be judged as a stale orphan.
+   */
+  fun readLatestTransition(currentCycleId: String): JournalTransition? {
+    return try {
+      val database = openJournal() ?: return null
+      database.rawQuery(READ_LATEST_TRANSITION_SQL, arrayOf(currentCycleId)).use { cursor ->
+        if (!cursor.moveToFirst()) {
+          null
+        } else {
+          JournalTransition(
+            cycleId = cursor.getString(0),
+            toState = cursor.getString(1),
+            atMs = cursor.getLong(2),
+          )
+        }
+      }
+    } catch (error: Throwable) {
+      Log.w(JOURNAL_LOG_TAG, "latest transition read failed", error)
+      null
     }
   }
 

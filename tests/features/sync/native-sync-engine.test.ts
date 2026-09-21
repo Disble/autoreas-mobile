@@ -22,6 +22,8 @@ function buildNativeModule(): NativeSyncEngineModule & { readonly runOnce: jest.
       backlogReadCount: 5,
       stage: 'closed',
       errorName: null,
+      recoveredProcessingCount: 2,
+      recoveredAbandonedCycleId: 'cycle-0',
     }),
   };
 }
@@ -51,6 +53,8 @@ describe('native-sync-engine helpers', () => {
       expect(result.backlogReadCount).toBe(0);
       expect(result.stage).toBeNull();
       expect(result.errorName).toBeNull();
+      expect(result.recoveredProcessingCount).toBe(0);
+      expect(result.recoveredAbandonedCycleId).toBeNull();
     });
 
     it('degrades to an unavailable engine when the native module lookup throws', async () => {
@@ -100,6 +104,8 @@ describe('native-sync-engine helpers', () => {
         backlogReadCount: 5,
         stage: 'closed',
         errorName: null,
+        recoveredProcessingCount: 2,
+        recoveredAbandonedCycleId: 'cycle-0',
       });
     });
 
@@ -139,7 +145,49 @@ describe('native-sync-engine helpers', () => {
         backlogReadCount: 0,
         stage: null,
         errorName: null,
+        recoveredProcessingCount: 0,
+        recoveredAbandonedCycleId: null,
       });
+    });
+
+    it('passes recovery sweep values through when the native side reported them', () => {
+      const result = normalizeNativeSyncEngineResult({
+        outcome: 'closed',
+        recoveredProcessingCount: 2,
+        recoveredAbandonedCycleId: 'cycle-0',
+      });
+
+      expect(result.recoveredProcessingCount).toBe(2);
+      expect(result.recoveredAbandonedCycleId).toBe('cycle-0');
+      expect(result.outcome).toBe('closed');
+    });
+
+    it('degrades missing, mistyped, non-finite, or negative recovery counts to 0', () => {
+      const missing = normalizeNativeSyncEngineResult({ outcome: 'closed' });
+      const mistyped = normalizeNativeSyncEngineResult({
+        recoveredProcessingCount: 'two',
+      });
+      const nonFinite = normalizeNativeSyncEngineResult({
+        recoveredProcessingCount: Number.NaN,
+      });
+      const negative = normalizeNativeSyncEngineResult({
+        recoveredProcessingCount: -1,
+      });
+
+      expect(missing.recoveredProcessingCount).toBe(0);
+      expect(mistyped.recoveredProcessingCount).toBe(0);
+      expect(nonFinite.recoveredProcessingCount).toBe(0);
+      expect(negative.recoveredProcessingCount).toBe(0);
+    });
+
+    it('degrades missing or non-string recovered cycle ids to null', () => {
+      const missing = normalizeNativeSyncEngineResult({ outcome: 'closed' });
+      const mistyped = normalizeNativeSyncEngineResult({
+        recoveredAbandonedCycleId: 42,
+      });
+
+      expect(missing.recoveredAbandonedCycleId).toBeNull();
+      expect(mistyped.recoveredAbandonedCycleId).toBeNull();
     });
 
     it('preserves a real zero count and rejects non-finite numbers', () => {
