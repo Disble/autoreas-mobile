@@ -3,12 +3,12 @@ import type { ForegroundSyncTicker } from '../../../src/features/sync/native-for
 
 describe('foreground-sync-runner', () => {
   function createFakeTicker() {
-    const listeners = new Set<() => void>();
+    const listeners = new Set<() => void | Promise<void>>();
 
     const ticker: ForegroundSyncTicker = {
       start: jest.fn(),
       stop: jest.fn(),
-      onTick: jest.fn((callback: () => void) => {
+      onTick: jest.fn((callback: () => void | Promise<void>) => {
         listeners.add(callback);
         return () => {
           listeners.delete(callback);
@@ -131,6 +131,34 @@ describe('foreground-sync-runner', () => {
     await Promise.resolve();
 
     expect(runCycle).not.toHaveBeenCalled();
+  });
+
+  it('returns the cycle promise to the ticker so the wake lock can be scoped to the cycle', async () => {
+    const { ticker } = createFakeTicker();
+    let resolveRunCycle!: () => void;
+    const runCycle = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRunCycle = resolve;
+        }),
+    );
+
+    const runner = createForegroundSyncRunner({ ticker, runCycle, onCycleError: jest.fn() });
+    const servicePromise = runner.start();
+
+    // The runner must hand its cycle promise back to the tick callback: the native ticker
+    // releases the per-cycle wake lock only when that promise settles. A discarded promise
+    // would leave the lock's lifetime undefined (safety-net timeout only).
+    const tickCallback = (ticker.onTick as jest.Mock).mock.calls[0]?.[0] as () => Promise<void>;
+    const cyclePromise = tickCallback();
+    expect(cyclePromise).toBeInstanceOf(Promise);
+
+    resolveRunCycle();
+    await expect(cyclePromise).resolves.toBeUndefined();
+    expect(runCycle).toHaveBeenCalledTimes(1);
+
+    await runner.stop();
+    await servicePromise;
   });
 
   it('does not call ticker.start/stop -- ticker lifecycle is owned by the caller', async () => {

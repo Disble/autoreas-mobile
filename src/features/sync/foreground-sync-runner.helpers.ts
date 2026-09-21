@@ -5,10 +5,14 @@ import type {
 
 /**
  * Creates a cancellable foreground-sync runner that owns the reconcile-cycle lifecycle.
- * The cadence itself comes from an injected `ForegroundSyncTicker` (native-driven, immune to JS
- * timer suspension) -- this runner only subscribes to ticks and reacts. Ticker start/stop lifecycle
- * is owned by the caller (e.g. the Notifee adapter), not by this runner, so the same ticker instance
- * can be reused across FGS register/unregister cycles independently of runner start/stop.
+ * The cadence itself comes from an injected `ForegroundSyncTicker` (alarm-driven, immune to CPU
+ * suspension) -- this runner only subscribes to ticks and reacts. Ticker start/stop lifecycle
+ * is owned by the caller (e.g. the Notifee adapter), not by this runner, so the same ticker
+ * instance can be reused across FGS register/unregister cycles independently of runner start/stop.
+ *
+ * The tick callback returns the cycle's promise so the ticker can scope the native per-cycle wake
+ * lock to the cycle's lifetime; `runCycleSafely` never rejects (failures route to `onCycleError`),
+ * but if `onCycleError` itself throws the rejection still settles the promise and releases the lock.
  */
 export function createForegroundSyncRunner(
   params: CreateForegroundSyncRunnerParams,
@@ -31,9 +35,7 @@ export function createForegroundSyncRunner(
         return runningPromise;
       }
 
-      unsubscribeTick = params.ticker.onTick(() => {
-        void runCycleSafely();
-      });
+      unsubscribeTick = params.ticker.onTick(() => runCycleSafely());
 
       runningPromise = new Promise<void>((resolve) => {
         resolveStopPromise = resolve;

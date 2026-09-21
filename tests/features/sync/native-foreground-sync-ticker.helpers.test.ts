@@ -1,25 +1,21 @@
 import { createNativeForegroundSyncTicker } from '../../../src/features/sync/native-foreground-sync-ticker.helpers';
 import type { NativeForegroundSyncTickerModule } from '../../../src/features/sync/native-foreground-sync-ticker.types';
 
-/**
- * The production contract has no per-tick acknowledgement. The mock still exposes one so the suite
- * can assert the helper never reaches for it: a future change that reintroduces a per-tick wake-lock
- * release would compile against this shape and must fail here instead.
- */
-type NativeForegroundSyncTickerModuleMock = NativeForegroundSyncTickerModule & {
-  readonly acknowledgeTick: jest.Mock;
-};
+/** Flushes pending microtasks (the cycle-promise settle path) before assertions. */
+async function flushMicrotasks(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 describe('native-foreground-sync-ticker', () => {
   function buildNativeModule() {
-    const listeners: Array<() => void> = [];
+    const listeners: (() => void | Promise<void>)[] = [];
 
-    const module: NativeForegroundSyncTickerModuleMock = {
+    const module: NativeForegroundSyncTickerModule = {
       start: jest.fn(),
       stop: jest.fn(),
-      acknowledgeTick: jest.fn(),
+      notifyCycleComplete: jest.fn(),
       isRunning: jest.fn().mockReturnValue(false),
-      addListener: jest.fn((_eventName: 'onTick', listener: () => void) => {
+      addListener: jest.fn((_eventName: 'onTick', listener: () => void | Promise<void>) => {
         listeners.push(listener);
 
         return {
@@ -36,7 +32,7 @@ describe('native-foreground-sync-ticker', () => {
     return {
       module,
       fireTick: () => {
-        listeners.forEach((listener) => listener());
+        listeners.forEach((listener) => void listener());
       },
     };
   }
@@ -73,7 +69,85 @@ describe('native-foreground-sync-ticker', () => {
     expect(onTick).toHaveBeenCalledTimes(1);
   });
 
-  it('never releases the wake lock between ticks, so the CPU cannot suspend mid-cadence', () => {
+  it('releases the native cycle wake lock when the tick listener promise resolves', async () => {
+    const { module, fireTick } = buildNativeModule();
+    const ticker = createNativeForegroundSyncTicker({
+      requireOptionalNativeModule: () => module,
+    });
+
+    let resolveCycle!: () => void;
+    ticker.onTick(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCycle = resolve;
+        }),
+    );
+    ticker.start(15_000);
+
+    fireTick();
+    await flushMicrotasks();
+
+    // The cycle is still running: the wake lock stays held (no release reported yet).
+    expect(module.notifyCycleComplete).not.toHaveBeenCalled();
+
+    resolveCycle();
+    await flushMicrotasks();
+
+    expect(module.notifyCycleComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the native cycle wake lock when the tick listener promise rejects', async () => {
+    const { module, fireTick } = buildNativeModule();
+    const ticker = createNativeForegroundSyncTicker({
+      requireOptionalNativeModule: () => module,
+    });
+
+    let rejectCycle!: (error: Error) => void;
+    ticker.onTick(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectCycle = reject;
+        }),
+    );
+    ticker.start(15_000);
+
+    fireTick();
+    await flushMicrotasks();
+    expect(module.notifyCycleComplete).not.toHaveBeenCalled();
+
+    rejectCycle(new Error('cycle failed'));
+    await flushMicrotasks();
+
+    expect(module.notifyCycleComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the native cycle wake lock only after every promise of the tick settles', async () => {
+    const { module, fireTick } = buildNativeModule();
+    const ticker = createNativeForegroundSyncTicker({
+      requireOptionalNativeModule: () => module,
+    });
+
+    const resolvers: (() => void)[] = [];
+    ticker.onTick(() => new Promise<void>((resolve) => resolvers.push(resolve)));
+    ticker.onTick(() => new Promise<void>((resolve) => resolvers.push(resolve)));
+    ticker.start(15_000);
+
+    fireTick();
+    await flushMicrotasks();
+
+    resolvers[0]?.();
+    await flushMicrotasks();
+
+    // One of two cycles settled; the wake lock must stay held for the other one.
+    expect(module.notifyCycleComplete).not.toHaveBeenCalled();
+
+    resolvers[1]?.();
+    await flushMicrotasks();
+
+    expect(module.notifyCycleComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the native cycle wake lock for a tick whose listener returns no promise', () => {
     const { module, fireTick } = buildNativeModule();
     const ticker = createNativeForegroundSyncTicker({
       requireOptionalNativeModule: () => module,
@@ -81,15 +155,10 @@ describe('native-foreground-sync-ticker', () => {
 
     ticker.onTick(jest.fn());
     ticker.start(15_000);
-    fireTick();
+
     fireTick();
 
-    // The wake lock is owned by the service lifetime (acquired on start, released on
-    // stop), never by an individual tick. Releasing it per tick left the ~13s gap
-    // between ticks unprotected: with the screen off the CPU suspended,
-    // SystemClock.uptimeMillis() stopped advancing, and the Handler.postDelayed that
-    // schedules the next tick never fired again. That is the screen-off sync stall.
-    expect(module.acknowledgeTick).not.toHaveBeenCalled();
+    expect(module.notifyCycleComplete).toHaveBeenCalledTimes(1);
   });
 
   it('unsubscribe stops delivering ticks to that listener', () => {
