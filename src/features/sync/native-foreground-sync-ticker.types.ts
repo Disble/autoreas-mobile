@@ -1,3 +1,5 @@
+import type { OptionalNativeModuleLoader } from './native-module-loader/native-module-loader.types';
+
 /** Defines the JS-facing seam over the native foreground-sync tick source. */
 export interface ForegroundSyncTicker {
   readonly start: (intervalMs: number) => void;
@@ -22,9 +24,8 @@ export interface NativeForegroundSyncTickerModule {
 }
 
 /** Defines the loader function signature for the optional native ticker module lookup. */
-export type RequireOptionalNativeModule = (
-  moduleName: string,
-) => NativeForegroundSyncTickerModule | null;
+export type RequireOptionalNativeModule =
+  OptionalNativeModuleLoader<NativeForegroundSyncTickerModule>;
 
 /** Defines the data contract for create native foreground sync ticker params. */
 export interface CreateNativeForegroundSyncTickerParams {

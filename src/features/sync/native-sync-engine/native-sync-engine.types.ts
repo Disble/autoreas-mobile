@@ -1,3 +1,5 @@
+import type { OptionalNativeModuleLoader } from '../native-module-loader/native-module-loader.types';
+
 /**
  * The outcome vocabulary the native engine reports for one background attempt, extended with the
  * seam-only `unavailable` value: a missing native module must be observable without changing the
@@ -62,9 +64,7 @@ export interface NativeSyncEngineModule {
 }
 
 /** Defines the loader function signature for the optional native engine module lookup. */
-export type RequireOptionalNativeModule = (
-  moduleName: string,
-) => NativeSyncEngineModule | null;
+export type RequireOptionalNativeModule = OptionalNativeModuleLoader<NativeSyncEngineModule>;
 
 /** Defines the data contract for create native sync engine params. */
 export interface CreateNativeSyncEngineParams {

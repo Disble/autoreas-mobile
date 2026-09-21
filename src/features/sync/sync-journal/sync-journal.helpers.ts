@@ -3,6 +3,10 @@ import {
   STAGE_TO_JOURNAL_STATE,
   SYNC_JOURNAL_NATIVE_MODULE_NAME,
 } from './sync-journal.constants';
+import {
+  loadDefaultOptionalNativeModuleLoader,
+  loadOptionalNativeModule,
+} from '../native-module-loader/native-module-loader.helpers';
 import type { SyncCycleStage } from '../sync-runtime-status.types';
 import type {
   CreateJournalRecordingCheckpointRecorderParams,
@@ -11,51 +15,11 @@ import type {
   JournalRecordingCheckpointRecorder,
   JournalTransition,
   NativeSyncJournalModule,
-  RequireOptionalNativeModule,
   SyncJournal,
 } from './sync-journal.types';
 
-/**
- * Lazily loads `expo-modules-core`'s `requireOptionalNativeModule` only when a journal is
- * actually constructed. `expo-modules-core` touches `Platform` at import time, which can throw
- * in narrowly mocked test environments (or non-Expo runtimes) that never expect this dependency
- * -- deferring the require, and wrapping it in try/catch, keeps every unrelated consumer of this
- * module (including callers that never build a journal) unaffected by that native surface.
- */
-function loadDefaultRequireOptionalNativeModule(): RequireOptionalNativeModule | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Runtime lazy loading preserves graceful fallback when expo-modules-core is unavailable or its native surface is unmocked.
-    const expoModulesCore = require('expo-modules-core') as {
-      requireOptionalNativeModule: RequireOptionalNativeModule;
-    };
-
-    return expoModulesCore.requireOptionalNativeModule;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Resolves the journal's native module through the injected (or lazily defaulted) loader, and
- * answers `null` for every way the lookup can fail -- a missing loader, a missing module, or an
- * unexpected native-bridge error -- so {@link createSyncJournal} has one uniform "unavailable"
- * signal to degrade on.
- */
-function loadSyncJournalNativeModule(
-  loadModule: RequireOptionalNativeModule | null,
-): NativeSyncJournalModule | null {
-  if (!loadModule) {
-    return null;
-  }
-
-  try {
-    return loadModule(SYNC_JOURNAL_NATIVE_MODULE_NAME);
-  } catch {
-    // requireOptionalNativeModule already returns null when the module is simply missing;
-    // this guard only protects against unexpected native-bridge lookup failures (e.g. Expo Go).
-    return null;
-  }
-}
+// The lazily-required `expo-modules-core` loader and the guarded null lookup live in
+// `../native-module-loader`, shared by the ticker, sync-engine, and sync-journal seams.
 
 /**
  * Builds the no-op journal used whenever the native module is absent (Expo Go, iOS, or a
@@ -82,8 +46,9 @@ function createUnavailableSyncJournal(): SyncJournal {
  */
 export function createSyncJournal(params: CreateSyncJournalParams = {}): SyncJournal {
   const loadModule =
-    params.requireOptionalNativeModule ?? loadDefaultRequireOptionalNativeModule();
-  const nativeModule = loadSyncJournalNativeModule(loadModule);
+    params.requireOptionalNativeModule ??
+    loadDefaultOptionalNativeModuleLoader<NativeSyncJournalModule>();
+  const nativeModule = loadOptionalNativeModule(loadModule, SYNC_JOURNAL_NATIVE_MODULE_NAME);
 
   if (!nativeModule) {
     return createUnavailableSyncJournal();

@@ -1,46 +1,16 @@
 import { FOREGROUND_SYNC_TICKER_NATIVE_MODULE_NAME } from './native-foreground-sync-ticker.constants';
+import {
+  loadDefaultOptionalNativeModuleLoader,
+  loadOptionalNativeModule,
+} from './native-module-loader/native-module-loader.helpers';
 import type {
   CreateNativeForegroundSyncTickerParams,
   ForegroundSyncTicker,
   NativeForegroundSyncTickerModule,
-  RequireOptionalNativeModule,
 } from './native-foreground-sync-ticker.types';
 
-/**
- * Lazily loads `expo-modules-core`'s `requireOptionalNativeModule` only when a ticker is actually
- * constructed. `expo-modules-core` touches `Platform` at import time, which can throw in narrowly
- * mocked test environments (or non-Expo runtimes) that never expect this dependency -- deferring
- * the require, and wrapping it in try/catch, keeps every unrelated consumer of this module
- * (including callers that never build a ticker) unaffected by that native surface.
- */
-function loadDefaultRequireOptionalNativeModule(): RequireOptionalNativeModule | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Runtime lazy loading preserves graceful fallback when expo-modules-core is unavailable or its native surface is unmocked.
-    const expoModulesCore = require('expo-modules-core') as {
-      requireOptionalNativeModule: RequireOptionalNativeModule;
-    };
-
-    return expoModulesCore.requireOptionalNativeModule;
-  } catch {
-    return null;
-  }
-}
-
-function loadNativeForegroundSyncTickerModule(
-  loadModule: RequireOptionalNativeModule | null,
-): NativeForegroundSyncTickerModule | null {
-  if (!loadModule) {
-    return null;
-  }
-
-  try {
-    return loadModule(FOREGROUND_SYNC_TICKER_NATIVE_MODULE_NAME);
-  } catch {
-    // requireOptionalNativeModule already returns null when the module is simply missing;
-    // this guard only protects against unexpected native-bridge lookup failures (e.g. Expo Go).
-    return null;
-  }
-}
+// The lazily-required `expo-modules-core` loader and the guarded null lookup live in
+// `native-module-loader/`, shared by the ticker, sync-engine, and sync-journal seams.
 
 /**
  * Creates the JS-side seam over the native foreground-sync ticker module.
@@ -52,8 +22,12 @@ export function createNativeForegroundSyncTicker(
   params: CreateNativeForegroundSyncTickerParams = {},
 ): ForegroundSyncTicker {
   const loadModule =
-    params.requireOptionalNativeModule ?? loadDefaultRequireOptionalNativeModule();
-  const nativeModule = loadNativeForegroundSyncTickerModule(loadModule);
+    params.requireOptionalNativeModule ??
+    loadDefaultOptionalNativeModuleLoader<NativeForegroundSyncTickerModule>();
+  const nativeModule = loadOptionalNativeModule(
+    loadModule,
+    FOREGROUND_SYNC_TICKER_NATIVE_MODULE_NAME,
+  );
   const listeners = new Set<() => void>();
   let subscription: { remove: () => void } | null = null;
   let isRunning = false;

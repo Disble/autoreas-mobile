@@ -1,3 +1,4 @@
+import type { OptionalNativeModuleLoader } from '../native-module-loader/native-module-loader.types';
 import type { SyncCycleCheckpointRecorder } from '../reconcile.types';
 
 /**
@@ -55,9 +56,7 @@ export interface NativeSyncJournalModule {
 }
 
 /** Defines the loader function signature for the optional native journal module lookup. */
-export type RequireOptionalNativeModule = (
-  moduleName: string,
-) => NativeSyncJournalModule | null;
+export type RequireOptionalNativeModule = OptionalNativeModuleLoader<NativeSyncJournalModule>;
 
 /** Defines the data contract for create sync journal params. */
 export interface CreateSyncJournalParams {
