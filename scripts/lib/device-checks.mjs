@@ -1,15 +1,14 @@
 // Acceptance checks and parsing helpers for the device sync verifier.
 //
-// This module owns everything behind the thin `scripts/verify-sync-on-device.mjs`
-// entry point: the adb process helpers, the pure parsing functions that turn raw device
-// output into plain values, and the acceptance checks themselves. Each check runs adb,
-// calls parsers, decides a verdict, and builds the evidence string; it never prints and
-// never exits, so the entry point stays in charge of output order, the summary table, and
-// the process exit code.
+// This module owns everything behind the thin `scripts/verify-sync-on-device.mjs` entry point: the adb
+// process helpers, the pure parsing functions that turn raw device output into plain values, and the
+// acceptance checks themselves. Each check runs adb, calls parsers, decides a verdict, and builds the
+// evidence string; it never prints and never exits, so the entry point stays in charge of output order,
+// the summary table, and the process exit code.
 //
-// No dependencies. `adb` must be on PATH. Host `sqlite3` is optional: the DB-backed
-// checks degrade to UNKNOWN or existence-only when it is missing, because reading a
-// live database is evidence collection, not an acceptance failure.
+// No dependencies. `adb` must be on PATH. Host `sqlite3` is optional: the DB-backed checks degrade to
+// UNKNOWN or existence-only when missing, because reading a live database is evidence collection,
+// not an acceptance failure.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -48,11 +47,7 @@ const JOURNAL_NEWEST_SQL = 'SELECT cycle_id, from_state, to_state, reason, at_ms
 /** Runs one adb subcommand; returns `{ok, out, err}` with decoded text and captured streams. */
 export function runAdb(args, maxBufferBytes = 16 * 1024 * 1024) {
   try {
-    const out = execFileSync(ADB, args, {
-      encoding: 'utf8',
-      maxBuffer: maxBufferBytes,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const out = execFileSync(ADB, args, { encoding: 'utf8', maxBuffer: maxBufferBytes, stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true, out, err: '' };
   } catch (error) {
     return adbFailure(error);
@@ -70,11 +65,7 @@ function adbFailure(error) {
  * host path. Binary-safe, read-only on the device; true when the pull produced a file.
  */
 function pullDeviceFile(remotePath, hostPath) {
-  const res = spawnSync(ADB, ['exec-out', 'run-as', PACKAGE_NAME, 'cat', remotePath], {
-    encoding: 'buffer',
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const res = spawnSync(ADB, ['exec-out', 'run-as', PACKAGE_NAME, 'cat', remotePath], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   if (res.status !== 0 || !res.stdout || res.stdout.length === 0) return false;
   writeFileSync(hostPath, res.stdout);
   return true;
@@ -91,11 +82,7 @@ export function resolveSqlite3() {
 
 /** Runs one read-only SQL statement against a pulled database file; `{ok, out}` with raw sqlite3 stdout. */
 function querySqlite(exe, dbPath, sql) {
-  const res = spawnSync(exe, ['-readonly', dbPath, sql], {
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const res = spawnSync(exe, ['-readonly', dbPath, sql], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   return { ok: res.status === 0, out: (res.stdout ?? '').trim() };
 }
 
@@ -108,6 +95,18 @@ export function parseAdbDeviceStates(out) {
     .slice(1)
     .map((line) => line.split(/\s+/)[1] ?? '')
     .filter(Boolean);
+}
+
+/**
+ * Parses the keyguard booleans out of a `dumpsys window` dump: `isKeyguardShowing` and
+ * `mDreamingLockscreen`. Returns null when neither boolean appears at all; `locked` is true
+ * the moment either flag reads true, so a partial dump still fails closed.
+ */
+export function parseKeyguardState(dump) {
+  const keyguardShowing = firstMatch(dump, /\bisKeyguardShowing=(true|false)/);
+  const dreamingLockscreen = firstMatch(dump, /\bmDreamingLockscreen=(true|false)/);
+  if (keyguardShowing === null && dreamingLockscreen === null) return null;
+  return { keyguardShowing, dreamingLockscreen, locked: keyguardShowing === 'true' || dreamingLockscreen === 'true' };
 }
 
 /** Parses `isForeground`, `types=` and whether the dataSync bit is set from a dumpsys service record. */
@@ -157,29 +156,19 @@ function parseRuntimeStatusRow(out) {
   return { lastAttemptAt, lastCycleStage, isCycleActive, lastErrorName };
 }
 
-/**
- * Turns a raw last_attempt_at value into a human age, tolerating seconds and milliseconds
- * epochs and ISO strings; null when the value cannot be interpreted.
- */
+/** Turns a raw last_attempt_at value into a human age (seconds/ms epochs, ISO strings); null when unparseable. */
 function parseAttemptAge(raw) {
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   if (!trimmed) return null;
   return parseEpochAttemptAge(trimmed) ?? parseIsoAttemptAge(trimmed);
 }
 
-/**
- * Parses the package's numeric uid from a package-scoped `dumpsys package` dump, trying the
- * `userId=` key first, then `appId=` and `uid=` (the keys this Android 15 build actually prints:
- * `uid=10540` / `appId=10540`); null when none is present.
- */
+/** Parses the package's numeric uid from a `dumpsys package` dump (userId=, then appId=/uid=); null when absent. */
 function parsePackageUid(out) {
   return firstMatch(out, /\buserId=(\d+)/) ?? firstMatch(out, /\bappId=(\d+)/) ?? firstMatch(out, /\buid=(\d+)/);
 }
 
-/**
- * Counts `Client timed out while executing` lines in a JobScheduler dump, total and scoped
- * to one app uid index. Timeouts are attributed to the most recently seen `JOB #u0a<i>/` header.
- */
+/** Counts `Client timed out while executing` lines in a JobScheduler dump, total and scoped to one app uid index. */
 function parseGuardTimeoutCounts(out, appIndex) {
   const state = out.split(/\r?\n/).reduce(collectTimeout, { appIndex, currentUid: null, scoped: 0, total: 0 });
   return { scoped: state.scoped, total: state.total };
@@ -189,6 +178,29 @@ function parseGuardTimeoutCounts(out, appIndex) {
 function parseStandbyBucket(out) {
   const value = out.trim().split(/\r?\n/).pop().trim();
   return { value, name: BUCKET_NAMES[value] ?? 'UNKNOWN' };
+}
+
+/** Device gate: the device is unlocked. The app cannot complete its JS startup while the keyguard is up — no SQLite
+ * open, no foreground service, no alarms — so a locked device would waste the whole acceptance window; the entry point
+ * stops the run on FAIL before any numbered check. An unreadable dump is UNKNOWN, never PASS. */
+export function checkDeviceUnlocked() {
+  const res = runAdb(['shell', 'dumpsys', 'window']);
+  if (!res.ok) return outcome('Device unlocked', 'UNKNOWN', `dumpsys window failed: ${res.err}`);
+  return keyguardOutcome(parseKeyguardState(res.out));
+}
+
+/** Builds the Device unlocked verdict: FAIL on any lock evidence, PASS only when both booleans read false, UNKNOWN otherwise. */
+function keyguardOutcome(state) {
+  if (!state) return outcome('Device unlocked', 'UNKNOWN', 'isKeyguardShowing/mDreamingLockscreen absent from dumpsys window output');
+  if (state.locked) {
+    return outcome('Device unlocked', 'FAIL',
+      `isKeyguardShowing=${orNotFound(state.keyguardShowing)} mDreamingLockscreen=${orNotFound(state.dreamingLockscreen)}\n` +
+      `The device is locked: the app cannot complete its JS startup while the keyguard is up, so this acceptance window would measure nothing. A human must unlock the device before the run is worth spending.`);
+  }
+  if (state.keyguardShowing === 'false' && state.dreamingLockscreen === 'false') {
+    return outcome('Device unlocked', 'PASS', 'isKeyguardShowing=false mDreamingLockscreen=false');
+  }
+  return outcome('Device unlocked', 'UNKNOWN', `partial keyguard state: isKeyguardShowing=${orNotFound(state.keyguardShowing)} mDreamingLockscreen=${orNotFound(state.dreamingLockscreen)}`);
 }
 
 /** Check 2: build identity, reported and never gated on the values. */
@@ -209,8 +221,7 @@ export function checkLabReadableBuild() {
   if (res.ok) return outcome('Lab-readable build', 'PASS', `run-as ls files/SQLite:\n${res.out.trim()}`);
   const raw = [res.out.trim(), res.err].filter(Boolean).join('\n');
   return outcome('Lab-readable build', 'FAIL',
-    `run-as ls files/SQLite failed — a production build cannot be inspected with run-as.\n${raw}\n` +
-    `Reinstall the lab-readable (debuggable) build; checks 7 and 8 cannot read this install.`);
+    `run-as ls files/SQLite failed — a production build cannot be inspected with run-as.\n${raw}\nReinstall the lab-readable (debuggable) build; checks 7 and 8 cannot read this install.`);
 }
 
 /** Check 4: the service record shows isForeground=true and the dataSync type bit; lifecycle flags reported either way. */
@@ -229,9 +240,7 @@ export function checkTickerAlive() {
     return outcome('Ticker alive', 'PASS', `wake lock held (${lines.length} line(s)):\n${lines[0].trim()}`);
   }
   return outcome('Ticker alive', 'FAIL',
-    `wake lock tag '${TICKER_WAKE_LOCK}' is absent from dumpsys power.\n` +
-    `The service can be foreground (check 4 green) with the ticker never started — this is exactly\n` +
-    `the state the investigation chased: foreground yet idle, no wake lock, no ticks.`);
+    `wake lock tag '${TICKER_WAKE_LOCK}' is absent from dumpsys power.\nThe service can be foreground (check 4 green) with the ticker never started — this is exactly\nthe state the investigation chased: foreground yet idle, no wake lock, no ticks.`);
 }
 
 /** Check 7: the engine was actually invoked; reports the newest occurrence, absence means no attempt reached the engine. */
@@ -243,8 +252,7 @@ export function checkEngineInvoked() {
     return outcome('Engine invoked', 'PASS', `newest of ${lines.length} occurrence(s):\n${lines[lines.length - 1].trim()}`);
   }
   return outcome('Engine invoked', 'FAIL',
-    `no '${ENGINE_MARKER}' line in the logcat buffer — no attempt ever reached the sync engine\n` +
-    `(SyncEngineModule.runOnce was never called since the buffer was last cleared).`);
+    `no '${ENGINE_MARKER}' line in the logcat buffer — no attempt ever reached the sync engine\n(SyncEngineModule.runOnce was never called since the buffer was last cleared).`);
 }
 
 /** Check 5: the FIRST log-derived check — the `[nativeSeam]` warning is the earliest decisive signal that a native seam
@@ -254,9 +262,7 @@ export function checkNativeSeamWarnings() {
   const pidRes = runAdb(['shell', 'pidof', '-s', PACKAGE_NAME]);
   const pid = pidRes.ok ? parsePidOfOutput(pidRes.out) : null;
   if (!pid) {
-    return outcome('Native seam warnings', 'FAIL',
-      `could not resolve the live app pid via 'adb shell pidof -s ${PACKAGE_NAME}' — the logcat dump cannot be scoped to ` +
-      `the current process, so a stale warning from an earlier run cannot be ruled out; the check refuses to PASS:\n${[pidRes.out.trim(), pidRes.err].filter(Boolean).join('\n')}`);
+    return outcome('Native seam warnings', 'FAIL', `could not resolve the live app pid via 'adb shell pidof -s ${PACKAGE_NAME}' — the logcat dump cannot be scoped to the current process, so a stale warning from an earlier run cannot be ruled out; the check refuses to PASS:\n${[pidRes.out.trim(), pidRes.err].filter(Boolean).join('\n')}`);
   }
   return scopedLogcatOutcome(pid, runAdb(scopedLogcatArgs(pid), 64 * 1024 * 1024));
 }
@@ -266,20 +272,17 @@ function scopedLogcatOutcome(pid, res) {
   if (!res.ok) return outcome('Native seam warnings', 'UNKNOWN', `logcat -d --pid=${pid} failed: ${res.err}`);
   const lines = parseNativeSeamWarnings(res.out);
   if (lines.length === 0) {
-    return outcome('Native seam warnings', 'PASS',
-      `no '${NATIVE_SEAM_WARNING}' warning from the current app process (pid ${pid}, scoped logcat read).`);
+    return outcome('Native seam warnings', 'PASS', `no '${NATIVE_SEAM_WARNING}' warning from the current app process (pid ${pid}, scoped logcat read).`);
   }
   return outcome('Native seam warnings', 'FAIL',
-    `${lines.length} '[nativeSeam]' warning(s) from the current app process (pid ${pid}) — a native module was never ` +
-    `registered and its seam degraded to a no-op (earlier and cheaper than the wake-lock symptom):\n${lines.join('\n')}`);
+    `${lines.length} '[nativeSeam]' warning(s) from the current app process (pid ${pid}) — a native module was never registered and its seam degraded to a no-op (earlier and cheaper than the wake-lock symptom):\n${lines.join('\n')}`);
 }
 
 /** Check 8: the journal exists with size and mtime; row count and newest transition only when host sqlite3 is available. */
 export function checkJournalWritten(sqlite3, workDir) {
   const res = runAdb(['shell', 'run-as', PACKAGE_NAME, 'ls', '-l', 'files/sync-journal.db']);
   if (!res.ok) {
-    return outcome('Journal written', 'FAIL',
-      `files/sync-journal.db not found via run-as:\n${[res.out.trim(), res.err].filter(Boolean).join('\n')}`);
+    return outcome('Journal written', 'FAIL', `files/sync-journal.db not found via run-as:\n${[res.out.trim(), res.err].filter(Boolean).join('\n')}`);
   }
   let evidence = `ls -l: ${res.out.trim()}`;
   if (!sqlite3) return outcome('Journal written', 'PASS', `${evidence}\nhost sqlite3 not found; only existence, size and mtime could be read.`);
@@ -363,8 +366,7 @@ function serviceStateOutcome(fg, flags) {
 
 /** Renders the Service state evidence line from the parsed facts. */
 function serviceEvidence(fg, flags) {
-  return `isForeground=${orNotFound(fg.isForeground)}, types=${orNotFound(fg.types)}, ` +
-    `stopIfKilled=${orNotFound(flags.stopIfKilled)}, createdFromFg=${orNotFound(flags.createdFromFg)}`;
+  return `isForeground=${orNotFound(fg.isForeground)}, types=${orNotFound(fg.types)}, stopIfKilled=${orNotFound(flags.stopIfKilled)}, createdFromFg=${orNotFound(flags.createdFromFg)}`;
 }
 
 /** Reads sync_runtime_status from the pulled main database and decides the verdict. */
@@ -431,8 +433,7 @@ function parseAppIndexFromJobscheduler(out, packageName) {
 
 /** Builds the execution-guard outcome: PASS at zero scoped burns, FAIL otherwise, uid source and both counts as evidence. */
 function guardOutcome(appIndex, uidEvidence, counts) {
-  const evidence =
-    `uid ${uidEvidence} (u0a${appIndex}); Client-timed-out lines in this uid's records: ${counts.scoped}; total in dump: ${counts.total}`;
+  const evidence = `uid ${uidEvidence} (u0a${appIndex}); Client-timed-out lines in this uid's records: ${counts.scoped}; total in dump: ${counts.total}`;
   return outcome('No execution-guard burns', counts.scoped === 0 ? 'PASS' : 'FAIL', evidence);
 }
 
@@ -451,11 +452,9 @@ function pullDatabaseWithSidecars(workDir) {
 function formatRuntimeStatusEvidence(rawRow, pulledNames) {
   const row = parseRuntimeStatusRow(rawRow);
   const age = parseAttemptAge(row.lastAttemptAt);
-  return (
-    `last_attempt_at=${row.lastAttemptAt} (age: ${age ?? 'unparseable'})\n` +
+  return `last_attempt_at=${row.lastAttemptAt} (age: ${age ?? 'unparseable'})\n` +
     `last_cycle_stage=${row.lastCycleStage || '(null)'}, is_cycle_active=${row.isCycleActive}, last_error_name=${row.lastErrorName || '(null)'}\n` +
-    `pulled with sidecars: ${pulledNames.join(', ')}`
-  );
+    `pulled with sidecars: ${pulledNames.join(', ')}`;
 }
 
 /** Reads the journal row count and newest transition from a pulled journal db, rendered as extra evidence lines. */

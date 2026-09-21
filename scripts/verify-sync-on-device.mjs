@@ -4,13 +4,13 @@
 // and prints a verdict per check (PASS / FAIL / UNKNOWN) with the raw evidence it read.
 // It is read-only on the device: dumpsys, logcat -d, am get-standby-bucket and file reads
 // through `run-as cat`. Exits non-zero when any check fails; exits 2 (cleanly, no stack
-// trace) when the device gate stops the run.
+// trace) when a device gate stops the run (no usable device, or a locked device).
 //
 // Usage: node scripts/verify-sync-on-device.mjs
 //
-// This file is the thin entry point only: the device gate, running the checks in order,
-// printing the summary table, and computing the exit code. The checks themselves and all
-// parsing live in scripts/lib/device-checks.mjs.
+// This file is the thin entry point only: the device gates (attachment, unlock), running the
+// checks in order, printing the summary table, and computing the exit code. The checks
+// themselves and all parsing live in scripts/lib/device-checks.mjs.
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,7 @@ import path from 'node:path';
 import {
   checkAttemptFreshness,
   checkBuildIdentity,
+  checkDeviceUnlocked,
   checkEngineInvoked,
   checkExecutionGuardBurns,
   checkJournalWritten,
@@ -70,6 +71,21 @@ function checkDeviceAttached() {
 }
 
 /**
+ * Device gate 2: the device must be unlocked before any acceptance check runs. The app cannot
+ * complete its JS startup while the keyguard is up, so a locked device would waste the whole
+ * window; like a missing device, this stops the run with exit code 2. The gate outcome is
+ * printed for the operator but not recorded, so the numbered acceptance checks stay eleven.
+ *
+ * @returns {boolean} whether the run may continue.
+ */
+function requireDeviceUnlocked() {
+  const gate = checkDeviceUnlocked();
+  console.log(`\n[gate] ${gate.name} ... ${gate.verdict}`);
+  for (const line of gate.evidence.split('\n')) console.log(`       | ${line}`);
+  return gate.verdict === 'PASS';
+}
+
+/**
  * Prints the compact summary table and the final passed count.
  *
  * @returns {{failed: number, unknown: number}} tallies used for the exit code.
@@ -89,13 +105,23 @@ function printSummary() {
 }
 
 /**
+ * Runs both device gates in order: exactly one usable device, then an unlocked screen. Each gate
+ * prints its own reason when it stops the run.
+ *
+ * @returns {boolean} whether the run may continue to the acceptance checks.
+ */
+function deviceGatesPass() {
+  return checkDeviceAttached() && requireDeviceUnlocked();
+}
+
+/**
  * Runs the eleven checks in order against the connected device.
  *
  * @param {string} workDir - host temp directory for pulled database files.
  * @returns {number} process exit code.
  */
 function runChecks(workDir) {
-  if (!checkDeviceAttached()) return 2;
+  if (!deviceGatesPass()) return 2;
   const sqlite3 = resolveSqlite3();
   console.log(`\nhost sqlite3: ${sqlite3 ?? 'not found (DB-backed checks degrade)'}`);
   record(checkBuildIdentity());
