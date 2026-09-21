@@ -82,6 +82,41 @@ describe('installFakeBridge', () => {
     fakeBridge.restore();
   });
 
+  it('holds the next request in flight until a deferred response is released', async () => {
+    const fakeBridge = installFakeBridge();
+    const deferred = fakeBridge.queueDeferredResponse();
+
+    const pending = globalThis.fetch('https://bridge.local/api/status');
+    let settled = false;
+
+    void pending.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    deferred.release({ status: 401, body: { status: 'unauthorized' } });
+
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe(JSON.stringify({ status: 'unauthorized' }));
+
+    fakeBridge.restore();
+  });
+
+  it('fails a held request when the deferred response is rejected', async () => {
+    const fakeBridge = installFakeBridge();
+    const deferred = fakeBridge.queueDeferredResponse();
+
+    const pending = globalThis.fetch('https://bridge.local/api/status');
+    deferred.reject(new Error('connection reset'));
+
+    await expect(pending).rejects.toThrow('connection reset');
+
+    fakeBridge.restore();
+  });
+
   it('restore() returns globalThis.fetch to its previous value', () => {
     const originalFetch = globalThis.fetch;
     const fakeBridge = installFakeBridge();

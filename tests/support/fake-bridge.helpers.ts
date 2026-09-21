@@ -1,8 +1,34 @@
 import type {
+  DeferredBridgeResponse,
   FakeBridge,
   FakeBridgeRequest,
   QueuedBridgeResponse,
 } from './fake-bridge.types';
+
+/** Internal queue entry whose delivery the test controls explicitly. */
+interface DeferredQueueEntry {
+  resolve: (response: QueuedBridgeResponse) => void;
+  reject: (reason: unknown) => void;
+}
+
+/** Anything the queue can hold: an immediate replay or a test-held deferred entry. */
+type QueueEntry = QueuedBridgeResponse | DeferredQueueEntry;
+
+/**
+ * Builds the replayed `Response`-shaped double for one queued response, shared by the immediate
+ * and the deferred delivery paths so both stay byte-identical in shape.
+ */
+function replayResponse(response: QueuedBridgeResponse): Response {
+  const rawBody = JSON.stringify(response.body);
+  const headers = buildQueuedHeadersGetter(response.headers);
+
+  return {
+    ok: response.status >= 200 && response.status < 300,
+    status: response.status,
+    text: () => Promise.resolve(rawBody),
+    ...(headers ? { headers } : {}),
+  } as unknown as Response;
+}
 
 /**
  * Parses a `fetch` init body back into the value the caller serialized, so assertions read
@@ -53,7 +79,7 @@ function buildQueuedHeadersGetter(
 export function installFakeBridge(): FakeBridge {
   const previousFetch = globalThis.fetch;
   const requests: FakeBridgeRequest[] = [];
-  const queued: QueuedBridgeResponse[] = [];
+  const queued: QueueEntry[] = [];
 
   const fakeFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : String(input);
@@ -76,15 +102,14 @@ export function installFakeBridge(): FakeBridge {
       );
     }
 
-    const rawBody = JSON.stringify(next.body);
-    const headers = buildQueuedHeadersGetter(next.headers);
+    if ('resolve' in next) {
+      return new Promise<Response>((resolve, reject) => {
+        next.resolve = (response) => resolve(replayResponse(response));
+        next.reject = reject;
+      });
+    }
 
-    return Promise.resolve({
-      ok: next.status >= 200 && next.status < 300,
-      status: next.status,
-      text: () => Promise.resolve(rawBody),
-      ...(headers ? { headers } : {}),
-    } as unknown as Response);
+    return Promise.resolve(replayResponse(next));
   };
 
   (globalThis as { fetch: typeof fetch }).fetch = fakeFetch as unknown as typeof fetch;
@@ -93,6 +118,19 @@ export function installFakeBridge(): FakeBridge {
     requests,
     queueResponse(response: QueuedBridgeResponse) {
       queued.push(response);
+    },
+    queueDeferredResponse(): DeferredBridgeResponse {
+      const entry: DeferredQueueEntry = {
+        resolve: () => undefined,
+        reject: () => undefined,
+      };
+
+      queued.push(entry);
+
+      return {
+        release: (response) => entry.resolve(response),
+        reject: (reason) => entry.reject(reason),
+      };
     },
     restore() {
       (globalThis as { fetch: typeof fetch }).fetch = previousFetch;
