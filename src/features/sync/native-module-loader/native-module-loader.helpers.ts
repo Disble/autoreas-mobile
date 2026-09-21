@@ -46,14 +46,52 @@ export function loadOptionalNativeModule<TModule>(
   moduleName: string,
 ): TModule | null {
   if (!loadModule) {
+    warnModuleUnavailableOnce(moduleName, 'expo-modules-core is unavailable');
     return null;
   }
 
   try {
-    return loadModule(moduleName);
+    const nativeModule = loadModule(moduleName);
+
+    if (!nativeModule) {
+      warnModuleUnavailableOnce(moduleName, 'the native module is missing');
+    }
+
+    return nativeModule;
   } catch {
     // requireOptionalNativeModule already returns null when the module is simply missing;
     // this guard only protects against unexpected native-bridge lookup failures (e.g. Expo Go).
+    warnModuleUnavailableOnce(moduleName, 'the native-bridge lookup threw');
     return null;
+  }
+}
+
+/**
+ * Warns exactly once per JS runtime that a native-sync seam degraded to its no-op path.
+ *
+ * The degradation is otherwise completely silent, and silence is indistinguishable from a healthy
+ * module that simply has not fired yet: on device a foreground service can sit `isForeground=true`
+ * with its notification posted while its ticker seam no-ops, which is exactly how background sync
+ * stayed dead for hours with no error anywhere. Degrading quietly is right; degrading invisibly is
+ * not. The flag lives on `globalThis` because this repo's role-file-shape rule allows a `.helpers`
+ * file to declare only types and functions.
+ *
+ * @param moduleName - The native module whose absence degraded the seam.
+ * @param reason - How the lookup failed, for the warning line.
+ */
+function warnModuleUnavailableOnce(moduleName: string, reason: string): void {
+  const flags = globalThis as { __nativeSyncSeamsWarned?: Record<string, boolean> };
+  const warned = (flags.__nativeSyncSeamsWarned ??= {});
+
+  if (warned[moduleName]) {
+    return;
+  }
+
+  warned[moduleName] = true;
+
+  try {
+    console.warn(`[nativeSeam] ${moduleName} unavailable (${reason}); this seam degrades to a no-op`);
+  } catch {
+    // A runtime without console must not fail here: this is a diagnostic, not control flow.
   }
 }

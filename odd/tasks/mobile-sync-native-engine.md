@@ -107,6 +107,11 @@ absence, however long — without the user opening the app, and no attempt can o
 - Evidence: journal, outbox, `dumpsys jobscheduler`, `am get-standby-bucket`, recorded in the log either
   way — including the counter-case.
 
+### T10 — Remove the temporary `[fgs]` foreground-sync diagnostic
+- Surface: `src/features/sync/notifee-foreground-service-adapter/notifee-foreground-service-adapter.helpers.ts` (one `console.warn` line plus its marker comment), `tests/features/sync/notifee-foreground-service-adapter.test.ts` if a case references it.
+- Requirement: delete the temporary `console.warn('[fgs] foreground sync work started')` diagnostic added in `register()` once the ticker is observed ticking on a device (`ForegroundSyncTicker:ticking` wake lock present in `dumpsys power`). Temporary markers without an owner are recurring debt in this project, so the removal is tracked as a task.
+- Evidence: the device observation itself — the `dumpsys power` capture showing the `ForegroundSyncTicker:ticking` wake lock while the foreground service is up, recorded in the investigation log.
+
 ## Sequence
 
 T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9. T2 before T3 is deliberate: if an attempt cannot report,
@@ -145,6 +150,7 @@ and held until the maintainer confirms, per `AGENTS.md`.
 | T7 | implemented, committed — device acceptance open | Engine implemented and committed; invocation now provable (`cf71725`: `SyncEngine: runOnce invoked (...)` before anything else, completion line with outcome/stage/elapsed, once-per-runtime JS warning when the native module is missing) and reachable from the active path (`e038901`: the tick tries the engine first under `execution_mode = android_foreground_service`). **Device acceptance still open: until 2026-09-20 no attempt reached the engine.** |
 | T8 | pending | |
 | T9 | pending | |
+| T10 | pending | Temporary `console.warn('[fgs] foreground sync work started')` diagnostic added in the adapter's `register()` (start-before-notification reorder). Remove once `ForegroundSyncTicker:ticking` is observed on device. |
 
 ### Device acceptance checklist (next run)
 

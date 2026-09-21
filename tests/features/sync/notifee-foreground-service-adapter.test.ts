@@ -113,6 +113,12 @@ describe('notifee-foreground-service-adapter', () => {
   const platformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
   const rawDb = { id: 'raw-db' } as unknown as SQLiteDatabase;
 
+  /** Puts the adapter on Android with notification permission resolved to the given status. */
+  function authorizeAndroid(authorizationStatus = AuthorizationStatus.AUTHORIZED) {
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    (notifee.requestPermission as jest.Mock).mockResolvedValue({ authorizationStatus });
+  }
+
   function buildRuntime(owner: 'foreground_service' = 'foreground_service'): SyncSQLiteRuntime {
     return {
       owner,
@@ -172,10 +178,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('requests the manifest-declared foreground service type and never data_sync', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -192,10 +195,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('starts foreground notification and reports registered state on Android', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -233,11 +233,30 @@ describe('notifee-foreground-service-adapter', () => {
     });
   });
 
-  it('stops foreground notification, closes the runtime, and reports unregistered state', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValue({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
+  it('starts the foreground sync work before displaying the notification', async () => {
+    authorizeAndroid();
+
+    // Ordering is observable here: record the invocation order of the runner start and the
+    // notification display. Device evidence (2026-09-20) showed that code placed after the
+    // `displayNotification({ asForegroundService: true })` await never runs, so the start
+    // must be invoked before that call is made.
+    const callOrder: string[] = [];
+    (notifee.displayNotification as jest.Mock).mockImplementationOnce(async () => {
+      callOrder.push('displayNotification');
     });
+    mockStart.mockImplementationOnce(async () => {
+      callOrder.push('startForegroundSyncWork');
+    });
+
+    const adapter = createNotifeeForegroundServiceAdapter();
+
+    await adapter.register();
+
+    expect(callOrder).toEqual(['startForegroundSyncWork', 'displayNotification']);
+  });
+
+  it('stops foreground notification, closes the runtime, and reports unregistered state', async () => {
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -262,10 +281,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('runs foreground sync cycles with the foreground service trigger source', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
     mockStart.mockImplementation(async () => {
       await headlessSyncCycleModule.runHeadlessSyncCycle({
         runtime: buildRuntime(),
@@ -288,10 +304,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('wraps the reconcile cycle in the exclusive sync-cycle lock keyed by the foreground_service owner', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -321,10 +334,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('records a cycle error to the runtime status snapshot via onCycleError', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -347,10 +357,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('stops the runner and closes the runtime when the notification stop action is pressed', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -382,10 +389,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('closes the runtime on a terminal cycle error', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
     (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockRejectedValue(
       new Error('terminal'),
     );
@@ -402,10 +406,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('completes unregister even when the runtime close rejects, keeping the handle for a later retry', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
     mockRuntimeClose.mockRejectedValue(new Error('database is locked'));
 
     const adapter = createNotifeeForegroundServiceAdapter();
@@ -428,10 +429,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('completes the stop-sync background event even when the runtime close rejects', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
     mockRuntimeClose.mockRejectedValue(new Error('database is locked'));
 
     const adapter = createNotifeeForegroundServiceAdapter();
@@ -455,10 +453,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('does not start the ticker or runner twice when register() runs a second time', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValue({
-      authorizationStatus: AuthorizationStatus.AUTHORIZED,
-    });
+    authorizeAndroid();
 
     const adapter = createNotifeeForegroundServiceAdapter();
 
@@ -477,10 +472,7 @@ describe('notifee-foreground-service-adapter', () => {
   });
 
   it('does not mark the service as running when notification permission is denied', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValueOnce({
-      authorizationStatus: AuthorizationStatus.DENIED,
-    });
+    authorizeAndroid(AuthorizationStatus.DENIED);
 
     const adapter = createNotifeeForegroundServiceAdapter();
 

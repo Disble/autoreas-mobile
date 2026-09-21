@@ -193,6 +193,28 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         name: 'Sync continuo',
       });
 
+      // Evidence (tablet, 2026-09-20 build): with the foreground service UP (isForeground=true,
+      // notification posted, ForegroundServiceTypeLoggerModule line present) there was no
+      // `ForegroundSyncTicker:ticking` wake lock in `dumpsys power`, and the ticker's native
+      // module was available to JS (the once-per-runtime degradation warning in
+      // native-module-loader never fired). The remaining explanation is ordering: code placed
+      // after `await notifee.displayNotification({ asForegroundService: true })` never runs,
+      // because that await can be the last thing that resolves before the process is handed to
+      // Notifee's headless context. The service is started by that call, but nothing about
+      // starting the tick live needs to wait for it to resolve, so the sync work starts BEFORE
+      // the notification is displayed, and the flag is set at the point the service is being
+      // started. The cold-start callback above stays for the case where Notifee boots the
+      // service without a live JS caller.
+      isForegroundServiceRunning = true;
+      startForegroundSyncWork()?.catch(() => {
+        // The runner already surfaced the failure through onCycleError (and closed the runtime);
+        // this fire-and-forget start must not become an unhandled rejection inside register().
+      });
+      // Temporary diagnostic: confirms on device that the sync work started before the
+      // notification await. Remove once the ticker is observed ticking on a device (ODD task
+      // T10 in odd/tasks/mobile-sync-native-engine.md).
+      console.warn('[fgs] foreground sync work started');
+
       await notifee.displayNotification({
         title: 'Sync continuo activo',
         body: 'Autoreas mantiene la sincronización activa en segundo plano.',
@@ -217,18 +239,6 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
             },
           ],
         },
-      });
-
-      // Evidence (tablet): the callback above never ran in this build, leaving the foreground
-      // service alive with a silent ticker -- no ForegroundSyncTicker:ticking wake lock in
-      // `dumpsys power`, no journal rows, `last_attempt_at` frozen. The service is actually
-      // started by the displayNotification call above, so the ticker and the runner are started
-      // here, from the JS flow that starts the service; the callback stays for the cold-start
-      // case where Notifee boots the service without a live JS caller.
-      isForegroundServiceRunning = true;
-      startForegroundSyncWork()?.catch(() => {
-        // The runner already surfaced the failure through onCycleError (and closed the runtime);
-        // this fire-and-forget start must not become an unhandled rejection inside register().
       });
     },
 
