@@ -62,7 +62,24 @@ simply absent.
 
 ## Where we are now
 
-*Last updated: 2026-09-20, third session — the root cause below.*
+*Last updated: 2026-09-21 — the device acceptance run below (measured 2026-09-20 23:13), the defect
+list the working engine exposed, and three fixes now implemented but **not yet on device**: the wake
+lock scoped to the cycle (T11), the empty-outbox pull, and the watchdog budget moved onto
+`elapsedRealtime`. See the two newest log entries. The root cause above stands.*
+
+**Implemented, uncommitted, not yet on device (2026-09-21).** T11, the empty-outbox pull and the
+watchdog budget clock are written, staged, and verified by the grouped Kotlin compile
+(`BUILD SUCCESSFUL` for `:sync-engine` and `:foreground-sync-ticker`), 174 suites / 1288 tests, and
+the pre-commit gate. Two findings from that pass are open: (a) `SCHEDULE_EXACT_ALARM` is denied by
+default on Android 14+ for apps targeting 33+ (`targetSdkVersion: 35`), and the maintainer decided
+on 2026-09-21 to avoid that scenario entirely: the ticker requests no exact-alarm permission and
+always uses the inexact `setAndAllowWhileIdle`, whose floor is roughly one alarm per minute (longer
+in Doze) — an accepted floor that T6 must turn into an honest base interval, measured on device;
+(b) the `settled` interlock is shared across attempts and `runOnce` has no reentrancy guard, so
+overlapping invocations can leave one promise unresolved and one watchdog inert. The compiler also
+caught a regression that neither the writer's report nor a diff read saw: the response-apply
+extraction dropped `updateOperationStatus`, leaving three unresolved references in
+`SyncEngineCycle.kt`.
 
 **Root cause, found and fixed (verified; `4654779`).** The three local Expo modules
 (`foreground-sync-ticker`, `sync-journal`, `sync-engine`) declared `"android": {
@@ -77,9 +94,13 @@ the shared `native-module-loader` (`3165cb9`) printed, once per runtime, `[nativ
 unavailable ... this seam degrades to a no-op` — the earliest decisive signal of this failure class,
 now a check in the acceptance instrument. After `4654779`, `npx expo-modules-autolinking resolve`
 reports a classifier for each module, the pre-build check that was missing. **Device acceptance is
-pending the build carrying `4654779` (registration) and `3e6e10b` (start ordering, which also keeps
-the cold-start callback).** Full entry: "2026-09-20 — the root cause: the modules were never
-registered", in the log below.
+no longer pending: on 2026-09-20 23:13 the build carrying `4654779` (registration) and `3e6e10b`
+(start ordering, which also keeps the cold-start callback) delivered operation id 19 in background
+with the app closed — journal `idle→checked→claimed→sent→applied→closed`, the operation `synced`,
+cursor 2352 → 2358; the one acceptance item that failed is the 30 s bound (see the newest log
+entry).** Full entry: "2026-09-20 — the root cause: the modules were never registered", in the log
+below; the acceptance run and the remaining defect list: "2026-09-21 — the engine works", also
+below.
 
 **Symptom.**** With the app closed, mobile does not sync with the bridge. Opening the app syncs
 correctly, over the WebSocket (the WS is foreground-only), which is why the defect is invisible
@@ -176,11 +197,14 @@ free.
 `background-sync-handoff-bound` is superseded, and its patch route was retracted on 2026-09-19: the
 module is consumed as a prebuilt Maven publication, so a source patch never reaches the compiler.
 
-1. **Run the device acceptance checklist** (`odd/tasks/mobile-sync-native-engine.md`): with the
-   root-cause fixes in place (`4654779` registration, `3e6e10b` ordering, plus `cf71725`, `e038901`),
-   confirm the ticker wake lock, the `SyncEngine: runOnce invoked (...)` logcat line,
-   `files/sync-journal.db` created with transition rows, a fresh `last_attempt_at`, and the attempt
-   bounded to 30 s instead of dying at 600. No `[nativeSeam]` warning may appear in logcat.
+1. **Run the device acceptance checklist** — **done 2026-09-20 23:13.** With the root-cause fixes in
+   place (`4654779` registration, `3e6e10b` ordering, plus `cf71725`, `e038901`), the run verified
+   the engine invoked in background with the app closed, `files/sync-journal.db` with transition
+   rows (`idle→checked→claimed→sent→applied→closed`), and a fresh `last_attempt_at` (attempts at
+   13–26 ms). The delivered operation is itself the direct evidence that no seam degraded to its
+   no-op path. The one failed item is the 30 s bound: 78 s of wall clock were measured
+   against it, with no `abandoned` row (the `Handler.postDelayed` clock freezes while the CPU is
+   suspended). Details and the remaining defect list: the 2026-09-21 log entry below.
 2. **Explain why the app's own bounds are inert** (T5). Unchanged by today's findings — the 600 s
    park class reproduced again at 18:05:46 in the `expo-background-task` path. Until this is answered,
    no architecture reused from here is safe, including a native one.
@@ -333,6 +357,125 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 ## Log
 
 Newest first.
+
+### 2026-09-21 (later) — three fixes written, one regression caught by the compiler, two findings opened
+
+T11 (wake lock scoped to the cycle), the empty-outbox pull, and the watchdog budget clock were
+implemented in one pass with parallel writers over disjoint file surfaces. Everything below is
+labelled by instrument: none of the three has been on a device yet, and the maintainer cannot test
+until a later build.
+
+**Verified by instrument (not by report).** Grouped Kotlin compile: `BUILD SUCCESSFUL` for
+`:sync-engine` and `:foreground-sync-ticker` (`gradlew ... compileReleaseKotlin` in the build
+container, run against a copy under `/tmp` so no `prebuild` output lands in the host tree).
+`npx tsc --noEmit` exit 0. Full suite **174 suites / 1288 tests** green. `npx lefthook run
+pre-commit` green, staged mutation score **88.89 ≥ 80**.
+
+**The compiler caught a regression that the report and a diff read both missed.** The empty-outbox
+fix extracted the response-apply step; the extraction was independently verified byte-identical
+against the previous `applyResponseWrites` (69 lines, clean diff), but it also **dropped
+`updateOperationStatus`** from `SyncEngineCycle.kt`, leaving three unresolved references (lines 92,
+343, 421). The writer's summary asserted no regression on the claim/send path and the diff read
+agreed; `:sync-engine:compileReleaseKotlin` failed with `Unresolved reference
+'updateOperationStatus'`. The method was restored identically from `HEAD` (10 lines, verified) and
+the grouped compile then passed. **Lesson for this file: for Kotlin the compile is the artifact. A
+"verbatim move, no regression" claim is a hypothesis until the module compiles.**
+
+**Verified (Android clock semantics + code, not device): the 78 s vs 30 s watchdog gap is a clock
+bug.** `Handler.postDelayed` is delivered against `SystemClock.uptimeMillis()`, which does **not**
+advance while the CPU is suspended, so a 30 s budget was never exceeded in the watchdog's own clock
+and it never fired — consistent with the measured 78 s of wall clock and the absent `abandoned` row.
+The budget is now an absolute deadline on `SystemClock.elapsedRealtime()` (counts deep sleep),
+re-checked when the callback is delivered; an unarmable watchdog refuses the attempt and traces the
+refusal as an `abandoned` row instead of running without a budget. Honest limit: user-space code
+cannot run while the CPU sleeps, so the guarantee is "fires at the first schedulable moment after
+30 s of wall clock", not an exact-timing wake.
+
+**The same clock class drove T11.** The ticker's inter-tick delay moved from `Handler.postDelayed`
+to `AlarmManager` `setAndAllowWhileIdle` with `ELAPSED_REALTIME_WAKEUP`, and the wake lock is
+now acquired per dispatched tick and released when JS reports the cycle settled through the new
+`notifyCycleComplete()` (a rejection settles too), with a 120 s `acquire(timeout)` safety net.
+
+**Platform consequence, decided 2026-09-21.** `targetSdkVersion: 35` on Android 15 means
+`SCHEDULE_EXACT_ALARM` is denied by default. Rather than carry a user-revocable special permission
+and an unreachable exact branch, the ticker avoids that scenario entirely: it requests no
+exact-alarm permission and always schedules the inexact `setAndAllowWhileIdle`, which stays
+suspend-proof because `ELAPSED_REALTIME_WAKEUP` counts deep sleep. The cost is stated honestly: the
+system may batch or defer the alarm, with a floor around one alarm per minute and longer gaps in
+Doze, so the 15 s `FOREGROUND_SYNC_INTERVAL_MS` is not a cadence the platform honours. The
+maintainer accepts that floor; T6 owns the interval value and must measure the delivered cadence on
+device before setting it.
+
+**New defect found while auditing the interlock (predates this change; not fixed).** `settled` is a
+single flag shared across attempts and `runOnce` has no reentrancy guard: if two invocations overlap,
+invocation B's `settled.set(false)` lands while A is in flight, A's worker can leave `settled ==
+true`, and B's worker then fails its CAS — B's promise never resolves and B's watchdog is inert at
+its deadline. The single-thread executor serializes cycle bodies but not the `runAttempt` prologues.
+This is the unresolved-promise hazard the watchdog exists to prevent, so it belongs with T6's
+in-flight guard.
+
+**Instrument change, no device run yet.** Check 5 no longer reads the whole logcat ring buffer: it
+resolves the live pid (`adb shell pidof -s`) and reads `logcat -d --pid=<pid>`, and it **refuses to
+PASS** when the pid cannot be resolved. That removes the false positive that made the previous run
+report 10 PASS / 1 FAIL (a stale `[nativeSeam]` warning from a pre-`4654779` process lifetime). No
+device was attached for this pass, so the fixed instrument has not been run against hardware.
+
+### 2026-09-21 — the engine works: acceptance verified end-to-end, and what the working engine now measures
+
+The build carrying `4654779` (module registration) and `3e6e10b` (start ordering) was accepted on
+device. This entry records what was verified, the one acceptance item that failed, and the defect
+list the now-working engine made measurable. Everything labelled **Verified** or **Measured** below
+was observed on the tablet; nothing here is inferred from code reading alone.
+
+**Verified: end-to-end background delivery, 2026-09-20 23:13.** With the bridge off, the user marked
+a chapter (operation id 19, created 23:05:04). When the bridge came up, the **native engine
+delivered it in background with the app closed**: the journal traversed
+`idle→checked→claimed→sent→applied→closed`, the operation reached **`synced`**, and the cursor
+advanced **2352 → 2358**. After the sync, background attempts cost **13–26 ms** each. This closes
+the device acceptance of T2 (a parked attempt leaves a readable state — here a delivered one) and
+T7 (a closed app closes a cycle), and it confirms the root-cause fix end to end: the same seams that
+were silent no-ops before `4654779` carried a full cycle.
+
+**Verified: the one acceptance item that failed.** The attempt was **not** bounded to 30 s. The
+watchdog budget is armed with `Handler.postDelayed`, whose clock freezes while the CPU is
+suspended: **78 s of wall clock** were measured against the **30 s** budget, and **no `abandoned`
+row** was written. The `abandoned` outcome (T3) remains unobserved on device.
+
+**Measured: the defects the working engine now exposes.** With the engine actually running, the
+missing policy layers became measurable instead of hypothetical:
+
+- **No backoff and no presence policy.** With the bridge down the runner attempts **6 times per
+  minute, each costing 30–65 s**, logged **20 connection failures in 3 minutes**, and the runner
+  discards the cycle promise. This is the T6 gap, now measured.
+- **No pull when the outbox is empty** (`SyncEngineCycle.kt`, around line 155): the cycle only
+  pushes; an empty outbox means nothing is pulled from the bridge.
+- **The temporary `[fgs]` diagnostic is still present** at
+  `notifee-foreground-service-adapter.helpers.ts:216` (T10, unchanged).
+
+**Measured: the ticker's wake-lock hold (T11, in progress).** The ticker holds its
+`PARTIAL_WAKE_LOCK` for the whole ticking lifetime (`ForegroundSyncTickerModule.kt:51-69`), and the
+system tags the hold `LONG`. Another worker is implementing the scoped hold right now; the
+requirement text in the ODD task is unchanged, and its device verification stays deferred.
+
+**Debt closed — recorded so it is not re-walked as pending:**
+
+- `patches/` no longer exists, and the stale-prebuild/patch guard was removed from
+  `docker-compose.eas.yml`, consistent with the standing rule never to modify a dependency's code.
+  The 2026-09-19 entry's build-time guard is therefore history, not current state.
+- The app left Android's `RESTRICTED` stand-by bucket: `am get-standby-bucket` now reports
+  **10 (EXEMPTED)** — the acceptance guard "not `45`" now holds.
+
+**Still open — recorded as open, not upgraded:**
+
+- **T4's device evidence.** `23e22f3` ships the sweep (`SyncEngineRecovery.sweep(cycleId)` from
+  `SyncEngineCycle.runCycle`, right after the lease claim), but neither recovery has been observed
+  on device: the two orphan `processing` rows returning to `pending`, and the expired
+  `sync_cycle_lock` lease being released.
+- **T9's long-absence catch-up and the 24 h metrics.** `consecutive_unclosed_cycles = 0` for 24 h
+  and zero JobScheduler `Client timed out` stops have not been measured; the catch-up within the
+  first hour was verified once (23:13), not over a long absence.
+- **Delivery.** Branch `dev` has never been pushed — there is no `refs/remotes/origin/dev`. Nothing
+  has shipped; delivery remains the maintainer's decision.
 
 ### 2026-09-20 — the root cause: the modules were never registered
 
