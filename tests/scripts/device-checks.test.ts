@@ -19,6 +19,7 @@ import path from 'node:path';
 // CJS runtime never requires the `.mjs`; static analysis (fallow) still sees the named imports,
 // which keeps the exports counted as consumed by this test.
 import type {
+  engineGateOutcome as EngineGateOutcome,
   parseKeyguardState as ParseKeyguardState,
   parseNativeSeamWarnings as ParseNativeSeamWarnings,
   parsePidOfOutput as ParsePidOfOutput,
@@ -27,29 +28,49 @@ import type {
 
 /** The check-5 parsing surface plus the device-gate keyguard parser, typed from the statically imported helper values. */
 type DeviceChecks = {
+  engineGateOutcome: typeof EngineGateOutcome;
   parseKeyguardState: typeof ParseKeyguardState;
   parseNativeSeamWarnings: typeof ParseNativeSeamWarnings;
   parsePidOfOutput: typeof ParsePidOfOutput;
   scopedLogcatArgs: typeof ScopedLogcatArgs;
 };
 
-/** Loads `scripts/lib/device-checks.mjs` by transforming it to CJS and evaluating it. */
+/** Loads `scripts/lib/device-checks.mjs` by transforming it to CJS and evaluating it.
+ *
+ * The module now imports its base layer (`./device-db-checks.mjs`), so the loader pre-transforms
+ * that dependency too and hands the evaluated module a `require` that resolves the relative
+ * specifier against the source directory instead of this test file's directory.
+ */
 function loadDeviceChecksModule(): DeviceChecks {
-  const file = path.resolve(__dirname, '../../scripts/lib/device-checks.mjs');
-  const result = transformFileSync(file, {
-    babelrc: false,
-    configFile: false,
-    plugins: ['@babel/plugin-transform-modules-commonjs'],
-  });
-  const { code } = result ?? {};
-  if (!code) throw new Error(`babel produced no code for ${file}`);
+  const sourceDir = path.resolve(__dirname, '../../scripts/lib');
+  const transform = (file: string): string => {
+    const result = transformFileSync(file, {
+      babelrc: false,
+      configFile: false,
+      plugins: ['@babel/plugin-transform-modules-commonjs'],
+    });
+    const { code } = result ?? {};
+    if (!code) throw new Error(`babel produced no code for ${file}`);
+    return code;
+  };
+  const dependencyFile = path.join(sourceDir, 'device-db-checks.mjs');
+  const dependency = { exports: {} as Record<string, unknown> };
+  new Function('require', 'module', 'exports', transform(dependencyFile))(require, dependency, dependency.exports);
+  const nodeRequire = require;
   const module = { exports: {} as Record<string, unknown> };
-  new Function('require', 'module', 'exports', code)(require, module, module.exports);
+  const moduleRequire = (specifier: string) =>
+    specifier === './device-db-checks.mjs' ? dependency.exports : nodeRequire(specifier);
+  new Function('require', 'module', 'exports', transform(path.join(sourceDir, 'device-checks.mjs')))(
+    moduleRequire,
+    module,
+    module.exports,
+  );
   return module.exports as DeviceChecks;
 }
 
 /** The real parsing surface of check 5, loaded from source. */
-const { parseKeyguardState, parseNativeSeamWarnings, parsePidOfOutput, scopedLogcatArgs } = loadDeviceChecksModule();
+const { engineGateOutcome, parseKeyguardState, parseNativeSeamWarnings, parsePidOfOutput, scopedLogcatArgs } =
+  loadDeviceChecksModule();
 
 /** A realistic `logcat -d -v time --pid=<pid>` dump with one fresh seam warning from the current pid. */
 const SCOPED_DUMP_FRESH_WARNING = [
@@ -133,6 +154,38 @@ describe('device gate keyguard parsing', () => {
 
   it('locks the verdict on a true flag even when the other boolean is absent (fail closed)', () => {
     expect(parseKeyguardState('  mDreamingLockscreen=true')).toMatchObject({ locked: true });
+  });
+});
+
+describe('check 7 engine-invoked gate verdicts', () => {
+  it('PASSes only through a demonstrable T6 gate refusal: an incomplete bridge config refuses every tick by design', () => {
+    const outcome = engineGateOutcome('4242', { config: { ip: '', port: '8787', token: 'tok' }, error: null });
+    expect(outcome.verdict).toBe('PASS');
+    expect(outcome.evidence).toContain('presence gate');
+    expect(outcome.evidence).toContain('incomplete');
+    expect(outcome.evidence).toContain('pid 4242');
+  });
+
+  it('stays UNKNOWN when the presence-gate state cannot be read, never PASS and never FAIL', () => {
+    const outcome = engineGateOutcome('4242', { config: null, error: 'host sqlite3 not found' });
+    expect(outcome.verdict).toBe('UNKNOWN');
+    expect(outcome.evidence).toContain('cannot be read');
+  });
+
+  it('stays UNKNOWN with a complete bridge config because a probe refusal is then indistinguishable from a real engine failure', () => {
+    const outcome = engineGateOutcome('4242', { config: { ip: '10.0.0.2', port: '8787', token: 'tok' }, error: null });
+    expect(outcome.verdict).toBe('UNKNOWN');
+    expect(outcome.evidence).toContain('complete');
+    expect(outcome.evidence).toContain('GET /api/status');
+  });
+
+  it('never reports FAIL for the absence of the engine marker alone', () => {
+    const outcomes = [
+      engineGateOutcome('4242', { config: null, error: 'pull of files/SQLite/autoreas.db failed; pulled: nothing' }),
+      engineGateOutcome('4242', { config: { ip: '', port: '', token: '' }, error: null }),
+      engineGateOutcome('4242', { config: { ip: '10.0.0.2', port: '8787', token: 'tok' }, error: null }),
+    ];
+    expect(outcomes.map((o) => o.verdict)).not.toContain('FAIL');
   });
 });
 

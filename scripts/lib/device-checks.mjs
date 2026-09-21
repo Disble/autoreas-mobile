@@ -9,20 +9,19 @@
 // No dependencies. `adb` must be on PATH. Host `sqlite3` is optional: the DB-backed checks degrade to
 // UNKNOWN or existence-only when missing, because reading a live database is evidence collection,
 // not an acceptance failure.
+//
+// The host-sqlite3 plumbing and the pure-DB checks live in `scripts/lib/device-db-checks.mjs` (the
+// base layer, extracted because this file sits at the 500-line hard limit); this module imports the
+// shared pieces from there and owns every adb-driven check.
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { outcome, pullDeviceFile, querySqlite, readBridgeGateConfig } from './device-db-checks.mjs';
 
 /** Android package this acceptance run inspects. */
 const PACKAGE_NAME = 'com.disble.autoreasmobile';
 /** Binary spawned for every device interaction. */
 const ADB = 'adb';
-/** Known host locations of sqlite3 beside the Android SDK platform-tools, tried in order. */
-const SQLITE3_KNOWN_PATHS = [
-  'C:/Users/User/AppData/Local/Android/Sdk/platform-tools/sqlite3',
-  'C:/Users/User/AppData/Local/Android/Sdk/platform-tools/sqlite3.exe',
-];
 /** dataSync foreground-service type bit the service record must carry. */
 const DATA_SYNC_TYPE_BIT = 0x40000000;
 /** Stand-by bucket value that means RESTRICTED and fails the bucket check. */
@@ -35,10 +34,6 @@ const ENGINE_MARKER = 'runOnce invoked';
 const NATIVE_SEAM_WARNING = '[nativeSeam]';
 /** Wake-lock tag the native ticker holds while it is ticking (dumpsys power). */
 const TICKER_WAKE_LOCK = 'ForegroundSyncTicker:ticking';
-/** Evidence text for Attempt freshness when host sqlite3 is unavailable. */
-const NO_SQLITE3_EVIDENCE = 'host sqlite3 not found; sync_runtime_status cannot be read. Install sqlite3 (SDK platform-tools) to lift this.';
-/** Read-only query for the newest sync_runtime_status row. */
-const RUNTIME_STATUS_SQL = 'SELECT last_attempt_at, last_cycle_stage, is_cycle_active, last_error_name FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
 /** Read-only query for the journal row count. */
 const JOURNAL_COUNT_SQL = 'SELECT COUNT(*) FROM journal;';
 /** Read-only query for the newest journal transition. */
@@ -58,32 +53,6 @@ export function runAdb(args, maxBufferBytes = 16 * 1024 * 1024) {
 function adbFailure(error) {
   const record = error && typeof error === 'object' ? error : {};
   return { ok: false, out: asText(record.stdout), err: joinText(record.stderr, record.message) };
-}
-
-/**
- * Pulls one file off the app's private storage via `adb exec-out run-as ... cat` into a
- * host path. Binary-safe, read-only on the device; true when the pull produced a file.
- */
-function pullDeviceFile(remotePath, hostPath) {
-  const res = spawnSync(ADB, ['exec-out', 'run-as', PACKAGE_NAME, 'cat', remotePath], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (res.status !== 0 || !res.stdout || res.stdout.length === 0) return false;
-  writeFileSync(hostPath, res.stdout);
-  return true;
-}
-
-/** Resolves the host sqlite3 executable (PATH, then known SDK locations); null when none answers `--version`. */
-export function resolveSqlite3() {
-  const candidates = ['sqlite3', ...SQLITE3_KNOWN_PATHS];
-  for (const exe of candidates) {
-    if (spawnSync(exe, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).status === 0) return exe;
-  }
-  return null;
-}
-
-/** Runs one read-only SQL statement against a pulled database file; `{ok, out}` with raw sqlite3 stdout. */
-function querySqlite(exe, dbPath, sql) {
-  const res = spawnSync(exe, ['-readonly', dbPath, sql], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-  return { ok: res.status === 0, out: (res.stdout ?? '').trim() };
 }
 
 /** Parses the device list body of `adb devices` into each entry's non-empty state value. */
@@ -129,7 +98,7 @@ function parseTickerWakeLockLines(out) {
   return out.split(/\r?\n/).filter((line) => line.includes(TICKER_WAKE_LOCK));
 }
 
-/** Parses the engine-marker lines out of a `logcat -d` dump, oldest first. */
+/** Parses the engine-marker lines out of a (pid-scoped) `logcat -d` dump, oldest first. */
 function parseEngineInvocations(out) {
   return out.split(/\r?\n/).filter((line) => line.includes(ENGINE_MARKER));
 }
@@ -148,19 +117,6 @@ export function parsePidOfOutput(out) {
 /** Builds the pid-scoped `adb logcat -d` argument vector that restricts the dump to one live process. */
 export function scopedLogcatArgs(pid) {
   return ['logcat', '-d', '-v', 'time', `--pid=${pid}`];
-}
-
-/** Splits one pipe-delimited sync_runtime_status row into its named fields, '' for missing columns. */
-function parseRuntimeStatusRow(out) {
-  const [lastAttemptAt = '', lastCycleStage = '', isCycleActive = '', lastErrorName = ''] = out.split('|');
-  return { lastAttemptAt, lastCycleStage, isCycleActive, lastErrorName };
-}
-
-/** Turns a raw last_attempt_at value into a human age (seconds/ms epochs, ISO strings); null when unparseable. */
-function parseAttemptAge(raw) {
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  if (!trimmed) return null;
-  return parseEpochAttemptAge(trimmed) ?? parseIsoAttemptAge(trimmed);
 }
 
 /** Parses the package's numeric uid from a `dumpsys package` dump (userId=, then appId=/uid=); null when absent. */
@@ -243,16 +199,42 @@ export function checkTickerAlive() {
     `wake lock tag '${TICKER_WAKE_LOCK}' is absent from dumpsys power.\nThe service can be foreground (check 4 green) with the ticker never started — this is exactly\nthe state the investigation chased: foreground yet idle, no wake lock, no ticks.`);
 }
 
-/** Check 7: the engine was actually invoked; reports the newest occurrence, absence means no attempt reached the engine. */
-export function checkEngineInvoked() {
-  const res = runAdb(['logcat', '-d', '-v', 'time'], 64 * 1024 * 1024);
-  if (!res.ok) return outcome('Engine invoked', 'UNKNOWN', `logcat -d failed: ${res.err}`);
+/** Check 7: the native sync engine was actually invoked during the CURRENT process lifetime. The logcat read is scoped
+ * to the live pid (check 5's discipline: `pidof -s` + `--pid=<pid>`) so a stale line from an earlier lifetime can never
+ * PASS it. When no marker exists, the T6 presence gate decides: every tick is gated on a `GET /api/status` probe
+ * (commit 6b10bcd), so with the bridge absent no cycle is entered and the engine is never invoked BY DESIGN — a
+ * demonstrable gate refusal does not fail the acceptance, and every unprovable state stays UNKNOWN. */
+export function checkEngineInvoked(sqlite3, workDir) {
+  const pidRes = runAdb(['shell', 'pidof', '-s', PACKAGE_NAME]);
+  const pid = pidRes.ok ? parsePidOfOutput(pidRes.out) : null;
+  if (!pid) {
+    return outcome('Engine invoked', 'UNKNOWN',
+      `could not resolve the live app pid via 'adb shell pidof -s ${PACKAGE_NAME}' — the logcat dump cannot be scoped to the current process, so a stale '${ENGINE_MARKER}' line from an earlier lifetime cannot be ruled out; the check refuses to PASS:\n${[pidRes.out.trim(), pidRes.err].filter(Boolean).join('\n')}`);
+  }
+  const res = runAdb(scopedLogcatArgs(pid), 64 * 1024 * 1024);
+  if (!res.ok) return outcome('Engine invoked', 'UNKNOWN', `logcat -d --pid=${pid} failed: ${res.err}`);
   const lines = parseEngineInvocations(res.out);
   if (lines.length > 0) {
-    return outcome('Engine invoked', 'PASS', `newest of ${lines.length} occurrence(s):\n${lines[lines.length - 1].trim()}`);
+    return outcome('Engine invoked', 'PASS', `newest of ${lines.length} occurrence(s) from the current process (pid ${pid}):\n${lines[lines.length - 1].trim()}`);
   }
-  return outcome('Engine invoked', 'FAIL',
-    `no '${ENGINE_MARKER}' line in the logcat buffer — no attempt ever reached the sync engine\n(SyncEngineModule.runOnce was never called since the buffer was last cleared).`);
+  return engineGateOutcome(pid, readBridgeGateConfig(sqlite3, workDir));
+}
+
+/** Builds the Engine invoked verdict when the pid-scoped buffer holds no marker: PASS only through a demonstrable T6
+ * presence-gate refusal (an incomplete bridge config, so probeBridgePresence rejects before any cycle is entered);
+ * UNKNOWN when the gate state cannot be read or the config is complete (a probe refusal is then indistinguishable from
+ * a real engine failure). The absence of the marker alone is never a FAIL and never a PASS without the artifact. */
+export function engineGateOutcome(pid, gate) {
+  if (gate.error) {
+    return outcome('Engine invoked', 'UNKNOWN',
+      `no '${ENGINE_MARKER}' line from the current process (pid ${pid}); the T6 presence-gate state cannot be read (${gate.error}), so a designed gate refusal cannot be distinguished from a real engine failure.`);
+  }
+  if (!gate.config.ip || !gate.config.port || !gate.config.token) {
+    return outcome('Engine invoked', 'PASS',
+      `no '${ENGINE_MARKER}' line from the current process (pid ${pid}) — and the presence gate legitimately refused every tick: bridge config is incomplete (ip=${gate.config.ip || '(missing)'} port=${gate.config.port || '(missing)'} token=${gate.config.token ? 'set' : '(missing)'}), so probeBridgePresence refuses before any cycle is entered (T6 gate). No engine invocation is the designed outcome, not a failure.`);
+  }
+  return outcome('Engine invoked', 'UNKNOWN',
+    `no '${ENGINE_MARKER}' line from the current process (pid ${pid}); bridge config is complete (ip=${gate.config.ip} port=${gate.config.port} token=set), so whether the gate refused because the bridge is unreachable or the engine was genuinely never reached cannot be distinguished from device reads. Probe the bridge's GET /api/status and re-run.`);
 }
 
 /** Check 5: the FIRST log-derived check — the `[nativeSeam]` warning is the earliest decisive signal that a native seam
@@ -293,15 +275,7 @@ export function checkJournalWritten(sqlite3, workDir) {
   return outcome('Journal written', 'PASS', evidence + readJournalRows(sqlite3, local));
 }
 
-/** Check 9: pulls the live app database (plus WAL/SHM) and reads sync_runtime_status; missing sqlite3 is UNKNOWN, not FAIL. */
-export function checkAttemptFreshness(sqlite3, workDir) {
-  if (!sqlite3) return outcome('Attempt freshness', 'UNKNOWN', NO_SQLITE3_EVIDENCE);
-  const pulled = pullDatabaseWithSidecars(workDir);
-  if (!pulled.hasMain) return outcome('Attempt freshness', 'UNKNOWN', pullFailureEvidence(pulled.names));
-  return runtimeStatusOutcome(sqlite3, workDir, pulled.names);
-}
-
-/** Check 10: counts `Client timed out while executing` lines inside the app uid's JobScheduler records; PASS at zero. */
+/** Check 11: counts `Client timed out while executing` lines inside the app uid's JobScheduler records; PASS at zero. */
 export function checkExecutionGuardBurns() {
   const pkg = runAdb(['shell', 'dumpsys', 'package', PACKAGE_NAME]);
   const jobs = runAdb(['shell', 'dumpsys', 'jobscheduler'], 32 * 1024 * 1024);
@@ -311,7 +285,7 @@ export function checkExecutionGuardBurns() {
   return guardOutcome(resolved.index, resolved.source, parseGuardTimeoutCounts(jobs.out, resolved.index));
 }
 
-/** Check 11: the app's stand-by bucket is not 45 (RESTRICTED); names the value either way. */
+/** Check 12: the app's stand-by bucket is not 45 (RESTRICTED); names the value either way. */
 export function checkStandbyBucket() {
   const res = runAdb(['shell', 'am', 'get-standby-bucket', PACKAGE_NAME]);
   if (!res.ok) {
@@ -322,11 +296,6 @@ export function checkStandbyBucket() {
     return outcome('Stand-by bucket', 'FAIL', `${value} ${name} — JobScheduler may defer or refuse the app's jobs in this bucket`);
   }
   return outcome('Stand-by bucket', 'PASS', `${value} ${name}`);
-}
-
-/** Builds one check outcome object in the shape the entry point records and prints. */
-function outcome(name, verdict, evidence) {
-  return { name, verdict, evidence };
 }
 
 /** Returns the first capture group of a regex against text, or null. */
@@ -367,25 +336,6 @@ function serviceStateOutcome(fg, flags) {
 /** Renders the Service state evidence line from the parsed facts. */
 function serviceEvidence(fg, flags) {
   return `isForeground=${orNotFound(fg.isForeground)}, types=${orNotFound(fg.types)}, stopIfKilled=${orNotFound(flags.stopIfKilled)}, createdFromFg=${orNotFound(flags.createdFromFg)}`;
-}
-
-/** Reads sync_runtime_status from the pulled main database and decides the verdict. */
-function runtimeStatusOutcome(sqlite3, workDir, pulledNames) {
-  const res = querySqlite(sqlite3, path.join(workDir, 'autoreas.db'), RUNTIME_STATUS_SQL);
-  if (!res.ok || !res.out) return outcome('Attempt freshness', 'UNKNOWN', queryFailureEvidence(res.out));
-  return outcome('Attempt freshness', 'PASS', formatRuntimeStatusEvidence(res.out, pulledNames));
-}
-
-/** Renders the Attempt freshness UNKNOWN evidence for a failed main-database pull. */
-function pullFailureEvidence(pulledNames) {
-  const names = pulledNames.join(', ');
-  return `pull of files/SQLite/autoreas.db failed; pulled: ${names || 'nothing'}`;
-}
-
-/** Renders the Attempt freshness UNKNOWN evidence for a failed or empty query. */
-function queryFailureEvidence(out) {
-  const rendered = out || '(empty result)';
-  return `sync_runtime_status query failed or returned nothing:\n${rendered}`;
 }
 
 /** Reduces one JobScheduler dump line into the running timeout tally, tracking the newest job header's uid. */
@@ -437,26 +387,6 @@ function guardOutcome(appIndex, uidEvidence, counts) {
   return outcome('No execution-guard burns', counts.scoped === 0 ? 'PASS' : 'FAIL', evidence);
 }
 
-/** Pulls the live app database with its WAL and SHM sidecars; reports labels and whether the main db arrived. */
-function pullDatabaseWithSidecars(workDir) {
-  const names = [];
-  for (const suffix of ['', '-wal', '-shm']) {
-    const remote = `files/SQLite/autoreas.db${suffix}`;
-    const local = path.join(workDir, `autoreas.db${suffix}`);
-    if (pullDeviceFile(remote, local)) names.push(suffix || '(main)');
-  }
-  return { names, hasMain: names.includes('(main)') };
-}
-
-/** Formats the Attempt freshness PASS evidence from the raw status row and pulled sidecar labels. */
-function formatRuntimeStatusEvidence(rawRow, pulledNames) {
-  const row = parseRuntimeStatusRow(rawRow);
-  const age = parseAttemptAge(row.lastAttemptAt);
-  return `last_attempt_at=${row.lastAttemptAt} (age: ${age ?? 'unparseable'})\n` +
-    `last_cycle_stage=${row.lastCycleStage || '(null)'}, is_cycle_active=${row.isCycleActive}, last_error_name=${row.lastErrorName || '(null)'}\n` +
-    `pulled with sidecars: ${pulledNames.join(', ')}`;
-}
-
 /** Reads the journal row count and newest transition from a pulled journal db, rendered as extra evidence lines. */
 function readJournalRows(sqlite3, localDbPath) {
   const count = querySqlite(sqlite3, localDbPath, JOURNAL_COUNT_SQL);
@@ -464,32 +394,6 @@ function readJournalRows(sqlite3, localDbPath) {
   let evidence = count.ok ? `\njournal rows: ${count.out}` : `\nrow count query failed: ${count.out}`;
   if (newest.ok && newest.out) evidence += `\nnewest transition: ${newest.out}`;
   return evidence;
-}
-
-/** Interprets an all-digit last_attempt_at value as a seconds or milliseconds epoch; null when unusable. */
-function parseEpochAttemptAge(trimmed) {
-  if (!/^\d+$/.test(trimmed)) return null;
-  const ms = normalizeEpochMs(Number(trimmed));
-  if (ms === null) return null;
-  return formatAge(ms, new Date(ms).toISOString());
-}
-
-/** Interprets a non-numeric last_attempt_at value as an ISO-style date string; null when Date.parse rejects it. */
-function parseIsoAttemptAge(trimmed) {
-  const parsed = Date.parse(trimmed);
-  if (Number.isNaN(parsed)) return null;
-  return formatAge(parsed, trimmed);
-}
-
-/** Normalizes a raw epoch number to milliseconds (values under 1e11 are seconds); null when not a valid date. */
-function normalizeEpochMs(value) {
-  const ms = value > 0 && value < 1e11 ? value * 1000 : value;
-  return Number.isNaN(new Date(ms).getTime()) ? null : ms;
-}
-
-/** Renders an epoch as minutes-ago text with the original value alongside in parentheses. */
-function formatAge(ms, rendered) {
-  return `${Math.round((Date.now() - ms) / 60000)} min ago (${rendered})`;
 }
 
 /** Computes the numeric app uid index (userId minus 10000) used in JobScheduler tags. */

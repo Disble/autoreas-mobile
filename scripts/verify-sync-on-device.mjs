@@ -1,6 +1,6 @@
 // Device acceptance instrument for the native background sync work.
 //
-// Runs the eleven acceptance checks from the sync investigation against the tablet over adb
+// Runs the twelve acceptance checks from the sync investigation against the tablet over adb
 // and prints a verdict per check (PASS / FAIL / UNKNOWN) with the raw evidence it read.
 // It is read-only on the device: dumpsys, logcat -d, am get-standby-bucket and file reads
 // through `run-as cat`. Exits non-zero when any check fails; exits 2 (cleanly, no stack
@@ -9,14 +9,15 @@
 // Usage: node scripts/verify-sync-on-device.mjs
 //
 // This file is the thin entry point only: the device gates (attachment, unlock), running the
-// checks in order, printing the summary table, and computing the exit code. The checks
-// themselves and all parsing live in scripts/lib/device-checks.mjs.
+// checks in order, printing the summary table, and computing the exit code. The adb-driven
+// checks and all adb parsing live in scripts/lib/device-checks.mjs; the host-sqlite3 plumbing
+// and the pure-DB checks (Attempt freshness, Cycle closure) live in
+// scripts/lib/device-db-checks.mjs.
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  checkAttemptFreshness,
   checkBuildIdentity,
   checkDeviceUnlocked,
   checkEngineInvoked,
@@ -28,9 +29,9 @@ import {
   checkStandbyBucket,
   checkTickerAlive,
   parseAdbDeviceStates,
-  resolveSqlite3,
   runAdb,
 } from './lib/device-checks.mjs';
+import { checkAttemptFreshness, checkCycleClosure, resolveSqlite3 } from './lib/device-db-checks.mjs';
 
 /** Verdicts collected in run order; printed per check and summarized at the end. */
 const results = [];
@@ -43,7 +44,7 @@ const results = [];
  */
 function record(outcome) {
   results.push(outcome);
-  console.log(`\n[${results.length}/11] ${outcome.name} ... ${outcome.verdict}`);
+  console.log(`\n[${results.length}/12] ${outcome.name} ... ${outcome.verdict}`);
   for (const line of outcome.evidence.split('\n')) console.log(`       | ${line}`);
 }
 
@@ -74,7 +75,7 @@ function checkDeviceAttached() {
  * Device gate 2: the device must be unlocked before any acceptance check runs. The app cannot
  * complete its JS startup while the keyguard is up, so a locked device would waste the whole
  * window; like a missing device, this stops the run with exit code 2. The gate outcome is
- * printed for the operator but not recorded, so the numbered acceptance checks stay eleven.
+ * printed for the operator but not recorded, so the numbered acceptance checks stay twelve.
  *
  * @returns {boolean} whether the run may continue.
  */
@@ -115,7 +116,7 @@ function deviceGatesPass() {
 }
 
 /**
- * Runs the eleven checks in order against the connected device.
+ * Runs the twelve checks in order against the connected device.
  *
  * @param {string} workDir - host temp directory for pulled database files.
  * @returns {number} process exit code.
@@ -132,9 +133,14 @@ function runChecks(workDir) {
   // the wake-lock and engine absences that the later checks would otherwise report as symptoms.
   record(checkNativeSeamWarnings());
   record(checkTickerAlive());
-  record(checkEngineInvoked());
+  record(checkEngineInvoked(sqlite3, workDir));
   record(checkJournalWritten(sqlite3, workDir));
   record(checkAttemptFreshness(sqlite3, workDir));
+  // The cycle-closure check sits right after Attempt freshness on purpose: it reads the same
+  // pulled database and carries the primary acceptance metric of
+  // docs/mobile-sync-architecture.md §9 — consecutive_unclosed_cycles = 0 — plus the journal
+  // FSM's per-cycle newest transitions.
+  record(checkCycleClosure(sqlite3, workDir));
   record(checkExecutionGuardBurns());
   record(checkStandbyBucket());
   const { failed } = printSummary();
