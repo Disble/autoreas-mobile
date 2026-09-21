@@ -6,7 +6,8 @@
   "entry": [
     "src/app/**/*.{ts,tsx}",
     "app/**/*.{ts,tsx}",
-    "scripts/log-lesson.mjs"
+    "scripts/log-lesson.mjs",
+    "scripts/verify-sync-on-device.mjs"
   ],
   "dynamicallyLoaded": [
     "plugins/withAndroidGradleMemory.js",

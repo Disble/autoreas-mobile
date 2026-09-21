@@ -634,6 +634,19 @@ regexes matched against the Gradle project name (`SettingsManager.kt`, `shouldUs
 A guard that greps the patched source text verifies a **proxy**, not the artifact: it passed green on
 every unpatched APK. The artifact-level control is the dex check below, run **after** the build.
 
+**Device acceptance instrument.** `node scripts/verify-sync-on-device.mjs` is the lab's acceptance
+instrument for the native sync work — not temporary tooling. With the tablet connected over adb it
+runs the ten acceptance checks in order (device attached, build identity, lab-readable build, service
+state, ticker wake lock, engine invoked, journal written, attempt freshness, no execution-guard burns,
+stand-by bucket), prints `PASS`/`FAIL`/`UNKNOWN` per check with the raw evidence it read, and exits
+non-zero when any check fails. It is read-only on the device: `dumpsys`, `logcat -d`,
+`am get-standby-bucket` and file reads through `run-as cat`. It replaces the by-hand
+`dumpsys`/`logcat`/`sqlite3` sequence above — the commands stay documented because they are what the
+instrument automates, not because anyone should still run them by hand. Host `sqlite3` (SDK
+platform-tools) is optional: the DB-backed checks degrade to `UNKNOWN`/existence-only without it,
+which is itself the verdict to trust, since reading a live database is evidence collection, not
+acceptance.
+
 ---
 
 ## Corrections made during this investigation
