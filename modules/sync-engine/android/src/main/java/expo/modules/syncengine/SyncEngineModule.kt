@@ -69,9 +69,6 @@ class SyncEngineModule : Module() {
   private var appDb: SQLiteDatabase? = null
   private var journal: SyncEngineJournal? = null
 
-  /** Guards the promise so exactly one of the watchdog and the worker settles it. */
-  private val settled = AtomicBoolean(false)
-
   /** The last attempt state reached, readable by the watchdog from outside the parked worker. */
   private val lastState = AtomicReference("idle")
 
@@ -104,8 +101,11 @@ class SyncEngineModule : Module() {
 
   /**
    * Runs one attempt on the work executor, with the watchdog armed at the budget. Both
-   * settlement paths are guarded by [settled] so the promise resolves exactly once, and the
-   * watchdog callback is cleaned up on normal completion (and again in `OnDestroy`).
+   * settlement paths are guarded by the attempt-local [settled] flag so the promise resolves
+   * exactly once, and the watchdog callback is cleaned up on normal completion (and again in
+   * `OnDestroy`). The flag is created per attempt, never at module level: two overlapping
+   * `runOnce` invocations must not share one interlock, or the second invocation's reset can
+   * invalidate the first's guard and leave its own promise unresolved past its budget.
    */
   private fun runAttempt(triggerSource: String, promise: Promise) {
     val cycleId = UUID.randomUUID().toString()
@@ -134,7 +134,9 @@ class SyncEngineModule : Module() {
       journal = SyncEngineJournal(context)
     }
 
-    settled.set(false)
+    // The interlock is PER ATTEMPT: the watchdog and worker closures below capture this
+    // instance, so overlapping invocations never share or reset each other's guard.
+    val settled = AtomicBoolean(false)
     lastState.set("idle")
 
     // The deadline is absolute on the elapsedRealtime clock, which counts time spent in deep
