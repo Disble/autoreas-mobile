@@ -62,10 +62,12 @@ simply absent.
 
 ## Where we are now
 
-*Last updated: 2026-09-21 — the device acceptance run below (measured 2026-09-20 23:13), the defect
-list the working engine exposed, and three fixes now implemented but **not yet on device**: the wake
-lock scoped to the cycle (T11), the empty-outbox pull, and the watchdog budget moved onto
-`elapsedRealtime`. See the two newest log entries. The root cause above stands.*
+*Last updated: 2026-09-21 (latest autonomous run) — a **24 h measurement window is open** on the
+installed build that carries `823d412` (the cycle-flag fix), the acceptance instrument now runs
+**twelve** checks including the cycle-closure check that measures `consecutive_unclosed_cycles`, and T5
+was reconnoitred read-only: **the fence it claims does not exist**, and its column has to arrive through
+the repair twin. The 24 h reading itself is due 2026-09-22 ~11:14 and is NOT yet taken. See the newest
+log entry. The root cause above and the device acceptance of 2026-09-20 23:13 both stand.*
 
 **Implemented and committed, not yet on device (2026-09-21).** T11 (`0db36e5`), the empty-outbox
 pull (`2b70829`) and the watchdog budget clock (`739fa8a`) are written, committed on `dev`, and
@@ -358,6 +360,99 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 ## Log
 
 Newest first.
+
+### 2026-09-21 (autonomous run, latest) — the 24 h window is opened on the build that carries the cycle-flag fix, and the instrument grows the check that measures it
+
+**Why this entry exists.** `consecutive_unclosed_cycles = 0` is the one primary acceptance metric of
+architecture-doc §9 that **fails on measurement** (§9.1), and the 24 h readings of §9 have never been
+taken. The fix for the leak is `823d412` — both terminal status builders now write `isCycleActive:
+false`, so a cycle that reports its outcome cannot leave the flag set — and it was committed at 10:42
+today, hours after the installed build (03:18). Nothing can be re-measured on a build that does not
+carry it, so the window could not start before a build.
+
+**The artifact read, before installing.** `build-1790006856748.apk` (11:07). The lab profile's
+`DEBUGGABLE` flag and `versionCode=9` were read back from the device after install
+(`dumpsys package … pkgFlags=[ DEBUGGABLE … ]`). For the JS half, the install carries a **Hermes
+bytecode** bundle (`assets/index.android.bundle`, magic `c61fbc03`), whose string table cannot show
+object-literal structure — so `isCycleActive: false` is **not** directly readable from it, and this
+reading is stated as what it is: the new bundle differs from the previously installed one
+(sha256 `0f860b70…` vs `a643aeb9…`; 5 310 716 vs 5 310 704 bytes) and the only bundled source
+change between those two builds is `823d412` (the other two commits since are a test file and
+documentation, neither bundled). The build ran against a tree verified clean at `fc39e7a`.
+
+**The window, and the positive proof that it is not a flat journal.** The app was launched at 11:12 and
+backgrounded at 11:14. At window start: `consecutive_unclosed_cycles=0`, `is_cycle_active=0`,
+`last_cycle_stage=closed`, `sync_cycle_lock` empty, `operation_log` `synced=24` with nothing unsynced,
+and the native journal at its 500-row cap with the newest transition at 09:41 (the previous delivery).
+A flat journal proves nothing on its own, so the mechanism was read alive in the same pass: the
+foreground service `isForeground=true types=0x40000000`, and `dumpsys alarm` reporting
+`expo.modules.foregroundsyncticker.TICK_ALARM` on the `ELAPSED_WAKEUP` clock. The bridge was then
+brought up (`wails dev` in `autoreas-bridge`; `GET /api/status` answers `401` without a token from
+both localhost and the LAN address — an HTTP answer, which is exactly what the T6 presence gate counts
+as present). With the bridge up, a **real background cycle ran at 11:42:39**: `runOnce invoked
+(triggerSource='background_task', cycleId=d12955a3-…)`, journal `idle→checked→sent→applied→closed` at
+11:42:40, counter still `0`. So the window measures cycles that actually ran, not a counter that reads
+zero because nothing happened.
+
+**The instrument grew the check that measures the metric, and lost a false FAIL.** Two defects were
+fixed in the same pass:
+
+1. **Check "Engine invoked" was a false FAIL by construction.** It read the whole `logcat -d` buffer
+   and failed whenever no `runOnce invoked` line existed — but with the T6 presence gate, a refused
+tick enters no cycle at all, so the absence of an invocation is the *designed* outcome. That was the
+   single FAIL of the previous acceptance run. It is now pid-scoped like the seam check
+   (`pidof -s` + `logcat -d --pid=<pid>`) so a stale line from an earlier process lifetime can no
+   longer PASS it, and a demonstrably complete-or-incomplete bridge-config read decides whether the
+   gate legitimately refused. An unreadable gate state or an unreachable bridge with a complete
+   config stays **UNKNOWN, never PASS** — the honest verdict, not a comfortable one.
+2. **New check: cycle closure.** It reads the newest `sync_runtime_status` row
+   (`consecutive_unclosed_cycles`, `is_cycle_active`) and enumerates journal cycles whose newest
+   transition is non-terminal. This is the §9 metric, now measured by the instrument instead of by
+   hand.
+
+The file had 498 of its 500 allowed lines, so the host-`sqlite3` half moved to a new
+`scripts/lib/device-db-checks.mjs` and was re-imported (one-way dependency, no cycle). The instrument
+now runs **twelve** checks: `12/12 PASS`, 0 failed, 0 unknown at 11:52 — including the new cycle-closure
+check reading `consecutive_unclosed_cycles=0`, `is_cycle_active=0` and every journal cycle terminal,
+and the ticker check reading 18 wake-lock acquisitions (the per-cycle scoping, visible as repeated
+acquire/release rather than one lifetime hold).
+
+**The seam warning now reaches the production channel.** The `[nativeSeam] <module> unavailable`
+warning is what found this project's root cause, and it existed only on the cable (`console.warn` → the
+instrument's check 5). It now also records a diagnostic event into the existing ring → drained at cycle
+start → piggybacked on `POST /api/sync/reconcile` pipeline, with the vocabulary deliberately widened by
+one `source`/`event` pair and three causes that map 1:1 to the loader's three failure paths. The log
+line stays: telemetry is the production channel, logcat is the cable channel, both once per runtime,
+with a comment saying so. Design debt paid: `docs/mobile-diagnostic-telemetry.md` exists so that
+"in production there is no cable" stops being true for this signal.
+
+**T5 reconnaissance, read-only, and it changes the order of work.** The last unimplemented task claims
+two acceptances: a parked UI write does not delay an attempt, and a reclaimed lease rejects the
+previous owner's writes. Reading the code:
+
+- **The second claim is false today.** `sync_cycle_lock` is `(id, owner, expires_at)`
+  (`startup.constants.ts:34-38`) with **no fence column anywhere**, and not one native write checks
+  ownership: the owner is the constant `"native_engine"` (`SyncEngineDatabases.kt:15`) and the release
+  is `DELETE … WHERE id = ? AND owner = ?` (`SyncCycleLease.kt:63-77`), so a stale attempt's `finally`
+  deletes the current row. Reclaiming a lease only prevents *new* claims.
+- **The column cannot arrive through the table DDL.** `SYNC_CYCLE_LOCK_TABLE_SQL` is applied with
+  `CREATE TABLE IF NOT EXISTS` (`client.helpers.ts:283-285`), so a new column there is a silent no-op
+  on every installed device; it must come through the `PRAGMA table_info`-driven repair twin that
+  `tests/infrastructure/db/migration-repair-parity.test.ts` enforces.
+- **There is no Kotlin unit-test harness** (no test source set in `modules/sync-engine/android/`), so
+  "a focused test" for the native fence cannot mean a Kotlin test without adding test infrastructure —
+  a separate decision, not part of T5.
+- **Clause one has no deterministic device producer.** Nothing in the app can park a UI write on
+  demand; the honest instrument is a host-side scenario with a negative control, which proves the
+  mechanism and not the device.
+
+**Honest limits of this entry.** The 24 h reading is **not taken** — it is due on 2026-09-22 at about
+11:14, and until then this window is a start, not a result. The `sync_runtime_status` counter is written
+by the JS cycle path while the native engine writes the journal, so the window pairs two channels: the
+counter reads 0 and the journal shows the attempts that actually closed. The bridge is up for the
+window by decision of the maintainer; whether it stays up for the whole 24 h is their machine's
+profile, and if no cycle runs the window must be recorded as VOID for the metric rather than reported
+as a zero that measured nothing.
 
 ### 2026-09-21 (autonomous run, later) — the background service delivered, and two of my own readings were wrong
 
@@ -947,9 +1042,10 @@ every unpatched APK. The artifact-level control is the dex check below, run **af
 
 **Device acceptance instrument.** `node scripts/verify-sync-on-device.mjs` is the lab's acceptance
 instrument for the native sync work — not temporary tooling. With the tablet connected over adb it
-runs the ten acceptance checks in order (device attached, build identity, lab-readable build, service
-state, ticker wake lock, engine invoked, journal written, attempt freshness, no execution-guard burns,
-stand-by bucket), prints `PASS`/`FAIL`/`UNKNOWN` per check with the raw evidence it read, and exits
+runs the twelve acceptance checks in order (device attached, build identity, lab-readable build, service
+state, native seam warnings, ticker wake lock, engine invoked, journal written, attempt freshness,
+cycle closure, no execution-guard burns, stand-by bucket), prints `PASS`/`FAIL`/`UNKNOWN` per check with
+the raw evidence it read, and exits
 non-zero when any check fails. It is read-only on the device: `dumpsys`, `logcat -d`,
 `am get-standby-bucket` and file reads through `run-as cat`. It replaces the by-hand
 `dumpsys`/`logcat`/`sqlite3` sequence above — the commands stay documented because they are what the
