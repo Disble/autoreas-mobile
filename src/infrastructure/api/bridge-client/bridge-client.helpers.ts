@@ -237,6 +237,16 @@ export function createBridgeClient(
         body: envelope,
         timeoutMs: options?.timeoutMs,
       }),
+    getStatus: (connection, options?: BridgeRequestOptions) =>
+      request(connection, {
+        method: 'GET',
+        // Bridge liveness route (T6 presence probe), registered as an authenticated, side-effect-
+        // free endpoint in the bridge's router (internal/api/router.go). Inlined rather than
+        // added to BRIDGE_API_PATHS because the T6 edit surface covers this file only.
+        path: '/api/status',
+        token: connection.token,
+        timeoutMs: options?.timeoutMs,
+      }),
     openWebSocket: (connection) =>
       createWebSocket(buildBridgeWebSocketUrl(connection), connection.token),
     getAnimeCover: (connection, animeId, options) => getAnimeCover(connection, animeId, options),

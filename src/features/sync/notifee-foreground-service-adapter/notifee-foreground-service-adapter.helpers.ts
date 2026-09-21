@@ -11,10 +11,14 @@ import { createSyncSQLiteRuntime } from '../sqlite-sync-runtime.helpers';
 import { createNativeSyncEngine } from '../native-sync-engine/native-sync-engine.helpers';
 import { withExclusiveSyncCycle } from '../sync-cycle-lock.helpers';
 import { recordSyncAttemptFailed } from '../sync-runtime-status.helpers';
+import { ATTEMPT_PROBE_DEADLINE_MS } from '../attempt-policy.constants';
+import { createAttemptPolicy } from '../attempt-policy.helpers';
 import type { NotifeeForegroundServiceAdapter } from './notifee-foreground-service-adapter.types';
 import type { SyncExecutionStatus } from '../sync-execution-strategy.types';
 import type { SyncSQLiteRuntime } from '../sqlite-sync-runtime.types';
 import { SchemaNotReadyError } from '../../../infrastructure/db/startup/startup.errors';
+import { bridgeClient } from '../../../infrastructure/api';
+import { getBridgeConfigSnapshot } from '../../../infrastructure/db/client/client.helpers';
 
 /**
  * Builds the status reported when the foreground-service strategy cannot run (non-Android).
@@ -75,8 +79,48 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
     }
   }
 
+  /**
+   * Cheap presence probe for the attempt gate (T6). Reads the persisted bridge coordinates and
+   * asks the bridge's side-effect-free `GET /api/status` with a short budget: resolving means the
+   * bridge answered with ANY HTTP status (including 401), which is presence; only a transport
+   * failure, an abort or the timeout is absence. A missing or incomplete config is absence too --
+   * an unpaired app must not start attempts. Never throws: the gate decides, not the probe.
+   */
+  async function probeBridgePresence(): Promise<boolean> {
+    try {
+      if (!serviceRuntime) {
+        serviceRuntime = createSyncSQLiteRuntime({ owner: 'foreground_service' });
+      }
+
+      const rawDb = await serviceRuntime.open();
+      const config = await getBridgeConfigSnapshot(rawDb);
+
+      if (!config?.ip || !config.port || !config.token) {
+        return false;
+      }
+
+      await bridgeClient.getStatus(
+        { ip: config.ip, port: config.port, token: config.token },
+        { timeoutMs: ATTEMPT_PROBE_DEADLINE_MS },
+      );
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // T6: every tick is gated on the probe above, so an absent bridge costs the probe budget
+  // (~1.5 s, writes nothing) instead of a full attempt that dies on the 10 s connect timeout.
+  // The policy also owns the in-flight guard and the absent-bridge backoff ladder.
+  const attemptPolicy = createAttemptPolicy({
+    probePresence: probeBridgePresence,
+    now: Date.now,
+  });
+
   const foregroundSyncRunner = createForegroundSyncRunner({
     ticker: foregroundSyncTicker,
+    attemptPolicy,
     onCycleError: recordForegroundCycleError,
     runCycle: async () => {
       // The native engine is tried first because it removes the JS timer (runtime open, lock,
@@ -210,10 +254,6 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         // The runner already surfaced the failure through onCycleError (and closed the runtime);
         // this fire-and-forget start must not become an unhandled rejection inside register().
       });
-      // Temporary diagnostic: confirms on device that the sync work started before the
-      // notification await. Remove once the ticker is observed ticking on a device (ODD task
-      // T10 in odd/tasks/mobile-sync-native-engine.md).
-      console.warn('[fgs] foreground sync work started');
 
       await notifee.displayNotification({
         title: 'Sync continuo activo',
