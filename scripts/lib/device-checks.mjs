@@ -1,11 +1,11 @@
 // Acceptance checks and parsing helpers for the device sync verifier.
 //
 // This module owns everything behind the thin `scripts/verify-sync-on-device.mjs`
-// entry point: the adb process helpers, the pure parsing functions that turn raw
-// device output into plain values, and the acceptance checks themselves. Each
-// check runs adb, calls parsers, decides a verdict, and builds the evidence string;
-// it never prints and never exits, so the entry point stays in charge of output
-// order, the summary table, and the process exit code.
+// entry point: the adb process helpers, the pure parsing functions that turn raw device
+// output into plain values, and the acceptance checks themselves. Each check runs adb,
+// calls parsers, decides a verdict, and builds the evidence string; it never prints and
+// never exits, so the entry point stays in charge of output order, the summary table, and
+// the process exit code.
 //
 // No dependencies. `adb` must be on PATH. Host `sqlite3` is optional: the DB-backed
 // checks degrade to UNKNOWN or existence-only when it is missing, because reading a
@@ -37,16 +37,13 @@ const NATIVE_SEAM_WARNING = '[nativeSeam]';
 /** Wake-lock tag the native ticker holds while it is ticking (dumpsys power). */
 const TICKER_WAKE_LOCK = 'ForegroundSyncTicker:ticking';
 /** Evidence text for Attempt freshness when host sqlite3 is unavailable. */
-const NO_SQLITE3_EVIDENCE =
-  'host sqlite3 not found; sync_runtime_status cannot be read. Install sqlite3 (SDK platform-tools) to lift this.';
+const NO_SQLITE3_EVIDENCE = 'host sqlite3 not found; sync_runtime_status cannot be read. Install sqlite3 (SDK platform-tools) to lift this.';
 /** Read-only query for the newest sync_runtime_status row. */
-const RUNTIME_STATUS_SQL =
-  'SELECT last_attempt_at, last_cycle_stage, is_cycle_active, last_error_name FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
+const RUNTIME_STATUS_SQL = 'SELECT last_attempt_at, last_cycle_stage, is_cycle_active, last_error_name FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
 /** Read-only query for the journal row count. */
 const JOURNAL_COUNT_SQL = 'SELECT COUNT(*) FROM journal;';
 /** Read-only query for the newest journal transition. */
-const JOURNAL_NEWEST_SQL =
-  'SELECT cycle_id, from_state, to_state, reason, at_ms FROM journal ORDER BY id DESC LIMIT 1;';
+const JOURNAL_NEWEST_SQL = 'SELECT cycle_id, from_state, to_state, reason, at_ms FROM journal ORDER BY id DESC LIMIT 1;';
 
 /** Runs one adb subcommand; returns `{ok, out, err}` with decoded text and captured streams. */
 export function runAdb(args, maxBufferBytes = 16 * 1024 * 1024) {
@@ -138,9 +135,20 @@ function parseEngineInvocations(out) {
   return out.split(/\r?\n/).filter((line) => line.includes(ENGINE_MARKER));
 }
 
-/** Parses the `[nativeSeam]` warning lines out of a `logcat -d` dump, oldest first. */
-function parseNativeSeamWarnings(out) {
+/** Parses the `[nativeSeam]` warning lines out of a (pid-scoped) `logcat -d` dump, oldest first. */
+export function parseNativeSeamWarnings(out) {
   return out.split(/\r?\n/).filter((line) => line.includes(NATIVE_SEAM_WARNING));
+}
+
+/** Parses the app pid out of `adb shell pidof -s <package>` output; null unless exactly one numeric pid is present. */
+export function parsePidOfOutput(out) {
+  const tokens = out.trim().split(/\s+/).filter(Boolean);
+  return tokens.length === 1 && /^\d+$/.test(tokens[0]) ? tokens[0] : null;
+}
+
+/** Builds the pid-scoped `adb logcat -d` argument vector that restricts the dump to one live process. */
+export function scopedLogcatArgs(pid) {
+  return ['logcat', '-d', '-v', 'time', `--pid=${pid}`];
 }
 
 /** Splits one pipe-delimited sync_runtime_status row into its named fields, '' for missing columns. */
@@ -200,13 +208,9 @@ export function checkLabReadableBuild() {
   const res = runAdb(['shell', 'run-as', PACKAGE_NAME, 'ls', 'files/SQLite']);
   if (res.ok) return outcome('Lab-readable build', 'PASS', `run-as ls files/SQLite:\n${res.out.trim()}`);
   const raw = [res.out.trim(), res.err].filter(Boolean).join('\n');
-  return outcome(
-    'Lab-readable build',
-    'FAIL',
-    `run-as ls files/SQLite failed — a production build cannot be inspected with run-as.\n` +
-      `${raw}\n` +
-      `Reinstall the lab-readable (debuggable) build; checks 7 and 8 cannot read this install.`
-  );
+  return outcome('Lab-readable build', 'FAIL',
+    `run-as ls files/SQLite failed — a production build cannot be inspected with run-as.\n${raw}\n` +
+    `Reinstall the lab-readable (debuggable) build; checks 7 and 8 cannot read this install.`);
 }
 
 /** Check 4: the service record shows isForeground=true and the dataSync type bit; lifecycle flags reported either way. */
@@ -224,13 +228,10 @@ export function checkTickerAlive() {
   if (lines.length > 0) {
     return outcome('Ticker alive', 'PASS', `wake lock held (${lines.length} line(s)):\n${lines[0].trim()}`);
   }
-  return outcome(
-    'Ticker alive',
-    'FAIL',
+  return outcome('Ticker alive', 'FAIL',
     `wake lock tag '${TICKER_WAKE_LOCK}' is absent from dumpsys power.\n` +
-      `The service can be foreground (check 4 green) with the ticker never started — this is exactly\n` +
-      `the state the investigation chased: foreground yet idle, no wake lock, no ticks.`
-  );
+    `The service can be foreground (check 4 green) with the ticker never started — this is exactly\n` +
+    `the state the investigation chased: foreground yet idle, no wake lock, no ticks.`);
 }
 
 /** Check 7: the engine was actually invoked; reports the newest occurrence, absence means no attempt reached the engine. */
@@ -241,36 +242,44 @@ export function checkEngineInvoked() {
   if (lines.length > 0) {
     return outcome('Engine invoked', 'PASS', `newest of ${lines.length} occurrence(s):\n${lines[lines.length - 1].trim()}`);
   }
-  return outcome(
-    'Engine invoked',
-    'FAIL',
+  return outcome('Engine invoked', 'FAIL',
     `no '${ENGINE_MARKER}' line in the logcat buffer — no attempt ever reached the sync engine\n` +
-      `(SyncEngineModule.runOnce was never called since the buffer was last cleared).`
-  );
+    `(SyncEngineModule.runOnce was never called since the buffer was last cleared).`);
 }
 
-/** Check 5: the FIRST log-derived check — the shared loader's `[nativeSeam]` warning is the earliest decisive signal that a native seam degraded to a silent no-op; its absence is a PASS. */
+/** Check 5: the FIRST log-derived check — the `[nativeSeam]` warning is the earliest decisive signal that a native seam
+ * degraded to a silent no-op; its absence is a PASS. The logcat read is scoped to the app's live pid (`pidof -s` +
+ * `logcat -d --pid=<pid>`) so warnings from earlier process lifetimes are excluded; an unresolvable pid never PASSes. */
 export function checkNativeSeamWarnings() {
-  const res = runAdb(['logcat', '-d', '-v', 'time'], 64 * 1024 * 1024);
-  if (!res.ok) return outcome('Native seam warnings', 'UNKNOWN', `logcat -d failed: ${res.err}`);
+  const pidRes = runAdb(['shell', 'pidof', '-s', PACKAGE_NAME]);
+  const pid = pidRes.ok ? parsePidOfOutput(pidRes.out) : null;
+  if (!pid) {
+    return outcome('Native seam warnings', 'FAIL',
+      `could not resolve the live app pid via 'adb shell pidof -s ${PACKAGE_NAME}' — the logcat dump cannot be scoped to ` +
+      `the current process, so a stale warning from an earlier run cannot be ruled out; the check refuses to PASS:\n${[pidRes.out.trim(), pidRes.err].filter(Boolean).join('\n')}`);
+  }
+  return scopedLogcatOutcome(pid, runAdb(scopedLogcatArgs(pid), 64 * 1024 * 1024));
+}
+
+/** Decides check 5 from the pid-scoped logcat dump: UNKNOWN when the read fails, PASS at zero `[nativeSeam]` lines, FAIL listing them. */
+function scopedLogcatOutcome(pid, res) {
+  if (!res.ok) return outcome('Native seam warnings', 'UNKNOWN', `logcat -d --pid=${pid} failed: ${res.err}`);
   const lines = parseNativeSeamWarnings(res.out);
-  if (lines.length === 0) return outcome('Native seam warnings', 'PASS', `no '${NATIVE_SEAM_WARNING}' warning in the logcat buffer.`);
-  return outcome(
-    'Native seam warnings',
-    'FAIL',
-    `${lines.length} '[nativeSeam]' warning(s) — a native module was never registered and its seam degraded to a no-op (earlier and cheaper than the wake-lock symptom):\n${lines.join('\n')}`
-  );
+  if (lines.length === 0) {
+    return outcome('Native seam warnings', 'PASS',
+      `no '${NATIVE_SEAM_WARNING}' warning from the current app process (pid ${pid}, scoped logcat read).`);
+  }
+  return outcome('Native seam warnings', 'FAIL',
+    `${lines.length} '[nativeSeam]' warning(s) from the current app process (pid ${pid}) — a native module was never ` +
+    `registered and its seam degraded to a no-op (earlier and cheaper than the wake-lock symptom):\n${lines.join('\n')}`);
 }
 
 /** Check 8: the journal exists with size and mtime; row count and newest transition only when host sqlite3 is available. */
 export function checkJournalWritten(sqlite3, workDir) {
   const res = runAdb(['shell', 'run-as', PACKAGE_NAME, 'ls', '-l', 'files/sync-journal.db']);
   if (!res.ok) {
-    return outcome(
-      'Journal written',
-      'FAIL',
-      `files/sync-journal.db not found via run-as:\n${[res.out.trim(), res.err].filter(Boolean).join('\n')}`
-    );
+    return outcome('Journal written', 'FAIL',
+      `files/sync-journal.db not found via run-as:\n${[res.out.trim(), res.err].filter(Boolean).join('\n')}`);
   }
   let evidence = `ls -l: ${res.out.trim()}`;
   if (!sqlite3) return outcome('Journal written', 'PASS', `${evidence}\nhost sqlite3 not found; only existence, size and mtime could be read.`);
@@ -354,10 +363,8 @@ function serviceStateOutcome(fg, flags) {
 
 /** Renders the Service state evidence line from the parsed facts. */
 function serviceEvidence(fg, flags) {
-  return (
-    `isForeground=${orNotFound(fg.isForeground)}, types=${orNotFound(fg.types)}, ` +
-    `stopIfKilled=${orNotFound(flags.stopIfKilled)}, createdFromFg=${orNotFound(flags.createdFromFg)}`
-  );
+  return `isForeground=${orNotFound(fg.isForeground)}, types=${orNotFound(fg.types)}, ` +
+    `stopIfKilled=${orNotFound(flags.stopIfKilled)}, createdFromFg=${orNotFound(flags.createdFromFg)}`;
 }
 
 /** Reads sync_runtime_status from the pulled main database and decides the verdict. */
@@ -383,12 +390,7 @@ function queryFailureEvidence(out) {
 function collectTimeout(state, line) {
   const currentUid = advanceJobUid(line, state.currentUid);
   if (!isTimeoutLine(line)) return { ...state, currentUid };
-  return {
-    ...state,
-    currentUid,
-    scoped: state.scoped + (currentUid === state.appIndex ? 1 : 0),
-    total: state.total + 1,
-  };
+  return { ...state, currentUid, scoped: state.scoped + (currentUid === state.appIndex ? 1 : 0), total: state.total + 1 };
 }
 
 /** Advances the tracked uid when the line opens a new `JOB #u0a<i>/` record. */
@@ -430,8 +432,7 @@ function parseAppIndexFromJobscheduler(out, packageName) {
 /** Builds the execution-guard outcome: PASS at zero scoped burns, FAIL otherwise, uid source and both counts as evidence. */
 function guardOutcome(appIndex, uidEvidence, counts) {
   const evidence =
-    `uid ${uidEvidence} (u0a${appIndex}); ` +
-    `Client-timed-out lines in this uid's records: ${counts.scoped}; total in dump: ${counts.total}`;
+    `uid ${uidEvidence} (u0a${appIndex}); Client-timed-out lines in this uid's records: ${counts.scoped}; total in dump: ${counts.total}`;
   return outcome('No execution-guard burns', counts.scoped === 0 ? 'PASS' : 'FAIL', evidence);
 }
 
