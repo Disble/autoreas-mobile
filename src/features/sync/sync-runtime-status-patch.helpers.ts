@@ -64,7 +64,12 @@ export function buildSyncAttemptStartedPatch(
  * Success records both the latest attempt timestamp and how many operations were confirmed, and
  * now also marks the stage `closed`, CLEARS the error triple to explicit `null` (Requirement:
  * "A succeeded cycle clears the previous error detail"), and resets `consecutiveUnclosedCycles`
- * -- a success closes the cycle it belongs to.
+ * -- a success closes the cycle it belongs to. Closing the cycle also RELEASES the
+ * `isCycleActive` flag: this patch is the last status write of the cycle's success path, so
+ * recording the outcome without releasing the flag would leave every later attempt counted as
+ * unclosed. The explicit `recordCycleActive(false)` in the cycle's `finally` stays -- it is
+ * idempotent -- but it is no longer the only thing standing between a reported outcome and a
+ * flag stuck on.
  */
 export function buildSyncAttemptSucceededPatch(
   triggerSource: SyncRuntimeTriggerSource,
@@ -85,6 +90,7 @@ export function buildSyncAttemptSucceededPatch(
     lastErrorStage: null,
     lastNativeErrcodeByte: null,
     consecutiveUnclosedCycles: 0,
+    isCycleActive: false,
   };
 }
 
@@ -96,7 +102,10 @@ export function buildSyncAttemptSucceededPatch(
  * cycle records the stage and error it failed with"). Every `detail` field defaults to `null`:
  * a caller that cannot classify where or why the cycle failed reports that honestly rather than
  * fabricating a stage or error class. A failure also closes the cycle, so
- * `consecutiveUnclosedCycles` resets to zero.
+ * `consecutiveUnclosedCycles` resets to zero, and the terminal write RELEASES the
+ * `isCycleActive` flag: this patch is the last status write of the cycle's failure path, and a
+ * cycle that reports its outcome must never leave the flag set -- otherwise the counter measures
+ * past leaks on every later attempt instead of the present one.
  */
 export function buildSyncAttemptFailedPatch(
   triggerSource: SyncRuntimeTriggerSource,
@@ -115,6 +124,7 @@ export function buildSyncAttemptFailedPatch(
     lastErrorStage: detail.errorStage ?? null,
     lastNativeErrcodeByte: detail.nativeErrcodeByte ?? null,
     consecutiveUnclosedCycles: 0,
+    isCycleActive: false,
   };
 }
 
