@@ -67,11 +67,12 @@ list the working engine exposed, and three fixes now implemented but **not yet o
 lock scoped to the cycle (T11), the empty-outbox pull, and the watchdog budget moved onto
 `elapsedRealtime`. See the two newest log entries. The root cause above stands.*
 
-**Implemented, uncommitted, not yet on device (2026-09-21).** T11, the empty-outbox pull and the
-watchdog budget clock are written, staged, and verified by the grouped Kotlin compile
-(`BUILD SUCCESSFUL` for `:sync-engine` and `:foreground-sync-ticker`), 174 suites / 1288 tests, and
-the pre-commit gate. Two findings from that pass are open: (a) `SCHEDULE_EXACT_ALARM` is denied by
-default on Android 14+ for apps targeting 33+ (`targetSdkVersion: 35`), and the maintainer decided
+**Implemented and committed, not yet on device (2026-09-21).** T11 (`0db36e5`), the empty-outbox
+pull (`2b70829`) and the watchdog budget clock (`739fa8a`) are written, committed on `dev`, and
+verified by the grouped Kotlin compile (`BUILD SUCCESSFUL` for `:sync-engine` and
+`:foreground-sync-ticker`), 174 suites / 1288 tests, and the pre-commit gate; the acceptance
+instrument is `9f2a3fa`. Two findings from that pass are open: (a) `SCHEDULE_EXACT_ALARM` is
+denied by default on Android 14+ for apps targeting 33+ (`targetSdkVersion: 35`), and the maintainer decided
 on 2026-09-21 to avoid that scenario entirely: the ticker requests no exact-alarm permission and
 always uses the inexact `setAndAllowWhileIdle`, whose floor is roughly one alarm per minute (longer
 in Doze) — an accepted floor that T6 must turn into an honest base interval, measured on device;
@@ -361,8 +362,10 @@ Newest first.
 ### 2026-09-21 (later) — three fixes written, one regression caught by the compiler, two findings opened
 
 T11 (wake lock scoped to the cycle), the empty-outbox pull, and the watchdog budget clock were
-implemented in one pass with parallel writers over disjoint file surfaces. Everything below is
-labelled by instrument: none of the three has been on a device yet, and the maintainer cannot test
+implemented in one pass with parallel writers over disjoint file surfaces and are committed on
+`dev` as `2b70829` (the pull), `739fa8a` (the budget clock) and `0db36e5` (T11), with the
+instrument as `9f2a3fa`. Everything below is labelled by instrument: none of the three has been
+on a device yet, and the maintainer cannot test
 until a later build.
 
 **Verified by instrument (not by report).** Grouped Kotlin compile: `BUILD SUCCESSFUL` for
