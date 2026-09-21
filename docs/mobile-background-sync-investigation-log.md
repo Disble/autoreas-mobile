@@ -62,9 +62,26 @@ simply absent.
 
 ## Where we are now
 
-*Last updated: 2026-09-20, second session — the trigger chain below.*
+*Last updated: 2026-09-20, third session — the root cause below.*
 
-**Symptom.** With the app closed, mobile does not sync with the bridge. Opening the app syncs
+**Root cause, found and fixed (verified; `4654779`).** The three local Expo modules
+(`foreground-sync-ticker`, `sync-journal`, `sync-engine`) declared `"android": {
+"modulesClassNames": ["..."] }` in `expo-module.config.json`; the key Expo reads on SDK 55 is
+`modules` (verified against `node_modules/expo-camera/expo-module.config.json` and `expo-sqlite`).
+Autolinking discovered the modules and their classes were inside the APK's dex, but nothing was
+registered at runtime, so `requireOptionalNativeModule` returned **null** for `ForegroundSyncTicker`
+— and the same for `SyncJournal` and `SyncEngine` (their own absence signals: no journal file, no
+engine invocation line). Every native seam therefore degraded to its no-op path: the ticker never
+ticked, the journal never wrote a row, the engine was never invoked. The degradation was silent until
+the shared `native-module-loader` (`3165cb9`) printed, once per runtime, `[nativeSeam] ...
+unavailable ... this seam degrades to a no-op` — the earliest decisive signal of this failure class,
+now a check in the acceptance instrument. After `4654779`, `npx expo-modules-autolinking resolve`
+reports a classifier for each module, the pre-build check that was missing. **Device acceptance is
+pending the build carrying `4654779` (registration) and `3e6e10b` (start ordering, which also keeps
+the cold-start callback).** Full entry: "2026-09-20 — the root cause: the modules were never
+registered", in the log below.
+
+**Symptom.**** With the app closed, mobile does not sync with the bridge. Opening the app syncs
 correctly, over the WebSocket (the WS is foreground-only), which is why the defect is invisible
 while the app is open. Reproduced on a Samsung Galaxy Tab S8 (SM-X800, Android 15, targetSdk 35),
 `com.disble.autoreasmobile` 1.3.0 (versionCode 8).
@@ -108,13 +125,14 @@ while the app is open. Reproduced on a Samsung Galaxy Tab S8 (SM-X800, Android 1
 mechanism above is not the whole reason nothing syncs — today's second session found three more
 links, each measured on the tablet (Samsung SM-X800, Android 15), not inferred:
 
-- **The sync ticker never started.** `ForegroundSyncTicker` and the foreground runner were started
-  only inside the callback passed to `notifee.registerForegroundService(...)`, and that callback does
-  not run in this build. Instrument: `dumpsys power` — no `ForegroundSyncTicker:ticking` wake lock
-  while the service is up, and hours with zero attempts (`last_attempt_at` frozen, `sync_cycle_lock`
-  empty, no journal file). The service itself is started by
-  `notifee.displayNotification({ ..., asForegroundService: true })` in the same `register()` method.
-  Fixed in `f48f93b`.
+- **The sync ticker never started.** The explanation first recorded here — that the callback passed
+  to `notifee.registerForegroundService(...)` does not run in this build — was **refuted the same
+  day** by the `[fgs] foreground sync work started` marker, which printed after
+  `displayNotification({ asForegroundService: true })`: the start sequence ran and the seam itself
+  was the no-op (see the root cause above). Instruments: `dumpsys power` — no
+  `ForegroundSyncTicker:ticking` wake lock while the service is up, and hours with zero attempts
+  (`last_attempt_at` frozen, `sync_cycle_lock` empty, no journal file). Ordering fix `3e6e10b`;
+  registration fix `4654779`.
 - **The engine was unreachable from the active path.** The device runs
   `execution_mode = android_foreground_service`, and in that mode `use-sync-runtime.ts` unregisters
   the background task, so the engine's wiring in `background-sync.task.ts` was dead code on this
@@ -159,9 +177,10 @@ free.
 module is consumed as a prebuilt Maven publication, so a source patch never reaches the compiler.
 
 1. **Run the device acceptance checklist** (`odd/tasks/mobile-sync-native-engine.md`): with the
-   2026-09-20 fixes in place (`f48f93b`, `cf71725`, `e038901`), confirm the ticker wake lock, the
-   `SyncEngine: runOnce invoked (...)` logcat line, `files/sync-journal.db` created with transition
-   rows, a fresh `last_attempt_at`, and the attempt bounded to 30 s instead of dying at 600.
+   root-cause fixes in place (`4654779` registration, `3e6e10b` ordering, plus `cf71725`, `e038901`),
+   confirm the ticker wake lock, the `SyncEngine: runOnce invoked (...)` logcat line,
+   `files/sync-journal.db` created with transition rows, a fresh `last_attempt_at`, and the attempt
+   bounded to 30 s instead of dying at 600. No `[nativeSeam]` warning may appear in logcat.
 2. **Explain why the app's own bounds are inert** (T5). Unchanged by today's findings — the 600 s
    park class reproduced again at 18:05:46 in the `expo-background-task` path. Until this is answered,
    no architecture reused from here is safe, including a native one.
@@ -307,12 +326,87 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 | "A green `npx lefthook run pre-commit` validates the change" | The first run reported every hook as `skip: no matching staged files` — a green result that measured nothing. The gate needs the files staged. |
 | "318 of 320 telemetry rows report `never_closed`, so no cycle ever closed" | 25 of those rows carry `last_stage = closed` with `consecutive_unclosed_cycles = 0`: they closed fine and `outcome` mislabels them (`derivePreviousCycleOutcome` lets the stuck flag outrank the stage). |
 | "The battery-optimisation exemption would fix the falling service" | The FGS death is Android 15's `dataSync` budget, not Doze; the exemption is listed only as an exemption for *starting* an FGS from the background. Exempting the app would let a hung cycle hold a wakelock and burn CPU unchecked. |
+| "The `registerForegroundService` callback does not run in this build" (2026-09-20, second session) | The temporary marker `[fgs] foreground sync work started`, placed after `displayNotification({ asForegroundService: true })`, printed on the dev client — the callback ran, and the seam itself was the no-op. Root cause: the native modules declared `modulesClassNames` where SDK 55 reads `modules`, so nothing was registered at runtime (`4654779`) |
 
 ---
 
 ## Log
 
 Newest first.
+
+### 2026-09-20 — the root cause: the modules were never registered
+
+Third session of the day. Everything under **Measured** below was measured on the tablet today; the
+mechanism that explains the measurements is verified against the installed Expo tooling, and commit
+hashes are cited only as the outcome a finding produced, never as a substitute for the reading.
+
+**Measured, in order.** With the foreground service up (`isForeground=true`, the persistent
+notification posted, the `ForegroundServiceTypeLoggerModule` line present in the dump):
+
+- No `ForegroundSyncTicker:ticking` wake lock in `dumpsys power` — the only wake-lock class checked.
+- `last_attempt_at` frozen at 14:38 while hours passed; `sync_cycle_lock` empty; no journal file; and
+  no `SyncEngine` or `SyncJournal` line anywhere in `logcat -d`.
+- `NotifeeHeadlessJS: launched taskId: 1` in the buffer: Notifee dispatches the
+  `registerForegroundService` callback through a headless JS task.
+- **The ordering hypothesis was tested and refuted.** The suspicion was that anything sequenced after
+  `await notifee.displayNotification({ asForegroundService: true })` may never run. A temporary
+  marker placed after it — `[fgs] foreground sync work started` — DID print on the next reload. So
+  the start sequence ran to completion, and the seam itself was the no-op. Fixed in `3e6e10b`, which
+  also keeps the cold-start callback.
+
+**The decisive signal was a warning, and until today it did not exist.** The shared loader
+(`native-module-loader`, `3165cb9`) prints a once-per-runtime warning when a seam's native module is
+missing. On the dev client it printed:
+
+```
+[nativeSeam] ForegroundSyncTicker unavailable (the native module is missing); this seam degrades to a no-op
+```
+
+The lesson belongs in this log: the degradation was completely **silent**, and silence is
+indistinguishable from a healthy module that simply has not fired yet — which is exactly why hours
+went into the wrong layers (FGS lifecycle, execution ordering, headless dispatch). That warning is
+the earliest decisive signal of this failure class — earlier and cheaper than the wake lock, which
+today proved to be a symptom rather than the signal — and the acceptance instrument now greps logcat
+for it.
+
+**Root cause (verified against the installed Expo tooling; fixed in `4654779`).** The three local
+Expo modules (`foreground-sync-ticker`, `sync-journal`, `sync-engine`) declared their Android modules
+as `"android": { "modulesClassNames": ["..."] }` in `expo-module.config.json`, but the key Expo reads
+on SDK 55 is `modules` (verified against `node_modules/expo-camera/expo-module.config.json` and
+`expo-sqlite`). Consequences, each verified separately:
+
+- Autolinking discovered the modules (`npx expo-modules-autolinking search --platform android` listed
+  all three — recorded earlier the same day as "the engine is in the binary").
+- The classes were inside the APK's dex.
+- **Nothing was registered at runtime**, so `requireOptionalNativeModule` returned `null` for
+  `ForegroundSyncTicker` (the `[nativeSeam]` warning above) — and the same for `SyncJournal` and
+  `SyncEngine`, established by their own absence signals: the journal never wrote a row and no file
+  exists, and the engine never logged an invocation.
+
+Every native seam therefore degraded to its no-op path: the ticker never ticked, the journal never
+wrote a row, and the engine was never invoked. After `4654779`, `npx expo-modules-autolinking
+resolve` reports a classifier for each module — the pre-build check that would have caught this
+before any 28-minute lab build.
+
+**The fast loop that made this findable (environment, not a finding).** A dev-client APK (build
+profile `development`) plus Metro on `http://localhost:8081`, launched with
+
+```bash
+adb shell am start -a android.intent.action.VIEW -d "autoreas-mobile://expo-development-client/?url=http%3A%2F%2F192.168.0.134%3A8081"
+```
+
+gives Fast Refresh for JS: the bundle reloads in seconds, which is how the `[nativeSeam]` warning was
+observed at all. Native changes still cost a ~28-minute lab build.
+
+**Environment fact, still open.** The bridge stopped listening on port 9876 (`curl` from the host
+returned `000`; nothing on the port in `netstat`), while the tablet is on the same subnet as the host
+(192.168.0.138/24 vs 192.168.0.134). The app's requests therefore time out (`BridgeTimeoutError ...
+/api/animes exceeded 10000ms`). This blocks the end-to-end catch-up case but NOT the trigger-chain
+verification, which needs no bridge.
+
+**Also committed today, for the ledger:** T4, the recovery sweep (`23e22f3`); the shared
+native-module loader that removed 33 duplicated lines (`3165cb9`); and the acceptance instrument
+(`2cc79a7`).
 
 ### 2026-09-20 — the trigger chain
 

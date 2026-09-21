@@ -2,7 +2,7 @@
 //
 // This module owns everything behind the thin `scripts/verify-sync-on-device.mjs`
 // entry point: the adb process helpers, the pure parsing functions that turn raw
-// device output into plain values, and the ten acceptance checks themselves. Each
+// device output into plain values, and the acceptance checks themselves. Each
 // check runs adb, calls parsers, decides a verdict, and builds the evidence string;
 // it never prints and never exits, so the entry point stays in charge of output
 // order, the summary table, and the process exit code.
@@ -32,6 +32,8 @@ const RESTRICTED_BUCKET = 45;
 const BUCKET_NAMES = { 5: 'EXEMPTED', 10: 'EXEMPTED', 15: 'EXEMPTED', 20: 'ACTIVE', 30: 'WORKING_SET', 40: 'FREQUENT', 45: 'RESTRICTED', 50: 'RESTRICTED' };
 /** Log line the native engine prints when a cycle actually reaches runOnce. */
 const ENGINE_MARKER = 'runOnce invoked';
+/** Log fragment the shared native-module loader prints once per runtime when a seam's native module is missing. */
+const NATIVE_SEAM_WARNING = '[nativeSeam]';
 /** Wake-lock tag the native ticker holds while it is ticking (dumpsys power). */
 const TICKER_WAKE_LOCK = 'ForegroundSyncTicker:ticking';
 /** Evidence text for Attempt freshness when host sqlite3 is unavailable. */
@@ -136,6 +138,11 @@ function parseEngineInvocations(out) {
   return out.split(/\r?\n/).filter((line) => line.includes(ENGINE_MARKER));
 }
 
+/** Parses the `[nativeSeam]` warning lines out of a `logcat -d` dump, oldest first. */
+function parseNativeSeamWarnings(out) {
+  return out.split(/\r?\n/).filter((line) => line.includes(NATIVE_SEAM_WARNING));
+}
+
 /** Splits one pipe-delimited sync_runtime_status row into its named fields, '' for missing columns. */
 function parseRuntimeStatusRow(out) {
   const [lastAttemptAt = '', lastCycleStage = '', isCycleActive = '', lastErrorName = ''] = out.split('|');
@@ -152,9 +159,13 @@ function parseAttemptAge(raw) {
   return parseEpochAttemptAge(trimmed) ?? parseIsoAttemptAge(trimmed);
 }
 
-/** Parses the numeric userId of the package from `dumpsys package` output; null when not found. */
-function parseUserId(out) {
-  return firstMatch(out, /\buserId=(\d+)/);
+/**
+ * Parses the package's numeric uid from a package-scoped `dumpsys package` dump, trying the
+ * `userId=` key first, then `appId=` and `uid=` (the keys this Android 15 build actually prints:
+ * `uid=10540` / `appId=10540`); null when none is present.
+ */
+function parsePackageUid(out) {
+  return firstMatch(out, /\buserId=(\d+)/) ?? firstMatch(out, /\bappId=(\d+)/) ?? firstMatch(out, /\buid=(\d+)/);
 }
 
 /**
@@ -205,7 +216,7 @@ export function checkServiceState() {
   return serviceStateOutcome(parseForegroundService(res.out), parseServiceLifecycleFlags(res.out));
 }
 
-/** Check 5: the ticker's wake lock is held; this check failed for the whole investigation, so its absence is explained. */
+/** Check 6: the ticker's wake lock is held; this check failed for the whole investigation, so its absence is explained. */
 export function checkTickerAlive() {
   const res = runAdb(['shell', 'dumpsys', 'power'], 32 * 1024 * 1024);
   if (!res.ok) return outcome('Ticker alive', 'UNKNOWN', `dumpsys power failed: ${res.err}`);
@@ -222,7 +233,7 @@ export function checkTickerAlive() {
   );
 }
 
-/** Check 6: the engine was actually invoked; reports the newest occurrence, absence means no attempt reached the engine. */
+/** Check 7: the engine was actually invoked; reports the newest occurrence, absence means no attempt reached the engine. */
 export function checkEngineInvoked() {
   const res = runAdb(['logcat', '-d', '-v', 'time'], 64 * 1024 * 1024);
   if (!res.ok) return outcome('Engine invoked', 'UNKNOWN', `logcat -d failed: ${res.err}`);
@@ -238,7 +249,20 @@ export function checkEngineInvoked() {
   );
 }
 
-/** Check 7: the journal exists with size and mtime; row count and newest transition only when host sqlite3 is available. */
+/** Check 5: the FIRST log-derived check — the shared loader's `[nativeSeam]` warning is the earliest decisive signal that a native seam degraded to a silent no-op; its absence is a PASS. */
+export function checkNativeSeamWarnings() {
+  const res = runAdb(['logcat', '-d', '-v', 'time'], 64 * 1024 * 1024);
+  if (!res.ok) return outcome('Native seam warnings', 'UNKNOWN', `logcat -d failed: ${res.err}`);
+  const lines = parseNativeSeamWarnings(res.out);
+  if (lines.length === 0) return outcome('Native seam warnings', 'PASS', `no '${NATIVE_SEAM_WARNING}' warning in the logcat buffer.`);
+  return outcome(
+    'Native seam warnings',
+    'FAIL',
+    `${lines.length} '[nativeSeam]' warning(s) — a native module was never registered and its seam degraded to a no-op (earlier and cheaper than the wake-lock symptom):\n${lines.join('\n')}`
+  );
+}
+
+/** Check 8: the journal exists with size and mtime; row count and newest transition only when host sqlite3 is available. */
 export function checkJournalWritten(sqlite3, workDir) {
   const res = runAdb(['shell', 'run-as', PACKAGE_NAME, 'ls', '-l', 'files/sync-journal.db']);
   if (!res.ok) {
@@ -257,7 +281,7 @@ export function checkJournalWritten(sqlite3, workDir) {
   return outcome('Journal written', 'PASS', evidence + readJournalRows(sqlite3, local));
 }
 
-/** Check 8: pulls the live app database (plus WAL/SHM) and reads sync_runtime_status; missing sqlite3 is UNKNOWN, not FAIL. */
+/** Check 9: pulls the live app database (plus WAL/SHM) and reads sync_runtime_status; missing sqlite3 is UNKNOWN, not FAIL. */
 export function checkAttemptFreshness(sqlite3, workDir) {
   if (!sqlite3) return outcome('Attempt freshness', 'UNKNOWN', NO_SQLITE3_EVIDENCE);
   const pulled = pullDatabaseWithSidecars(workDir);
@@ -265,18 +289,17 @@ export function checkAttemptFreshness(sqlite3, workDir) {
   return runtimeStatusOutcome(sqlite3, workDir, pulled.names);
 }
 
-/** Check 9: counts `Client timed out while executing` lines inside the app uid's JobScheduler records; PASS at zero. */
+/** Check 10: counts `Client timed out while executing` lines inside the app uid's JobScheduler records; PASS at zero. */
 export function checkExecutionGuardBurns() {
   const pkg = runAdb(['shell', 'dumpsys', 'package', PACKAGE_NAME]);
-  if (!pkg.ok) return outcome('No execution-guard burns', 'UNKNOWN', `dumpsys package failed: ${pkg.err}`);
-  const userId = parseUserId(pkg.out);
-  if (!userId) return outcome('No execution-guard burns', 'UNKNOWN', 'userId not found in dumpsys package output');
   const jobs = runAdb(['shell', 'dumpsys', 'jobscheduler'], 32 * 1024 * 1024);
   if (!jobs.ok) return outcome('No execution-guard burns', 'UNKNOWN', `dumpsys jobscheduler failed: ${jobs.err}`);
-  return guardOutcome(userId, parseGuardTimeoutCounts(jobs.out, appIndexFor(userId)));
+  const resolved = resolveGuardAppIndex(pkg.ok ? pkg.out : '', jobs.out);
+  if (!resolved.index) return outcome('No execution-guard burns', 'UNKNOWN', `could not resolve the app uid from ${resolved.source}`);
+  return guardOutcome(resolved.index, resolved.source, parseGuardTimeoutCounts(jobs.out, resolved.index));
 }
 
-/** Check 10: the app's stand-by bucket is not 45 (RESTRICTED); names the value either way. */
+/** Check 11: the app's stand-by bucket is not 45 (RESTRICTED); names the value either way. */
 export function checkStandbyBucket() {
   const res = runAdb(['shell', 'am', 'get-standby-bucket', PACKAGE_NAME]);
   if (!res.ok) {
@@ -379,10 +402,35 @@ function isTimeoutLine(line) {
   return line.includes('Client timed out while executing');
 }
 
-/** Builds the execution-guard outcome: PASS at zero scoped burns, FAIL otherwise, uid and both counts as evidence. */
-function guardOutcome(userId, counts) {
+/** Resolves the guard check's app uid index: `dumpsys package` userId first, then the `u0a<i>` of job records naming the package; index is null when neither source answers. */
+function resolveGuardAppIndex(pkgOut, jobsOut) {
+  const uid = parsePackageUid(pkgOut);
+  if (uid) return { index: appIndexFor(uid), source: `dumpsys package uid=${uid}` };
+  const fallback = parseAppIndexFromJobscheduler(jobsOut, PACKAGE_NAME);
+  if (fallback) return { index: fallback, source: `dumpsys jobscheduler job records naming the package (u0a${fallback})` };
+  return { index: null, source: 'dumpsys package userId= or dumpsys jobscheduler job records' };
+}
+
+/** Collects the distinct `u0a<i>` indices on the lines of a dump that name the package. */
+function collectJobIndices(out, packageName) {
+  const indices = new Set();
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.includes(packageName) ? line.match(/\bu0a(\d+)\b/) : null;
+    if (m) indices.add(m[1]);
+  }
+  return indices;
+}
+
+/** Derives the app uid index from `dumpsys jobscheduler` when `dumpsys package` carries no `userId=`; a single distinct index wins, null otherwise. */
+function parseAppIndexFromJobscheduler(out, packageName) {
+  const indices = collectJobIndices(out, packageName);
+  return indices.size === 1 ? [...indices][0] : null;
+}
+
+/** Builds the execution-guard outcome: PASS at zero scoped burns, FAIL otherwise, uid source and both counts as evidence. */
+function guardOutcome(appIndex, uidEvidence, counts) {
   const evidence =
-    `uid=${userId} (u0a${appIndexFor(userId)}); ` +
+    `uid ${uidEvidence} (u0a${appIndex}); ` +
     `Client-timed-out lines in this uid's records: ${counts.scoped}; total in dump: ${counts.total}`;
   return outcome('No execution-guard burns', counts.scoped === 0 ? 'PASS' : 'FAIL', evidence);
 }

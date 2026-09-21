@@ -1,6 +1,6 @@
 // Device acceptance instrument for the native background sync work.
 //
-// Runs the ten acceptance checks from the sync investigation against the tablet over adb
+// Runs the eleven acceptance checks from the sync investigation against the tablet over adb
 // and prints a verdict per check (PASS / FAIL / UNKNOWN) with the raw evidence it read.
 // It is read-only on the device: dumpsys, logcat -d, am get-standby-bucket and file reads
 // through `run-as cat`. Exits non-zero when any check fails; exits 2 (cleanly, no stack
@@ -22,6 +22,7 @@ import {
   checkExecutionGuardBurns,
   checkJournalWritten,
   checkLabReadableBuild,
+  checkNativeSeamWarnings,
   checkServiceState,
   checkStandbyBucket,
   checkTickerAlive,
@@ -41,7 +42,7 @@ const results = [];
  */
 function record(outcome) {
   results.push(outcome);
-  console.log(`\n[${results.length}/10] ${outcome.name} ... ${outcome.verdict}`);
+  console.log(`\n[${results.length}/11] ${outcome.name} ... ${outcome.verdict}`);
   for (const line of outcome.evidence.split('\n')) console.log(`       | ${line}`);
 }
 
@@ -88,7 +89,7 @@ function printSummary() {
 }
 
 /**
- * Runs the ten checks in order against the connected device.
+ * Runs the eleven checks in order against the connected device.
  *
  * @param {string} workDir - host temp directory for pulled database files.
  * @returns {number} process exit code.
@@ -100,6 +101,10 @@ function runChecks(workDir) {
   record(checkBuildIdentity());
   record(checkLabReadableBuild());
   record(checkServiceState());
+  // The [nativeSeam] check comes FIRST among the log-derived checks on purpose: a seam-degradation
+  // warning is the earliest and cheapest decisive signal this failure class exists — it explains
+  // the wake-lock and engine absences that the later checks would otherwise report as symptoms.
+  record(checkNativeSeamWarnings());
   record(checkTickerAlive());
   record(checkEngineInvoked());
   record(checkJournalWritten(sqlite3, workDir));
