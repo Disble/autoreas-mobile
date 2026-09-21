@@ -25,6 +25,7 @@ import {
   MIGRATION_LEDGER_PIN_SQL,
   MIGRATION_LEDGER_SEED_SQL,
   OPERATION_LOG_COLUMN_DEFINITIONS,
+  SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
 } from './client.constants';
@@ -285,6 +286,33 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 }
 
 /**
+ * Adds every `sync_cycle_lock` column added after the table first shipped, mirroring
+ * `ensureAnimesColumns`'s single-PRAGMA-read mechanism. `CREATE TABLE IF NOT EXISTS` above is a
+ * no-op on a database that already carries an older shape, so this repair twin is the ONLY route
+ * the `fence` column has to an installed device.
+ *
+ * The ALTER deliberately runs only when the table already exists (the PRAGMA read returned at
+ * least one column): a missing table is completed by `ensureSyncCycleLockTable`'s CREATE, which
+ * already ships the column, and skipping there keeps the repair pipeline's writer order stable
+ * for stores created fresh.
+ */
+async function ensureSyncCycleLockColumns(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(sync_cycle_lock)',
+  );
+
+  if (columns.length === 0) {
+    return;
+  }
+
+  await ensureMissingColumns(
+    rawDb,
+    new Set(columns.map((column) => column.name)),
+    SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
+  );
+}
+
+/**
  * Pins drizzle's migration gate on any device that already carries the application schema, so
  * `migrate()` applies NOTHING there and the idempotent repair steps below own convergence.
  *
@@ -350,6 +378,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureSeasonRatingQueueTable(rawDb);
   await ensureActiveSeasonCacheTable(rawDb);
   await ensureSyncCycleLockTable(rawDb);
+  await ensureSyncCycleLockColumns(rawDb);
   return db;
 }
 

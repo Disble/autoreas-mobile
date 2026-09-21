@@ -2,6 +2,8 @@ package expo.modules.syncengine
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
+import android.util.Log
 import java.io.File
 
 /**
@@ -13,6 +15,9 @@ import java.io.File
 
 /** Owner stamped on the singleton `sync_cycle_lock` row when the engine claims it. */
 const val ENGINE_LOCK_OWNER = "native_engine"
+
+/** Row id of the singleton `sync_cycle_lock` row; mirrors `SYNC_CYCLE_LOCK_ROW_ID`. */
+const val ENGINE_LOCK_ROW_ID = 1L
 
 /** Lease duration for one claimed cycle; mirrors `DEFAULT_SYNC_CYCLE_LOCK_LEASE_MS` (60 s). */
 const val ENGINE_LEASE_MS = 60_000L
@@ -44,6 +49,104 @@ const val APP_DATABASE_NAME = "autoreas.db"
 
 /** Subdirectory expo-sqlite stores database files in, relative to the app's `filesDir`. */
 const val SQLITE_SUBDIRECTORY = "SQLite"
+
+/** Log tag for the database reads hosted in this file. */
+const val TAG_DATABASE_READS = "SyncEngineDb"
+
+/**
+ * Ownership guard appended to every destructive or monotonic engine write over the app database:
+ * the statement only affects rows while the singleton lease row still names the writer's exact
+ * owner/fence pair. When a later attempt reclaimed the expired lease, the guard selects nothing
+ * and the write affects zero rows -- a reclaimed lease rejects the previous owner's writes
+ * (ADR 008) instead of only preventing new claims.
+ *
+ * Bind order for a guarded statement: the statement's own placeholders first, then the owner,
+ * then the fence.
+ */
+const val LEASE_OWNERSHIP_GUARD_SQL =
+  "EXISTS (SELECT 1 FROM sync_cycle_lock WHERE id = $ENGINE_LOCK_ROW_ID AND owner = ? AND fence = ?)"
+
+/**
+ * Reads the singleton lease row's `owner` and `fence` back and reports whether they name exactly
+ * [owner] and [fence]. The stored pair is the single source of truth for who holds the lease.
+ * A missing `sync_cycle_lock` table reads as not-owned rather than throwing.
+ */
+fun isSyncCycleLeaseOwnedBy(appDb: SQLiteDatabase, owner: String, fence: String): Boolean {
+  return try {
+    appDb.rawQuery(READ_OWNERSHIP_SQL, arrayOf(ENGINE_LOCK_ROW_ID.toString())).use { cursor ->
+      cursor.moveToFirst() &&
+        cursor.getString(0) == owner &&
+        !cursor.isNull(1) &&
+        cursor.getString(1) == fence
+    }
+  } catch (error: SQLiteException) {
+    false
+  }
+}
+
+private const val READ_OWNERSHIP_SQL = "SELECT owner, fence FROM sync_cycle_lock WHERE id = ?"
+
+/**
+ * Verifies lease ownership for a whole write transaction, throwing [LeaseLostException] when the
+ * lease no longer names this attempt. Sound as a transaction-wide guard: the caller runs inside
+ * `BEGIN IMMEDIATE`, and another connection's reclaim is itself a write, so the write lock pins
+ * the fence for the entire transaction -- no claim can interleave between this check and COMMIT.
+ */
+fun requireLeaseOwnership(appDb: SQLiteDatabase, lease: LeaseFence) {
+  if (!isSyncCycleLeaseOwnedBy(appDb, lease.owner, lease.fence)) {
+    throw LeaseLostException("lease row no longer names owner=${lease.owner}")
+  }
+}
+
+/** The `bridge_config` columns the engine reads (single row, newest id). */
+data class BridgeConfigRow(
+  val id: Long,
+  val deviceId: String?,
+  val ip: String?,
+  val port: String?,
+  val token: String?,
+  val lastChangelogId: Long?,
+)
+
+/**
+ * Reads the single `bridge_config` row; `null` when absent, or on a not-yet-migrated store.
+ * Lives beside the other database plumbing so the cycle keeps to its pipeline shape.
+ */
+fun readBridgeConfig(appDb: SQLiteDatabase): BridgeConfigRow? {
+  return try {
+    appDb.rawQuery(
+      "SELECT id, device_id, ip, port, token, last_changelog_id FROM bridge_config " +
+        "ORDER BY id DESC LIMIT 1",
+      null,
+    ).use { cursor ->
+      if (!cursor.moveToFirst()) {
+        null
+      } else {
+        BridgeConfigRow(
+          id = cursor.getLong(0),
+          deviceId = cursor.getString(1),
+          ip = cursor.getString(2),
+          port = cursor.getString(3),
+          token = cursor.getString(4),
+          lastChangelogId = if (cursor.isNull(5)) null else cursor.getLong(5),
+        )
+      }
+    }
+  } catch (error: SQLiteException) {
+    // A fresh install has no schema until the foreground's first open; mirror the JS
+    // SchemaNotReadyError -> no-op handling with `not_applicable`.
+    Log.w(TAG_DATABASE_READS, "bridge_config unreadable (schema not ready?)", error)
+    null
+  }
+}
+
+/** Reports whether a read config carries everything one attempt needs to reach the bridge. */
+fun hasCompleteBridgeConnection(config: BridgeConfigRow): Boolean {
+  return !config.deviceId.isNullOrBlank() &&
+    !config.ip.isNullOrBlank() &&
+    !config.port.isNullOrBlank() &&
+    !config.token.isNullOrBlank()
+}
 
 /**
  * Creates the `pending_remote_changes` staging table when missing. Byte-identical to the app's

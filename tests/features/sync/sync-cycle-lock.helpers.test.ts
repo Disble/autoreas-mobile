@@ -1,9 +1,41 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
+import {
+  runMigrations,
+  withLocalWrite,
+} from '../../../src/infrastructure/db/client/client.helpers';
+import { SYNC_CYCLE_LOCK_ROW_ID } from '../../../src/features/sync/sync-cycle-lock.constants';
 import { withExclusiveSyncCycle } from '../../../src/features/sync/sync-cycle-lock.helpers';
+import {
+  applyMigrationFiles,
+  createTestSqliteAdapter,
+} from '../../support/sqlite-adapter.helpers';
+
+// The write door is mocked for the fake-store suites below but its REAL implementation is kept
+// for the fence-contract suites, which drive a real node:sqlite adapter through the actual door.
+/**
+ * Real implementation of the write door captured before the module mock replaces it, so the
+ * fence-contract suites can invoke it directly against the real node:sqlite adapter.
+ */
+const actualClientHelpers = jest.requireActual(
+  '../../../src/infrastructure/db/client/client.helpers',
+);
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
+  ...jest.requireActual('../../../src/infrastructure/db/client/client.helpers'),
   withLocalWrite: jest.fn(),
+}));
+
+// The ONLY production module mocked for the real-database suites: drizzle is handed a
+// node:sqlite proxy handle instead of expo-sqlite, and the migrator is a no-op because
+// `applyMigrationFiles` already ran the same SQL. `runMigrations` still executes its
+// idempotent repair steps, which is where the `sync_cycle_lock.fence` column reaches
+// databases created before the column existed.
+jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
+  getDrizzleFactory: () =>
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+    require('../../support/drizzle-test-factory.helpers').createTestDrizzleFactory(),
+  getDrizzleMigrator: () => async () => undefined,
+  getOpenDatabaseSync: () => () => undefined,
 }));
 
 /**
@@ -14,7 +46,7 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
  * without requiring a native SQLite binary in the Jest/Node environment.
  */
 function createSharedLockStore() {
-  let row: { owner: string; expiresAt: number } | null = null;
+  let row: { owner: string; expiresAt: number; fence: string } | null = null;
   const statements: string[] = [];
 
   function createConnection(): SQLiteDatabase {
@@ -26,10 +58,16 @@ function createSharedLockStore() {
         }
 
         if (sql.startsWith('INSERT INTO sync_cycle_lock')) {
-          const [, owner, expiresAt, now] = params as [number, string, number, number];
+          const [, owner, expiresAt, fence, now] = params as [
+            number,
+            string,
+            number,
+            string,
+            number,
+          ];
 
           if (!row || row.expiresAt <= now || row.owner === owner) {
-            row = { owner, expiresAt };
+            row = { owner, expiresAt, fence };
             return { changes: 1, lastInsertRowId: 0 };
           }
 
@@ -37,14 +75,30 @@ function createSharedLockStore() {
         }
 
         if (sql.startsWith('DELETE FROM sync_cycle_lock')) {
-          const [, owner] = params as [number, string];
+          const [, owner, fence] = params as [number, string, string];
 
-          if (row && row.owner === owner) {
+          // Fenced release: the row is deleted only when BOTH the owner and the claim's own
+          // fence token still match -- a reclaimed owner's release must affect zero rows.
+          if (row && row.owner === owner && row.fence === fence) {
             row = null;
             return { changes: 1, lastInsertRowId: 0 };
           }
 
           return { changes: 0, lastInsertRowId: 0 };
+        }
+
+        throw new Error(`Unexpected SQL in fake lock store: ${sql}`);
+      },
+      async getFirstAsync<T>(sql: string, ...params: unknown[]): Promise<T | null> {
+        statements.push(sql);
+        if (sql.startsWith('SELECT owner, fence FROM sync_cycle_lock')) {
+          const [id] = params as [number];
+
+          if (row && id === 1) {
+            return { owner: row.owner, fence: row.fence } as T;
+          }
+
+          return null;
         }
 
         throw new Error(`Unexpected SQL in fake lock store: ${sql}`);
@@ -255,5 +309,104 @@ describe('sync-cycle-lock', () => {
     // Proves the assertion above actually exercised the release's door (and its throw), rather
     // than passing vacuously because release never routed through the door at all.
     expect(doorCallCount).toBe(2);
+  });
+});
+
+describe('sync-cycle-lock fence contract (real node:sqlite database)', () => {
+  /** Lets the write door's queued awaits settle without waiting on wall-clock timers. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  /** Opens one migrated, repaired adapter -- the schema shape an installed device has. */
+  async function openAdapter(): Promise<SQLiteDatabase> {
+    const adapter = createTestSqliteAdapter();
+    await applyMigrationFiles(adapter);
+    await runMigrations(adapter);
+
+    return adapter;
+  }
+
+  /** Reads the singleton lease row back, or null once the row was released. */
+  function readLockRow(rawDb: SQLiteDatabase) {
+    return rawDb.getFirstAsync<{ owner: string; fence: string | null }>(
+      'SELECT owner, fence FROM sync_cycle_lock WHERE id = ?',
+      SYNC_CYCLE_LOCK_ROW_ID,
+    );
+  }
+
+  beforeEach(() => {
+    // The fence suites run the REAL write door over the real adapter.
+    (withLocalWrite as jest.Mock).mockImplementation(actualClientHelpers.withLocalWrite);
+  });
+
+  it("a reclaimed lease rejects the previous owner's release", async () => {
+    const rawDb = await openAdapter();
+
+    let resolveFirstRun: () => void = () => undefined;
+    const firstRun = jest.fn(
+      () => new Promise<void>((resolve) => { resolveFirstRun = resolve; }),
+    );
+    const firstCycle = withExclusiveSyncCycle({
+      rawDb,
+      owner: 'first_owner',
+      run: firstRun,
+      leaseMs: 1_000,
+      now: () => 1_000,
+      generateFenceToken: () => 'fence-first',
+    });
+    while (firstRun.mock.calls.length === 0) {
+      await flush();
+    }
+
+    // The first lease lapses (1_000 + 1_000 <= 2_500) and a second claimer takes the row
+    // with its own fence token.
+    let resolveSecondRun: () => void = () => undefined;
+    const secondRun = jest.fn(
+      () => new Promise<void>((resolve) => { resolveSecondRun = resolve; }),
+    );
+    const secondCycle = withExclusiveSyncCycle({
+      rawDb,
+      owner: 'second_owner',
+      run: secondRun,
+      leaseMs: 1_000,
+      now: () => 2_500,
+      generateFenceToken: () => 'fence-second',
+    });
+    while (secondRun.mock.calls.length === 0) {
+      await flush();
+    }
+
+    await expect(readLockRow(rawDb)).resolves.toMatchObject({
+      owner: 'second_owner',
+      fence: 'fence-second',
+    });
+
+    // The FIRST claimer's release must affect zero rows: its fence no longer matches the row.
+    resolveFirstRun();
+    await firstCycle;
+
+    await expect(readLockRow(rawDb)).resolves.toMatchObject({
+      owner: 'second_owner',
+      fence: 'fence-second',
+    });
+
+    // The CURRENT owner's release still deletes.
+    resolveSecondRun();
+    await secondCycle;
+
+    await expect(readLockRow(rawDb)).resolves.toBeNull();
+  });
+
+  it("the current owner's release does delete the row (negative control)", async () => {
+    const rawDb = await openAdapter();
+
+    await withExclusiveSyncCycle({
+      rawDb,
+      owner: 'foreground_service',
+      run: jest.fn().mockResolvedValue(undefined),
+      now: () => 1_000,
+      generateFenceToken: () => 'fence-a',
+    });
+
+    await expect(readLockRow(rawDb)).resolves.toBeNull();
   });
 });

@@ -6,7 +6,8 @@ import android.util.Log
 private const val RECOVERY_LOG_TAG = "SyncEngine"
 
 private const val RETURN_ORPHANED_CLAIMS_SQL =
-  "UPDATE operation_log SET status = 'pending' WHERE status = 'processing'"
+  "UPDATE operation_log SET status = 'pending' WHERE status = 'processing' AND " +
+    LEASE_OWNERSHIP_GUARD_SQL
 
 /**
  * The attempt states a later attempt may compensate (architecture doc 6.2): everything except
@@ -22,6 +23,8 @@ private val NON_TERMINAL_STATES = setOf("checked", "claimed", "sent", "applied",
 data class RecoveryResult(
   val processingReturned: Int,
   val abandonedCycleId: String?,
+  /** True when the lease was already lost before the sweep ran; the attempt must abandon. */
+  val leaseLost: Boolean = false,
 )
 
 /**
@@ -58,10 +61,17 @@ class SyncEngineRecovery(
   /**
    * Runs both compensations and reports what they reclaimed. Never throws: each step is
    * individually guarded, so a journal failure cannot block the claim recovery and vice versa.
+   * The whole sweep runs under the caller's fence: the orphan compensation is a destructive
+   * write, so its statement is guarded by [LEASE_OWNERSHIP_GUARD_SQL] -- after a reclaim it
+   * affects zero rows -- and a lease already lost before the sweep reports [RecoveryResult.leaseLost]
+   * so the attempt abandons instead of writing on.
    */
-  fun sweep(currentCycleId: String): RecoveryResult {
+  fun sweep(currentCycleId: String, lease: LeaseFence): RecoveryResult {
+    if (!isSyncCycleLeaseOwnedBy(appDb, lease.owner, lease.fence)) {
+      return RecoveryResult(processingReturned = 0, abandonedCycleId = null, leaseLost = true)
+    }
     val abandonedCycleId = abandonStaleAttempt(currentCycleId)
-    val processingReturned = returnOrphanedClaims()
+    val processingReturned = returnOrphanedClaims(lease)
     return RecoveryResult(processingReturned, abandonedCycleId)
   }
 
@@ -94,12 +104,17 @@ class SyncEngineRecovery(
 
   /**
    * Returns every orphaned `processing` row to `pending` inside one `BEGIN IMMEDIATE`
-   * transaction, answering the number of rows reclaimed; `0` on any failure.
+   * transaction, answering the number of rows reclaimed; `0` on any failure. The statement is
+   * fenced: when this attempt's lease was reclaimed, the ownership guard selects nothing and the
+   * update affects zero rows instead of clobbering the new owner's claims.
    */
-  private fun returnOrphanedClaims(): Int {
+  private fun returnOrphanedClaims(lease: LeaseFence): Int {
     return try {
       inImmediateTransaction(appDb) {
-        appDb.compileStatement(RETURN_ORPHANED_CLAIMS_SQL).executeUpdateDelete()
+        appDb.compileStatement(RETURN_ORPHANED_CLAIMS_SQL).apply {
+          bindString(1, lease.owner)
+          bindString(2, lease.fence)
+        }.executeUpdateDelete()
       }
     } catch (error: Throwable) {
       Log.w(RECOVERY_LOG_TAG, "recovery sweep: orphaned claim recovery failed", error)

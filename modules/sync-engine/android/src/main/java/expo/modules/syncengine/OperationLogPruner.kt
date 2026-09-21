@@ -16,18 +16,27 @@ private const val TERMINAL_MAX_COUNT = 500
  * Retention prune over the operation log, ported statement-for-statement from
  * `pruneOperationLog` (`operation-log-retention.helpers.ts`): TTL first, then max-count, per
  * status — `synced` 7 days / 1000 rows, `dead_letter` 30 days / 500, `conflict_exhausted`
- * 30 days / 500 — deleting only terminal statuses, oldest first. The caller owns the
- * transaction, exactly as the JS prune runs in its caller's write transaction.
+ * 30 days / 500 — deleting only terminal statuses, oldest first. The prune opens its own
+ * `BEGIN IMMEDIATE` transaction and verifies the cycle lease inside it (see `pruneSafely`).
  */
 object OperationLogPruner {
 
   /**
-   * Runs the whole prune inside the caller's already-open transaction. A failure is warned
+   * Runs the whole prune inside one `BEGIN IMMEDIATE` transaction. A failure is warned
    * about and swallowed: a prune failure must never fail the attempt (step 9 of the contract).
+   *
+   * Fenced (ADR 008): [requireLeaseOwnership] runs as the FIRST statement inside the
+   * transaction, so a lease reclaimed between the caller's last guarded write and this prune
+   * aborts the prune with [LeaseLostException] before any row is deleted. The exception is
+   * rethrown, not swallowed, so the cycle classifies it like every other lease loss
+   * (`outcome = abandoned`, `LeaseLost`). A reclaim is itself a write, so the write lock taken
+   * by `BEGIN IMMEDIATE` pins the fence for the whole transaction -- no claim can interleave
+   * with the deletes.
    */
-  fun pruneSafely(appDb: SQLiteDatabase) {
+  fun pruneSafely(appDb: SQLiteDatabase, lease: LeaseFence) {
     try {
       inImmediateTransaction(appDb) {
+        requireLeaseOwnership(appDb, lease)
         val now = System.currentTimeMillis()
         pruneByTtl(appDb, "synced", now - SYNCED_TTL_DAYS * RETENTION_DAY_MS)
         pruneByTtl(appDb, "dead_letter", now - TERMINAL_TTL_DAYS * RETENTION_DAY_MS)
@@ -36,6 +45,10 @@ object OperationLogPruner {
         pruneByMaxCount(appDb, "dead_letter", TERMINAL_MAX_COUNT)
         pruneByMaxCount(appDb, "conflict_exhausted", TERMINAL_MAX_COUNT)
       }
+    } catch (error: LeaseLostException) {
+      // Fence contract: lease loss during the prune is not a prune failure -- rethrow so the
+      // cycle classifies it as `abandoned` / `LeaseLost` instead of writing on.
+      throw error
     } catch (error: Throwable) {
       Log.w(PRUNE_LOG_TAG, "operation-log pruning failed", error)
     }
