@@ -361,6 +361,22 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 
 Newest first.
 
+### 2026-09-21 (release 1.4.0) — the 24 h window closed as VOID, two migration gaps measured, and the release decision
+
+**Why this entry exists.** The maintainer asked whether the next release was ready, then pointed out that the 24 h window does not need 24 real hours. Reading it early was possible; reading it at all was not, and that is the finding. The release decision that follows is recorded here too.
+
+**The window, closed early and VOID on 2026-09-21 14:47.** Opened 11:14 (3 h 33 min elapsed at the read). `sync_runtime_status` was **frozen at `last_attempt_at = last_success_at = 1790007160232` (11:12:40)**, `last_trigger_source='bootstrap'`, `last_failure_message=NULL`, `consecutive_unclosed_cycles=0` — while the native journal recorded **14 cycles** in the same span, 12 `closed` and 2 `failed` (14:27:52 and 14:43:03, both `failed to connect to /192.168.0.134 (port 9876) … after 10000ms`), every one of them terminal. Two real failures are absent from the status row. `grep sync_runtime_status modules/**/*.kt` returns nothing, and both native branches (`background-sync.helpers.ts` and the FGS adapter's `runCycle`) return from `engine.runOnce(...)` before any status write; the adapter's `catch` never fires because the seam guarantees `runOnce` never rejects.
+
+**Two consequences, one cause.** (1) `settings-screen.helpers.ts:57-61` renders that row, so Settings shows 11:12:40 forever and reports no failure at all — a regression against `v1.3.0`, where the JS cycle wrote the same row and no native engine existed. (2) `consecutive_unclosed_cycles` increments only when a previous attempt left `is_cycle_active` set, and the live path never sets it, so **the column can only ever read 0**: §9's primary criterion was unfalsifiable by construction, and the remaining hours of the window would not have changed that. The falsifiable half is the journal. The cause is one class: the migration moved the cycle to Kotlin and left the layers around it behind.
+
+**The same read found the second instance of that class.** The T6 presence gate exists only in the FGS runner's `createAttemptPolicy`; `runBackgroundSyncCycle` calls the engine directly. Measured with the bridge absent: `runOnce invoked (triggerSource='background_task', cycleId=c350bf58-…)` at 14:42:53 entered `checked`/`sent` and paid `10033ms`, while the `TICK_ALARM` at 14:42:41 was correctly refused and produced no cycle. T6's `< 2 s, writes nothing` acceptance holds only for the trigger that has the gate.
+
+**Decision, and the reversal inside it.** Both gaps were first specified for implementation before the release (T13: the native attempt projects itself into `sync_runtime_status`, with `attempt_started` + `is_cycle_active=1` before `engine.runOnce` and exactly one terminal write after it; T14: the presence probe extracted to a shared helper and gating `runBackgroundSyncCycle` too). An implementation was started and **abandoned unverified** when the maintainer redirected: ship 1.4.0 with what works, and put the details, the possible bugs, the untested paths and the what-ifs in this log and in the backlog. That work is preserved as a patch outside the repository (`../autoreas-mobile-wip-t13-t14.patch`, 1033 lines) and its contract is written into the ODD task document, so nothing is lost and the release ships only verified code.
+
+**The release.** `1.4.0`, a minor bump: the behaviour change is visible and the schema change is additive and nullable (`fence TEXT`), with this project's own precedent of 2026-09-09 stating that an additive nullable migration is a minor bump and not a major one. Path A (CI), tag on `main`.
+
+**Honest limits of this entry.** The fence slice (`e78dc69`) was still unverified on a device when release preparation began, and that is the one open risk this release carries: it touches the repair twin's `ALTER`, the same startup path this project killed on 2026-09-10 with a re-applied `ALTER` (`duplicate column`). A lab build of the release commit is therefore installed and read on the tablet before the tag is pushed; its result is recorded in a later entry.
+
 ### 2026-09-21 (autonomous run, latest) — the 24 h window is opened on the build that carries the cycle-flag fix, and the instrument grows the check that measures it
 
 **Why this entry exists.** `consecutive_unclosed_cycles = 0` is the one primary acceptance metric of
