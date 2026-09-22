@@ -6,9 +6,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -28,7 +30,11 @@ private const val TICK_ALARM_REQUEST_CODE = 2001
 private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
 
 /**
- * Native ticker: drives the FGS reconcile cadence from `AlarmManager` instead of a `Handler`.
+ * Native surface that keeps foreground sync alive: the `AlarmManager`-driven tick source, the
+ * alarm re-arm, and the battery-optimization exemption request. Notifee remains the owner of the
+ * foreground service and its notification -- this module supplies the mechanisms that keep that
+ * service reachable and its cadence running, not the service itself.
+ *
  * Ticks used to be scheduled with `Handler.postDelayed`, which measures delays against
  * `SystemClock.uptimeMillis()` -- a clock that stops advancing while the CPU is suspended. With
  * the screen off and no wake lock held between ticks, the pending delay froze and the next tick
@@ -42,13 +48,18 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * release per reported cycle even when cycles overlap; `stop()` and `OnDestroy` drop every
  * remaining reference. The timeout is only a safety net for a cycle that never reports back.
  *
- * Notifee remains the owner of the foreground service and its notification -- this module only
- * supplies the tick source.
- *
  * The tick alarm is deliberately inexact: the system may batch or defer allow-while-idle alarms,
  * with a floor of roughly one delivery per minute and longer gaps in Doze. The catch-up criterion
  * (reconcile within the first hour of bridge reachability) tolerates that, so the module does
  * not request the exact-alarm special permission.
+ *
+ * The battery-optimization exemption (`isIgnoringBatteryOptimizations` /
+ * `requestIgnoreBatteryOptimizations`) is exemption #13 on Android's documented background-FGS-
+ * start allow-list and the only one this app can reach: it is what flips `getFgsAllowStart` from
+ * `DENIED` to `SYSTEM_ALLOW_LISTED` and, as a side effect, unlocks `setExactAndAllowWhileIdle`
+ * without the separate `SCHEDULE_EXACT_ALARM` permission. It is requested, never assumed -- the
+ * user grants it through the system dialog, and every caller here degrades honestly when it is
+ * refused.
  */
 class ForegroundSyncTickerModule : Module() {
   private var wakeLock: PowerManager.WakeLock? = null
@@ -181,6 +192,62 @@ class ForegroundSyncTickerModule : Module() {
     releaseAllCycleWakeLocks()
   }
 
+  /**
+   * Answers whether the app is currently exempt from Android's battery-optimization
+   * restrictions (Doze / App Standby). Never throws: a missing context, a missing
+   * `PowerManager` service, or a `SecurityException` from the platform all resolve to `false`
+   * rather than propagating, because this is a status read, not a control-flow dependency.
+   */
+  private fun isIgnoringBatteryOptimizations(): Boolean {
+    val context = appContext.reactContext ?: return false
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+
+    return try {
+      powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    } catch (error: SecurityException) {
+      false
+    }
+  }
+
+  /**
+   * Fires the one-tap system dialog (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) that lets
+   * the user grant this app the battery-optimization exemption. `FLAG_ACTIVITY_NEW_TASK` lets
+   * the intent launch from a non-Activity context, which this module always is. Returns `false`
+   * immediately when the app is already exempt -- there is nothing to request. Never throws: if
+   * no activity can resolve the intent, or starting it throws for any reason (including a
+   * `SecurityException` on OEM builds that block the action), this resolves to `false` instead
+   * of propagating -- the caller degrades, it does not crash. The return value only reports
+   * whether the dialog was launched, not whether the user granted it; callers re-read
+   * `isIgnoringBatteryOptimizations()` to observe the outcome.
+   *
+   * Deliberately NOT guarded by `intent.resolveActivity(packageManager)`. That call is subject to
+   * Android 11+ package-visibility filtering, and this app targets SDK 35, so without a `<queries>`
+   * entry for this action it can return `null` for an intent `startActivity` would have resolved
+   * fine. Pre-checking would therefore fail closed on exactly the devices the exemption matters
+   * most on, and it would fail SILENTLY: the dialog would never show and this would report `false`
+   * forever. Letting `startActivity` throw `ActivityNotFoundException` into the catch below yields
+   * the same `false` for a genuinely absent activity, with no false negative.
+   */
+  private fun requestIgnoreBatteryOptimizations(): Boolean {
+    if (isIgnoringBatteryOptimizations()) {
+      return false
+    }
+
+    val context = appContext.reactContext ?: return false
+
+    return try {
+      val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+        data = Uri.parse("package:${context.packageName}")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+
+      context.startActivity(intent)
+      true
+    } catch (error: Exception) {
+      false
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
@@ -200,6 +267,14 @@ class ForegroundSyncTickerModule : Module() {
 
     Function("notifyCycleComplete") {
       releaseCycleWakeLock()
+    }
+
+    Function("isIgnoringBatteryOptimizations") {
+      isIgnoringBatteryOptimizations()
+    }
+
+    Function("requestIgnoreBatteryOptimizations") {
+      requestIgnoreBatteryOptimizations()
     }
 
     OnDestroy {

@@ -33,6 +33,13 @@ const SPECIAL_USE_FGS_SUBTYPE_PROPERTY = {
   },
 };
 
+// REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is exemption #13 on Android's documented background-FGS-
+// start allow-list, and the only one this sideloaded app can reach (the others need a system
+// role, a carrier privilege, or a Play-only allow-list entry). Without it, `getFgsAllowStart`
+// stays `DENIED` on targetSdk 35 and nothing -- not a manifest receiver, not a watchdog -- can
+// restart the foreground service from the background; the declaration only unlocks the request,
+// the user still grants or refuses it through the system dialog fired by
+// `requestIgnoreBatteryOptimizations()` in `ForegroundSyncTickerModule.kt`.
 /** Permissions the service needs, merged into the manifest when it does not declare them yet. */
 const REQUIRED_PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE',
@@ -40,6 +47,7 @@ const REQUIRED_PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.POST_NOTIFICATIONS',
+  'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
   'android.permission.WAKE_LOCK',
 ];
 
