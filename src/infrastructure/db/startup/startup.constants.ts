@@ -35,7 +35,8 @@ export const SYNC_CYCLE_LOCK_TABLE_SQL =
   'CREATE TABLE IF NOT EXISTS sync_cycle_lock (' +
   'id INTEGER PRIMARY KEY, ' +
   'owner TEXT NOT NULL, ' +
-  'expires_at INTEGER NOT NULL)';
+  'expires_at INTEGER NOT NULL, ' +
+  'fence TEXT)';
 
 /**
  * Maps each table needing column-level readiness proof to its required column names. A table
@@ -48,6 +49,10 @@ export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>
   bridge_config: ['is_sync_telemetry_enabled'],
   animes: ['last_applied_change_ms', 'bridge_modified_at'],
   operation_log: ['conflict_attempt_count'],
+  // The fence token is what makes a reclaimed cycle-lock lease reject the previous owner's
+  // release (and the native engine's fenced writes): without it a lease lapse only prevents
+  // NEW claims while the stale owner can still delete the current holder's row.
+  sync_cycle_lock: ['fence'],
 };
 
 /** Counts required tables without exposing runtime values or application data. */

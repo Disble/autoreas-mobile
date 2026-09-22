@@ -28,9 +28,9 @@ export interface HeadlessSyncCycleProgress {
   stage: HeadlessSyncCycleStage;
   attemptedAt: number;
   /**
-   * This cycle's own correlation id, set once `runCycleBody` mints it. Stays `null` until then,
-   * so an abandoned cycle killed before that point reports honestly that it has none to
-   * correlate, rather than fabricating one.
+   * This cycle's own correlation id, minted by `runCycleBody` BEFORE its first await, so even a
+   * cycle abandoned inside `runtime.open()` already carries an id to correlate with. `null`
+   * only before `runCycleBody` is entered at all.
    */
   cycleId: string | null;
 }

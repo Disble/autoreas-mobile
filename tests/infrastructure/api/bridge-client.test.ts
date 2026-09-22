@@ -1,4 +1,5 @@
 import {
+  BridgeTimeoutError,
   BridgeUnreachableError,
   createBridgeClient,
 } from '../../../src/infrastructure/api/bridge-client';
@@ -121,5 +122,68 @@ describe('bridge-client', () => {
 
     expect(createWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:9876/ws', 'token123');
     expect(result).toBe(socket);
+  });
+
+  describe('getStatus (T6 presence probe)', () => {
+    it('probes GET /api/status with bearer auth and a bodyless GET', async () => {
+      const fetchFn = jest.fn(async () =>
+        buildResponse({ body: '{"status":"ok"}' }) as unknown as Response,
+      );
+      const client = createBridgeClient({ fetchFn });
+
+      const result = await client.getStatus(connection);
+
+      expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/status', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer token123' },
+        signal: expect.any(AbortSignal),
+      });
+      expect(result).toEqual({
+        ok: true,
+        status: 200,
+        data: { status: 'ok' },
+        rawBody: '{"status":"ok"}',
+        url: 'http://192.168.1.10:9876/api/status',
+        retryAfterMs: null,
+      });
+    });
+
+    it('treats ANY http answer as presence -- a 401 is still a result, not an error', async () => {
+      const fetchFn = jest.fn(async () =>
+        buildResponse({ ok: false, status: 401, body: 'unauthorized' }) as unknown as Response,
+      );
+      const client = createBridgeClient({ fetchFn });
+
+      const result = await client.getStatus(connection);
+
+      // Presence semantics: only a transport failure / abort / timeout rejects; a status code
+      // (even 401/403/404) resolves, so the attempt policy sees the bridge as present.
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(401);
+    });
+
+    it('honours the timeoutMs override so the probe can budget 1500 ms', async () => {
+      jest.useFakeTimers();
+      try {
+        const fetchFn = ((_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+          })) as unknown as typeof fetch;
+        const client = createBridgeClient({ fetchFn });
+
+        const pending = client.getStatus(connection, { timeoutMs: 1500 });
+        const assertion = pending.catch((error: unknown) => error);
+
+        await jest.advanceTimersByTimeAsync(1500);
+        const error = await assertion;
+
+        expect(error).toBeInstanceOf(BridgeTimeoutError);
+        expect(error).toMatchObject({ timeoutMs: 1500 });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 });

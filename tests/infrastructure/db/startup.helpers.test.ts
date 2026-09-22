@@ -42,6 +42,7 @@ describe('database startup helpers', () => {
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
           { name: 'conflict_attempt_count' },
+          { name: 'fence' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -58,6 +59,7 @@ describe('database startup helpers', () => {
       'migrations',
       'quick-check',
       'table-check',
+      'column-check',
       'column-check',
       'column-check',
       'column-check',
@@ -126,6 +128,7 @@ describe('database startup helpers', () => {
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
         { name: 'conflict_attempt_count' },
+        { name: 'fence' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockClear();
@@ -159,6 +162,7 @@ describe('database startup helpers', () => {
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
           { name: 'conflict_attempt_count' },
+          { name: 'fence' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -244,6 +248,7 @@ describe('database startup helpers', () => {
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
         { name: 'conflict_attempt_count' },
+        { name: 'fence' },
       ]),
     } as unknown as SQLiteDatabase;
     const newerDb = {
@@ -304,7 +309,7 @@ describe('database startup helpers', () => {
           return [{ name: 'id' }, { name: 'conflict_attempt_count' }];
         }
 
-        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }];
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();

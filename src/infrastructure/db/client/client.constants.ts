@@ -175,6 +175,23 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
 ];
 
 /**
+ * Lists the `sync_cycle_lock` columns added after the table first shipped, mirroring
+ * `ANIMES_COLUMN_DEFINITIONS` for the advisory-lock table's one legacy repair.
+ *
+ * `fence` is the per-claim token a reclaimed lease checks before honoring an owner's writes
+ * (ADR 008's fencing invariant). It is deliberately NULLABLE with no default: a fabricated
+ * token on pre-existing rows would look like a claim the row never recorded, while NULL means
+ * "claimed by code that predates fencing" -- such a row is only reclaimable through its lease
+ * expiry, exactly as before, and the first fenced claimant overwrites the token wholesale.
+ */
+export const SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
+  {
+    columnName: 'fence',
+    sql: 'ALTER TABLE sync_cycle_lock ADD COLUMN fence TEXT',
+  },
+];
+
+/**
  * The newest `when` any journal entry carries, and therefore the highest `created_at` the
  * migrator could ever write. Used as the pin for an installed device's ledger so drizzle's gate
  * reports "everything applied" and the migrator becomes a fresh-install bootstrapper only.

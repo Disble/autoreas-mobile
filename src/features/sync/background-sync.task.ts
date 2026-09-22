@@ -16,6 +16,11 @@ try {
     // kills the job at its runtime limit and re-enqueues it -- H06h's loop. So the decision of
     // WHETHER this settles lives in `resolveBackgroundTaskOutcome`, which cannot hang or throw;
     // all that remains here is mapping its outcome onto the Expo enum.
+    // Routed through the native engine when it is available (its own connections, lease owner
+    // and 30 s native watchdog — no JS timer on this path), falling back to the existing JS
+    // cycle otherwise until the migration retires it (ODD T8). Either way the attempt resolves;
+    // the decision of WHETHER this settles lives in `resolveBackgroundTaskOutcome`, which cannot
+    // hang or throw; all that remains here is mapping its outcome onto the Expo enum.
     const outcome = await resolveBackgroundTaskOutcome({
       runCycle: runBackgroundSyncCycle,
     });

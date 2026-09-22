@@ -2,7 +2,7 @@
   "expo": {
     "name": "Autoreas Mobile",
     "slug": "autoreas-mobile",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "autoreas-mobile",
@@ -27,6 +27,7 @@
     "plugins": [
       "./plugins/withAndroidForegroundSync",
       "./plugins/withAndroidGradleMemory",
+      "./plugins/withAndroidLabDebuggable",
       "expo-router",
       [
         "expo-splash-screen",

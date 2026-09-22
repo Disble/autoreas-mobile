@@ -4,9 +4,13 @@ import {
   ANIMES_COLUMN_DEFINITIONS,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   OPERATION_LOG_COLUMN_DEFINITIONS,
+  SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
 } from "../../../src/infrastructure/db/client/client.constants";
-import { REQUIRED_SCHEMA_TABLES } from "../../../src/infrastructure/db/startup/startup.constants";
+import {
+  REQUIRED_SCHEMA_COLUMNS,
+  REQUIRED_SCHEMA_TABLES,
+} from "../../../src/infrastructure/db/startup/startup.constants";
 
 /** Directory holding the migration SQL this contract is measured against. */
 const MIGRATIONS_DIRECTORY = join(__dirname, "../../../src/infrastructure/db/migrations");
@@ -28,6 +32,7 @@ const REPAIR_DEFINITIONS_BY_TABLE: Readonly<Record<string, readonly { columnName
   animes: ANIMES_COLUMN_DEFINITIONS,
   bridge_config: BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   operation_log: OPERATION_LOG_COLUMN_DEFINITIONS,
+  sync_cycle_lock: SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   sync_runtime_status: SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
 };
 
@@ -87,6 +92,27 @@ describe("migration / repair parity", () => {
     });
 
     expect(declared.length).toBeGreaterThan(0);
+    expect(missing).toEqual([]);
+  });
+
+  it("gives every required-schema column an idempotent repair twin", () => {
+    // REQUIRED_SCHEMA_COLUMNS is the readiness proof: `validatePreparedSchema` refuses to stamp
+    // a version over a database missing one of these columns. A proof with no repair twin would
+    // turn every legacy device into a permanent startup failure instead of repairing it, so the
+    // two maps are held to the same coverage here.
+    const missing = Object.entries(REQUIRED_SCHEMA_COLUMNS).flatMap(([table, columns]) =>
+      columns
+        .filter((column) => {
+          if ((BESPOKE_REPAIR_COLUMNS[table] ?? []).includes(column)) {
+            return false;
+          }
+
+          const definitions = REPAIR_DEFINITIONS_BY_TABLE[table] ?? [];
+          return !definitions.some((definition) => definition.columnName === column);
+        })
+        .map((column) => ({ table, column })),
+    );
+
     expect(missing).toEqual([]);
   });
 

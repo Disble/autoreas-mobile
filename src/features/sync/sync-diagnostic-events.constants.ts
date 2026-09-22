@@ -6,6 +6,9 @@
  * would carry database paths, URLs with the user's LAN address, SQL fragments and bound values --
  * and in this app the bound values are anime titles. So the diagnostic feed transmits symbols,
  * never text.
+ *
+ * DELIBERATE WIDENING: `native_seam` joins the list so a native-sync seam can report its own
+ * degradation. It is the one emitter that lives below every feature, on the cold-start path.
  */
 export const SYNC_DIAGNOSTIC_SOURCES = [
   'sync_cycle',
@@ -15,6 +18,7 @@ export const SYNC_DIAGNOSTIC_SOURCES = [
   'background_task',
   'startup',
   'reconcile_conflict',
+  'native_seam',
 ] as const;
 
 /**
@@ -39,6 +43,11 @@ export const SYNC_DIAGNOSTIC_SOURCES = [
  * - `conflict_operation_stalled` -> an operation has been losing a PROGRESSING optimistic-
  *   concurrency race for longer than `STALLED_OPERATION_VISIBILITY_THRESHOLD_MS`. It stays
  *   queued and keeps retrying; this event exists only so that silence has a bound too.
+ * - `native_module_unavailable` -> a native-sync seam degraded to its no-op path (Expo Go, iOS,
+ *   or a non-prebuilt binary). This is the warning that found the `modules`/`modulesClassNames`
+ *   root cause after hours of silent background-sync death -- but it only ever reached
+ *   `adb logcat`, and in production there is no cable. Routed here so the degradation rides the
+ *   same reconcile piggyback as every other signal.
  */
 export const SYNC_DIAGNOSTIC_EVENTS = [
   'ws_opened',
@@ -54,6 +63,28 @@ export const SYNC_DIAGNOSTIC_EVENTS = [
   'conflict_reason_unrecognized',
   'conflict_token_missing',
   'conflict_operation_stalled',
+  'native_module_unavailable',
+] as const;
+
+/**
+ * Why a native-sync seam degraded, as the loader (`native-module-loader.helpers.ts`) already
+ * distinguishes it. DELIBERATE WIDENING of the closed vocabulary: these members join the cycle
+ * error causes on the wire, and everything outside the union keeps the existing collapse/drop
+ * semantics. Each member maps 1:1 to one of the loader's three failure paths so the telemetry
+ * symbol and the `[nativeSeam]` logcat line read as the same incident:
+ * - `expo_modules_core_unavailable` -> `expo-modules-core` itself could not be loaded.
+ * - `native_module_missing` -> the lookup answered null, i.e. this host has no such module.
+ * - `native_bridge_lookup_threw` -> the lookup raised, e.g. an unexpected native-bridge error.
+ *
+ * The module NAME is deliberately not part of the vocabulary: coalescing is by
+ * (source, event, cause), so every degraded seam merges into one entry whose count says how many
+ * seams degraded. Per-module granularity stays on the cable channel, where the logcat line
+ * already carries it.
+ */
+export const SYNC_DIAGNOSTIC_NATIVE_SEAM_CAUSES = [
+  'expo_modules_core_unavailable',
+  'native_module_missing',
+  'native_bridge_lookup_threw',
 ] as const;
 
 /**

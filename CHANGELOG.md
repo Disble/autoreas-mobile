@@ -16,6 +16,37 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-09-21
+
+**Background sync is what this release is about, and two limits travel with it.** The sync status shown in Settings can lag: with the background engine now owning the cycle, the "last attempt" and "last success" values there are no longer updated, so until the next release treat the anime list itself as the truth about whether a change reached your PC. And while your PC is off, an attempt started by Android's own scheduler can still take up to ten seconds before giving up; the tick that runs while the app is open already gives up in under two seconds.
+
+### Added
+
+- Changes you make on the phone now reach your PC while the app is closed. Sync runs in the app's native layer instead of a JavaScript timer, so Android can no longer suspend it half-way and leave the transfer parked forever.
+- Every sync attempt is written to its own log on the device, so a transfer that did not finish can be told apart from one that never started.
+
+### Changed
+
+- With your PC off, the app now checks whether it can reach it before doing any work, instead of opening a connection and waiting for it to time out.
+
+### Fixed
+
+- Sync no longer gets stuck when the app is closed. The old code could take the "one transfer at a time" lock and never release it; the lock is now tied to a token that belongs to a single attempt, so an attempt that died can no longer block the next one or overwrite its result.
+- An attempt that dies mid-flight — the phone killing the app, the system stopping the job — is now cleaned up before the next attempt starts: its half-finished state is abandoned and its batch returns to the queue.
+- A transfer that failed is no longer reported as still running. The "attempts that never closed" counter was counting old failures forever instead of the present one.
+- The app no longer keeps the CPU awake for the whole time the sync service is running, only while a transfer is actually happening, and sync schedules its next tick with an alarm that survives deep sleep instead of one that stops waking up once the screen has been off for a while.
+- The attempt limit now actually fires. It was measured against a clock that stops while the phone sleeps, so a stuck transfer could run for minutes instead of the intended thirty seconds.
+- An attempt with nothing to send now still asks your PC for changes, instead of closing early and waiting for the next round.
+- The sync engine's native modules were not being registered at all, which is why every background attempt was a silent no-op. They are registered now.
+- The sync service declares the Android 14+ service type it actually is, so the system no longer refuses to start it, and the ticker now starts from the same place the service does, before the notification is awaited, so a slow notification no longer means a ticker that never starts.
+
+### Internal
+
+- The sync cycle, its journal and its HTTP transport now live in a native Kotlin module with a thirty-second watchdog whose clock counts sleep; the JavaScript cycle remains as the fallback for a build where that module is missing.
+- Queue changes, the sync lock and the journal are written through ownership-checked statements, so an attempt that lost its lock stops writing instead of overwriting state it no longer holds.
+- The device acceptance instrument grew to twelve checks and reads its own verdicts from the device, and the lab build profile it runs against is debuggable by construction while production is not.
+- Degraded native seams now record a diagnostic event on the device in addition to the cable-channel log line, so a missing native module is visible in production rather than only over USB.
+
 ## [1.3.0] — 2026-09-15
 
 **Cover art requires Bridge 1.13.0 or newer.** Everything else in this release works against an older Bridge; covers simply stay as the placeholder illustration until you update it.

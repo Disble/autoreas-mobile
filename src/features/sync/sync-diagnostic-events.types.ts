@@ -1,5 +1,6 @@
 import type {
   SYNC_DIAGNOSTIC_EVENTS,
+  SYNC_DIAGNOSTIC_NATIVE_SEAM_CAUSES,
   SYNC_DIAGNOSTIC_SOURCES,
 } from './sync-diagnostic-events.constants';
 import type { SyncCycleErrorCause } from './sync-telemetry.types';
@@ -9,6 +10,16 @@ export type SyncDiagnosticSource = (typeof SYNC_DIAGNOSTIC_SOURCES)[number];
 
 /** What was observed. Closed for the same reason. */
 export type SyncDiagnosticEventKind = (typeof SYNC_DIAGNOSTIC_EVENTS)[number];
+
+/** Why a native-sync seam degraded, as the loader itself distinguishes it. Closed vocabulary. */
+export type SyncNativeSeamDiagnosticCause = (typeof SYNC_DIAGNOSTIC_NATIVE_SEAM_CAUSES)[number];
+
+/**
+ * Every cause the diagnostic ring can carry: the cycle-error causes derived from failure
+ * messages, plus the native-seam causes the module loader reports directly. Closed for the same
+ * transport-privacy reason as the sources and events; anything else collapses or is dropped.
+ */
+export type SyncDiagnosticCause = SyncCycleErrorCause | SyncNativeSeamDiagnosticCause;
 
 /**
  * One coalesced entry of the diagnostic ring.
@@ -20,7 +31,7 @@ export type SyncDiagnosticEventKind = (typeof SYNC_DIAGNOSTIC_EVENTS)[number];
 export interface SyncDiagnosticEvent {
   readonly source: SyncDiagnosticSource;
   readonly event: SyncDiagnosticEventKind;
-  readonly cause: SyncCycleErrorCause | null;
+  readonly cause: SyncDiagnosticCause | null;
   readonly firstAt: number;
   readonly lastAt: number;
   readonly count: number;
@@ -30,7 +41,7 @@ export interface SyncDiagnosticEvent {
 export interface WireSyncDiagnosticEvent {
   readonly source: SyncDiagnosticSource;
   readonly event: SyncDiagnosticEventKind;
-  readonly cause: SyncCycleErrorCause | null;
+  readonly cause: SyncDiagnosticCause | null;
   readonly first_at: number;
   readonly last_at: number;
   readonly count: number;

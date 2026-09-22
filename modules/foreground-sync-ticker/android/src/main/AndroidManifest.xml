@@ -1,1 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Deliberately no exact-alarm permission: the tick alarm is inexact by design (inexact
+         allow-while-idle), so no user-revocable special permission is requested. WAKE_LOCK is
+         declared app-wide by the withAndroidForegroundSync config plugin. -->
+</manifest>

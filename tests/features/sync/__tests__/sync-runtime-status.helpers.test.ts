@@ -1,4 +1,9 @@
 import {
+  getSyncRuntimeStatusSnapshot,
+  recordCycleActive,
+  recordSyncAttemptFailed,
+  recordSyncAttemptStarted,
+  recordSyncAttemptSucceeded,
   withColumnDefault,
   withPatchOverride,
 } from '../../../../src/features/sync/sync-runtime-status.helpers';
@@ -17,6 +22,28 @@ import {
 import type { SyncRuntimeStatusSnapshot } from '../../../../src/features/sync/sync-runtime-status.types';
 import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
 import type { OperationLogConvergence } from '../../../../src/features/sync/operation-log-convergence.types';
+import type { SQLiteDatabase } from 'expo-sqlite';
+import { runMigrations } from '../../../../src/infrastructure/db/client/client.helpers';
+import {
+  applyMigrationFiles,
+  createTestSqliteAdapter,
+} from '../../../support/sqlite-adapter.helpers';
+
+// The ONLY production modules mocked in this suite, and only to hand drizzle a node:sqlite
+// handle instead of expo-sqlite -- the same wiring the behaviour suites use. The drizzle
+// migrator is a no-op because `applyMigrationFiles` already ran the same SQL; `runMigrations`
+// still executes its idempotent repair steps, which is where the post-0010
+// `sync_runtime_status` columns live on installed devices. Everything else (write door,
+// singleton upsert, merge semantics) runs for real.
+jest.mock('../../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
+  getDrizzleFactory: () =>
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+    require('../../../support/drizzle-test-factory.helpers').createTestDrizzleFactory(),
+  getDrizzleMigrator: () => async () => undefined,
+  getOpenDatabaseSync: () => () => undefined,
+  useOptionalSQLiteContext: () => null,
+  useOptionalLiveQuery: (_query: unknown, fallback: unknown) => ({ data: fallback }),
+}));
 
 /** Shared neutral snapshot fixture, so each test only spells out the fields it cares about. */
 const NEUTRAL_SNAPSHOT: SyncRuntimeStatusSnapshot = createEmptySyncRuntimeStatusSnapshot();
@@ -87,6 +114,7 @@ describe('sync runtime status helpers', () => {
       lastErrorStage: null,
       lastNativeErrcodeByte: null,
       consecutiveUnclosedCycles: 0,
+      isCycleActive: false,
     });
   });
 
@@ -104,6 +132,7 @@ describe('sync runtime status helpers', () => {
       lastErrorStage: null,
       lastNativeErrcodeByte: null,
       consecutiveUnclosedCycles: 0,
+      isCycleActive: false,
     });
   });
 });
@@ -295,6 +324,89 @@ describe('column semantics that the whole runtime-status mapping rests on', () =
   it('withPatchOverride keeps the current value only when the field is absent', () => {
     expect(withPatchOverride(undefined, 'previous error')).toBe('previous error');
     expect(withPatchOverride('new error', 'previous error')).toBe('new error');
+  });
+});
+
+describe('a terminal sync attempt releases the cycle-active flag (regression: 2026-09-21 device defect)', () => {
+  // Regression coverage for the measured device defect: with the bridge unreachable, a cycle
+  // whose terminal state was recorded left `is_cycle_active` set, so every LATER attempt was
+  // counted as unclosed (observed 0 -> 1 -> 2) and the acceptance metric
+  // "`consecutive_unclosed_cycles` stays 0 for 24 h with the app closed" broke. These tests
+  // drive the REAL helper stack (`node:sqlite` adapter + project migrations) through the exact
+  // write sequence a headless cycle performs, so the flag bookkeeping is exercised the way the
+  // device exercises it rather than against a mocked snapshot. An explicit
+  // `recordCycleActive(false)` still appears in the real cycle's finally -- its absence here is
+  // the point: the terminal write alone must close the cycle.
+
+  /** Replays the status writes a headless cycle performs from start to a terminal outcome. */
+  async function recordCycleFromStartToTerminal(
+    adapter: SQLiteDatabase,
+    cycleId: string,
+    terminal: 'success' | 'failure',
+  ): Promise<void> {
+    await recordSyncAttemptStarted(adapter, 'background_task', 1710000000000, cycleId);
+    await recordCycleActive(adapter, true);
+
+    if (terminal === 'success') {
+      await recordSyncAttemptSucceeded(adapter, 'background_task', 1710000001000, 3, cycleId);
+    } else {
+      await recordSyncAttemptFailed(
+        adapter,
+        'background_task',
+        1710000001000,
+        'Network Error',
+        {
+          cycleId,
+          stage: null,
+          errorName: 'BridgeUnreachableError',
+          errorStage: null,
+          nativeErrcodeByte: null,
+        },
+      );
+    }
+  }
+
+  /** Opens one migrated, repaired adapter -- the schema shape an installed device has. */
+  async function openAdapter(): Promise<SQLiteDatabase> {
+    const adapter = createTestSqliteAdapter();
+    await applyMigrationFiles(adapter);
+    await runMigrations(adapter);
+
+    return adapter;
+  }
+
+  it('a failed cycle leaves is_cycle_active false, so the next started cycle is not counted as unclosed', async () => {
+    const adapter = await openAdapter();
+
+    await recordCycleFromStartToTerminal(adapter, 'cycle-1', 'failure');
+
+    const afterFailure = await getSyncRuntimeStatusSnapshot(adapter);
+    expect(afterFailure.isCycleActive).toBe(false);
+    expect(afterFailure.consecutiveUnclosedCycles).toBe(0);
+
+    await recordSyncAttemptStarted(adapter, 'background_task', 1710000002000, 'cycle-2');
+    await recordSyncAttemptFailed(adapter, 'background_task', 1710000003000, 'Network Error');
+
+    const afterSecondCycle = await getSyncRuntimeStatusSnapshot(adapter);
+    expect(afterSecondCycle.isCycleActive).toBe(false);
+    expect(afterSecondCycle.consecutiveUnclosedCycles).toBe(0);
+  });
+
+  it('a succeeded cycle leaves is_cycle_active false too, so a later start is not counted as unclosed either', async () => {
+    const adapter = await openAdapter();
+
+    await recordCycleFromStartToTerminal(adapter, 'cycle-1', 'success');
+
+    const afterSuccess = await getSyncRuntimeStatusSnapshot(adapter);
+    expect(afterSuccess.isCycleActive).toBe(false);
+    expect(afterSuccess.consecutiveUnclosedCycles).toBe(0);
+
+    await recordSyncAttemptStarted(adapter, 'background_task', 1710000002000, 'cycle-2');
+    await recordSyncAttemptFailed(adapter, 'background_task', 1710000003000, 'Network Error');
+
+    const afterSecondCycle = await getSyncRuntimeStatusSnapshot(adapter);
+    expect(afterSecondCycle.isCycleActive).toBe(false);
+    expect(afterSecondCycle.consecutiveUnclosedCycles).toBe(0);
   });
 });
 
