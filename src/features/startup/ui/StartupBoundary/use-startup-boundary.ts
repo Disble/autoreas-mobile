@@ -8,27 +8,27 @@ import {
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  STARTUP_FAILURE_RECOVERY_HINT,
-  STARTUP_FONT_FAILURE_MESSAGE,
   STARTUP_FONT_LOAD_DEADLINE_MS,
   STARTUP_PROVIDER_READINESS_DEADLINE_MS,
-  STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
 } from '../../startup.constants';
-import { createStartupDiagnostic } from '../../startup.helpers';
 import { useStartup } from '../../use-startup';
 import {
+  createFontStartupFailure,
+  createProviderReadinessStartupFailure,
   renderKeyboardAvoidingWrapper,
   navigateAndReleaseStartupSplash,
   releaseStartupBoundarySplashScreen,
   resolveStartupBoundaryContent,
   resolveStartupBoundaryRootContent,
   resolveStartupBoundaryScreen,
+  resolveStartupFailureState,
 } from './startup-boundary.helpers';
+import { useStartupFailureLogs } from './use-startup-failure-logs';
+import { useStartupSlowNotice } from './use-startup-slow-notice';
 import type {
   StartupBoundaryProps,
   StartupBoundaryViewModel,
 } from './startup-boundary.types';
-import type { StartupFailure } from '../../startup.types';
 
 /** Coordinates app root layout state and actions. */
 export function useStartupBoundary(
@@ -58,37 +58,26 @@ export function useStartupBoundary(
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
   const shouldRenderRouteSlot = isReady && !startupState.failure;
-  const fontStartupFailure = (() => {
-    if (!fontLoadError && !hasFontLoadDeadlineElapsed) {
-      return null;
-    }
-
-    return {
-      diagnostic: createStartupDiagnostic(
-        'font_loading',
-        fontLoadError ?? new Error('Font loading deadline exceeded'),
-      ),
-      diagnosticMessage: STARTUP_FONT_FAILURE_MESSAGE,
-      recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
-    };
-  })();
-  const existingStartupFailure = startupState.failure ?? fontStartupFailure;
-  const providerReadinessStartupFailure: StartupFailure | null = (() => {
-    if (!hasProviderReadinessDeadlineElapsed) {
-      return null;
-    }
-
-    return {
-      diagnostic: createStartupDiagnostic(
-        'provider_readiness',
-        new Error('SQLiteProvider readiness deadline exceeded'),
-      ),
-      diagnosticMessage: STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
-      recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
-    };
-  })();
-  const startupFailure = existingStartupFailure ?? providerReadinessStartupFailure;
-  const isBootstrapped = isReady && !startupFailure;
+  const fontStartupFailure = createFontStartupFailure({
+    fontLoadError,
+    hasFontLoadDeadlineElapsed,
+  });
+  const providerReadinessStartupFailure = createProviderReadinessStartupFailure({
+    hasProviderReadinessDeadlineElapsed,
+  });
+  const { existingStartupFailure, isBootstrapped, startupFailure } = resolveStartupFailureState({
+    fontStartupFailure,
+    isReady,
+    providerReadinessStartupFailure,
+    startupStateFailure: startupState.failure,
+  });
+  const hasExceededSoftDeadline = useStartupSlowNotice({
+    existingStartupFailure,
+    fontsLoaded,
+    hasSQLiteProvider: Boolean(SQLiteProvider),
+    isReady,
+  });
+  useStartupFailureLogs({ failures: [fontStartupFailure, providerReadinessStartupFailure] });
   const screen = resolveStartupBoundaryScreen({
     fontsLoaded,
     hasSQLiteProvider: Boolean(SQLiteProvider),
@@ -103,6 +92,7 @@ export function useStartupBoundary(
     SQLiteProvider,
     databaseName,
     handleDatabaseInit,
+    hasExceededSoftDeadline,
     isBootstrapped,
     preProviderContent: resolvedContent.preProviderContent,
     providerContent: resolvedContent.providerContent,
@@ -180,6 +170,7 @@ export function useStartupBoundary(
     databaseName,
     fontsLoaded,
     handleDatabaseInit,
+    hasExceededSoftDeadline,
     isBootstrapped,
     preProviderContent: resolvedContent.preProviderContent,
     providerContent: resolvedContent.providerContent,

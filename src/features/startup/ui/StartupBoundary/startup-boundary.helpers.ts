@@ -11,14 +11,25 @@ import { AppThemeProvider } from '../../../../contexts/app-theme-context/app-the
 import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate/SyncRuntimeGate';
 import { StartupBoundaryLoading } from './StartupBoundaryLoading';
 import { StartupBoundaryFallback } from './StartupBoundaryFallback';
+import {
+  STARTUP_FAILURE_RECOVERY_HINT,
+  STARTUP_FONT_FAILURE_MESSAGE,
+  STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
+} from '../../startup.constants';
+import { createStartupDiagnostic } from '../../startup.helpers';
 import type {
   StartupBoundaryScreen,
+  CreateFontStartupFailureParams,
+  CreateProviderReadinessStartupFailureParams,
   ResolveStartupBoundaryContentParams,
   ResolveStartupBoundaryRootContentParams,
   ResolveStartupBoundaryScreenParams,
+  ResolveStartupFailureStateParams,
   ResolvedStartupBoundaryContent,
+  ResolvedStartupFailureState,
   StartupRouteRouter,
 } from './startup-boundary.types';
+import type { StartupFailure } from '../../startup.types';
 import type { Href } from 'expo-router';
 
 /**
@@ -77,6 +88,66 @@ export function renderKeyboardAvoidingWrapper(children: ReactNode) {
     },
     children,
   );
+}
+
+/**
+ * Derives the terminal failure presented when font loading fails or misses its deadline.
+ * Returns null while fonts may still arrive so the boundary keeps waiting instead of failing early.
+ */
+export function createFontStartupFailure(
+  params: Readonly<CreateFontStartupFailureParams>,
+): StartupFailure | null {
+  if (!params.fontLoadError && !params.hasFontLoadDeadlineElapsed) {
+    return null;
+  }
+
+  return {
+    diagnostic: createStartupDiagnostic(
+      'font_loading',
+      params.fontLoadError ?? new Error('Font loading deadline exceeded'),
+    ),
+    diagnosticMessage: STARTUP_FONT_FAILURE_MESSAGE,
+    recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
+  };
+}
+
+/**
+ * Derives the terminal failure presented when SQLiteProvider readiness misses its deadline.
+ * Returns null until the readiness deadline elapses so normal startup stays uninterrupted.
+ */
+export function createProviderReadinessStartupFailure(
+  params: Readonly<CreateProviderReadinessStartupFailureParams>,
+): StartupFailure | null {
+  if (!params.hasProviderReadinessDeadlineElapsed) {
+    return null;
+  }
+
+  return {
+    diagnostic: createStartupDiagnostic(
+      'provider_readiness',
+      new Error('SQLiteProvider readiness deadline exceeded'),
+    ),
+    diagnosticMessage: STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
+    recoveryHint: STARTUP_FAILURE_RECOVERY_HINT,
+  };
+}
+
+/**
+ * Resolves the effective startup failure chain and bootstrap readiness from the raw failure inputs.
+ * The startup state failure wins over the font failure, provider readiness is the last resort, and
+ * bootstrap readiness requires the runtime to be ready with no terminal failure at all.
+ */
+export function resolveStartupFailureState(
+  params: Readonly<ResolveStartupFailureStateParams>,
+): ResolvedStartupFailureState {
+  const existingStartupFailure = params.startupStateFailure ?? params.fontStartupFailure;
+  const startupFailure = existingStartupFailure ?? params.providerReadinessStartupFailure;
+
+  return {
+    existingStartupFailure,
+    isBootstrapped: params.isReady && !startupFailure,
+    startupFailure,
+  };
 }
 
 /**
@@ -219,7 +290,11 @@ export function resolveStartupBoundaryRootContent(
       },
       createElement(
         Suspense,
-        { fallback: createElement(StartupBoundaryLoading) },
+        {
+          fallback: createElement(StartupBoundaryLoading, {
+            isTakingLongerThanExpected: params.hasExceededSoftDeadline,
+          }),
+        },
         rootContent,
       ),
     ),
