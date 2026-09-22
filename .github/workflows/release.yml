@@ -220,16 +220,22 @@ jobs:
           fi
 
       # Catches: withAndroidForegroundSync silently no longer applying. It is the
-      # only source of android:foregroundServiceType, and Android 14+ refuses to
-      # start the service without it — background sync would die on device while
-      # every test and the build stay green.
+      # only source of android:foregroundServiceType, the tick-alarm receiver, and the
+      # battery-optimization-exemption permission, and Android 14+ refuses to start the
+      # service without the type — background sync would die on device while every test
+      # and the build stay green. The receiver and the two extra permissions were added
+      # for the multi-day-survival fix (background-service-multiday-survival); this guard
+      # was widened alongside them so a silently-unapplied plugin cannot ship again.
       - name: Foreground sync survived the prebuild
         env:
           AAPT2: ${{ steps.aapt2.outputs.path }}
         run: |
           set -euo pipefail
           "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > manifest.txt
-          for needle in app.notifee.core.ForegroundService foregroundServiceType; do
+          for needle in \
+            app.notifee.core.ForegroundService \
+            foregroundServiceType \
+            expo.modules.foregroundsyncticker.TickAlarmReceiver; do
             if ! grep -q "$needle" manifest.txt; then
               echo "::error::the shipped manifest is missing $needle; plugins/withAndroidForegroundSync.js did not apply"
               exit 1
@@ -238,14 +244,16 @@ jobs:
           for permission in \
             android.permission.FOREGROUND_SERVICE \
             android.permission.FOREGROUND_SERVICE_DATA_SYNC \
+            android.permission.FOREGROUND_SERVICE_SPECIAL_USE \
             android.permission.POST_NOTIFICATIONS \
+            android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS \
             android.permission.WAKE_LOCK; do
             if ! grep -q "$permission" badging.txt; then
               echo "::error::the shipped APK is missing $permission"
               exit 1
             fi
           done
-          echo "foreground service, its data-sync type and all four permissions are present"
+          echo "foreground service, its data-sync type, the tick-alarm receiver and all six permissions are present"
 
       # Catches: a shipped APK that reports itself debuggable. `android:debuggable` widens the
       # attack surface and is the exact attribute `withAndroidLabDebuggable` adds for lab builds,

@@ -4,7 +4,7 @@ import type { OpenAppDatabaseSyncParams } from '../../infrastructure/db/client';
 /**
  * Names the sync runtime owner responsible for a dedicated SQLite connection.
  */
-export type SyncSQLiteOwner = 'headless_cycle' | 'foreground_service';
+export type SyncSQLiteOwner = 'headless_cycle' | 'foreground_service' | 'foreground_service_watchdog';
 
 /**
  * Defines a SQLite database instance with close methods that may vary by runtime context.

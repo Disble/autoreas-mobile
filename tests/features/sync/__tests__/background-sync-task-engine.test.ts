@@ -30,6 +30,14 @@ jest.mock('../../../../src/features/sync/sync-cycle-lock.helpers', () => ({
   ),
 }));
 
+// The FGS watchdog is a separate concern from engine-vs-JS routing, and it shares
+// `sqlite-sync-runtime.helpers`'s mock above -- left unmocked here, its real implementation
+// would call that same `createSyncSQLiteRuntime` mock and pollute the call-count assertions
+// below. Its own behaviour is covered directly in foreground-service-watchdog.helpers.test.ts.
+jest.mock('../../../../src/features/sync/foreground-service-watchdog.helpers', () => ({
+  runForegroundServiceWatchdog: jest.fn(),
+}));
+
 jest.mock('expo-background-task', () => ({
   BackgroundTaskResult: {
     Failed: 'failed-result',
@@ -63,6 +71,13 @@ function getJsRuntimeMock() {
   return jest.requireMock(
     '../../../../src/features/sync/sqlite-sync-runtime.helpers',
   ) as { createSyncSQLiteRuntime: jest.Mock };
+}
+
+/** Returns the mocked FGS watchdog, a collaborator unrelated to this file's routing assertions. */
+function getForegroundServiceWatchdogMock() {
+  return jest.requireMock(
+    '../../../../src/features/sync/foreground-service-watchdog.helpers',
+  ) as { runForegroundServiceWatchdog: jest.Mock };
 }
 
 /**
@@ -125,6 +140,9 @@ describe('background sync task native-engine routing', () => {
       withDatabase: jest.fn(),
       close: jest.fn().mockResolvedValue(undefined),
     });
+    getForegroundServiceWatchdogMock().runForegroundServiceWatchdog.mockResolvedValue(
+      'already_running',
+    );
   });
 
   it('routes the attempt through the native engine when it is available', async () => {

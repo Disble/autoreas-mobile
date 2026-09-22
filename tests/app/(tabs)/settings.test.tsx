@@ -7,6 +7,7 @@ import { useBackgroundSyncStatus } from '../../../src/features/settings/use-back
 import { useBridgeConfig } from '../../../src/features/settings/use-bridge-config';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
 import { useSyncTelemetryPreference } from '../../../src/features/settings/use-sync-telemetry-preference';
+import * as batteryOptimizationModule from '../../../src/features/sync/native-battery-optimization.helpers';
 
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
@@ -36,6 +37,10 @@ jest.mock('../../../src/features/sync/use-sync-facade', () => ({
   useSyncFacade: jest.fn(),
 }));
 
+jest.mock('../../../src/features/sync/native-battery-optimization.helpers', () => ({
+  createNativeBatteryOptimizationExemption: jest.fn(),
+}));
+
 jest.mock('@react-navigation/elements', () => ({
   useHeaderHeight: () => 64,
 }));
@@ -48,6 +53,8 @@ describe('SettingsScreen', () => {
   const mockPush = jest.fn();
   const mockReplace = jest.fn();
   const mockUnpair = jest.fn();
+  const mockIsExempt = jest.fn<boolean, []>();
+  const mockRequestExemption = jest.fn<boolean, []>();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -107,6 +114,15 @@ describe('SettingsScreen', () => {
     (useNetworkState as jest.Mock).mockReturnValue({
       isConnected: true,
       isInternetReachable: true,
+    });
+
+    mockIsExempt.mockReturnValue(false);
+    mockRequestExemption.mockReturnValue(true);
+    (
+      batteryOptimizationModule.createNativeBatteryOptimizationExemption as jest.Mock
+    ).mockReturnValue({
+      isExempt: mockIsExempt,
+      requestExemption: mockRequestExemption,
     });
   });
 
@@ -220,5 +236,27 @@ describe('SettingsScreen', () => {
 
     expect(mockUnpair).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('muestra la acción para activar la excepción de batería cuando la app no está exenta', () => {
+    render(<SettingsScreen />);
+
+    expect(screen.getByText('Excepción de batería')).toBeTruthy();
+    expect(
+      screen.getByText('Sin esta excepción, Android puede detener el servicio persistente en segundo plano.'),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Activar excepción'));
+
+    expect(mockRequestExemption).toHaveBeenCalledTimes(1);
+  });
+
+  it('oculta la acción cuando la app ya está exenta de la optimización de batería', () => {
+    mockIsExempt.mockReturnValue(true);
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText('La app está exenta de las restricciones de batería de Android.')).toBeTruthy();
+    expect(screen.queryByText('Activar excepción')).toBeNull();
   });
 });
