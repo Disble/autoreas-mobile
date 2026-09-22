@@ -95,8 +95,14 @@ internal fun scheduleNextTick(context: Context, delayMs: Long) {
   val pendingIntent = buildTickPendingIntent(context)
 
   // Inexact by design: setAndAllowWhileIdle is still elapsedRealtime-based and wakeup, so it
-  // survives CPU suspension, but the system may batch or defer it (floor ~1/minute, longer in
-  // Doze). No exact-alarm permission is requested.
+  // survives CPU suspension. Android's Doze documentation states the real floor: "Neither
+  // setAndAllowWhileIdle() nor setExactAndAllowWhileIdle() can fire alarms more than once per
+  // nine minutes, per app" -- not the roughly-one-minute figure this comment used to claim. The
+  // existing catch-up criterion (reconcile within the first hour of bridge reachability)
+  // tolerates a nine-minute floor just as well, which is why no exact-alarm permission is
+  // requested here. Whether the battery-optimization exemption (see
+  // ForegroundSyncTickerModule's class doc) lifts this specific alarm quota was NOT verified on
+  // device and must not be assumed.
   alarmManager.setAndAllowWhileIdle(
     AlarmManager.ELAPSED_REALTIME_WAKEUP,
     triggerAtElapsedMs,

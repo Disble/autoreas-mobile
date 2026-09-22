@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 import { runHeadlessSyncCycle } from '../headless-sync-cycle.helpers';
 import { FOREGROUND_SYNC_INTERVAL_MS, NOTIFEE_FOREGROUND_SYNC_CHANNEL_ID } from './notifee-foreground-service-adapter.constants';
 import { createForegroundSyncRunner } from '../foreground-sync-runner.helpers';
+import { createNativeBatteryOptimizationExemption } from '../native-battery-optimization.helpers';
 import { createNativeForegroundSyncTicker } from '../native-foreground-sync-ticker.helpers';
 import { createSyncSQLiteRuntime } from '../sqlite-sync-runtime.helpers';
 import { createNativeSyncEngine } from '../native-sync-engine/native-sync-engine.helpers';
@@ -22,6 +23,9 @@ import { getBridgeConfigSnapshot } from '../../../infrastructure/db/client/clien
 
 /**
  * Builds the status reported when the foreground-service strategy cannot run (non-Android).
+ * The exemption is still read live here, never hardcoded to `false`: it is an OS-level fact
+ * independent of this strategy's own (unsupported) registration state, and the seam itself
+ * already degrades to `false` off Android, so this stays honest without a platform check.
  */
 function createUnsupportedStatus(): SyncExecutionStatus {
   return {
@@ -31,6 +35,7 @@ function createUnsupportedStatus(): SyncExecutionStatus {
     canShowPersistentNotification: false,
     // This strategy only owns the FGS path; the WorkManager floor reports its own flag.
     isBackgroundTaskRegistered: false,
+    isBatteryOptimizationExempt: createNativeBatteryOptimizationExemption().isExempt(),
   };
 }
 
@@ -305,6 +310,10 @@ export function createNotifeeForegroundServiceAdapter(): NotifeeForegroundServic
         isForegroundServiceRunning,
         canShowPersistentNotification,
         isBackgroundTaskRegistered: false,
+        // Read fresh every call, never cached in closure: the user can grant or revoke this
+        // through the system dialog at any time, independent of the FGS registration lifecycle
+        // above, so a stale cached value would silently drift from the real device state.
+        isBatteryOptimizationExempt: createNativeBatteryOptimizationExemption().isExempt(),
       });
     },
   };

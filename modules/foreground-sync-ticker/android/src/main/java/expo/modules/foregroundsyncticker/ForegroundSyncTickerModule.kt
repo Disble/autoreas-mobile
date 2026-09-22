@@ -56,10 +56,14 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * release per reported cycle even when cycles overlap; `stop()` and `OnDestroy` drop every
  * remaining reference. The timeout is only a safety net for a cycle that never reports back.
  *
- * The tick alarm is deliberately inexact: the system may batch or defer allow-while-idle alarms,
- * with a floor of roughly one delivery per minute and longer gaps in Doze. The catch-up criterion
- * (reconcile within the first hour of bridge reachability) tolerates that, so the module does
- * not request the exact-alarm special permission.
+ * The tick alarm is deliberately inexact: the system may batch or defer allow-while-idle alarms.
+ * Android's Doze documentation states the floor is one delivery per NINE minutes, per app -- not
+ * the roughly-one-minute figure this doc used to claim (see TickAlarmScheduler.kt's own comment
+ * for the exact citation). The catch-up criterion (reconcile within the first hour of bridge
+ * reachability) tolerates a nine-minute floor just as well, so the module still does not request
+ * the exact-alarm special permission. Whether the battery-optimization exemption below actually
+ * lifts that specific alarm quota was NOT verified on device and must not be assumed -- only
+ * `getFgsAllowStart` flipping to `SYSTEM_ALLOW_LISTED` was confirmed, not the alarm floor itself.
  *
  * The battery-optimization exemption (`isIgnoringBatteryOptimizations` /
  * `requestIgnoreBatteryOptimizations`) is exemption #13 on Android's documented background-FGS-

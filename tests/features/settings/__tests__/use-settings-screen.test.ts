@@ -1,12 +1,13 @@
 import { useNetworkState } from 'expo-network';
 import { act, renderHook } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
-import { Alert } from 'react-native';
+import { Alert, AppState, type AppStateStatus } from 'react-native';
 import { useResponsiveLayout } from '../../../../src/hooks/use-responsive-layout';
 import { useBackgroundSyncStatus } from '../../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../../src/features/settings/use-bridge-config';
 import { useSyncFacade } from '../../../../src/features/sync/use-sync-facade';
 import { useSyncTelemetryPreference } from '../../../../src/features/settings/use-sync-telemetry-preference';
+import * as batteryOptimizationModule from '../../../../src/features/sync/native-battery-optimization.helpers';
 import { useSettingsScreen } from '../../../../src/features/settings/ui/SettingsScreen/use-settings-screen';
 
 jest.mock('expo-router', () => ({
@@ -41,11 +42,17 @@ jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: jest.fn(),
 }));
 
+jest.mock('../../../../src/features/sync/native-battery-optimization.helpers', () => ({
+  createNativeBatteryOptimizationExemption: jest.fn(),
+}));
+
 describe('useSettingsScreen', () => {
   const push = jest.fn();
   const replace = jest.fn();
   const unpair = jest.fn();
   const setSyncTelemetryEnabled = jest.fn().mockResolvedValue(undefined);
+  const mockIsExempt = jest.fn<boolean, []>();
+  const mockRequestExemption = jest.fn<boolean, []>();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -101,6 +108,14 @@ describe('useSettingsScreen', () => {
     (useNetworkState as jest.Mock).mockReturnValue({
       isConnected: true,
       isInternetReachable: true,
+    });
+    mockIsExempt.mockReturnValue(false);
+    mockRequestExemption.mockReturnValue(true);
+    (
+      batteryOptimizationModule.createNativeBatteryOptimizationExemption as jest.Mock
+    ).mockReturnValue({
+      isExempt: mockIsExempt,
+      requestExemption: mockRequestExemption,
     });
   });
 
@@ -208,5 +223,98 @@ describe('useSettingsScreen', () => {
     });
 
     expect(setSyncTelemetryEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('exposes the live battery-exemption state', () => {
+    mockIsExempt.mockReturnValue(true);
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.isBatteryOptimizationExempt).toBe(true);
+  });
+
+  it('re-reads isExempt after requesting, without trusting the request return value', () => {
+    // requestExemption() reports `false` (e.g. the dialog failed to launch) while isExempt()'s
+    // SECOND read reports `true` -- deliberately divergent values, so a bug that trusted
+    // requestExemption()'s return instead of re-reading isExempt() would observably fail here.
+    mockIsExempt.mockReturnValueOnce(false).mockReturnValueOnce(true);
+    mockRequestExemption.mockReturnValue(false);
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.isBatteryOptimizationExempt).toBe(false);
+
+    act(() => {
+      result.current.handleRequestBatteryExemption();
+    });
+
+    expect(mockRequestExemption).toHaveBeenCalledTimes(1);
+    expect(result.current.isBatteryOptimizationExempt).toBe(true);
+  });
+
+  it('re-reads the exemption when the app returns to the foreground', () => {
+    // The read taken right after `requestExemption()` still sees the pre-decision state: that
+    // call only launches the system dialog, which takes the user OUT of the app before they
+    // grant anything. The grant becomes observable when the app comes back, so without this
+    // re-check the one screen that reports the exemption would keep saying "not exempt" right
+    // after the user granted it -- reading as a broken feature on the keystone mechanism.
+    const changeHandlers: ((state: AppStateStatus) => void)[] = [];
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((type: string, handler: (state: AppStateStatus) => void) => {
+        if (type === 'change') {
+          changeHandlers.push(handler);
+        }
+        return { remove: jest.fn() } as unknown as ReturnType<typeof AppState.addEventListener>;
+      });
+    mockIsExempt.mockReturnValue(false);
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    expect(result.current.isBatteryOptimizationExempt).toBe(false);
+    expect(changeHandlers).toHaveLength(1);
+
+    mockIsExempt.mockReturnValue(true);
+    act(() => {
+      changeHandlers.forEach((handler) => handler('active'));
+    });
+
+    expect(result.current.isBatteryOptimizationExempt).toBe(true);
+  });
+
+  it('ignores app-state transitions that are not a return to the foreground', () => {
+    const changeHandlers: ((state: AppStateStatus) => void)[] = [];
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((type: string, handler: (state: AppStateStatus) => void) => {
+        if (type === 'change') {
+          changeHandlers.push(handler);
+        }
+        return { remove: jest.fn() } as unknown as ReturnType<typeof AppState.addEventListener>;
+      });
+    mockIsExempt.mockReturnValue(false);
+
+    const { result } = renderHook(() => useSettingsScreen({}));
+
+    mockIsExempt.mockReturnValue(true);
+    act(() => {
+      changeHandlers.forEach((handler) => handler('background'));
+    });
+
+    // Going to the background cannot have changed the grant, so re-reading there would only
+    // churn state on every app switch.
+    expect(result.current.isBatteryOptimizationExempt).toBe(false);
+  });
+
+  it('unsubscribes the app-state listener on unmount', () => {
+    const remove = jest.fn();
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockReturnValue({ remove } as unknown as ReturnType<typeof AppState.addEventListener>);
+
+    const { unmount } = renderHook(() => useSettingsScreen({}));
+    unmount();
+
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });
