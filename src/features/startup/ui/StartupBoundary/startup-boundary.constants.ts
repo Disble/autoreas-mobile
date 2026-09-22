@@ -5,6 +5,14 @@ export const STARTUP_BOUNDARY_LOADING_TITLE = 'Preparando tu biblioteca';
 export const STARTUP_BOUNDARY_LOADING_DESCRIPTION =
   'Estamos preparando tus datos locales.';
 
+/**
+ * Safe Spanish hint shown once startup exceeds the soft deadline without being a failure.
+ * Uses the same voseo imperative as `STARTUP_FAILURE_RECOVERY_HINT`; it only informs that startup
+ * is slower than usual and names closing and reopening as the escape if it does not advance.
+ */
+export const STARTUP_BOUNDARY_SLOW_DESCRIPTION =
+  'El inicio está tardando más de lo usual. La app sigue funcionando; si no avanza, cerrá y volvé a abrir la app.';
+
 /** Provides the startup failure fallback title. */
 export const STARTUP_BOUNDARY_FAILURE_TITLE = 'No pudimos iniciar la app';
 

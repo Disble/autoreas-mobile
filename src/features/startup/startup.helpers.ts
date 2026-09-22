@@ -1,11 +1,13 @@
 import {
   STARTUP_CONFIG_FAILURE_MESSAGE,
   STARTUP_DATABASE_FAILURE_MESSAGE,
+  STARTUP_DATABASE_PREPARATION_MAX_ATTEMPTS,
   STARTUP_FAILURE_LOG_PREFIX,
   STARTUP_FAILURE_RECOVERY_HINT,
   STARTUP_LOCAL_OPERATION_DEADLINE_MS,
   STARTUP_SQLITE_CODES,
 } from './startup.constants';
+import { SQLITE_BUSY_TIMEOUT_MS } from '../../infrastructure/db/startup/startup.constants';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import { prepareForegroundDatabase } from '../../infrastructure/db/startup/startup.helpers';
 import type {
@@ -52,6 +54,19 @@ export function createStartupDiagnostic(
 }
 
 /**
+ * Decides whether a failed database preparation attempt may be retried inside the remaining startup budget.
+ * Only the transient lock outcomes are retried: `classification === 'busy'`, which covers `SQLITE_BUSY`
+ * and `SQLITE_LOCKED`, the two results a concurrent writer can clear on its own.
+ * `corruption`, `incompatible_schema`, `schema_validation`, and `sqlite` are permanent or
+ * unclassified SQLite outcomes and are never retried. `unknown` is deliberately NOT treated as
+ * permanent, but it is not retried either: spending the remaining startup budget waiting on an
+ * unidentified error is a guess, not a policy.
+ */
+export function isRetryableStartupDiagnostic(diagnostic: StartupDiagnostic): boolean {
+  return diagnostic.classification === 'busy';
+}
+
+/**
  * Rejects local startup work that does not settle before its deadline so controlled failure UI can render.
  * The timer is always cleared after settlement to prevent a completed operation from retaining resources.
  */
@@ -83,11 +98,50 @@ export function createStartupDatabaseInitializer(
     const requestId = latestInitRequestId + 1;
     latestInitRequestId = requestId;
     const isLatestRequest = () => latestInitRequestId === requestId;
+    // One shared budget for the whole local readiness sequence: database preparation (including
+    // its bounded retries) and then the local configuration read each run on what remains of
+    // this absolute deadline, so their combined worst case stays inside
+    // STARTUP_PROVIDER_READINESS_DEADLINE_MS instead of stacking two full allowances.
+    const localReadinessDeadlineAt = Date.now() + STARTUP_LOCAL_OPERATION_DEADLINE_MS;
+    const prepareWithBoundedRetry = async () => {
+      for (
+        let attempt = 1;
+        attempt <= STARTUP_DATABASE_PREPARATION_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        try {
+          // Sequential by design: every attempt contends for the same SQLite write lock on a
+          // single database connection, so running attempts concurrently would create exactly
+          // the second writer on one database file this loop exists to prevent.
+          await prepareForegroundDatabase(rawDb);
+          return;
+        } catch (error) {
+          const diagnostic = createStartupDiagnostic('database_preparation', error);
+          const isLastAttempt = attempt === STARTUP_DATABASE_PREPARATION_MAX_ATTEMPTS;
+          // Strict comparison on the shared budget: one full busy wait must fit inside the
+          // remaining local readiness allowance with room to spare, so a retry can never race
+          // the outer deadline and swap the accurate `busy` diagnostic for the generic
+          // deadline `unknown` classification. A superseded request never retries either: its
+          // state writes are already ignored, so burning budget on its behalf is pure waste.
+          const hasBudgetForAnotherBusyWait =
+            Date.now() + SQLITE_BUSY_TIMEOUT_MS < localReadinessDeadlineAt;
+
+          if (
+            isLastAttempt ||
+            !isLatestRequest() ||
+            !isRetryableStartupDiagnostic(diagnostic) ||
+            !hasBudgetForAnotherBusyWait
+          ) {
+            throw error;
+          }
+        }
+      }
+    };
 
     try {
       await withStartupDeadline(
-        prepareForegroundDatabase(rawDb),
-        STARTUP_LOCAL_OPERATION_DEADLINE_MS,
+        prepareWithBoundedRetry(),
+        localReadinessDeadlineAt - Date.now(),
       );
     } catch (error) {
       const diagnostic = createStartupDiagnostic('database_preparation', error);
@@ -115,7 +169,7 @@ export function createStartupDatabaseInitializer(
     try {
       const bridgeConfig = await withStartupDeadline(
         getBridgeConfigSnapshot(rawDb),
-        STARTUP_LOCAL_OPERATION_DEADLINE_MS,
+        localReadinessDeadlineAt - Date.now(),
       );
 
       if (isLatestRequest()) {

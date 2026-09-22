@@ -16,6 +16,23 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-09-22
+
+**This is a fix for an app that could refuse to open.** After 1.4.0 the app could end on "No pudimos iniciar la app" while the data on the tablet was perfectly fine: the app allowed the database to wait for a lock for exactly as long as it allowed the whole startup to take, so one busy moment had no room left to resolve. Reopening usually worked, which is what made it look random.
+
+### Fixed
+
+- Opening the app no longer fails when the local database is briefly busy; the app now waits the short lock out instead of giving up at the moment the wait was about to succeed.
+- A startup that hits a real problem can now be told apart from one that was only slow, and every startup failure is written to the device log instead of disappearing.
+
+### Changed
+
+- If startup takes longer than usual, the loading screen says so and keeps working, rather than staying silent and then showing an error.
+
+### Internal
+
+- Recorded the investigation, the decisions and the one remaining known gap -- the app and the background sync engine can still contend for the local database while the schema is prepared -- in `odd/tasks/startup-contention-resilience.md`.
+
 ## [1.4.0] — 2026-09-21
 
 **Background sync is what this release is about, and two limits travel with it.** The sync status shown in Settings can lag: with the background engine now owning the cycle, the "last attempt" and "last success" values there are no longer updated, so until the next release treat the anime list itself as the truth about whether a change reached your PC. And while your PC is off, an attempt started by Android's own scheduler can still take up to ten seconds before giving up; the tick that runs while the app is open already gives up in under two seconds.
