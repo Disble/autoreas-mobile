@@ -8,6 +8,7 @@ import {
   resolveBackgroundTaskOutcome,
   runBackgroundSyncCycle,
 } from "./background-sync.helpers";
+import { runForegroundServiceWatchdog } from "./foreground-service-watchdog.helpers";
 
 try {
   TaskManager.defineTask(BACKGROUND_SYNC_TASK_NAME, async () => {
@@ -24,6 +25,24 @@ try {
     const outcome = await resolveBackgroundTaskOutcome({
       runCycle: runBackgroundSyncCycle,
     });
+
+    // Rides this same headless wake rather than adding a second scheduler -- this WorkManager
+    // job is the only vehicle in this app that can legally call back into Notifee from the
+    // background. Deliberately NOT awaited. `adapter.register()` (inside the watchdog) can hang
+    // forever on this path: the ordering note above `notifee.displayNotification` in
+    // notifee-foreground-service-adapter.helpers.ts documents that code after that await may
+    // never run once the process is handed to Notifee's headless context. Worse, the JS-level
+    // deadline inside `runForegroundServiceWatchdog` cannot be trusted to rescue that hang here --
+    // see its own doc comment for the device-confirmed reason (2026-09-04): JS timers do not run
+    // in this headless cycle once a cycle fails to signal, and only native bounds fire. Awaiting a
+    // hang here would leave this callback's `CompletableDeferred` uncompleted, which is exactly
+    // H06h's loop -- the one `resolveBackgroundTaskOutcome` above exists to break. Firing without
+    // awaiting is what actually guarantees this callback still returns: that guarantee comes from
+    // structure, not from any timer firing. If the runtime tears down mid-`register()`, that is
+    // acceptable: the native ticker persists its own state (T2+T3), so the next wake's watchdog
+    // sees the service still down and retries. `.catch()` only silences an eventual unhandled
+    // rejection; it does nothing for a promise that never settles at all.
+    void runForegroundServiceWatchdog().catch(() => undefined);
 
     return outcome === "success"
       ? BackgroundTask.BackgroundTaskResult.Success

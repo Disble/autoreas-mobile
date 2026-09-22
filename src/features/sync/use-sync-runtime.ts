@@ -49,7 +49,6 @@ export function useSyncRuntime(
 
   // 5. Derived State (`useMemo`)
   const isRuntimeEnabled = useMemo(
-    // eslint-disable-next-line react-doctor/no-event-handler -- prop used as implicit sync trigger; extraction requires significant restructure
     () => props.isBootstrapped && isConfigured,
     [isConfigured, props.isBootstrapped],
   );
@@ -77,6 +76,10 @@ export function useSyncRuntime(
                 isForegroundServiceRunning: false,
                 canShowPersistentNotification: false,
                 isBackgroundTaskRegistered: isRegistered,
+                // This WorkManager-floor strategy does not own the battery-optimization signal
+                // (only the FGS adapter reads it); the concurrent-status OR-merge picks up the
+                // FGS adapter's live reading regardless of what this strategy reports here.
+                isBatteryOptimizationExempt: false,
               };
             },
           },

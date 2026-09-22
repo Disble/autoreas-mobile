@@ -99,6 +99,12 @@ export interface BuildSettingsSyncSummaryInput {
   };
 }
 
+/** Defines the result contract for `useSettingsScreenBatteryExemption`. */
+export interface UseSettingsScreenBatteryExemptionResult {
+  readonly isBatteryOptimizationExempt: boolean;
+  readonly handleRequestBatteryExemption: () => void;
+}
+
 /** Defines the result contract for `useSettingsScreenTheme`. */
 export interface SettingsScreenThemeResult {
   readonly themeColorForeground: string;
@@ -143,16 +149,19 @@ export interface SettingsScreenViewModel {
   readonly isUnpairing: boolean;
   readonly layoutMode: LayoutMode;
   readonly syncSummary: SettingsSyncSummary;
+  readonly toneColors: ResolvedToneColors;
   readonly themeColorForeground: string;
   readonly themeColorMuted: string;
   readonly themeColorSuccess: string;
   readonly themeColorWarning: string;
   readonly themeColorDanger: string;
   readonly isSyncTelemetryEnabled: boolean;
+  readonly isBatteryOptimizationExempt: boolean;
   readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
   readonly handleSyncSummaryAction: (() => void) | null;
   readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
+  readonly handleRequestBatteryExemption: () => void;
 }
 
 /** Defines the data contract for settings bridge card props. */
@@ -174,6 +183,8 @@ export interface SettingsSyncCardProps {
   readonly handleSummaryAction: (() => void) | null;
   readonly isSyncTelemetryEnabled: boolean;
   readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
+  readonly isBatteryOptimizationExempt: boolean;
+  readonly handleRequestBatteryExemption: () => void;
   readonly layoutMode: LayoutMode;
   readonly section: BackgroundSyncSection;
   readonly summary: SettingsSyncSummary;

@@ -1,12 +1,14 @@
 import { useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSyncTelemetryPreference } from '../../use-sync-telemetry-preference';
 import { useSettingsScreenActions } from './use-settings-screen-actions';
 import { useSettingsScreenBackgroundSyncSection } from './use-settings-screen-background-sync-section';
+import { useSettingsScreenBatteryExemption } from './use-settings-screen-battery-exemption';
 import { useSettingsScreenDeviceOnline } from './use-settings-screen-device-online';
 import { useSettingsScreenSyncSummary } from './use-settings-screen-sync-summary';
 import { useSettingsScreenTheme } from './use-settings-screen-theme';
 import type {
+  ResolvedToneColors,
   SettingsScreenProps,
   SettingsScreenViewModel,
 } from './settings-screen.types';
@@ -42,8 +44,29 @@ export function useSettingsScreen(
   const backgroundSyncSection = useSettingsScreenBackgroundSyncSection(isConfigured);
   const { isEnabled: isSyncTelemetryEnabled, setEnabled: setSyncTelemetryEnabled } =
     useSyncTelemetryPreference();
+  const { isBatteryOptimizationExempt, handleRequestBatteryExemption } =
+    useSettingsScreenBatteryExemption();
 
   // 5. Derived State (useMemo)
+  // Memoized because it is handed straight to `SettingsSyncCard` as a prop: rebuilt inline on
+  // every render it would be a new object identity each time and re-render that card for no
+  // reason. It lives here rather than in the screen because `.tsx` files stay dumb UI.
+  const toneColors: ResolvedToneColors = useMemo(
+    () => ({
+      foreground: themeColorForeground,
+      muted: themeColorMuted,
+      success: themeColorSuccess,
+      warning: themeColorWarning,
+      danger: themeColorDanger,
+    }),
+    [
+      themeColorForeground,
+      themeColorMuted,
+      themeColorSuccess,
+      themeColorWarning,
+      themeColorDanger,
+    ],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
   const { handleGoToSetup, handleRePair, handleSyncSummaryAction } = useSettingsScreenActions({
@@ -70,9 +93,11 @@ export function useSettingsScreen(
     error,
     isConfigured,
     isSyncTelemetryEnabled,
+    isBatteryOptimizationExempt,
     isUnpairing,
     layoutMode,
     syncSummary,
+    toneColors,
     themeColorForeground,
     themeColorMuted,
     themeColorSuccess,
@@ -82,5 +107,6 @@ export function useSettingsScreen(
     handleRePair,
     handleSyncSummaryAction,
     handleToggleSyncTelemetry,
+    handleRequestBatteryExemption,
   };
 }

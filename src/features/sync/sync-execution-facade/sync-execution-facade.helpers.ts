@@ -7,6 +7,7 @@ import type {
   SyncExecutionStrategy,
 } from '../sync-execution-strategy.types';
 
+/** Builds the safe status reported before any strategy has registered. */
 function createFallbackStatus(): SyncExecutionStatus {
   return {
     registrationStatus: 'unsupported' as const,
@@ -14,6 +15,9 @@ function createFallbackStatus(): SyncExecutionStatus {
     isForegroundServiceRunning: false,
     canShowPersistentNotification: false,
     isBackgroundTaskRegistered: false,
+    // Static like every other field here: no strategy has registered yet, so there is no live
+    // seam to read through, unlike the adapter's own status builders.
+    isBatteryOptimizationExempt: false,
   };
 }
 
@@ -36,6 +40,12 @@ function mergeConcurrentSyncExecutionStatus(
   const canShowPersistentNotification = statuses.some(
     (status) => status.canShowPersistentNotification,
   );
+  // Also OR-ed, not just the FGS-owning strategy's own reading: the exemption is a single
+  // device-wide fact, so any strategy that read it as true is enough to report it true, and a
+  // strategy that does not own this signal already reports its own safe `false`.
+  const isBatteryOptimizationExempt = statuses.some(
+    (status) => status.isBatteryOptimizationExempt,
+  );
   const isAnyPathRegistered = isForegroundServiceRunning || isBackgroundTaskRegistered;
 
   return {
@@ -46,6 +56,7 @@ function mergeConcurrentSyncExecutionStatus(
     isForegroundServiceRunning,
     canShowPersistentNotification,
     isBackgroundTaskRegistered,
+    isBatteryOptimizationExempt,
   };
 }
 

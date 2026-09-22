@@ -16,6 +16,32 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-09-22
+
+**Background sync could die overnight and never come back, and this release gives it a way back.** On the tablet the persistent service stopped at 02:12 and stayed down: the app kept waking, but with no service running Android treated it as ordinary spare memory and killed it twice before morning. Two things caused it. The alarm that paces the sync was delivered to a listener that dies with the app's screen, so the first missed delivery ended the cadence permanently; and nothing was allowed to restart the service from the background, because Android only permits that for apps the user has excused from battery optimisation.
+
+**One thing is asked of you, once.** Settings now has an "Excepción de batería" row. Until you grant it, the app cannot restart its own sync service after Android stops it, and this release's main fix cannot do its job. Everything else keeps working without it.
+
+### Added
+
+- Settings shows whether the app is excused from Android's battery optimisation, and offers to ask for it. The row updates when you come back from the system dialog, so it reflects what you actually chose.
+- Sync now notices when its persistent service has stopped and starts it again by itself, on the next time Android wakes the app.
+
+### Fixed
+
+- The sync cadence no longer dies on a single missed tick. The alarm is now delivered to a listener that survives the app being closed or killed, and each delivery schedules the next one, so a lost tick costs one interval instead of everything.
+- Stopping sync now really stops it. The alarm only re-arms itself while sync is meant to be running, so a stopped service can no longer leave the tablet waking up every minute for nothing.
+
+### Changed
+
+- The persistent sync service now keeps running for days at a time rather than until the next time Android reclaims memory, provided the battery exception above is granted.
+
+### Internal
+
+- Corrected a wrong assumption in the alarm code: Android delivers these alarms at most once every nine minutes while dozing, not once a minute. The sync interval is unchanged, since the catch-up rule tolerates the real floor just as well.
+- The release check now verifies all six permissions and the new alarm receiver actually reached the published APK, instead of four permissions.
+- Recorded the device evidence, every decision and the one open question -- a lint rule whose nesting limit is below what the UI library can produce -- in `odd/tasks/background-service-multiday-survival.md`.
+
 ## [1.4.1] — 2026-09-22
 
 **This is a fix for an app that could refuse to open.** After 1.4.0 the app could end on "No pudimos iniciar la app" while the data on the tablet was perfectly fine: the app allowed the database to wait for a lock for exactly as long as it allowed the whole startup to take, so one busy moment had no room left to resolve. Reopening usually worked, which is what made it look random.
