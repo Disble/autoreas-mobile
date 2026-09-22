@@ -1,8 +1,10 @@
 package expo.modules.foregroundsyncticker
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
@@ -22,7 +24,8 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
 
 /**
  * Native surface that keeps foreground sync alive: the `AlarmManager`-driven tick source, the
- * alarm re-arm, and the battery-optimization exemption request. Notifee remains the owner of the
+ * alarm re-arm, the battery-optimization exemption request, and the FGS presence check a
+ * headless JS caller uses to decide whether to restore it. Notifee remains the owner of the
  * foreground service and its notification -- this module supplies the mechanisms that keep that
  * service reachable and its cadence running, not the service itself.
  *
@@ -65,6 +68,17 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * without the separate `SCHEDULE_EXACT_ALARM` permission. It is requested, never assumed -- the
  * user grants it through the system dialog, and every caller here degrades honestly when it is
  * refused.
+ *
+ * `isForegroundServiceRunning` gives a headless JS caller (T4's watchdog) the one signal it
+ * cannot otherwise have: whether the foreground service is ACTUALLY up right now, in a fresh
+ * process with no live adapter instance to ask. It queries
+ * `NotificationManager.getActiveNotifications()` for a match on the given channel id -- an
+ * Android foreground-service notification cannot outlive its service, the platform removes it
+ * the moment the service stops, so this is a faithful proxy rather than a guess.
+ * `ActivityManager.getRunningServices()` filtered to `app.notifee.core.ForegroundService` was
+ * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
+ * internal class name into this module, whereas the channel id is a constant this repo already
+ * owns.
  */
 class ForegroundSyncTickerModule : Module() {
   private var wakeLock: PowerManager.WakeLock? = null
@@ -216,6 +230,30 @@ class ForegroundSyncTickerModule : Module() {
     }
   }
 
+  /**
+   * Answers whether a currently active notification belongs to [channelId] -- today, that is the
+   * FGS notification's own channel, so this is a faithful proxy for "is the foreground service
+   * actually running right now" rather than a guess (see the class doc for why). Never throws: a
+   * missing context, a missing `NotificationManager`, a platform below the API level that
+   * exposes notification channels, or any lookup failure all resolve to `false` instead of
+   * propagating, matching every other status read in this module.
+   */
+  private fun isForegroundServiceRunning(channelId: String): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+      return false
+    }
+
+    val context = appContext.reactContext ?: return false
+    val notificationManager =
+      context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
+
+    return try {
+      notificationManager.activeNotifications.any { it.notification.channelId == channelId }
+    } catch (error: Exception) {
+      false
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
@@ -243,6 +281,10 @@ class ForegroundSyncTickerModule : Module() {
 
     Function("requestIgnoreBatteryOptimizations") {
       requestIgnoreBatteryOptimizations()
+    }
+
+    Function("isForegroundServiceRunning") { channelId: String ->
+      isForegroundServiceRunning(channelId)
     }
 
     OnCreate {
