@@ -1,13 +1,8 @@
 package expo.modules.foregroundsyncticker
 
-import android.app.AlarmManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
-import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
@@ -15,10 +10,6 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 private const val WAKE_LOCK_TAG = "ForegroundSyncTicker:ticking"
-
-private const val TICK_ALARM_ACTION = "expo.modules.foregroundsyncticker.TICK_ALARM"
-
-private const val TICK_ALARM_REQUEST_CODE = 2001
 
 /**
  * Safety net for the per-cycle wake lock: the primary bound is the JS cycle promise, reported
@@ -41,6 +32,20 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * never fired. Alarms of type `ELAPSED_REALTIME_WAKEUP` measure against
  * `SystemClock.elapsedRealtime()` (time since boot, including sleep) and wake the CPU to
  * deliver, so the cadence survives suspension without a permanently held wake lock.
+ *
+ * The alarm is delivered to [TickAlarmReceiver], a manifest-declared `BroadcastReceiver`
+ * (declared in `plugins/withAndroidForegroundSync.js`, not in this module's own -- deliberately
+ * empty -- `AndroidManifest.xml`). Android instantiates a manifest receiver with a plain
+ * `Context` and no reference to this module, in a process that may have no React Native context
+ * at all -- exactly the state a process kill leaves behind. A receiver registered on the React
+ * context instead, as this module used to do, dies with that context while the alarm survives in
+ * the system `AlarmManager` and fires into a void. So the responsibility is split: the receiver
+ * re-arms the next alarm from persisted state on every delivery, whether or not a module instance
+ * is alive; this module only dispatches `onTick` to JS, through [onAlarmReceived], and only when
+ * [activeInstance] is set. A module instance registers itself in `OnCreate` and clears the
+ * reference in `OnDestroy`, and also re-arms from persisted state at that point, so a fresh
+ * instance created after a process kill resumes the cadence without waiting on a broadcast that
+ * already fired into the previous, dead process.
  *
  * The `PARTIAL_WAKE_LOCK` is scoped to one dispatched cycle: acquired when a tick fires,
  * released when JS reports the cycle settled via `notifyCycleComplete()` (a rejection settles
@@ -65,18 +70,15 @@ class ForegroundSyncTickerModule : Module() {
   private var wakeLock: PowerManager.WakeLock? = null
   private var intervalMs: Long = 15_000L
   private var isTicking = false
-  private var isReceiverRegistered = false
 
-  private val tickReceiver = object : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {
-      if (intent?.action != TICK_ALARM_ACTION) {
-        return
-      }
-      dispatchTick()
-    }
-  }
-
-  private fun dispatchTick() {
+  /**
+   * Entry point [TickAlarmReceiver] calls when it finds a live module instance to deliver to.
+   * The alarm's re-arm already happened in the receiver -- see its KDoc -- so this only reports
+   * the tick to JS. Guarded by [isTicking] defensively: the receiver already checked the
+   * persisted flag before dispatching here, but the in-memory flag is this alive instance's own
+   * source of truth, e.g. if a tick lands mid-`stop()`.
+   */
+  internal fun onAlarmReceived() {
     if (!isTicking) {
       return
     }
@@ -84,8 +86,6 @@ class ForegroundSyncTickerModule : Module() {
     acquireCycleWakeLock()
 
     sendEvent("onTick", mapOf("firedAt" to SystemClock.elapsedRealtime()))
-
-    scheduleNextTick(intervalMs)
   }
 
   private fun acquireCycleWakeLock() {
@@ -119,77 +119,45 @@ class ForegroundSyncTickerModule : Module() {
     wakeLock = null
   }
 
-  private fun registerTickReceiver() {
-    if (isReceiverRegistered) {
-      return
-    }
-    val context = appContext.reactContext ?: return
-
-    val filter = IntentFilter(TICK_ALARM_ACTION)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      context.registerReceiver(tickReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-    } else {
-      context.registerReceiver(tickReceiver, filter)
-    }
-    isReceiverRegistered = true
-  }
-
-  private fun unregisterTickReceiver() {
-    if (!isReceiverRegistered) {
-      return
-    }
-    appContext.reactContext?.unregisterReceiver(tickReceiver)
-    isReceiverRegistered = false
-  }
-
-  private fun buildTickPendingIntent(context: Context): PendingIntent {
-    val intent = Intent(TICK_ALARM_ACTION).setPackage(context.packageName)
-    return PendingIntent.getBroadcast(
-      context,
-      TICK_ALARM_REQUEST_CODE,
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-  }
-
-  private fun scheduleNextTick(delayMs: Long) {
-    val context = appContext.reactContext ?: return
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-
-    val triggerAtElapsedMs = SystemClock.elapsedRealtime() + delayMs
-    val pendingIntent = buildTickPendingIntent(context)
-
-    // Inexact by design: setAndAllowWhileIdle is still elapsedRealtime-based and wakeup, so it
-    // survives CPU suspension, but the system may batch or defer it (floor ~1/minute, longer in
-    // Doze). No exact-alarm permission is requested.
-    alarmManager.setAndAllowWhileIdle(
-      AlarmManager.ELAPSED_REALTIME_WAKEUP,
-      triggerAtElapsedMs,
-      pendingIntent,
-    )
-  }
-
-  private fun cancelTickAlarm() {
-    val context = appContext.reactContext ?: return
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-    alarmManager.cancel(buildTickPendingIntent(context))
-  }
-
   private fun startTicking(nextIntervalMs: Long) {
     stopTicking()
 
     intervalMs = nextIntervalMs
     isTicking = true
 
-    registerTickReceiver()
-    scheduleNextTick(intervalMs)
+    val context = appContext.reactContext ?: return
+    persistTickingState(context, isTicking = true, intervalMs = intervalMs)
+    scheduleNextTick(context, intervalMs)
   }
 
   private fun stopTicking() {
     isTicking = false
-    cancelTickAlarm()
-    unregisterTickReceiver()
     releaseAllCycleWakeLocks()
+
+    val context = appContext.reactContext ?: return
+    persistTickingState(context, isTicking = false, intervalMs = intervalMs)
+    cancelTickAlarm(context)
+  }
+
+  /**
+   * Re-arms the next alarm from whatever ticking state survived process death, so a fresh module
+   * instance -- created after the previous one was killed without `OnDestroy` ever running --
+   * resumes the cadence instead of waiting on a broadcast that may never come. Idempotent:
+   * [scheduleNextTick] reuses the same request-coded `PendingIntent` every time, so calling this
+   * again only updates the trigger time, it never stacks a second alarm. Called from `OnCreate`,
+   * so a lost broadcast costs at most one interval -- the next app open or headless wake -- not
+   * the whole cadence.
+   */
+  private fun reArmFromPersistedState() {
+    val context = appContext.reactContext ?: return
+    val persisted = readTickingState(context)
+    if (!persisted.isTicking) {
+      return
+    }
+
+    intervalMs = persisted.intervalMs
+    isTicking = true
+    scheduleNextTick(context, intervalMs)
   }
 
   /**
@@ -277,8 +245,28 @@ class ForegroundSyncTickerModule : Module() {
       requestIgnoreBatteryOptimizations()
     }
 
+    OnCreate {
+      activeInstance = this@ForegroundSyncTickerModule
+      reArmFromPersistedState()
+    }
+
     OnDestroy {
+      if (activeInstance === this@ForegroundSyncTickerModule) {
+        activeInstance = null
+      }
       stopTicking()
     }
+  }
+
+  companion object {
+    /**
+     * Live module instance [TickAlarmReceiver] dispatches ticks to, set in `OnCreate` and cleared
+     * in `OnDestroy`. The clear is mandatory, not optional cleanup: a stale reference to a
+     * destroyed module would leak the instance and dispatch a tick into a torn-down runtime. A
+     * null reference is simply a no-op for the receiver's re-arm -- there is no JS to deliver to,
+     * not an error condition.
+     */
+    @Volatile
+    internal var activeInstance: ForegroundSyncTickerModule? = null
   }
 }
