@@ -42,15 +42,13 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * [reArmFromPersistedState] below only covers the alarm side of a fresh module instance created
  * after a process kill, so a lost broadcast costs at most one interval, not the whole cadence.
  *
- * **`Events("onTick")` and `notifyCycleComplete()` are kept, but now inert (T4).** Both remain
- * declared on the JS-facing surface below purely so the still-unmigrated JS callers
- * (`native-foreground-sync-ticker.helpers.ts`'s `addListener('onTick', ...)` and
- * `notifyCycleComplete()` call) keep working without a runtime error until T5 rewires them onto
- * the native FGS path directly. Nothing in this file calls `sendEvent` anymore, and
- * `notifyCycleComplete()` is a no-op: there is no more per-tick wake lock to release. T5 should
- * drop both, along with `ForegroundSyncTickListener`, `addListener`'s `'onTick'` overload, and
- * every caller of `notifyCycleComplete()` in `native-foreground-sync-ticker.helpers.ts` and the
- * Notifee adapter.
+ * **`Events("onTick")` and `notifyCycleComplete()` are retired (T5).** Before T4 this module
+ * dispatched `onTick` to JS and held a per-tick wake lock JS released through
+ * `notifyCycleComplete()`; T4 stopped emitting the event but kept both declared, purely so the
+ * still-unmigrated JS callers (`native-foreground-sync-ticker.helpers.ts`'s
+ * `addListener('onTick', ...)` and `notifyCycleComplete()` call) would not throw. T5 rewired
+ * `SyncForegroundService` (native, `modules/sync-engine`) to run the whole attempt itself and
+ * dropped every JS caller of `onTick`/`notifyCycleComplete`, so neither is declared here anymore.
  *
  * The tick alarm is deliberately inexact: the system may batch or defer allow-while-idle alarms.
  * Android's Doze documentation states the floor is one delivery per NINE minutes, per app -- not
@@ -75,10 +73,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * `NotificationManager.getActiveNotifications()` for a match on that channel id -- an Android
  * foreground-service notification cannot outlive its service, the platform removes it the moment
  * the service stops, so this is a faithful proxy rather than a guess. It does not hardcode which
- * channel to check: the caller passes it, and as of T4 the one caller
- * (`foreground-service-watchdog.helpers.ts`) still passes Notifee's own channel id, not
- * `SyncForegroundService.CHANNEL_ID` -- a JS-side mismatch T5 needs to resolve, not a defect in
- * this function, which is unchanged by T4.
+ * channel to check: the caller passes it. As of T5 the one caller
+ * (`native-foreground-sync-adapter.helpers.ts`'s `getStatus()`) passes
+ * `SyncForegroundService.CHANNEL_ID` (`autoreas-sync-foreground-native`), the native service's own
+ * channel -- T4's JS-side mismatch (the retired watchdog passed Notifee's channel id instead) is
+ * resolved by T5 retiring that caller along with it; this function itself is unchanged.
  * `ActivityManager.getRunningServices()` filtered to `app.notifee.core.ForegroundService` was
  * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
  * internal class name into this module, whereas the channel id is a constant this repo already
@@ -210,11 +209,6 @@ class ForegroundSyncTickerModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
-    // Kept only for JS-surface compatibility until T5 -- see the class doc's "Events(\"onTick\")
-    // and notifyCycleComplete() are kept, but now inert" paragraph. Never emitted natively as of
-    // T4: nothing in this file calls sendEvent anymore.
-    Events("onTick")
-
     Function("start") { intervalMillis: Double ->
       startTicking(intervalMillis.toLong())
     }
@@ -225,13 +219,6 @@ class ForegroundSyncTickerModule : Module() {
 
     Function("isRunning") {
       isTicking
-    }
-
-    // No-op as of T4: there is no more per-tick wake lock to release (see the class doc). Kept
-    // so native-foreground-sync-ticker.helpers.ts's existing call site does not throw before T5
-    // removes it.
-    Function("notifyCycleComplete") {
-      // intentionally empty
     }
 
     Function("isIgnoringBatteryOptimizations") {

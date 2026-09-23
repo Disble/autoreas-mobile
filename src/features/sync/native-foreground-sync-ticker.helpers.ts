@@ -6,31 +6,34 @@ import {
 import type {
   CreateNativeForegroundSyncTickerParams,
   ForegroundSyncTicker,
-  ForegroundSyncTickListener,
   NativeForegroundSyncTickerModule,
 } from './native-foreground-sync-ticker.types';
 
 // The lazily-required `expo-modules-core` loader and the guarded null lookup live in
 // `native-module-loader/`, shared by the ticker, sync-engine, and sync-journal seams.
 
-/** Answers whether the value is a promise-like object, so sync listeners keep working unchanged. */
-function isPromiseLike(value: unknown): value is Promise<unknown> {
-  return (
-    typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function'
-  );
-}
-
 /**
- * Creates the JS-side seam over the native foreground-sync ticker module.
- * When the native module is unavailable (Expo Go, iOS, or a non-prebuilt binary) this degrades
- * to a no-op ticker instead of crashing -- the FGS simply runs without a native tick source until
- * a native build is installed; callers can observe this via `isRunning()` staying false.
+ * Creates the JS-side seam over the native foreground-sync ticker module (ODD
+ * native-foreground-sync-service T5). `start()`/`stop()` delegate straight to the native module,
+ * which persists ticking state, arms/cancels the tick alarm, and starts/stops
+ * `SyncForegroundService` (see `TickAlarmScheduler.kt`'s `startSyncTicking`/`stopSyncTicking`) --
+ * there is no JS-side idempotency guard here on purpose: native `startTicking()` already stops
+ * then restarts unconditionally, so a caller invoking `start()` again (e.g. the app opening while
+ * the FGS mode is on) is safe and simply re-arms/restores the service.
  *
- * The native wake lock is scoped to the cycle: the native module acquires it when a tick is
- * dispatched, and this helper reports completion through `notifyCycleComplete()` once every
- * cycle promise that tick produced has settled (rejections settle too), so a rejected cycle
- * also releases the lock. The native side still bounds the hold with a safety-net timeout for
- * a cycle that never reports back.
+ * `isRunning()` delegates straight to the native module on every call instead of tracking local
+ * closure state: a fresh `createNativeForegroundSyncTicker()` call (e.g. from a headless
+ * background-task wake, a different JS object than whatever live adapter last called `start()`)
+ * must still read the real native ticking state, not a flag that always starts `false` in a new
+ * instance.
+ *
+ * Before T5 this seam also subscribed to a native `onTick` event and reported cycle completion
+ * back through `notifyCycleComplete()`. Native no longer emits `onTick` or needs that report
+ * (T3+T4 moved cycle dispatch and execution entirely into `SyncForegroundService` /
+ * `SyncEngineRunner`), so that wiring is retired here.
+ *
+ * Degrades to a no-op when the native module is unavailable (Expo Go, iOS, or a non-prebuilt
+ * binary) instead of crashing -- `isRunning()` then always answers `false`.
  */
 export function createNativeForegroundSyncTicker(
   params: CreateNativeForegroundSyncTickerParams = {},
@@ -42,72 +45,18 @@ export function createNativeForegroundSyncTicker(
     loadModule,
     FOREGROUND_SYNC_TICKER_NATIVE_MODULE_NAME,
   );
-  const listeners = new Set<ForegroundSyncTickListener>();
-  let subscription: { remove: () => void } | null = null;
-  let isRunning = false;
-
-  /** Reports one dispatched tick's cycles as settled to the native wake-lock owner. */
-  function notifyCycleComplete(): void {
-    nativeModule?.notifyCycleComplete();
-  }
-
-  function notifyListeners() {
-    const cyclePromises: Promise<unknown>[] = [];
-
-    listeners.forEach((listener) => {
-      const result: unknown = listener();
-      if (isPromiseLike(result)) {
-        cyclePromises.push(result);
-      }
-    });
-
-    if (cyclePromises.length === 0) {
-      notifyCycleComplete();
-      return;
-    }
-
-    // `allSettled` waits for every cycle of the tick (rejections included) before the single
-    // per-tick release, matching the native side's one wake-lock reference per dispatched tick.
-    void Promise.allSettled(cyclePromises).then(() => {
-      notifyCycleComplete();
-    });
-  }
 
   return {
     start(intervalMs: number) {
-      if (!nativeModule || isRunning) {
-        return;
-      }
-
-      subscription = nativeModule.addListener('onTick', () => {
-        notifyListeners();
-      });
-
-      nativeModule.start(intervalMs);
-      isRunning = true;
+      nativeModule?.start(intervalMs);
     },
 
     stop() {
-      if (!nativeModule || !isRunning) {
-        return;
-      }
-
-      nativeModule.stop();
-      subscription?.remove();
-      subscription = null;
-      isRunning = false;
-    },
-
-    onTick(callback: ForegroundSyncTickListener) {
-      listeners.add(callback);
-
-      return () => {
-        listeners.delete(callback);
-      };
+      nativeModule?.stop();
     },
 
     isRunning() {
-      return isRunning;
+      return nativeModule?.isRunning() ?? false;
     },
   };
 }

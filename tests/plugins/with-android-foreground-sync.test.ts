@@ -3,7 +3,7 @@
  * Notifee foreground-service type and the manifest-declared tick-alarm receiver.
  *
  * `expo/config-plugins` is mocked at the module boundary (the convention used in
- * `tests/features/sync/notifee-foreground-service-adapter.test.ts`): the real `withAndroidManifest`
+ * `tests/features/sync/native-foreground-sync-adapter.test.ts`): the real `withAndroidManifest`
  * only registers a mod for Expo's prebuild pipeline to run later, so calling the plugin directly in
  * a test would never invoke its callback. The mock makes `withAndroidManifest` invoke its callback
  * synchronously against a fake, already-parsed manifest instead, so the plugin's own logic — the

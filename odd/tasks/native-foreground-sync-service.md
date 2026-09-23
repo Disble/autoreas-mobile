@@ -151,7 +151,7 @@ Checklist:
 - [x] T2 (`db66a6f`)
 - [x] T3
 - [x] T4
-- [ ] T5
+- [x] T5
 - [ ] T6
 - [ ] T7
 - [ ] T8
@@ -303,4 +303,28 @@ receives ticks; `foreground-service-watchdog.helpers.ts` checks Notifee's channe
 Module `OnCreate` re-arms the alarm but does not start the service; opening the app restores it only
 through JS `start()` (T5) or the next tick.
 
-Next: T5.
+### T5 — done
+
+Route: delegated writer. New `native-foreground-sync-adapter` replaces the Notifee adapter as the
+FGS execution strategy: `register()` requests notification permission, then `ticker.start(60_000)`
+(native persists state, arms the alarm, starts the service); `unregister()` calls `ticker.stop()`;
+app open calls `register()` again, which restores a dead service. `getStatus()` checks presence on
+`autoreas-sync-foreground-native`. `runBackgroundSyncCycle()` returns `no_op` before touching SQLite
+while the ticker reports ticking (the module restores `isTicking` from persisted state in `OnCreate`,
+so this holds in a revived headless process). Retired: the Notifee FGS adapter, the JS foreground
+runner, `attempt-policy`, the headless watchdog, the `onTick` event and `notifyCycleComplete`
+(JS and Kotlin). Stryker surface moved from the deleted watchdog to the new adapter's helpers.
+
+Evidence: `bun run test` 180 suites / 1365 tests; typecheck clean; react-doctor 100/100; both
+Gradle test modules and release compiles `BUILD SUCCESSFUL`; lefthook pre-commit pass with staged
+mutation score 100 (three survivors found by Stryker were closed with tests).
+
+Follow-ups (not in scope): Notifee's `app.notifee.core.ForegroundService` manifest declaration and
+`FOREGROUND_SERVICE_DATA_SYNC` look dead now; the `SyncSQLiteOwner` variants `foreground_service` /
+`foreground_service_watchdog` are unreachable. Known behaviour for T7: `startTicking` stops then
+restarts the service, so each app open recreates it (notification may flicker).
+
+**For T6:** nothing writes `sync_runtime_status` for FGS-mode attempts any more; Settings shows the
+service presence live, but `last_attempt_at` / `last_success_at` / `last_trigger_source` go stale.
+
+Next: T6.

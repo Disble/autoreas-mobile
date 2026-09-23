@@ -1,7 +1,7 @@
 import * as Network from "expo-network";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { createNotifeeForegroundServiceAdapter } from "./notifee-foreground-service-adapter";
+import { createNativeForegroundSyncAdapter } from "./native-foreground-sync-adapter";
 import { useBridgeConfig } from "../settings/use-bridge-config";
 import { useWebSocket } from "../ws/use-websocket";
 import {
@@ -60,7 +60,7 @@ export function useSyncRuntime(
     () =>
       createSyncExecutionFacade({
         strategies: [
-          createNotifeeForegroundServiceAdapter(),
+          createNativeForegroundSyncAdapter(),
           {
             mode: "best_effort_background_task",
             register: registerBackgroundSyncTask,

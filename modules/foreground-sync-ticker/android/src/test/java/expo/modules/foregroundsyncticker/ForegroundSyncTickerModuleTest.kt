@@ -33,9 +33,8 @@ class ForegroundSyncTickerModuleTest {
 
     assertFalse(
       "onAlarmReceived (the former onTick dispatch entry point, called by TickAlarmReceiver's " +
-        "old activeInstance-based dispatch) must not exist: T4 retires the native onTick " +
-        "event entirely, Events(\"onTick\") is now declared but never emitted, kept only for " +
-        "JS-surface compatibility until T5",
+        "old activeInstance-based dispatch) must not exist: T4 retired native onTick dispatch " +
+        "entirely, and T5 dropped the now-inert Events(\"onTick\") declaration itself",
       methodNames.any { it.startsWith("onAlarmReceived") },
     )
   }

@@ -14,6 +14,7 @@ import type {
 } from './background-sync.types';
 import { BACKGROUND_SYNC_ENGINE_TRIGGER_SOURCE } from './native-sync-engine/native-sync-engine.constants';
 import { createNativeSyncEngine } from './native-sync-engine/native-sync-engine.helpers';
+import { createNativeForegroundSyncTicker } from './native-foreground-sync-ticker.helpers';
 import type {
   NativeSyncEngineResult,
   NativeSyncEngineOutcome,
@@ -53,8 +54,20 @@ function mapNativeEngineResultToCycleResult(
  * triggers on both degradation points: a missing module (`isAvailable()` false, the migration
  * case) and an `unavailable` outcome from an engine that reported available (defence in depth
  * against a race between lookup and call).
+ *
+ * ODD native-foreground-sync-service T5: while the native foreground service owns the background
+ * (its ticker is armed), this WorkManager path must not run a competing sync attempt -- the
+ * `sync_cycle_lock` lease would refuse it anyway (`not_applicable`), but skipping before ever
+ * opening a runtime or touching the wire is what "stops being a sync path in FGS mode" means.
+ * The check reads the native module fresh on every call (`createNativeForegroundSyncTicker()`
+ * delegates straight to native state, never a stale JS flag) so a headless wake with no live
+ * adapter instance still sees the real ticking state.
  */
 export async function runBackgroundSyncCycle(): Promise<HeadlessSyncCycleResult> {
+  if (createNativeForegroundSyncTicker().isRunning()) {
+    return { kind: 'no_op', syncedCount: 0 };
+  }
+
   const engine = createNativeSyncEngine();
 
   if (engine.isAvailable()) {
