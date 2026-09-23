@@ -150,7 +150,7 @@ Checklist:
 - [x] T1 (`db66a6f`)
 - [x] T2 (`db66a6f`)
 - [x] T3
-- [ ] T4
+- [x] T4
 - [ ] T5
 - [ ] T6
 - [ ] T7
@@ -282,4 +282,25 @@ watchdog's background looper fires only with `ShadowSystemClock.advanceBy(...)` 
 `shadowOf(looper).idleFor(...)`. Real sleeps never fire it. Applies to any future test of the
 `abandoned` path (Kotlin test debt).
 
-Next: T4.
+### T4 — done
+
+Route: delegated writer. `TickAlarmReceiver` re-arms first, then starts
+`expo.modules.syncengine.SyncForegroundService` by explicit class name (no Gradle dependency);
+any start failure is logged and the alarm stays armed. Module `start()`/`stop()` delegate to
+`startSyncTicking`/`stopSyncTicking` (persist state + alarm + service together). The `onTick` → JS
+dispatch, `activeInstance` and the per-tick JS wake lock are retired; `Events("onTick")` and
+`notifyCycleComplete()` stay declared but inert until T5 drops their JS consumers. Harness added to
+`foreground-sync-ticker` (11 tests). Two false-negative mutations were caught and fixed in the tests
+(an outer catch masking the bridge's own catch; JVM name mangling of `internal` methods).
+
+Evidence: both Gradle unit-test modules and both release compiles `BUILD SUCCESSFUL`; typecheck
+clean; lefthook pre-commit 185 suites / 1417 tests.
+
+**For T5:** drop the `onTick` listener and `notifyCycleComplete()` calls
+(`native-foreground-sync-ticker.helpers.ts`) and their types; the FGS-mode JS runner no longer
+receives ticks; `foreground-service-watchdog.helpers.ts` checks Notifee's channel with
+`isForegroundServiceRunning`, but the live FGS now posts on `autoreas-sync-foreground-native`.
+Module `OnCreate` re-arms the alarm but does not start the service; opening the app restores it only
+through JS `start()` (T5) or the next tick.
+
+Next: T5.

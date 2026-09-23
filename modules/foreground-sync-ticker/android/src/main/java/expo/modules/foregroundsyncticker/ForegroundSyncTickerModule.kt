@@ -6,28 +6,25 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
-import android.os.SystemClock
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-private const val WAKE_LOCK_TAG = "ForegroundSyncTicker:ticking"
-
-/**
- * Safety net for the per-cycle wake lock: the primary bound is the JS cycle promise, reported
- * back through `notifyCycleComplete()`. If JS never reports completion (parked cycle, torn-down
- * runtime, removed listener) this timeout releases the lock so the CPU can sleep again. It is
- * deliberately much larger than a healthy cycle -- it bounds a hung cycle, it does not pace the
- * cadence, and it must not be tuned down to serve as the cycle budget.
- */
-private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
-
 /**
  * Native surface that keeps foreground sync alive: the `AlarmManager`-driven tick source, the
  * alarm re-arm, the battery-optimization exemption request, and the FGS presence check a
- * headless JS caller uses to decide whether to restore it. Notifee remains the owner of the
- * foreground service and its notification -- this module supplies the mechanisms that keep that
- * service reachable and its cadence running, not the service itself.
+ * headless JS caller uses to decide whether to restore it.
+ *
+ * **Ownership of the foreground service itself (ODD native-foreground-sync-service, T3+T4).**
+ * Kotlin owns the service outright now, through `modules/sync-engine`'s `SyncForegroundService`
+ * -- a DIFFERENT Gradle module this one must never depend on. `start()`/`stop()` below start and
+ * stop that service by explicit intent (see `SyncForegroundServiceBridge.kt` and
+ * `TickAlarmScheduler.kt`'s `startSyncTicking`/`stopSyncTicking`), never by import, together with
+ * arming/cancelling the alarm; [TickAlarmReceiver] does the same on every tick it receives while
+ * ticking. Before T4, this module only dispatched `onTick` to JS and held a per-tick wake lock
+ * scoped to the JS cycle promise; that entire path -- the event dispatch, the wake lock, and the
+ * `activeInstance` companion [TickAlarmReceiver] used to dispatch through -- is retired. See
+ * [TickAlarmReceiver]'s own "History" doc for the fuller before/after.
  *
  * Ticks used to be scheduled with `Handler.postDelayed`, which measures delays against
  * `SystemClock.uptimeMillis()` -- a clock that stops advancing while the CPU is suspended. With
@@ -40,21 +37,20 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * (declared in `plugins/withAndroidForegroundSync.js`, not in this module's own -- deliberately
  * empty -- `AndroidManifest.xml`). Android instantiates a manifest receiver with a plain
  * `Context` and no reference to this module, in a process that may have no React Native context
- * at all -- exactly the state a process kill leaves behind. A receiver registered on the React
- * context instead, as this module used to do, dies with that context while the alarm survives in
- * the system `AlarmManager` and fires into a void. So the responsibility is split: the receiver
- * re-arms the next alarm from persisted state on every delivery, whether or not a module instance
- * is alive; this module only dispatches `onTick` to JS, through [onAlarmReceived], and only when
- * [activeInstance] is set. A module instance registers itself in `OnCreate` and clears the
- * reference in `OnDestroy`, and also re-arms from persisted state at that point, so a fresh
- * instance created after a process kill resumes the cadence without waiting on a broadcast that
- * already fired into the previous, dead process.
+ * at all -- exactly the state a process kill leaves behind. So the alarm re-arm and the service
+ * restart both live in the receiver, independent of whether a module instance is alive;
+ * [reArmFromPersistedState] below only covers the alarm side of a fresh module instance created
+ * after a process kill, so a lost broadcast costs at most one interval, not the whole cadence.
  *
- * The `PARTIAL_WAKE_LOCK` is scoped to one dispatched cycle: acquired when a tick fires,
- * released when JS reports the cycle settled via `notifyCycleComplete()` (a rejection settles
- * too). The lock is reference counted, so one reference per dispatched tick balances one
- * release per reported cycle even when cycles overlap; `stop()` and `OnDestroy` drop every
- * remaining reference. The timeout is only a safety net for a cycle that never reports back.
+ * **`Events("onTick")` and `notifyCycleComplete()` are kept, but now inert (T4).** Both remain
+ * declared on the JS-facing surface below purely so the still-unmigrated JS callers
+ * (`native-foreground-sync-ticker.helpers.ts`'s `addListener('onTick', ...)` and
+ * `notifyCycleComplete()` call) keep working without a runtime error until T5 rewires them onto
+ * the native FGS path directly. Nothing in this file calls `sendEvent` anymore, and
+ * `notifyCycleComplete()` is a no-op: there is no more per-tick wake lock to release. T5 should
+ * drop both, along with `ForegroundSyncTickListener`, `addListener`'s `'onTick'` overload, and
+ * every caller of `notifyCycleComplete()` in `native-foreground-sync-ticker.helpers.ts` and the
+ * Notifee adapter.
  *
  * The tick alarm is deliberately inexact: the system may batch or defer allow-while-idle alarms.
  * Android's Doze documentation states the floor is one delivery per NINE minutes, per app -- not
@@ -73,69 +69,24 @@ private const val CYCLE_WAKE_LOCK_TIMEOUT_MS = 120_000L
  * user grants it through the system dialog, and every caller here degrades honestly when it is
  * refused.
  *
- * `isForegroundServiceRunning` gives a headless JS caller (T4's watchdog) the one signal it
- * cannot otherwise have: whether the foreground service is ACTUALLY up right now, in a fresh
- * process with no live adapter instance to ask. It queries
- * `NotificationManager.getActiveNotifications()` for a match on the given channel id -- an
- * Android foreground-service notification cannot outlive its service, the platform removes it
- * the moment the service stops, so this is a faithful proxy rather than a guess.
+ * `isForegroundServiceRunning` gives a headless JS caller the one signal it cannot otherwise
+ * have: whether a foreground service matching the given notification channel id is ACTUALLY up
+ * right now, in a fresh process with no live adapter instance to ask. It queries
+ * `NotificationManager.getActiveNotifications()` for a match on that channel id -- an Android
+ * foreground-service notification cannot outlive its service, the platform removes it the moment
+ * the service stops, so this is a faithful proxy rather than a guess. It does not hardcode which
+ * channel to check: the caller passes it, and as of T4 the one caller
+ * (`foreground-service-watchdog.helpers.ts`) still passes Notifee's own channel id, not
+ * `SyncForegroundService.CHANNEL_ID` -- a JS-side mismatch T5 needs to resolve, not a defect in
+ * this function, which is unchanged by T4.
  * `ActivityManager.getRunningServices()` filtered to `app.notifee.core.ForegroundService` was
  * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
  * internal class name into this module, whereas the channel id is a constant this repo already
  * owns.
  */
 class ForegroundSyncTickerModule : Module() {
-  private var wakeLock: PowerManager.WakeLock? = null
   private var intervalMs: Long = 15_000L
   private var isTicking = false
-
-  /**
-   * Entry point [TickAlarmReceiver] calls when it finds a live module instance to deliver to.
-   * The alarm's re-arm already happened in the receiver -- see its KDoc -- so this only reports
-   * the tick to JS. Guarded by [isTicking] defensively: the receiver already checked the
-   * persisted flag before dispatching here, but the in-memory flag is this alive instance's own
-   * source of truth, e.g. if a tick lands mid-`stop()`.
-   */
-  internal fun onAlarmReceived() {
-    if (!isTicking) {
-      return
-    }
-
-    acquireCycleWakeLock()
-
-    sendEvent("onTick", mapOf("firedAt" to SystemClock.elapsedRealtime()))
-  }
-
-  private fun acquireCycleWakeLock() {
-    val context = appContext.reactContext ?: return
-    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
-
-    val lock = wakeLock ?: powerManager
-      .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-      .also { created ->
-        // Reference counted (the default) so overlapping dispatched cycles balance: each tick
-        // acquires one reference and each `notifyCycleComplete()` releases one.
-        created.setReferenceCounted(true)
-        wakeLock = created
-      }
-
-    lock.acquire(CYCLE_WAKE_LOCK_TIMEOUT_MS)
-  }
-
-  private fun releaseCycleWakeLock() {
-    val lock = wakeLock ?: return
-    if (lock.isHeld) {
-      lock.release()
-    }
-  }
-
-  private fun releaseAllCycleWakeLocks() {
-    val lock = wakeLock ?: return
-    while (lock.isHeld) {
-      lock.release()
-    }
-    wakeLock = null
-  }
 
   private fun startTicking(nextIntervalMs: Long) {
     stopTicking()
@@ -144,17 +95,14 @@ class ForegroundSyncTickerModule : Module() {
     isTicking = true
 
     val context = appContext.reactContext ?: return
-    persistTickingState(context, isTicking = true, intervalMs = intervalMs)
-    scheduleNextTick(context, intervalMs)
+    startSyncTicking(context, intervalMs)
   }
 
   private fun stopTicking() {
     isTicking = false
-    releaseAllCycleWakeLocks()
 
     val context = appContext.reactContext ?: return
-    persistTickingState(context, isTicking = false, intervalMs = intervalMs)
-    cancelTickAlarm(context)
+    stopSyncTicking(context, intervalMs)
   }
 
   /**
@@ -164,7 +112,9 @@ class ForegroundSyncTickerModule : Module() {
    * [scheduleNextTick] reuses the same request-coded `PendingIntent` every time, so calling this
    * again only updates the trigger time, it never stacks a second alarm. Called from `OnCreate`,
    * so a lost broadcast costs at most one interval -- the next app open or headless wake -- not
-   * the whole cadence.
+   * the whole cadence. Alarm-only, deliberately: it does not also start the service, because the
+   * tick alarm (via [TickAlarmReceiver]) is the guaranteed path that restores it without JS, and
+   * duplicating a second service-start site here would fork that responsibility.
    */
   private fun reArmFromPersistedState() {
     val context = appContext.reactContext ?: return
@@ -235,12 +185,11 @@ class ForegroundSyncTickerModule : Module() {
   }
 
   /**
-   * Answers whether a currently active notification belongs to [channelId] -- today, that is the
-   * FGS notification's own channel, so this is a faithful proxy for "is the foreground service
-   * actually running right now" rather than a guess (see the class doc for why). Never throws: a
-   * missing context, a missing `NotificationManager`, a platform below the API level that
-   * exposes notification channels, or any lookup failure all resolve to `false` instead of
-   * propagating, matching every other status read in this module.
+   * Answers whether a currently active notification belongs to [channelId] -- see the class doc
+   * for why this is a faithful proxy for "is the foreground service actually running right now"
+   * rather than a guess. Never throws: a missing context, a missing `NotificationManager`, a
+   * platform below the API level that exposes notification channels, or any lookup failure all
+   * resolve to `false` instead of propagating, matching every other status read in this module.
    */
   private fun isForegroundServiceRunning(channelId: String): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -261,6 +210,9 @@ class ForegroundSyncTickerModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
+    // Kept only for JS-surface compatibility until T5 -- see the class doc's "Events(\"onTick\")
+    // and notifyCycleComplete() are kept, but now inert" paragraph. Never emitted natively as of
+    // T4: nothing in this file calls sendEvent anymore.
     Events("onTick")
 
     Function("start") { intervalMillis: Double ->
@@ -275,8 +227,11 @@ class ForegroundSyncTickerModule : Module() {
       isTicking
     }
 
+    // No-op as of T4: there is no more per-tick wake lock to release (see the class doc). Kept
+    // so native-foreground-sync-ticker.helpers.ts's existing call site does not throw before T5
+    // removes it.
     Function("notifyCycleComplete") {
-      releaseCycleWakeLock()
+      // intentionally empty
     }
 
     Function("isIgnoringBatteryOptimizations") {
@@ -292,27 +247,11 @@ class ForegroundSyncTickerModule : Module() {
     }
 
     OnCreate {
-      activeInstance = this@ForegroundSyncTickerModule
       reArmFromPersistedState()
     }
 
     OnDestroy {
-      if (activeInstance === this@ForegroundSyncTickerModule) {
-        activeInstance = null
-      }
       stopTicking()
     }
-  }
-
-  companion object {
-    /**
-     * Live module instance [TickAlarmReceiver] dispatches ticks to, set in `OnCreate` and cleared
-     * in `OnDestroy`. The clear is mandatory, not optional cleanup: a stale reference to a
-     * destroyed module would leak the instance and dispatch a tick into a torn-down runtime. A
-     * null reference is simply a no-op for the receiver's re-arm -- there is no JS to deliver to,
-     * not an error condition.
-     */
-    @Volatile
-    internal var activeInstance: ForegroundSyncTickerModule? = null
   }
 }
