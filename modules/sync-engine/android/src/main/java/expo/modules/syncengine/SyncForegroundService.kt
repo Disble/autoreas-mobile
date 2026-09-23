@@ -88,6 +88,19 @@ class SyncForegroundService : Service() {
       SyncEngineRunner.runOnce(context, triggerSource, cycleId, startMs, requirePresence, onResult)
     }
 
+  /**
+   * Swappable in tests (ODD native-foreground-sync-service T6), same reason and shape as
+   * [attemptRunner]: defaults to the real [SyncEngineRuntimeStatus.record]. `internal` so this
+   * module's own test source set can replace it with a throwing fake, to prove a status-write
+   * failure never keeps [startOneAttempt] from releasing the wake lock or resetting
+   * [attemptInFlight] (see the class doc's "never crashes the process" paragraph, which this
+   * seam extends to the status projection).
+   */
+  internal var runtimeStatusWriter: (Context, String, Long, CycleOutcome) -> Unit =
+    { context, cycleId, attemptedAtMs, outcome ->
+      SyncEngineRuntimeStatus.record(context, cycleId, attemptedAtMs, outcome)
+    }
+
   /** True while one attempt is in flight; see the class doc's coalescing paragraph. */
   private val attemptInFlight = AtomicBoolean(false)
 
@@ -149,6 +162,16 @@ class SyncForegroundService : Service() {
           "native fgs tick attempt finished outcome='${outcome.outcome}' stage='${outcome.stage}' " +
             "(cycleId=$cycleId)",
         )
+        try {
+          // ODD native-foreground-sync-service T6: projects this attempt's outcome into
+          // sync_runtime_status so Settings stops showing stale values for the native FGS path.
+          // SyncEngineRuntimeStatus.record never throws by contract, but this seam is injectable
+          // (a test fake, or a future caller that does not honor that contract), so the wake
+          // lock release and the in-flight reset below must survive it regardless.
+          runtimeStatusWriter(applicationContext, cycleId, startMs, outcome)
+        } catch (error: Throwable) {
+          Log.w(LOG_TAG, "status projection crashed (cycleId=$cycleId)", error)
+        }
         releaseWakeLock()
         attemptInFlight.set(false)
       }

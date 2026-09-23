@@ -152,7 +152,7 @@ Checklist:
 - [x] T3
 - [x] T4
 - [x] T5
-- [ ] T6
+- [x] T6
 - [ ] T7
 - [ ] T8
 
@@ -327,4 +327,24 @@ restarts the service, so each app open recreates it (notification may flicker).
 **For T6:** nothing writes `sync_runtime_status` for FGS-mode attempts any more; Settings shows the
 service presence live, but `last_attempt_at` / `last_success_at` / `last_trigger_source` go stale.
 
-Next: T6.
+### T6 — done
+
+Route: delegated writer. `SyncEngineRuntimeStatus` (new) projects each service attempt into
+`sync_runtime_status`, called from the service's result callback inside its own try/catch (a failed
+write never blocks the wake lock release or the in-flight reset); the JS `runOnce` path is unchanged.
+Mapping mirrors `buildSyncAttemptSucceededPatch` / `buildSyncAttemptFailedPatch`:
+`closed` sets attempt, success, counters, cycle id/stage and clears errors; `failed` / `abandoned` set
+attempt and error fields and leave `last_success_at` and the counters untouched; `not_applicable`
+(presence refused, no config, lease held) writes nothing, exactly as the retired JS gate did.
+`last_trigger_source` is `foreground_service` (an existing labelled member of the closed TS union;
+`native_fgs_tick` would render as `undefined` in Settings). UPDATE-then-INSERT in a `BEGIN IMMEDIATE`
+transaction on a short-lived connection with `busy_timeout`; no UPSERT, so default Robolectric SQLite.
+
+Evidence: sync-engine 30 Kotlin tests; both release compiles `BUILD SUCCESSFUL`; lefthook pre-commit
+pass (180 suites / 1365 tests). RED observed (missing symbols); five mutations caught.
+
+**Known limit:** Settings reads through `useLiveQuery`, which hooks expo-sqlite's own connection; a
+write from the native connection does not fire it, so the screen refreshes on the next JS re-query
+(foreground, navigation), not live. The data is correct; live refresh is a separate decision.
+
+Next: T7 (device acceptance).

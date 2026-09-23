@@ -170,6 +170,59 @@ class SyncForegroundServiceTest {
   }
 
   @Test
+  fun `a completed outcome is projected through the runtimeStatusWriter seam`() {
+    val service = newService()
+    val runner = RecordingAttemptRunner()
+    service.attemptRunner = runner
+
+    var recordedCycleId: String? = null
+    var recordedAttemptedAtMs: Long? = null
+    var recordedOutcome: CycleOutcome? = null
+    service.runtimeStatusWriter = { _, cycleId, attemptedAtMs, outcome ->
+      recordedCycleId = cycleId
+      recordedAttemptedAtMs = attemptedAtMs
+      recordedOutcome = outcome
+    }
+
+    startCommand(service)
+    val outcome = CycleOutcome("closed", "closed", 3, 5, null)
+    runner.resolve(outcome)
+
+    assertEquals(outcome, recordedOutcome)
+    assertTrue("a cycle id must have been recorded", !recordedCycleId.isNullOrBlank())
+    assertTrue("the attempt start time must have been recorded", (recordedAttemptedAtMs ?: 0) > 0)
+  }
+
+  @Test
+  fun `a runtimeStatusWriter failure still releases the wake lock and resets the in-flight guard`() {
+    val service = newService()
+    val runner = RecordingAttemptRunner()
+    service.attemptRunner = runner
+    service.runtimeStatusWriter = { _, _, _, _ -> throw RuntimeException("status write boom") }
+
+    startCommand(service, startId = 1)
+    val lock = ShadowPowerManager.getLatestWakeLock()
+
+    // Must not throw out of the result callback: SyncForegroundService wraps the seam in its own
+    // try/catch (ODD native-foreground-sync-service T6), on top of SyncEngineRuntimeStatus.record's
+    // own "never throws" contract, precisely so an injectable failure here cannot escape.
+    runner.resolve(CycleOutcome("closed", "closed", 1, 1, null))
+
+    assertFalse(
+      "the wake lock must be released even when the status projection throws",
+      isWakeLockHeld(lock),
+    )
+
+    val secondResult = startCommand(service, startId = 2)
+    assertEquals(Service.START_STICKY, secondResult)
+    assertEquals(
+      "the in-flight guard must have been reset so a later start command starts a new attempt",
+      2,
+      runner.invocationCount.get(),
+    )
+  }
+
+  @Test
   fun `onDestroy releases a still-held wake lock defensively`() {
     val service = newService()
     val runner = RecordingAttemptRunner()
