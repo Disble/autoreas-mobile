@@ -146,8 +146,8 @@ command; P3 is best effort; the `SyncJournalModule` row is closed by a decision,
 
 Checklist:
 
-- [ ] T1
-- [ ] T2
+- [x] T1 (`db66a6f`)
+- [x] T2 (`db66a6f`)
 - [ ] T3
 - [ ] T4
 - [ ] T5
@@ -186,7 +186,7 @@ prebuild whenever `plugins/withAndroidForegroundSync.js` changes.
 
 ## Progress
 
-### T1 + T2 — done, awaiting commit confirmation
+### T1 + T2 — done, committed `db66a6f`
 
 Route: delegated writer (writer trigger: 4 Kotlin files). Shipped:
 
