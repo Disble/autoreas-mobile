@@ -347,4 +347,23 @@ pass (180 suites / 1365 tests). RED observed (missing symbols); five mutations c
 write from the native connection does not fire it, so the screen refreshes on the next JS re-query
 (foreground, navigation), not live. The data is correct; live refresh is a separate decision.
 
-Next: T7 (device acceptance).
+### T7 — device acceptance, partial (2026-09-23)
+
+`lab` build (`build-1790199857753.apk`, debuggable, same package, `1.5.0`) installed with
+`adb install -r` over the 1.5.0 release. Host `android/` moved out of the repo during the Docker build
+(`.easignore` does not exclude it; EAS would otherwise skip prebuild) and restored afterwards; Git
+hooks verified untouched.
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 2 | Process death without force-stop, service back without opening the app | **PASS** (twice) | The install itself killed the process (`PACKAGE UPDATED`, the WebView-update signature). The tick alarm survived the update; at the next tick `Background started FGS: Allowed … code:SYSTEM_ALLOW_LISTED` for our class, `createdFromFg=false`. Second run: `run-as … kill -9` → `Scheduling restart of crashed service … in 1000ms` → new process and a `closed` attempt 1.5 s later: **`START_STICKY` restart measured**, no alarm needed. |
+| 1 | Service foreground with our notification | **PASS** (service side) | `isForeground=true foregroundId=4821 types=0x40000000`, channel `autoreas-sync-foreground-native`, `stopIfKilled=false`. The JS takeover on app open is **not verified**: the tablet was locked, so the launched activity never came to the foreground and JS never called `start()`. |
+| 3 | Bridge up, pending operations synced within one interval | **PASS** | Four `native_fgs_tick` attempts, every one `checked → claimed → sent → applied → closed` in 61–310 ms, zero JS lines. Operations 26 and 28 (`pending` for hours on 1.5.0) became `synced`. `sync_runtime_status`: same `cycleId`, `closed`, `last_synced_count = 2`, `last_trigger_source = foreground_service` (T6 verified). |
+| 4 | Bridge down: presence refused, no claim, < 2 s | **not run** | Needs the bridge stopped by the maintainer. Covered by unit tests only. |
+| 5 | 24 h | **not run** | Needs a day of observation. The retired `ForegroundSyncTicker:ticking` wake lock is gone by design; the check script's ticker/dataSync checks are stale. |
+
+Observed cadence: one tick every ~105 s (60 s interval + the inexact alarm's 45 s window), as before.
+`scripts/lib/device-checks.mjs` still checks the retired ticker wake lock and the `dataSync` bit: update
+it before relying on `verify-sync-on-device.mjs` for this build.
+
+Next: finish T7 (unlocked app open, bridge-down run, 24 h), then T8.
