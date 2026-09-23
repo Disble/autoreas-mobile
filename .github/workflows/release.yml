@@ -220,12 +220,14 @@ jobs:
           fi
 
       # Catches: withAndroidForegroundSync silently no longer applying. It is the
-      # only source of android:foregroundServiceType, the tick-alarm receiver, and the
-      # battery-optimization-exemption permission, and Android 14+ refuses to start the
-      # service without the type — background sync would die on device while every test
-      # and the build stay green. The receiver and the two extra permissions were added
-      # for the multi-day-survival fix (background-service-multiday-survival); this guard
-      # was widened alongside them so a silently-unapplied plugin cannot ship again.
+      # only source of android:foregroundServiceType, the tick-alarm receiver, the
+      # native SyncForegroundService declaration, and the battery-optimization-exemption
+      # permission, and Android 14+ refuses to start a service without the type —
+      # background sync would die on device while every test and the build stay green.
+      # The receiver and the two extra permissions were added for the multi-day-survival
+      # fix (background-service-multiday-survival); SyncForegroundService was added for
+      # native-foreground-sync-service T3; this guard was widened alongside each so a
+      # silently-unapplied plugin cannot ship again.
       - name: Foreground sync survived the prebuild
         env:
           AAPT2: ${{ steps.aapt2.outputs.path }}
@@ -235,7 +237,8 @@ jobs:
           for needle in \
             app.notifee.core.ForegroundService \
             foregroundServiceType \
-            expo.modules.foregroundsyncticker.TickAlarmReceiver; do
+            expo.modules.foregroundsyncticker.TickAlarmReceiver \
+            expo.modules.syncengine.SyncForegroundService; do
             if ! grep -q "$needle" manifest.txt; then
               echo "::error::the shipped manifest is missing $needle; plugins/withAndroidForegroundSync.js did not apply"
               exit 1

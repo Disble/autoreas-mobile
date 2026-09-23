@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.ExecutorService
@@ -71,6 +72,35 @@ private const val LOG_TAG = "SyncEngine"
  * gate exists for ODD native-foreground-sync-service T3's service caller, which has no JS attempt
  * policy in front of it.
  *
+ * **T3 fix: the probe's HTTP call runs on [worker], never on the caller's thread.**
+ * [SyncForegroundService] calls [runOnce] from `onStartCommand`, which Android always invokes on
+ * the MAIN thread; a synchronous HTTP call there would throw `NetworkOnMainThreadException`,
+ * which [SyncEngineBridgePresence.probe]'s own `catch (Throwable)` would report as a plain
+ * absence -- every gated attempt silently refused, with no trace of the real cause. So the probe
+ * (and the cycle) run inside the [worker.execute] block below; [runOnce] itself only opens the
+ * lazily-held db/journal and arms the watchdog (both fast, local, never network) before
+ * submitting to [worker] and returning, regardless of caller thread.
+ *
+ * **The watchdog arms at ENQUEUE, on the caller's thread -- corrected after an earlier T3 attempt
+ * got this backwards.** An earlier version of this fix armed the watchdog only once [worker]
+ * actually started running the attempt, reasoning that a queued attempt's budget should not
+ * count down while merely waiting in line. That reasoning is exactly backwards: the watchdog
+ * exists FOR the case where [worker]'s thread is parked inside a native call (the class doc's own
+ * "load-bearing guarantee" paragraph) -- and while parked, [worker] never reaches a SECOND queued
+ * attempt's closure AT ALL, so a watchdog armed only inside that closure would never arm, and
+ * [onResult] would never fire for it. That breaks the "[onResult] always fires within budget"
+ * contract for BOTH of [runOnce]'s current callers: [SyncEngineModule]'s JS promise would never
+ * resolve, and [SyncForegroundService]'s in-flight guard would stay true forever, silently
+ * coalescing every later tick while its notification kept claiming sync was active. So the
+ * watchdog is armed HERE, at enqueue, on the CALLER's thread (fast: computing a deadline and
+ * calling `Handler.postDelayed` never touches the network or a lock worth worrying about) --
+ * its budget covers the FULL span of queue wait + presence probe + cycle, exactly like the
+ * design [SyncEngineModule]'s single JS caller already relied on before T1 extracted this class.
+ * If the watchdog fires while an attempt is still queued, [worker] -- once it finally reaches
+ * that attempt's closure -- finds [settled] already `true` and runs NEITHER the probe NOR the
+ * cycle: the caller was already told `abandoned`, and starting a cycle afterward would be a
+ * zombie writing to the lease/journal for an attempt nobody is waiting on anymore.
+ *
  * Deferred, documented as such (not silently skipped):
  * - the conflict-exhaustion policy (`conflict_attempt_count` caps and the token re-base) --
  *   conflicts fall back to the generic "reset to pending" retry;
@@ -97,8 +127,20 @@ object SyncEngineRunner {
   private var appDb: SQLiteDatabase? = null
   private var journal: SyncEngineJournal? = null
 
-  /** The last attempt state reached, readable by the watchdog from outside the parked worker. */
-  private val lastState = AtomicReference("idle")
+  /**
+   * Test-only override for [ENGINE_BUDGET_MS], added by the ODD native-foreground-sync-service T3
+   * testing pass so a test can force the watchdog to fire (combined with
+   * [watchdogLooperForTest]'s virtual-clock advance) without waiting out the real 30 s production
+   * budget. `null` (the default) leaves production behavior completely unchanged; only a test
+   * that explicitly sets this ever sees a different budget. `internal` keeps it out of the public
+   * API the module and the service call.
+   */
+  @Volatile
+  internal var budgetMsOverrideForTest: Long? = null
+
+  /** The budget this process actually runs under: [budgetMsOverrideForTest] in tests, else the
+   * real [ENGINE_BUDGET_MS]. */
+  private fun currentBudgetMs(): Long = budgetMsOverrideForTest ?: ENGINE_BUDGET_MS
 
   init {
     watchdogThread.start()
@@ -116,16 +158,19 @@ object SyncEngineRunner {
    * `MissingReactContext` refusal) can still use the same identifiers its own log line already
    * named.
    *
-   * Both settlement paths (watchdog and worker) are guarded by the attempt-local [settled] flag
-   * so [onResult] fires exactly once, and the watchdog callback is cleaned up on normal
-   * completion. The flag is created per attempt, never at object level: two overlapping
-   * attempts must not share one interlock, or the second attempt's watchdog can be cancelled by
-   * the first's cleanup and leave its own callback uncalled past its budget. [worker] being a
-   * single-thread executor is what keeps their [SyncEngineCycle.run] calls from ever running
-   * concurrently against the shared lease; it does not, by itself, prevent two watchdogs from
-   * being armed back to back should two callers invoke [runOnce] at nearly the same instant --
-   * exactly the property [SyncEngineModule]'s own single JS caller already relied on before this
-   * extraction.
+   * EVERY settlement path -- presence refused, completed, crashed, and abandoned -- goes through
+   * `settled.compareAndSet(false, true)` before calling [onResult], and removes the watchdog
+   * callback when it is the one that won that race. This is what keeps [onResult] firing EXACTLY
+   * once even when the watchdog and the worker's own path both reach a terminal decision (the
+   * watchdog fires while a presence probe already in flight has not yet returned, say): whichever
+   * settles first wins, and the other becomes a no-op. The flag, the tracked stage, and the
+   * watchdog itself are created PER ATTEMPT, never at object level: two overlapping attempts must
+   * not share one interlock, or the second attempt's watchdog could be cancelled by the first's
+   * cleanup and leave its own callback uncalled past its budget. [worker] being a single-thread
+   * executor is what keeps [SyncEngineCycle.run] calls from ever running concurrently against the
+   * shared lease; it does NOT, by itself, keep two watchdogs from being armed back to back --
+   * exactly the property two independent callers (the module today, the foreground service from
+   * T3) need, since each caller's own budget must cover its own full queue wait.
    */
   fun runOnce(
     context: Context,
@@ -138,7 +183,8 @@ object SyncEngineRunner {
     // Opened once and kept for the process's lifetime (see the class doc): a steady-state
     // presence-refused tick below never repeats this open, it only reuses the already-live
     // connection. Synchronized so two near-simultaneous first callers cannot both race to open
-    // the same file.
+    // the same file. This is the only work runOnce ever does on the CALLER's thread: it is local
+    // file I/O, never network, so it is safe on a main-thread caller (SyncForegroundService).
     synchronized(this) {
       if (appDb == null) {
         appDb = openAppDatabase(context)
@@ -150,47 +196,39 @@ object SyncEngineRunner {
     val db = appDb!!
     val activeJournal = journal!!
 
-    // The interlock is PER ATTEMPT: the watchdog and worker closures below capture this local,
-    // so overlapping invocations never share or reset each other's guard.
-    val settled = AtomicBoolean(false)
-    lastState.set("idle")
-
-    if (requirePresence) {
-      val probe = SyncEngineBridgePresence.probe(db)
-      if (!probe.isPresent) {
-        // No claim, no lease touch, no journal write: the gate exists precisely to keep an
-        // absent-bridge tick this cheap (see the class doc). `not_applicable` is the existing
-        // closed-vocabulary outcome for "nothing was claimed" (SyncEngineCycle's own no-config
-        // path reports the same value); errorName names the specific reason so this refusal
-        // stays distinguishable from a real no-config/lease-held-elsewhere attempt.
-        val elapsedMs = System.currentTimeMillis() - startMs
-        Log.i(LOG_TAG, "presence refused (reason='${probe.reason}', elapsedMs=$elapsedMs)")
-        onResult(CycleOutcome("not_applicable", "idle", 0, 0, "BridgePresenceRefused"))
-        return
-      }
-    }
-
-    // The deadline is absolute on the elapsedRealtime clock, which counts time spent in deep
-    // sleep (SystemClock.elapsedRealtime(), available since API 1; the app targets SDK 35).
-    val deadlineElapsedMs = SystemClock.elapsedRealtime() + ENGINE_BUDGET_MS
     val handler = watchdogHandler
     if (handler == null) {
-      // The budget cannot be armed. Running the attempt without its watchdog would recreate
-      // exactly the unresolved-result hazard the watchdog exists to prevent, so the attempt is
-      // refused and the refusal is traced in the journal with the existing vocabulary -- an
-      // unarmable budget must never be silent.
+      // The budget mechanism itself is unavailable (the watchdog thread never got a looper).
+      // This is checked up front, before ever touching worker or the presence gate, because no
+      // attempt should be queued at all if its budget could never be armed -- an unarmable
+      // budget must never be silent, and refusing here keeps that refusal on the same footing
+      // (immediate, journaled) as before the T3 fix.
       Log.w(LOG_TAG, "attempt $cycleId refused: watchdog could not be armed")
       activeJournal.append(
         cycleId,
-        lastState.get(),
+        "idle",
         "abandoned",
         "watchdog could not be armed; attempt refused",
         System.currentTimeMillis(),
       )
-      onResult(CycleOutcome("abandoned", lastState.get(), 0, 0, null))
+      onResult(CycleOutcome("abandoned", "idle", 0, 0, null))
       return
     }
 
+    // The interlock and the tracked stage are PER ATTEMPT: fresh locals captured by the worker
+    // and watchdog closures below, never shared object-level state -- shared state is exactly
+    // what would let one caller's reset clobber another's in-flight stage.
+    val settled = AtomicBoolean(false)
+    val stageRef = AtomicReference("idle")
+
+    // Armed HERE, at enqueue, on the CALLER's thread -- see the class doc's "the watchdog arms
+    // at ENQUEUE" paragraph for why: the budget must cover the full span of queue wait +
+    // presence probe + cycle, because worker may already be parked inside a native call for a
+    // PRIOR attempt, in which case this attempt's own closure below never even starts. Arming
+    // only computes a deadline and posts to a Handler -- fast, local, never network -- so doing
+    // this on the caller's thread is safe even when the caller is a main-thread service.
+    val budgetMs = currentBudgetMs()
+    val deadlineElapsedMs = SystemClock.elapsedRealtime() + budgetMs
     val watchdog = object : Runnable {
       override fun run() {
         // Delivery rides the handler's uptimeMillis clock, which freezes in deep sleep, so the
@@ -205,28 +243,65 @@ object SyncEngineRunner {
           return
         }
         if (settled.compareAndSet(false, true)) {
-          val stage = lastState.get()
-          Log.w(LOG_TAG, "attempt $cycleId abandoned at stage '$stage' after ${ENGINE_BUDGET_MS}ms")
+          val stage = stageRef.get()
+          Log.w(LOG_TAG, "attempt $cycleId abandoned at stage '$stage' after ${budgetMs}ms")
           // The watchdog owns the abandon record AND the result: the work thread may be parked
-          // inside a native call and unable to report anything at all.
+          // inside a native call (or may not have started at all -- still queued behind a prior
+          // attempt) and unable to report anything at all.
           activeJournal.append(
             cycleId,
             stage,
             "abandoned",
-            "watchdog budget of ${ENGINE_BUDGET_MS}ms expired",
+            "watchdog budget of ${budgetMs}ms expired",
             System.currentTimeMillis(),
           )
           onResult(CycleOutcome("abandoned", stage, 0, 0, null))
         }
       }
     }
-
-    handler.postDelayed(watchdog, ENGINE_BUDGET_MS)
+    handler.postDelayed(watchdog, budgetMs)
 
     worker.execute {
+      // If the watchdog already fired while this attempt was still queued (worker was parked
+      // inside a prior attempt's native call for the whole budget), settled is already true:
+      // neither the probe nor the cycle may run. The caller was already told `abandoned`, and a
+      // cycle starting now would be a zombie -- claiming the lease and writing the journal for
+      // an attempt nobody is waiting on anymore. No journal row is written here: the watchdog
+      // already wrote the one and only row this attempt gets.
+      if (settled.get()) {
+        Log.w(LOG_TAG, "attempt $cycleId skipped: abandoned while queued")
+        return@execute
+      }
+
       try {
+        // The presence gate's HTTP call runs HERE, on worker -- never on the caller's thread.
+        // SyncForegroundService calls runOnce from onStartCommand (the main thread); a
+        // synchronous HTTP call there would throw NetworkOnMainThreadException, which
+        // SyncEngineBridgePresence.probe's own catch(Throwable) would silently report as
+        // absence. Placed inside this try (unlike an earlier T3 attempt) so a database read
+        // failure inside the probe cannot escape this closure and leave onResult uncalled.
+        if (requirePresence) {
+          val probe = SyncEngineBridgePresence.probe(db)
+          if (!probe.isPresent) {
+            // No claim, no lease touch, no journal write beyond what the watchdog may already
+            // have written: the gate exists precisely to keep an absent-bridge tick this cheap
+            // (see the class doc). `not_applicable` is the existing closed-vocabulary outcome
+            // for "nothing was claimed"; errorName names the specific reason. Goes through the
+            // SAME settled/removeCallbacks pair as every other settlement path: the watchdog may
+            // have already fired while this exact HTTP call was still in flight, in which case
+            // this CAS loses and onResult must NOT fire a second time.
+            val elapsedMs = System.currentTimeMillis() - startMs
+            Log.i(LOG_TAG, "presence refused (reason='${probe.reason}', elapsedMs=$elapsedMs)")
+            if (settled.compareAndSet(false, true)) {
+              handler.removeCallbacks(watchdog)
+              onResult(CycleOutcome("not_applicable", "idle", 0, 0, "BridgePresenceRefused"))
+            }
+            return@execute
+          }
+        }
+
         val cycle = SyncEngineCycle(db, activeJournal)
-        val outcome = cycle.run(triggerSource, cycleId, lastState::set)
+        val outcome = cycle.run(triggerSource, cycleId, stageRef::set)
         if (settled.compareAndSet(false, true)) {
           handler.removeCallbacks(watchdog)
           Log.i(
@@ -238,17 +313,31 @@ object SyncEngineRunner {
         }
       } catch (error: Throwable) {
         // SyncEngineCycle never throws by contract; this guard only keeps an infrastructure
-        // surprise from leaving the callback uncalled. It still names the failure.
+        // surprise (including a probe/database failure outside SyncEngineCycle itself) from
+        // leaving the callback uncalled. It still names the failure.
         Log.w(LOG_TAG, "attempt $cycleId crashed", error)
         if (settled.compareAndSet(false, true)) {
           handler.removeCallbacks(watchdog)
           onResult(
-            CycleOutcome("failed", lastState.get(), 0, 0, error.javaClass.simpleName),
+            CycleOutcome("failed", stageRef.get(), 0, 0, error.javaClass.simpleName),
           )
         }
       }
     }
   }
+
+  /**
+   * Test-only accessor for the watchdog's background [Looper] (ODD native-foreground-sync-service
+   * T3 testing pass), so a test can deterministically force the watchdog to fire: this project's
+   * Robolectric configuration runs `SystemClock` as a virtual clock even for a genuinely separate
+   * background `HandlerThread`, so a `Handler.postDelayed` callback here never fires from real
+   * wall-clock waiting alone (verified directly -- see [SyncEngineRunnerTest]'s class doc). A test
+   * instead calls `org.robolectric.shadows.ShadowSystemClock.advanceBy(duration)` to move the
+   * virtual clock forward and `org.robolectric.Shadows.shadowOf(watchdogLooperForTest()).
+   * idleFor(duration)` to make THIS SPECIFIC looper process its now-due messages. `internal`
+   * keeps it out of the public API the module and the service call.
+   */
+  internal fun watchdogLooperForTest(): Looper = watchdogThread.looper
 
   /**
    * Test-only reset, added by the ODD native-foreground-sync-service testing pass. Closes the
@@ -275,6 +364,6 @@ object SyncEngineRunner {
       journal?.close()
       journal = null
     }
-    lastState.set("idle")
+    budgetMsOverrideForTest = null
   }
 }

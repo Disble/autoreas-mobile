@@ -7,8 +7,9 @@ gate. JS keeps the UI only.
 Status: planning. Branch `fix/native-foreground-sync-service`, cut from `dev` at `ac18acb`.
 
 Delivery strategy: `single-pr` (same reasoning as `background-service-multiday-survival.md`: no PR
-process, local merge to `main`; the work-unit commits carry the review burden). Per `AGENTS.md`,
-**every commit needs the maintainer's explicit confirmation after validation and diff review**.
+process, local merge to `main`; the work-unit commits carry the review burden). The maintainer authorized
+work-unit commits without per-commit confirmation (2026-09-23), after validation and diff review;
+push, merge and release still need confirmation.
 
 TDD: enabled. Source: user `CLAUDE.md` (Strict TDD) and project `AGENTS.md` (RED → GREEN → MUTATE →
 REFACTOR). Runner: `bun run test` (`jest --maxWorkers=4`), focused `bunx jest <path>`. Real gate:
@@ -148,7 +149,7 @@ Checklist:
 
 - [x] T1 (`db66a6f`)
 - [x] T2 (`db66a6f`)
-- [ ] T3
+- [x] T3
 - [ ] T4
 - [ ] T5
 - [ ] T6
@@ -252,4 +253,33 @@ starts, so the measured cost should stay within 1.5 s. T7 measures it.
   behind the running one, and the reset of `lastState` clobbers the running attempt's stage.
   Pre-existing shape, now reachable: make both per attempt and arm the budget when the worker starts.
 
-Next: T3 + T4.
+### T3 — done
+
+Route: delegated writer (writer trigger: service + runner + plugin + CI guard + tests).
+
+- `SyncEngineRunner`: the presence probe and the cycle run only on `worker`; stage is per attempt.
+  The watchdog stays armed at **enqueue** (the budget covers queue wait + probe + cycle), and a
+  worker that picks up an attempt already abandoned while queued runs neither probe nor cycle. Every
+  settlement path goes through one `settled` compare-and-set. (A first draft armed the watchdog at
+  worker start, following the constraint as originally worded; the parent review rejected it: a
+  parked worker would leave queued attempts unresolved forever and pin the service's in-flight flag.)
+- `SyncForegroundService` (new): `specialUse`, `START_STICKY`, channel `autoreas-sync-foreground-native`
+  with the Notifee copy, one attempt per start command with `requirePresence = true` and
+  `triggerSource = "native_fgs_tick"`, coalesced while one is in flight, partial wake lock per attempt
+  (35 s safety timeout) released on every path. Stable cross-module contract for T4:
+  `expo.modules.syncengine.SyncForegroundService`. It never calls `stopSelf()`.
+- Manifest through `plugins/withAndroidForegroundSync.js`; plugin test and the `release.yml` manifest
+  guard require the new service. Notifee's declaration untouched (T5).
+
+Evidence: Kotlin 21 tests green (9 presence, 7 runner, 5 service); both release compiles
+`BUILD SUCCESSFUL`; plugin Jest 7/7; lefthook pre-commit pass (185 suites / 1417 tests). RED
+observed against the rejected draft; mutations: removing the queued-skip guard runs the zombie cycle
+(`expected:<[abandoned]> but was:<[abandoned, checked, not_applicable]>`); removing coalescing, wake
+lock release, in-flight reset or `startForeground` each fails its test.
+
+**Harness finding:** Robolectric's PAUSED looper uses a virtual clock; `postDelayed` on the
+watchdog's background looper fires only with `ShadowSystemClock.advanceBy(...)` plus
+`shadowOf(looper).idleFor(...)`. Real sleeps never fire it. Applies to any future test of the
+`abandoned` path (Kotlin test debt).
+
+Next: T4.
