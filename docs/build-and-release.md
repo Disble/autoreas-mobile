@@ -110,6 +110,40 @@ it attaches to the local bundler.
 - the managed prebuild sets Gradle JVM memory to `-Xmx2g` with a `1g` metaspace limit through
   `plugins/withAndroidGradleMemory.js`; no generated `android/` project is tracked
 
+**Build time and the Docker-only speed-ups**
+
+Measured on 2026-09-23 (`lab` profile, 20 CPUs / ~15.5 GB for Docker, warm Bun and Gradle volumes):
+
+| Setup | Total | Gradle |
+|---|---|---|
+| Before (four ABIs, lintVital, no build cache) | 10 m 15 s | 8 m 55 s, 1108 tasks executed |
+| First build with the speed-ups (empty build cache) | 5 m 26 s | 4 m 13 s |
+| Later builds (warm build cache) | 4 m 25 s | 3 m 8 s, 400 of 1044 tasks from cache |
+
+Gradle is ~90 % of the build; everything else (EAS setup, install, prebuild, JS bundle) is about a
+minute. The speed-ups live only in the Docker path, so the CI release build (`release.yml`, which
+runs `eas build --local` on the runner) still produces the universal APK:
+
+- **One ABI.** `ORG_GRADLE_PROJECT_reactNativeArchitectures` builds native code for `arm64-v8a`
+  only (the test tablet). For a universal APK:
+  `AUTOREAS_ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64 docker compose -f docker-compose.eas.yml run --rm eas-build`.
+  (`expo-updates` ignores the filter and still builds its small library for every ABI.)
+- **Gradle build cache.** `docker/gradle/gradle.properties` is mounted as the Gradle user-home
+  properties with `org.gradle.caching=true`. EAS extracts the project into a fresh directory on
+  every build, so without it nothing is reused between builds.
+- **No lintVital.** `docker/gradle/init.d/skip-lint-vital.init.gradle` disables
+  `lintVitalAnalyzeRelease`; release builds still run it.
+- **No expo-doctor** (`EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1`): it exits 1 on this project and EAS
+  ignores it anyway.
+- **Git worktrees.** `EAS_NO_VCS=1` lets the build run from a worktree, where `.git` is a file
+  pointing at a Windows path the container cannot read. Files are selected by `.easignore`.
+- **`.easignore` excludes `/android/`, `/ios/` and `build-*.apk`.** A host `npx expo prebuild`
+  output and previous local APKs (~140 MB each) are never uploaded into the build; EAS runs its own
+  prebuild as for any managed project.
+
+A build whose three attempts all fail now exits non-zero with `--- Build FAILED after 3 attempts.
+No APK was produced. ---`; before, it printed "Build complete" and exited 0.
+
 ### Option 3 — remote preview build
 
 ```bash

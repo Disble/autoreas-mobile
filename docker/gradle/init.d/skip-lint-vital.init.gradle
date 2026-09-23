@@ -1,0 +1,14 @@
+// Gradle init script for the local Docker APK build ONLY.
+//
+// docker-compose.eas.yml mounts this directory at /root/.gradle/init.d, where Gradle applies every
+// script automatically. CI (release.yml) never runs in this container, so release builds keep
+// their lintVital checks.
+//
+// lintVitalAnalyzeRelease runs in every module of a release build and was among the slowest
+// tasks of the baseline (up to 34.5 s per module). A local test APK does not need it: the same
+// sources are linted by the release build before anything ships.
+allprojects {
+  tasks.matching { it.name.startsWith('lintVital') }.configureEach {
+    enabled = false
+  }
+}

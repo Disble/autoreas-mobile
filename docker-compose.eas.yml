@@ -19,6 +19,12 @@ services:
       # Cache Gradle downloads and build outputs (~1-2GB, only downloaded once)
       - gradle_cache:/root/.gradle
 
+      # Docker-only Gradle speed-ups, layered over the cache volume (see the files for why):
+      # the build cache switch and an init script that skips lintVital. Read-only; CI never
+      # mounts them, so release builds are unaffected.
+      - ./docker/gradle/gradle.properties:/root/.gradle/gradle.properties:ro
+      - ./docker/gradle/init.d:/root/.gradle/init.d:ro
+
       # Cache Android SDK extras (avoids re-downloading NDK components)
       - android_cache:/root/.android
 
@@ -50,6 +56,16 @@ services:
       # hooks, `CI=true bun install` does not. See ARCHITECTURE.md "Hook installation is
       # host-owned".
       - CI=true
+      # Build native code for the test device's ABI only (the tablet is arm64-v8a). Gradle
+      # reads ORG_GRADLE_PROJECT_* as project properties that override android/gradle.properties,
+      # so CMake runs for one ABI instead of four. For a universal APK, run with
+      # AUTOREAS_ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64.
+      - ORG_GRADLE_PROJECT_reactNativeArchitectures=${AUTOREAS_ANDROID_ABIS:-arm64-v8a}
+      # expo-doctor exits 1 on this project and EAS ignores it anyway; skipping saves ~6 s.
+      - EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1
+      # Select files from .easignore without Git. Required from a Git worktree, where `.git` is a
+      # file pointing at a Windows path the container cannot resolve.
+      - EAS_NO_VCS=1
       - _JAVA_OPTIONS=-Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2,TLSv1.3 -Djdk.tls.client.protocols=TLSv1.2,TLSv1.3
 
     # Load all env vars from .env.local (Supabase keys, Firebase paths, EXPO_TOKEN, etc.)
@@ -63,11 +79,13 @@ services:
         echo '--- Installing dependencies ---' &&
         bun install --frozen-lockfile &&
         echo '--- Starting EAS local build ---' &&
+        ok=0 &&
         for attempt in 1 2 3; do
-          bunx eas-cli@latest build --local --platform android --profile $${0:-preview} --non-interactive && break
-          echo \"--- Attempt $$attempt failed, retrying in 5s... ---\" &&
-          sleep 5
-        done &&
+          if bunx eas-cli@latest build --local --platform android --profile $${0:-preview} --non-interactive; then ok=1; break; fi
+          echo \"--- Attempt $$attempt failed ---\"
+          [ $$attempt -lt 3 ] && sleep 5
+        done;
+        if [ $$ok -ne 1 ]; then echo '--- Build FAILED after 3 attempts. No APK was produced. ---'; exit 1; fi;
         echo '--- Build complete. APK is in your project folder. ---'
       "
     command: preview
