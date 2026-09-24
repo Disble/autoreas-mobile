@@ -153,7 +153,7 @@ Checklist:
 - [x] T4
 - [x] T5
 - [x] T6
-- [ ] T7
+- [ ] T7 (steps 1–4 pass; 24 h pending)
 - [ ] T8
 
 ## Acceptance (T7, on device)
@@ -379,4 +379,20 @@ Both side worktrees merged into this branch and removed:
   11 ticker), 181 suites / 1385 Jest tests, full pre-commit gate including the `native` job.
   Its document: `odd/tasks/kotlin-native-test-debt.md`.
 
-Next: finish T7 (unlocked app open, bridge-down run, 24 h), then T8.
+### T7 — second device run on the consolidated branch (2026-09-23, `1ce9bf0`)
+
+New `lab` APK built with the fast Docker path (~5 min, `lib/arm64-v8a/` only), installed over the
+previous lab build.
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 2 | Death without force-stop, back without opening the app | **PASS** (third time) | The install killed the process; 47 s later `Background started FGS: Allowed` and a `closed` attempt in 241 ms. |
+| 1 | App open: JS takes the service over | **PASS** | Unlocking with the app on top recreated the service from the foreground (`createdFromFg=true`, new `ServiceRecord`, same pid); notification on `autoreas-sync-foreground-native`; the alarm stayed armed and the next tick closed in 48 ms. No JS errors. |
+| 4 | Bridge down: refused, no claim, < 2 s | **PASS** | Bridge process stopped on the PC; Windows dropped the SYN, so the tablet saw the PC-off case: `presence refused (reason='SocketTimeoutException', elapsedMs=1527)`, `outcome='not_applicable' stage='idle'`, zero journal lines. Bridge restarted: next tick `closed` in 89 ms. |
+| 3 | Pending operations synced | PASS (first run) | Not repeated: no pending operations existed. |
+| 5 | 24 h | **deferred** | Maintainer decision: a later session. |
+
+Follow-up (minor): every refused tick logs the full `SocketTimeoutException` stack trace at WARN; with
+the PC off overnight that is ~500 traces. Log one line instead.
+
+Next: T7 step 5 (24 h) in a later session, then T8 (release, maintainer confirms any push).
