@@ -200,7 +200,7 @@ Do not mistake a local APK for a release artifact. They differ on purpose:
 | `expo-doctor` | Disabled | Not disabled (also ignored by EAS either way) |
 | EAS eager JS bundle | Runs (measured: skipping it saves nothing, see the logbook) | Runs |
 | Output | `dist/android/autoreas-mobile-<version>-<profile>-<abis>-<timestamp>[-g<commit>].apk` | `autoreas-mobile-<version>-android.apk` on the GitHub Release |
-| Kotlin unit tests + lint | Pre-commit hook only (`native` job, when `modules/*/android/**` is staged) | CI `guard` job, every push of a release tag |
+| Kotlin unit tests + lint | Pre-commit hook only (`native` job, when `modules/*/android/**` is staged; tests only, no lint) | CI's own `native` job (tests + lint, one Gradle invocation), in parallel with the release build, skipped outright when nothing native changed since the previous release tag |
 | JS lint / typecheck / tests | Pre-commit hook | CI `guard` job |
 | eas-cli version | Floats on `@latest` | Pinned (`eas-cli@23.2.0` at the time of writing) |
 | Signing | EAS-managed remote keystore (same as CI) | EAS-managed remote keystore |

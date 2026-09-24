@@ -23,9 +23,31 @@ const MODULE_INPUT_BASENAMES = ['expo-module.config.json', 'android/build.gradle
  *  Not exported: only `buildGradleTestArgs` below needs it. */
 const GRADLE_TEST_TASKS = [':sync-engine:testDebugUnitTest', ':foreground-sync-ticker:testDebugUnitTest'];
 
-/** Builds the full Gradle argv (task paths plus flags) for the unit-test invocation. */
-export function buildGradleTestArgs() {
-  return [...GRADLE_TEST_TASKS, '--console=plain'];
+/** Android lint task targets for the same two modules (C3), in `./gradlew` task-path form.
+ *  Not exported: only `buildGradleTestArgs` below needs it. `lintDebug`, not `lintVital`: the
+ *  release build already runs `lintVitalAnalyzeRelease` for every module, so this only needs the
+ *  full debug lint ruleset lintVital's fatal-only subset does not cover (see
+ *  .github/workflows/release.yml's own comment on the equivalent step for the full reasoning). */
+const GRADLE_LINT_TASKS = [':sync-engine:lintDebug', ':foreground-sync-ticker:lintDebug'];
+
+/**
+ * Builds the full Gradle argv (task paths plus flags) for the unit-test invocation. Passing
+ * `withLint: true` (C3) appends the Android lint tasks for the same two modules so both run in
+ * ONE Gradle invocation -- one configuration phase, one daemon -- instead of the test run and a
+ * separate `./gradlew :sync-engine:lintDebug :foreground-sync-ticker:lintDebug` afterwards.
+ *
+ * `--build-cache` (C1) turns on Gradle's build cache for this invocation only (equivalent to
+ * `org.gradle.caching=true`, scoped to just this command line, never written to a shared
+ * `gradle.properties`): CI backs it with `gradle/actions/setup-gradle`'s GitHub Actions cache,
+ * and a local run without that action still gets the default `~/.gradle` build-cache directory.
+ * Always on, whether this runs from `.github/workflows/release.yml`'s `native` job or lefthook's
+ * local `native` pre-commit job (lefthook.yml) -- both run the same debug-variant tests/lint that
+ * ship in no release artifact, so reusing their cached task outputs carries no release-reproducibility
+ * risk, unlike the release build's own Gradle invocation, which never receives this flag.
+ */
+export function buildGradleTestArgs({ withLint = false } = {}) {
+  const tasks = withLint ? [...GRADLE_TEST_TASKS, ...GRADLE_LINT_TASKS] : [...GRADLE_TEST_TASKS];
+  return [...tasks, '--build-cache', '--console=plain'];
 }
 
 /**

@@ -60,10 +60,22 @@ const { buildGradleTestArgs, decidePrebuildStatus, describeMissingToolchain, has
   loadKotlinTestsModule();
 
 describe('buildGradleTestArgs', () => {
-  it('runs both modules with --console=plain', () => {
+  it('runs both modules with the build cache on and --console=plain, lint tasks omitted by default', () => {
     expect(buildGradleTestArgs()).toEqual([
       ':sync-engine:testDebugUnitTest',
       ':foreground-sync-ticker:testDebugUnitTest',
+      '--build-cache',
+      '--console=plain',
+    ]);
+  });
+
+  it('appends both modules\' lintDebug tasks, in the SAME invocation, when withLint is true (C3)', () => {
+    expect(buildGradleTestArgs({ withLint: true })).toEqual([
+      ':sync-engine:testDebugUnitTest',
+      ':foreground-sync-ticker:testDebugUnitTest',
+      ':sync-engine:lintDebug',
+      ':foreground-sync-ticker:lintDebug',
+      '--build-cache',
       '--console=plain',
     ]);
   });

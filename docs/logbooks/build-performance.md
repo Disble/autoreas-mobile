@@ -92,3 +92,40 @@ Maven dependency is resolved from scratch, separately in `guard` and in the buil
 starts 54 s in; summed task time is 1240 s against 1607 s of wall time, so a 4-vCPU runner barely
 parallelises; the last ~6 minutes are the app's CMake builds for `armeabi-v7a`, `x86` and `x86_64`,
 one after the other; `lintVital` accounts for 244 s of task time.
+
+### Pending measurement — C1 + C2 + C3 + C7, next real release (v1.6.1)
+
+No CI run exists yet for C1–C3 and C7 (`.github/workflows/release.yml`); the maintainer decided
+CI changes are measured on the next real release, not with extra dry runs (see
+`odd/tasks/build-resource-optimization.md`, T3). **v1.6.1 must record:**
+
+- **Job DAG (C7):** whether `guard` now finishes in about a minute (the Kotlin gate moved out of
+  it), the wall-clock overlap between the new parallel `native` and `build` jobs, and whether
+  `publish` correctly waited on both and ran once `build` succeeded and `native` either succeeded
+  or was skipped.
+- **C2 decision:** the `native` output `guard` reported (`run`/`skip`) and why (the tag compared
+  against, and whether any watched path matched). `app.json`/`package.json`'s version bump alone no
+  longer forces `run`: `scripts/lib/release-native-gate.mjs`'s version-aware exemption
+  (`isVersionBumpOnlyDiff`) already reports `skip` for three real past ranges with no other
+  native-relevant change (`v1.0.1..v1.1.0`, `v1.2.1..v1.2.2`, `v1.4.0..v1.4.1`) — whether v1.6.1
+  itself gets `run` or `skip` now depends on whether v1.6.1 touches anything under the watched-path
+  list besides the version bump, not on the version bump itself.
+- **C1 caching:** the `native` and `build` jobs' own Gradle summaries (`from cache` counts, whether
+  `setup-gradle`'s job summary reports a cache hit) compared to C4's zero-reuse baseline; whether
+  `cache-provider: basic` actually persisted a GitHub Actions cache entry across this run and the
+  next one.
+- **C3 merge:** `native`'s single Gradle invocation time (test + lint together) against C4's
+  283 s + 208 s serial baseline.
+- **Rows to compare against C4:** `guard` total, `native` total (new), `build`/release-build total,
+  `publish` total, and the workflow's overall wall clock from tag push to published release.
+
+Local evidence gathered instead (this repo, JDK 21 via Android Studio's bundled JBR, warm
+`android/` project already prebuilt): `bun run test:kotlin` (no lint) — `BUILD SUCCESSFUL in 18s`,
+`138 actionable tasks: 1 executed, 137 up-to-date`; `bun run test:kotlin -- --with-lint`, first run
+after lint had never run locally — `BUILD SUCCESSFUL in 5m 15s`, `244 actionable tasks: 104
+executed, 3 from cache, 137 up-to-date`; the same command run again immediately after — `BUILD
+SUCCESSFUL in 1m 2s`, `244 actionable tasks: 21 executed, 223 up-to-date`. All three are one Gradle
+invocation each (C3): the lint tasks (`:sync-engine:lintDebug`, `:foreground-sync-ticker:lintDebug`)
+ran alongside `testDebugUnitTest` for both modules in the same `BUILD SUCCESSFUL`, never a second
+invocation. These numbers are local-machine, warm-cache signal only — not a substitute for the
+CI row above, which needs a real cold runner and the shared GitHub Actions cache.

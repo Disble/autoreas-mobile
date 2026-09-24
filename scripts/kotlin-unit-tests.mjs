@@ -144,7 +144,15 @@ function exitForGradleResult(wrapperPath, result) {
   process.exit(result.status ?? 1);
 }
 
-/** Runs the Gradle unit-test command for both modules with the platform-correct wrapper, streaming output. */
+/** True when `--with-lint` was passed on the CLI (C3): runs the Android lint tasks for
+ *  `sync-engine` and `foreground-sync-ticker` in the same Gradle invocation as the unit tests.
+ *  `bun run test:kotlin -- --with-lint` forwards this the same way npm scripts do. */
+function withLintRequested() {
+  return process.argv.includes('--with-lint');
+}
+
+/** Runs the Gradle unit-test (and, with `--with-lint`, lint) command for both modules with the
+ *  platform-correct wrapper, streaming output. */
 function runGradleTests() {
   const missing = describeMissingToolchain({ hasJava: hasUsableJava(), hasAndroidSdk: hasUsableAndroidSdk() });
   if (missing.length > 0) {
@@ -155,7 +163,8 @@ function runGradleTests() {
   // Resolved to an absolute path: cmd.exe's search order for a bare `gradlew.bat` depends on how
   // the shell was invoked, and an absolute path removes the ambiguity on every platform.
   const wrapperPath = path.join(androidDir, executable);
-  const result = spawnSync(wrapperPath, buildGradleTestArgs(), { cwd: androidDir, stdio: 'inherit', shell: useShell });
+  const args = buildGradleTestArgs({ withLint: withLintRequested() });
+  const result = spawnSync(wrapperPath, args, { cwd: androidDir, stdio: 'inherit', shell: useShell });
   exitForGradleResult(wrapperPath, result);
 }
 
