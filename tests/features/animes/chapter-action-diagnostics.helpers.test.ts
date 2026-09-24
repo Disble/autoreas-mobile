@@ -14,6 +14,38 @@ import type {
   ChapterActionSyncOutcome,
 } from '../../../src/features/animes/chapter-action-diagnostics.types';
 
+/**
+ * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
+ *
+ * The bridge does not declare this kind yet, so every payload-contract case below -- the privacy
+ * allowlist, the closed vocabulary, the phase-specific fields, the shared correlation id -- would
+ * otherwise have no payload left to assert on, and the builder that the bridge will start reading
+ * the day the registry flips would sit unguarded until then. Stubbing the DECISION keeps those
+ * assertions driving the real builder, while the case that pins today's registry (the last one in
+ * this file) re-arms the real decision and proves the recorder obeys it.
+ */
+jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => {
+  const actual = jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  };
+
+  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
+});
+
+/** The acceptance decision as it actually ships, read from the real module this file replaces. */
+const actualIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
+/** The stub of that decision which the recorder actually consults in this suite. */
+const mockIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireMock('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    isSyncDiagnosticsPayloadAccepted: jest.Mock;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
 /** A store that keeps what the recorder persisted, so a case can read the wire payload itself. */
 type CapturingStore = Pick<SyncDiagnosticsOutboxStore, 'enqueue'> & {
   readonly entries: SyncDiagnosticsOutboxEntry[];
@@ -40,6 +72,13 @@ function parsePayload(entry: SyncDiagnosticsOutboxEntry): Record<string, unknown
 const fixedNow = 1710000000000;
 
 describe('chapter action diagnostics', () => {
+  beforeEach(() => {
+    // Re-armed for every case: `jest.restoreAllMocks` would otherwise leave the stub answering
+    // `undefined`, and the gate case's real decision must not leak into the payload cases. The
+    // bridge-accepts-this-kind world is what keeps the payload assertions below meaningful.
+    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
+  });
+
   it('records one received observation naming the wire action', () => {
     const store = createCapturingStore();
 
@@ -187,5 +226,91 @@ describe('chapter action diagnostics', () => {
     expect(() =>
       beginChapterAction('capPlus', { store, now: () => fixedNow, generateId: () => 'a' }),
     ).not.toThrow();
+  });
+
+  it('enqueues nothing at all for an action whose switch is off', () => {
+    // The declared contract (database.schema.ts:113-115) is "stops the payload from being built
+    // or sent at all": no phase may survive the switch, not even the receipt that carries no
+    // anime identity -- a queued row is a row that will be POSTed later.
+    const store = createCapturingStore();
+    const params = {
+      store,
+      now: () => fixedNow,
+      generateId: () => 'obs',
+      isTelemetryEnabled: false,
+    };
+
+    const context = beginChapterAction('capPlus', params);
+    recordChapterActionCommitted(context, params);
+    recordChapterActionSkipped(context, 'anime_missing', params);
+    recordChapterActionFailed(context, new Error('database is locked'), params);
+    recordChapterActionSync(context, 'ok', params);
+
+    expect(store.entries).toHaveLength(0);
+  });
+
+  it('records exactly the same phases as before when the switch is explicitly on', () => {
+    const store = createCapturingStore();
+    const params = {
+      store,
+      now: () => fixedNow,
+      generateId: () => 'obs',
+      isTelemetryEnabled: true,
+    };
+
+    const context = beginChapterAction('capMinus', params);
+    recordChapterActionSync(context, 'failed', params);
+
+    expect(store.entries).toHaveLength(2);
+    expect(parsePayload(store.entries[0]).phase).toBe('received');
+    expect(parsePayload(store.entries[1])).toMatchObject({ phase: 'sync', outcome: 'failed' });
+  });
+
+  it('resolves the switch once per action, so a later phase cannot resurrect a muted action', () => {
+    const store = createCapturingStore();
+
+    const context = beginChapterAction('capPlusHalf', {
+      store,
+      now: () => fixedNow,
+      generateId: () => 'obs',
+      isTelemetryEnabled: false,
+    });
+    recordChapterActionCommitted(context, {
+      store,
+      now: () => fixedNow + 10,
+      generateId: () => 'obs-later',
+      isTelemetryEnabled: true,
+    });
+
+    expect(store.entries).toHaveLength(0);
+  });
+
+  it('treats an absent switch value as enabled, mirroring the persisted-preference default', () => {
+    const store = createCapturingStore();
+
+    beginChapterAction('capPlus', { store, now: () => fixedNow, generateId: () => 'obs' });
+
+    expect(store.entries).toHaveLength(1);
+  });
+
+  it('enqueues nothing for any phase while the bridge does not accept the chapter kind', () => {
+    // The bridge strict-decodes this endpoint with `DisallowUnknownFields()` and answers 400 for a
+    // `kind` it does not declare, and the flush reads 400 as "this body is malformed forever" and
+    // deletes the row. So the recorder must not create one in the first place: with the registry
+    // as it ships, EVERY phase is silent -- the receipt, the skip, the commit, the failure and the
+    // post-write sync outcome. The action still opens and still carries its correlation id, because
+    // the mutation path depends on that context whether or not anything is being recorded.
+    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+    const store = createCapturingStore();
+    const params = { store, now: () => fixedNow, generateId: () => 'obs' };
+
+    const context = beginChapterAction('capPlus', params);
+    recordChapterActionCommitted(context, params);
+    recordChapterActionSkipped(context, 'anime_missing', params);
+    recordChapterActionFailed(context, new Error('database is locked'), params);
+    recordChapterActionSync(context, 'ok', params);
+
+    expect(store.entries).toHaveLength(0);
+    expect(context.correlationId).toBe('obs');
   });
 });

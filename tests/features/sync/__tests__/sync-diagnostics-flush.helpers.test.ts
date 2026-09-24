@@ -1,6 +1,7 @@
 import {
   captureSyncDiagnosticsEnvelope,
   flushSyncDiagnosticsOutbox,
+  isSyncDiagnosticsPayloadAccepted,
 } from '../../../../src/features/sync/sync-diagnostics-flush.helpers';
 import { SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS } from '../../../../src/features/sync/sync-diagnostics-flush.constants';
 import type { WireSyncCycleTelemetry } from '../../../../src/features/sync/sync-telemetry.types';
@@ -50,6 +51,20 @@ function buildRecord(
   };
 }
 
+/**
+ * One stored chapter observation: a body whose `kind` the bridge does not declare, so the bridge
+ * answers 400 for it -- and this flush reads 400 as "this envelope is malformed forever" and
+ * deletes the row. A device that ran a build from before the recorder was gated still holds rows
+ * exactly like this one, and they must never be POSTed again.
+ */
+const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify({
+  kind: 'chapter_action',
+  action: 'cap_plus',
+  phase: 'received',
+  at: 1_000,
+  correlation_id: 'corr-1',
+});
+
 /** Builds a bridge HTTP result double for one disposition. */
 function buildResult(overrides: Partial<BridgeHttpResult> = {}): BridgeHttpResult {
   return {
@@ -89,6 +104,22 @@ describe('captureSyncDiagnosticsEnvelope', () => {
     captureSyncDiagnosticsEnvelope(null, { store });
 
     expect(store.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('isSyncDiagnosticsPayloadAccepted', () => {
+  it('accepts the kindless legacy cycle envelope, the one kind the registry still carries', () => {
+    expect(isSyncDiagnosticsPayloadAccepted(WIRE)).toBe(true);
+  });
+
+  it('refuses a body that declares a kind the bridge does not accept', () => {
+    expect(isSyncDiagnosticsPayloadAccepted(JSON.parse(UNROUTABLE_CHAPTER_PAYLOAD))).toBe(false);
+  });
+
+  it('refuses a body that is not an object at all, instead of guessing a kind for it', () => {
+    expect(isSyncDiagnosticsPayloadAccepted(null)).toBe(false);
+    expect(isSyncDiagnosticsPayloadAccepted([])).toBe(false);
+    expect(isSyncDiagnosticsPayloadAccepted('chapter_action')).toBe(false);
   });
 });
 
@@ -230,6 +261,64 @@ describe('flushSyncDiagnosticsOutbox', () => {
     },
   );
 
+  it('leaves an unroutable body in place and still delivers the routable envelope behind it', async () => {
+    // The row a pre-fix build queued, which the bridge answers 400 for: POSTing it buys the same
+    // rejection and the row is deleted. So it is SKIPPED -- not removed, not discarded -- and the
+    // batch keeps going, because stopping here would starve the deliverable cycle envelope queued
+    // behind it. The price is the batch slot: `readFlushCandidates` handed back two candidates
+    // and only one POST was issued, which is why the RECORDER gate, not this one, is the primary
+    // fix -- a skipped row stays at the head of the queue and is re-read by every later pass.
+    const unroutable = buildRecord({ cycleId: 'chapter-1', payload: UNROUTABLE_CHAPTER_PAYLOAD });
+    const routable = buildRecord({ cycleId: 'cycle-2' });
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue([unroutable, routable]),
+    });
+    const postSyncDiagnostics = jest
+      .fn()
+      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
+    const client = { postSyncDiagnostics };
+
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+
+    // The chapter body is never asked about, never deleted, and never deferred.
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(postSyncDiagnostics).toHaveBeenCalledWith(
+      CONNECTION,
+      WIRE,
+      expect.objectContaining({ timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS }),
+    );
+    expect(store.remove).toHaveBeenCalledWith('cycle-2');
+    expect(store.remove).not.toHaveBeenCalledWith('chapter-1');
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+  });
+
+  it('skips every unroutable body ahead of a routable one instead of stopping at the first', async () => {
+    const firstUnroutable = buildRecord({
+      cycleId: 'chapter-1',
+      payload: UNROUTABLE_CHAPTER_PAYLOAD,
+    });
+    const secondUnroutable = buildRecord({
+      cycleId: 'chapter-2',
+      payload: JSON.stringify({ kind: 'chapter_action', phase: 'sync', outcome: 'ok' }),
+    });
+    const routable = buildRecord({ cycleId: 'cycle-3' });
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue([firstUnroutable, secondUnroutable, routable]),
+    });
+    const postSyncDiagnostics = jest
+      .fn()
+      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
+    const client = { postSyncDiagnostics };
+
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).toHaveBeenCalledTimes(1);
+    expect(store.remove).toHaveBeenCalledWith('cycle-3');
+    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+  });
+
   it.each([408, 429, 500, 503])(
     'leaves the row queued and stops the batch on a %d',
     async (status) => {
@@ -280,5 +369,85 @@ describe('flushSyncDiagnosticsOutbox', () => {
     await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
 
     expect(store.deferUntil).not.toHaveBeenCalled();
+  });
+
+  it('performs no POST, no candidate read, no remove and no deferUntil while the switch is off', async () => {
+    // The declared contract of the switch (database.schema.ts:113-115) is that turning it off
+    // stops the payload being built or sent AT ALL. Gating only capture would leave every row
+    // queued before the switch was flipped draining to the bridge afterwards.
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue([buildRecord({ cycleId: 'cycle-1' })]),
+    });
+    const client = { postSyncDiagnostics: jest.fn().mockResolvedValue(buildResult()) };
+
+    const result = await flushSyncDiagnosticsOutbox({
+      connection: CONNECTION,
+      store,
+      client,
+      config: { isSyncTelemetryEnabled: false },
+    });
+
+    expect(client.postSyncDiagnostics).not.toHaveBeenCalled();
+    // Not merely "no eligible candidate": the pass must not even look at the outbox.
+    expect(store.readFlushCandidates).not.toHaveBeenCalled();
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 });
+  });
+
+  it('leaves the queued rows untouched while off, and delivers them once the switch is back on', async () => {
+    const pending = [buildRecord({ cycleId: 'cycle-1' })];
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue(pending),
+    });
+    const postSyncDiagnostics = jest
+      .fn()
+      .mockResolvedValue(buildResult({ ok: true, status: 200 }));
+    const client = { postSyncDiagnostics };
+
+    await flushSyncDiagnosticsOutbox({
+      connection: CONNECTION,
+      store,
+      client,
+      config: { isSyncTelemetryEnabled: false },
+    });
+
+    // The switch is per-pass: no row is deleted or deferred because it is off, so the SAME
+    // candidates are eligible again under the pre-existing rules the moment it comes back on.
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(store.deferUntil).not.toHaveBeenCalled();
+
+    const result = await flushSyncDiagnosticsOutbox({
+      connection: CONNECTION,
+      store,
+      client,
+      config: { isSyncTelemetryEnabled: true },
+    });
+
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).toHaveBeenCalledWith('cycle-1');
+    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+  });
+
+  it('behaves exactly as today when the switch is on', async () => {
+    const store = buildFakeStore({
+      readFlushCandidates: jest.fn().mockReturnValue([buildRecord({ cycleId: 'cycle-1' })]),
+    });
+    const postSyncDiagnostics = jest
+      .fn()
+      .mockResolvedValue(buildResult({ ok: true, status: 200 }));
+    const client = { postSyncDiagnostics };
+
+    const result = await flushSyncDiagnosticsOutbox({
+      connection: CONNECTION,
+      store,
+      client,
+      config: { isSyncTelemetryEnabled: true },
+    });
+
+    expect(store.readFlushCandidates).toHaveBeenCalledTimes(1);
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).toHaveBeenCalledWith('cycle-1');
+    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
   });
 });

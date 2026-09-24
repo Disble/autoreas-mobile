@@ -50,10 +50,21 @@ export interface ChapterActionContext {
   readonly action: ChapterActionLabel;
   readonly correlationId: string;
   readonly startedAt: number;
+  /**
+   * The user's telemetry preference, resolved ONCE when the action was opened and carried by the
+   * context from then on.
+   *
+   * On the context rather than re-read per phase because the switch is a per-action decision, not
+   * a per-observation one: a tap that started while the user had telemetry off must not emit its
+   * later phases if the switch is flipped mid-action, and a tap that started while it was on must
+   * not lose them. One resolution also means the flag cannot disagree with itself between the
+   * phases of a single gesture.
+   */
+  readonly isTelemetryEnabled: boolean;
 }
 
 /**
- * Collaborators the recorder resolves per call. All three default to their production values and
+ * Collaborators the recorder resolves per call. All of them default to their production values and
  * exist so a test can observe the wire payload without a real SQLite file, a real clock, or a
  * random id.
  */
@@ -61,6 +72,13 @@ export interface ChapterActionDiagnosticsParams {
   readonly store?: Pick<SyncDiagnosticsOutboxStore, 'enqueue'>;
   readonly now?: () => number;
   readonly generateId?: () => string;
+  /**
+   * The user's diagnostic-telemetry preference, resolved by the caller that already holds the
+   * bridge-config row. `false` mutes the WHOLE action: no phase reaches the outbox, not even the
+   * receipt, and nothing is built. Injectable so both switch positions are drivable without a
+   * database; absent follows `isSyncTelemetryEnabled`'s nullish rule and means enabled.
+   */
+  readonly isTelemetryEnabled?: boolean;
 }
 
 /**

@@ -22,6 +22,37 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
+ *
+ * The bridge does not declare this kind yet, so the phase, correlation and duration assertions
+ * below would have no observations left to read, and the recorder that the bridge will start
+ * reading the day the registry flips would sit unguarded until then. Stubbing the DECISION keeps
+ * those assertions driving the real mutation path, while the case that pins today's registry (the
+ * last one in this file) re-arms the real decision and proves the whole path obeys it.
+ */
+jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => {
+  const actual = jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  };
+
+  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
+});
+
+/** The acceptance decision as it actually ships, read from the real module this file replaces. */
+const actualIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
+/** The stub of that decision which the recorder actually consults in this suite. */
+const mockIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireMock('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
+    isSyncDiagnosticsPayloadAccepted: jest.Mock;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
 // The recorder resolves this store by default, so replacing it in the module registry is what lets
 // a case read exactly what the mutation path persisted -- no SQLite file, and no assertion on an
 // internal collaborator's call count.
@@ -151,6 +182,10 @@ describe('chapter action diagnostics on the mutation path', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Re-armed for every case: `jest.restoreAllMocks` in `afterEach` wipes the implementation, and
+    // the gate case's real decision must not leak into the payload cases either. The
+    // bridge-accepts-this-kind world is what keeps the phase assertions below meaningful.
+    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
     mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue.mockReset();
     consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Date, 'now').mockReturnValue(now);
@@ -323,5 +358,69 @@ describe('chapter action diagnostics on the mutation path', () => {
     expect(mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue).toHaveBeenCalled();
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.insert).toHaveBeenCalled();
+  });
+
+  it('enqueues nothing for a tap whose switch is off, and still commits the write', async () => {
+    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
+    const txMocks = createTxDbMocks();
+    configureMutationWrite(txMocks.txDb);
+
+    const context = beginChapterAction('capPlus', { isTelemetryEnabled: false });
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlus('anime-1', context);
+      await Promise.resolve();
+    });
+
+    // Zero observations, including the `received` the tap boundary emits and the `sync` the
+    // fire-and-forget push would append: powering the switch off must not leave a partial thread.
+    expect(readPersistedEntries()).toHaveLength(0);
+    // The user's own write is untouched: the switch is a diagnostics flag, never a mutation gate.
+    expect(txMocks.update).toHaveBeenCalledWith(animes);
+    expect(txMocks.insert).toHaveBeenCalled();
+    expect(mockSyncPendingOperations).toHaveBeenCalled();
+  });
+
+  it('enqueues nothing for a tap dropped with no SQLite context while the switch is off', async () => {
+    mockUseSQLiteContext.mockReturnValue(null);
+
+    const context = beginChapterAction('capPlus', { isTelemetryEnabled: false });
+    const { result } = renderHook(() => useMutateAnime());
+
+    let thrown: unknown = undefined;
+    await act(async () => {
+      thrown = await result.current
+        .capPlus('anime-1', context)
+        .then(() => undefined, (error: unknown) => error);
+    });
+
+    expect(readPersistedEntries()).toHaveLength(0);
+    // The missing-database error still crosses this layer untouched.
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe(EXPO_SQLITE_UNAVAILABLE_MESSAGE);
+  });
+
+  it('enqueues nothing for any phase while the bridge does not accept the chapter kind', async () => {
+    // The bridge answers 400 for a `kind` it does not declare and the flush deletes a 400, so the
+    // whole path must stay off the wire: receipt, commit and the post-write sync outcome included.
+    // The mutation itself is never gated by a diagnostics decision.
+    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
+    const txMocks = createTxDbMocks();
+    configureMutationWrite(txMocks.txDb);
+
+    const context = beginChapterAction('capPlus');
+    const { result } = renderHook(() => useMutateAnime());
+
+    await act(async () => {
+      await result.current.capPlus('anime-1', context);
+      await Promise.resolve();
+    });
+
+    expect(readPersistedEntries()).toHaveLength(0);
+    expect(txMocks.update).toHaveBeenCalledWith(animes);
+    expect(txMocks.insert).toHaveBeenCalled();
+    expect(mockSyncPendingOperations).toHaveBeenCalled();
   });
 });

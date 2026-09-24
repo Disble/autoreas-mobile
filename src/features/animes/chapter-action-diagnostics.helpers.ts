@@ -1,7 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import { syncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
+import { isSyncDiagnosticsPayloadAccepted } from '../sync/sync-diagnostics-flush.helpers';
 import { SYNC_CYCLE_ERROR_CAUSES } from '../sync/sync-telemetry.constants';
 import { causeFromError } from '../sync/sync-telemetry.helpers';
+import { isSyncTelemetryEnabled } from '../sync/sync-telemetry-preference.helpers';
 import {
   CHAPTER_ACTION_EVENT_KIND,
   CHAPTER_ACTION_FINISHED_OUTCOMES,
@@ -58,6 +60,20 @@ type ChapterActionWireFields = Partial<
  */
 function generateChapterActionId(): string {
   return Crypto.randomUUID();
+}
+
+/**
+ * Resolves the recorder's gate from the value a caller injected, or from nothing at all.
+ *
+ * Routed through the switch's own predicate rather than a hand-written `?? true`: "absent means
+ * enabled" is a decision with a written rationale (a device that never opened Settings must still
+ * report the failure it hit), and a second copy of that rule here would be a second place for the
+ * two answers to drift apart. It also gives the injected value the predicate's own safety
+ * property: anything that is not an explicit `true` -- garbage a cast let through, a string, a
+ * number -- mutes the channel instead of opening it.
+ */
+function resolveChapterActionTelemetryEnabled(injected: boolean | undefined): boolean {
+  return isSyncTelemetryEnabled({ isSyncTelemetryEnabled: injected });
 }
 
 /**
@@ -262,15 +278,34 @@ function buildWirePayload(
  * the process that produced it. The clock is read once so the payload's `at` and any duration
  * derived from it describe the same instant, and the write is swallowed by contract -- the store
  * already never throws, and instrumentation must never be the reason a user mutation fails.
+ *
+ * Gated FIRST on the action's resolved switch position, before the clock is read and before any
+ * payload is built: while the user's telemetry is off this returns without observing anything, so
+ * no phase of the action can reach the outbox -- not a receipt, not a redacted or partial row.
+ *
+ * Gated LAST on the bridge actually accepting the payload the builder just produced, and never on a
+ * copy of that decision: the diagnostics endpoint strict-decodes its body and answers 400 for a
+ * `kind` it does not declare, while the flush reads a 400 as a permanent rejection and deletes the
+ * row. Writing such a row would be writing something the system is designed to destroy, so with no
+ * accepted kind in the registry this returns before the `enqueue` and every phase stays silent.
+ * The day the bridge ships a kind, the registry entry is the only thing that has to change here.
  */
 function emitChapterAction(
   context: ChapterActionContext,
   observation: ChapterActionObservation,
   params: ChapterActionDiagnosticsParams,
 ): void {
+  if (!context.isTelemetryEnabled) {
+    return;
+  }
+
   const at = (params.now ?? Date.now)();
   const payload = buildWirePayload(context, observation, at);
   if (payload === null) {
+    return;
+  }
+
+  if (!isSyncDiagnosticsPayloadAccepted(payload)) {
     return;
   }
 
@@ -293,7 +328,9 @@ function emitChapterAction(
  * indistinguishable from the device precisely because nothing upstream of this call runs.
  *
  * The correlation id is generated first and shared by every later observation of this action, so
- * two sequential presses stay separable even when their outcomes are identical.
+ * two sequential presses stay separable even when their outcomes are identical. The user's
+ * telemetry preference is resolved here, once, for the same reason: it is a property of the action
+ * this call opens, and every later phase reads it off the context instead of re-deciding.
  */
 export function beginChapterAction(
   action: ChapterActionLabel,
@@ -303,6 +340,7 @@ export function beginChapterAction(
     action,
     correlationId: (params.generateId ?? generateChapterActionId)(),
     startedAt: (params.now ?? Date.now)(),
+    isTelemetryEnabled: resolveChapterActionTelemetryEnabled(params.isTelemetryEnabled),
   };
 
   emitChapterAction(context, { action, phase: 'received' }, params);

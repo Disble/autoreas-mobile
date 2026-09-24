@@ -24,6 +24,19 @@ jest.mock("expo-network", () => ({
   useNetworkState: jest.fn(),
 }));
 
+/**
+ * Stable toast double. The shared bootstrap mock builds a NEW toast object per call, which makes
+ * the screen's callbacks change identity on every render anyway -- and that would hide a missing
+ * dependency entry behind an unrelated re-creation, exactly the stale closure the toggle case
+ * below exists to catch.
+ */
+const mockToast = { show: jest.fn(), hide: jest.fn() };
+
+jest.mock("heroui-native", () => ({
+  useThemeColor: jest.fn(() => ["#000000"]),
+  useToast: jest.fn(() => ({ toast: mockToast, isToastVisible: false })),
+}));
+
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(() => ({ push: jest.fn() })),
 }));
@@ -33,13 +46,7 @@ jest.mock("../../../../src/contexts/app-theme-context", () => ({
 }));
 
 jest.mock("../../../../src/features/settings/use-bridge-config", () => ({
-  useBridgeConfig: jest.fn(() => ({
-    config: { deviceId: "bridge-1" },
-    isConfigured: true,
-    isUnpairing: false,
-    error: null,
-    unpair: jest.fn(),
-  })),
+  useBridgeConfig: jest.fn(() => mockBuildBridgeConfigResult()),
 }));
 
 jest.mock("../../../../src/features/animes/use-mutate-anime", () => ({
@@ -84,6 +91,61 @@ const mockDiagnosticsOutbox = jest.requireMock(
   "../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants",
 ) as { syncDiagnosticsOutboxStore: { enqueue: jest.Mock } };
 
+/**
+ * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
+ *
+ * The bridge does not declare this kind yet, so the phase assertions below would otherwise have no
+ * observations left to read, and the screen-to-recorder wiring the bridge will start reading the
+ * day the registry flips would sit unguarded until then. Stubbing the DECISION keeps those
+ * assertions driving the real callback path, while the last case in this file re-arms the real
+ * decision and proves the production truth: with the registry as it ships, a tap enqueues nothing.
+ */
+jest.mock("../../../../src/features/sync/sync-diagnostics-flush.helpers", () => {
+  const actual = jest.requireActual("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  };
+
+  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
+});
+
+/** The acceptance decision as it actually ships, read from the real module this file replaces. */
+const actualIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireActual("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
+    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
+/** The stub of that decision which the recorder actually consults in this suite. */
+const mockIsSyncDiagnosticsPayloadAccepted = (
+  jest.requireMock("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
+    isSyncDiagnosticsPayloadAccepted: jest.Mock;
+  }
+).isSyncDiagnosticsPayloadAccepted;
+
+/** The mocked bridge-config hook, re-pointed by the cases that exercise the telemetry switch. */
+const { useBridgeConfig: mockUseBridgeConfig } = jest.requireMock(
+  "../../../../src/features/settings/use-bridge-config",
+) as { useBridgeConfig: jest.Mock };
+
+/**
+ * Builds the mocked `useBridgeConfig()` result, i.e. the pairing row the screen reads its
+ * telemetry switch from. The default states NO switch at all: that is the device that never
+ * opened Settings, which the switch's own nullish rule treats as enabled.
+ */
+function mockBuildBridgeConfigResult(
+  config: { deviceId: string; isSyncTelemetryEnabled?: boolean } = {
+    deviceId: "bridge-1",
+  },
+) {
+  return {
+    config,
+    isConfigured: true,
+    isUnpairing: false,
+    error: null,
+    unpair: jest.fn(),
+  };
+}
+
 /** One anime fixture, enough for `useAnimeList` to return a non-empty list. */
 const animeFixture: Anime = {
   _id: "thu-1",
@@ -123,7 +185,11 @@ function parsePayload(entry: SyncDiagnosticsOutboxEntry): Record<string, unknown
 describe("useAnimeListScreen chapter action diagnostics", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Re-armed for every case: the phase cases below run with the kind ACCEPTED (see the mock's own
+    // comment), and the last case installs the real decision for itself only.
+    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
     mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue.mockReset();
+    mockUseBridgeConfig.mockReturnValue(mockBuildBridgeConfigResult());
     (useNetworkState as jest.Mock).mockReturnValue({
       isConnected: true,
       isInternetReachable: true,
@@ -196,5 +262,130 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     expect(droppedSkipped.correlation_id).toBe(droppedReceived.correlation_id);
     expect(droppedReceived.correlation_id).not.toBe(firstReceived.correlation_id);
     expect(new Set(entries.map((entry) => entry.cycleId)).size).toBe(3);
+  });
+
+  it("persists the same phases as before when the switch is explicitly on", async () => {
+    mockUseBridgeConfig.mockReturnValue(
+      mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: true }),
+    );
+    mockCapPlus.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    const entries = readPersistedEntries();
+    expect(entries).toHaveLength(1);
+    expect(parsePayload(entries[0])).toEqual({
+      kind: "chapter_action",
+      action: "cap_plus",
+      phase: "received",
+      at: expect.any(Number),
+      correlation_id: expect.any(String),
+    });
+  });
+
+  it("persists nothing for a tap while the switch is off, and still runs the mutation", async () => {
+    mockUseBridgeConfig.mockReturnValue(
+      mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: false }),
+    );
+    mockCapPlus.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    // Not even the receipt: the tap boundary itself must be muted, since a row queued here would
+    // be POSTed later by the flush once the switch came back on.
+    expect(readPersistedEntries()).toHaveLength(0);
+    // The switch gates telemetry only -- the user's own write still happened.
+    expect(mockCapPlus).toHaveBeenCalledWith(
+      "thu-1",
+      expect.objectContaining({ action: "capPlus", correlationId: expect.any(String) }),
+    );
+  });
+
+  it("persists nothing for a repeat tap dropped in flight while the switch is off", async () => {
+    mockUseBridgeConfig.mockReturnValue(
+      mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: false }),
+    );
+    let releaseFirstTap!: () => void;
+    mockCapPlus.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirstTap = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    let firstTap: Promise<void>;
+    let droppedTap: Promise<void>;
+    await act(async () => {
+      firstTap = result.current.handleCapPlus("thu-1");
+      droppedTap = result.current.handleCapPlus("thu-1");
+    });
+
+    await act(async () => {
+      releaseFirstTap();
+      await Promise.all([firstTap, droppedTap]);
+    });
+
+    // Both boundary calls are gated: the dropped repeat's `skipped/in_flight` is as muted as the
+    // receipt of the tap it dropped.
+    expect(mockCapPlus).toHaveBeenCalledTimes(1);
+    expect(readPersistedEntries()).toHaveLength(0);
+  });
+
+  it("honours a switch turned off while the screen stays mounted", async () => {
+    // Mounted with the switch ON, so the tap boundary's callback exists before the toggle.
+    mockUseBridgeConfig.mockReturnValue(
+      mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: true }),
+    );
+    mockCapPlus.mockResolvedValue(undefined);
+
+    const { result, rerender } = renderHook(() => useAnimeListScreen({}), {
+      initialProps: { tick: 0 },
+    });
+
+    // The user flips it off in Settings; this screen re-renders with the new row, exactly as a
+    // live query would deliver it.
+    mockUseBridgeConfig.mockReturnValue(
+      mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: false }),
+    );
+    rerender({ tick: 1 });
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    // A callback that closed over the pre-toggle value would still enqueue here.
+    expect(readPersistedEntries()).toHaveLength(0);
+  });
+
+  it("enqueues nothing for a tap while the bridge does not accept the chapter kind", async () => {
+    // The production truth of this suite, asserted with the REAL registry instead of the stub
+    // above: the bridge answers 400 for a `kind` it does not declare and the flush deletes a 400,
+    // so the tap boundary must stay entirely off the wire. The mutation itself is untouched.
+    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+    mockCapPlus.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    await act(async () => {
+      await result.current.handleCapPlus("thu-1");
+    });
+
+    expect(readPersistedEntries()).toHaveLength(0);
+    // The user's own write still happened: this gate is a diagnostics decision, never a gate on
+    // the mutation the button was pressed for.
+    expect(mockCapPlus).toHaveBeenCalledWith(
+      "thu-1",
+      expect.objectContaining({ action: "capPlus", correlationId: expect.any(String) }),
+    );
   });
 });
