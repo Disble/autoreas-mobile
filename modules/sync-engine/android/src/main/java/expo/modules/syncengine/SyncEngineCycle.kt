@@ -66,9 +66,13 @@ data class CycleOutcome(
  * semantics each step's TypeScript reference defines. Differences are deliberate and named:
  * - the no-config case returns `not_applicable` instead of throwing (a background attempt is a
  *   probe, not a user-facing failure);
- * - the conflict-exhaustion policy (attempt caps and the token re-base), the diagnostics flush
- *   (`POST /api/sync/diagnostics`) and the full `client_telemetry` envelope are DEFERRED, not
- *   silently skipped: conflicts fall back to the generic "reset to pending" retry;
+ * - the conflict-exhaustion policy (attempt caps and the token re-base) and the full
+ *   `client_telemetry` envelope are DEFERRED, not silently skipped: conflicts fall back to the
+ *   generic "reset to pending" retry;
+ * - the diagnostics flush (`POST /api/sync/diagnostics`) is NOT deferred any more: the attempt
+ *   delivers stored envelopes through [SyncEngineDiagnosticsCourier] once the lease is held and
+ *   before it reads the backlog, on both the claimed and the pull-only path. It is deliberately
+ *   outside the journal and outside the outcome -- a delivery failure is never a cycle failure;
  * - the empty-backlog attempt still reconciles: with nothing to claim or send, the reconcile
  *   request is still issued pull-only, exactly like the JS no-op attempt (the JS cycle's
  *   `syncPendingOperations` always runs, so remote changes arrive without anything to push).
@@ -80,6 +84,7 @@ data class CycleOutcome(
 class SyncEngineCycle(
   private val appDb: SQLiteDatabase,
   private val journal: SyncEngineJournal,
+  private val diagnostics: SyncEngineDiagnosticsCourier = SyncEngineDiagnosticsCourier.forAppDatabase(appDb),
 ) {
   private val lease = SyncCycleLease(appDb)
 
@@ -188,6 +193,16 @@ class SyncEngineCycle(
       transition("abandoned", "cycle lease lost before the backlog read")
       return outcome("abandoned", lastState, 0, 0, "LeaseLost")
     }
+
+    // Diagnostics drain (C2): once the fence is held and before the backlog read, so BOTH the
+    // claimed path and the pull-only path deliver stored envelopes first. Deliberately placed here
+    // and not around the reconcile: it is not a journaled step (the attempt's states stay exactly
+    // as they were), it never throws (the courier swallows by contract), and its tally is not part
+    // of the outcome -- instrumentation delivery must never change whether a cycle succeeded.
+    diagnostics.drain(
+      isSyncTelemetryEnabled = config.isSyncTelemetryEnabled,
+      connection = SyncDiagnosticsConnection(ip = ip, port = port, token = token),
+    )
 
     val backlog = readBacklog()
     val backlogReadCount = backlog.size
