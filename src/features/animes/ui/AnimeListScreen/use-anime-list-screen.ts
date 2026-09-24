@@ -15,6 +15,14 @@ import {
 } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import { buildAnimeMutationFailureFeedback } from "../../anime-mutation-failure.helpers";
+import {
+  beginChapterAction,
+  recordChapterActionSkipped,
+} from "../../chapter-action-diagnostics.helpers";
+import type {
+  ChapterActionContext,
+  ChapterActionLabel,
+} from "../../chapter-action-diagnostics.types";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { useSeasonRatingIntent } from "../../use-season-rating-intent";
@@ -191,8 +199,20 @@ export function useAnimeListScreen(
   ]);
 
   const runMutation = useCallback(
-    async (animeId: string, action: (id: string) => Promise<void>) => {
+    async (
+      animeId: string,
+      actionLabel: ChapterActionLabel,
+      action: (id: string, actionContext: ChapterActionContext) => Promise<void>,
+    ) => {
+      // Opened BEFORE the same-anime guard, because this is the only point that can answer "did the
+      // tap reach JS at all": a disabled button never gets here, and neither does a tap a dead JS
+      // thread swallowed. Everything after this line is attributable to a callback that ran.
+      const actionContext = beginChapterAction(actionLabel);
+
       if (mutatingAnimeByIdRef.current[animeId]) {
+        // The callback ran and the same-anime guard dropped it. Distinct from a failure: nothing
+        // was attempted, so nothing can have been lost.
+        recordChapterActionSkipped(actionContext, "in_flight");
         return;
       }
 
@@ -204,7 +224,7 @@ export function useAnimeListScreen(
       setIsMutatingAnimeById(nextMutatingState);
 
       try {
-        await action(animeId);
+        await action(animeId, actionContext);
       } catch (error) {
         // Callers fire this through `void handleCapPlus(...)`, so an escaping rejection would
         // become an unhandled promise and the button would just look dead. Surface it instead.
@@ -234,22 +254,22 @@ export function useAnimeListScreen(
   );
 
   const handleCapPlus = useCallback(
-    (animeId: string) => runMutation(animeId, capPlus),
+    (animeId: string) => runMutation(animeId, "capPlus", capPlus),
     [capPlus, runMutation],
   );
 
   const handleCapMinus = useCallback(
-    (animeId: string) => runMutation(animeId, capMinus),
+    (animeId: string) => runMutation(animeId, "capMinus", capMinus),
     [capMinus, runMutation],
   );
 
   const handleCapPlusHalf = useCallback(
-    (animeId: string) => runMutation(animeId, capPlusHalf),
+    (animeId: string) => runMutation(animeId, "capPlusHalf", capPlusHalf),
     [capPlusHalf, runMutation],
   );
 
   const handleCapMinusHalf = useCallback(
-    (animeId: string) => runMutation(animeId, capMinusHalf),
+    (animeId: string) => runMutation(animeId, "capMinusHalf", capMinusHalf),
     [capMinusHalf, runMutation],
   );
 
