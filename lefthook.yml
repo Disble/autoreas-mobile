@@ -8,12 +8,24 @@
 # SILENTLY MAKES `git commit` FREEZE THE DESKTOP, and no test will object.
 #
 # SHAPE: one parallel `quick` group for the sub-30s checks, plus one piped `heavy`
-# lane for the two jobs that both spawn Jest workers. Do NOT serialize the quick
-# checks behind the heavy lane -- that adds their full cost to the critical path
-# and buys nothing. Wall time is max(quick, heavy), so only the longest lane matters.
+# lane for the two jobs that both spawn Jest workers, plus one conditional `native`
+# job. Do NOT serialize the quick checks behind the heavy lane -- that adds their
+# full cost to the critical path and buys nothing. Wall time is max(quick, heavy,
+# native), so only the longest triggered lane matters.
 pre-commit:
   parallel: true
   jobs:
+    # Runs only when a staged file falls under a native module's `android/` tree
+    # (Kotlin sources, tests, build.gradle, test resources) -- lefthook skips a
+    # glob-scoped job outright when nothing staged matches, so an ordinary JS-only
+    # commit never pays for this. `test:kotlin` (scripts/kotlin-unit-tests.mjs)
+    # regenerates `android/` when it is missing or stale, then runs the Kotlin unit
+    # tests for `sync-engine` and `foreground-sync-ticker` -- see "Kotlin
+    # verification without Docker" in odd/tasks/native-foreground-sync-service.md
+    # for the underlying Gradle commands and timings this wraps.
+    - name: native
+      glob: 'modules/*/android/**'
+      run: bun run test:kotlin
     - name: quick
       group:
         parallel: true

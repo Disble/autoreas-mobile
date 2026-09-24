@@ -19,6 +19,7 @@
     "generate:feature": "node ./scripts/generate-feature.js",
     "audit": "fallow audit --quiet",
     "test:mutation:staged": "node ./scripts/dlinter-mutation-staged.mjs",
+    "test:kotlin": "node ./scripts/kotlin-unit-tests.mjs",
     "sqlite:lab": "node --no-warnings ./tests/sqlite-lab/run.mjs"
   },
   "dependencies": {
