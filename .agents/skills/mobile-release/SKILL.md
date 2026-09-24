@@ -226,13 +226,11 @@ one.
    ```bash
    docker compose -f docker-compose.eas.yml run --rm eas-build production
    ```
-   The container is tuned for fast test builds: native code for `arm64-v8a` only and no
-   `lintVitalAnalyzeRelease` (see `docs/build-and-release.md`, "Build time and the
-   Docker-only speed-ups"). A rehearsal that must match the CI release needs every ABI:
-   ```bash
-   AUTOREAS_ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64      docker compose -f docker-compose.eas.yml run --rm eas-build production
-   ```
-   lintVital still only runs in CI.
+   The container is tuned for fast test builds: one native ABI by default and no
+   `lintVitalAnalyzeRelease`. For the ABI options — including the universal-ABI command a
+   rehearsal that must match the CI release needs — and the full configuration reference, see
+   `docs/local-android-build.md` ("Configuration reference" and "Which ABI do I need?"). lintVital
+   still only runs in CI.
 8. Confirm the artifact is an APK and reports the version you expect. Do not trust
    the filename:
    ```bash

@@ -56,11 +56,22 @@ services:
       # hooks, `CI=true bun install` does not. See ARCHITECTURE.md "Hook installation is
       # host-owned".
       - CI=true
-      # Build native code for the test device's ABI only (the tablet is arm64-v8a). Gradle
-      # reads ORG_GRADLE_PROJECT_* as project properties that override android/gradle.properties,
-      # so CMake runs for one ABI instead of four. For a universal APK, run with
-      # AUTOREAS_ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64.
-      - ORG_GRADLE_PROJECT_reactNativeArchitectures=${AUTOREAS_ANDROID_ABIS:-arm64-v8a}
+      # AUTOREAS_ANDROID_ABIS itself is deliberately NOT set here. It reaches the container two
+      # other ways instead -- via `env_file: .env.local` below (a developer's persistent
+      # override) or `docker compose run -e AUTOREAS_ANDROID_ABIS=...` (Compose's own `run -e`
+      # already beats `env_file:` for that key, no help needed) -- and the entrypoint script
+      # resolves the final value, validates it, and prints where it came from. See
+      # docs/local-android-build.md ("Configuration reference") for the full precedence and
+      # docker/eas-build-entrypoint.sh for why: Compose interpolates `${VAR}` in THIS file from
+      # the HOST shell at parse time, never from `.env.local`, so a naive
+      # `${AUTOREAS_ANDROID_ABIS:-arm64-v8a}` here silently ignored .env.local entirely.
+      #
+      # This line only captures a bare shell export (no `-e`) for the entrypoint, under a
+      # DIFFERENT name than AUTOREAS_ANDROID_ABIS on purpose -- a same-named `environment:` entry
+      # always wins over `env_file:` for that key even when the host variable is unset (verified
+      # empirically against Docker Compose v2.40.3-desktop.1), which would silently empty out
+      # whatever .env.local set.
+      - AUTOREAS_ANDROID_ABIS_SHELL_OVERRIDE=${AUTOREAS_ANDROID_ABIS:-}
       # expo-doctor exits 1 on this project and EAS ignores it anyway; skipping saves ~6 s.
       - EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1
       # Select files from .easignore without Git. Required from a Git worktree, where `.git` is a
@@ -74,20 +85,15 @@ services:
 
     # Default profile is "preview" — override by passing arg:
     #   docker compose ... run --rm eas-build production
-    entrypoint: >
-      bash -c "
-        echo '--- Installing dependencies ---' &&
-        bun install --frozen-lockfile &&
-        echo '--- Starting EAS local build ---' &&
-        ok=0 &&
-        for attempt in 1 2 3; do
-          if bunx eas-cli@latest build --local --platform android --profile $${0:-preview} --non-interactive; then ok=1; break; fi
-          echo \"--- Attempt $$attempt failed ---\"
-          [ $$attempt -lt 3 ] && sleep 5
-        done;
-        if [ $$ok -ne 1 ]; then echo '--- Build FAILED after 3 attempts. No APK was produced. ---'; exit 1; fi;
-        echo '--- Build complete. APK is in your project folder. ---'
-      "
+    #
+    # The entrypoint itself lives in docker/eas-build-entrypoint.sh (bind-mounted in via
+    # `- .:/app`, same as every other project file). It resolves and validates
+    # AUTOREAS_ANDROID_ABIS, then keeps every behaviour this used to inline here: dependency
+    # install, the profile argument (defaulting to "preview"), three build attempts with a
+    # non-zero exit and "Build FAILED after 3 attempts" if all three fail, and the final success
+    # line. Invoked through `bash` explicitly rather than relying on the file's own execute bit,
+    # which a Windows bind mount does not reliably preserve.
+    entrypoint: ["bash", "docker/eas-build-entrypoint.sh"]
     command: preview
 
 volumes:

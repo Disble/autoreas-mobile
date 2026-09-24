@@ -60,9 +60,15 @@ bunx eas-cli build --platform android --profile development
 
 ### Option 2 — local preview build with Docker
 
-To generate the APK locally on Windows with Docker Desktop, this repo already includes the required
-setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs dependencies from
-`bun.lock` with `bun install --frozen-lockfile`.
+Generates the APK on your own machine with Docker Desktop, using the setup already in
+`Dockerfile.eas` and `docker-compose.eas.yml`. A warm build takes about 4.5 minutes (was ~10 minutes
+before the Docker-only speed-ups described there); everything — profiles, ABI selection,
+configuration reference, how the caching works, and a local-vs-CI comparison table — is documented
+in **[Local Android build with Docker](local-android-build.md)**.
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build
+```
 
 > [!WARNING]
 > **The container shares your `.git`.** The `- .:/app` mount is not filtered by `.dockerignore`, so
@@ -70,79 +76,13 @@ setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs d
 > is set in `docker-compose.eas.yml` — without it, `bun install` regenerates your Windows Git hooks
 > with Linux paths. See [Git hooks](#git-hooks).
 
-**Minimum requirements**
+The output APK is written to the project root as `build-*.apk` (gitignored). The speed-ups —
+one ABI by default, a Gradle build cache, and skipping `lintVitalAnalyzeRelease` — live only in the
+Docker path; CI's `release.yml` runs `eas build --local` directly on the runner and still produces
+the universal, fully-linted APK.
 
-- Docker Desktop with the WSL2 backend enabled
-- `EXPO_TOKEN` loaded in `.env.local`
-
-The profile is passed as the last argument; it defaults to `preview` when omitted.
-
-```bash
-# Preview (default) — self-contained APK with the JS bundle included
-docker compose -f docker-compose.eas.yml run --rm eas-build
-
-# Development — APK that connects to Metro on your machine instead of bundling the JS
-docker compose -f docker-compose.eas.yml run --rm eas-build development
-
-# Production — optimized, self-contained APK
-docker compose -f docker-compose.eas.yml run --rm eas-build production
-```
-
-For the development profile: install the APK, start Metro with `bun run start`, then open the app so
-it attaches to the local bundler.
-
-> [!WARNING]
-> **The production profile only emits an APK because `eas.json` sets
-> `production.android.buildType: "apk"`.** EAS defaults that key to APK *only* when a profile
-> declares `distribution: "internal"`; with it unset, the Gradle command falls through to
-> `:app:bundleRelease` and the output is an **AAB**, which cannot be sideloaded. This section
-> described the output as an APK from the start while no `buildType` was set — corrected
-> 2026-09-04. Never trust the extension alone:
->
-> ```bash
-> unzip -l build-*.apk | grep -q BundleConfig.pb && echo "this is an AAB"
-> ```
-
-**Output**
-
-- the APK is written to the project root as `build-*.apk`
-- those local artifacts are ignored by Git
-- the managed prebuild sets Gradle JVM memory to `-Xmx2g` with a `1g` metaspace limit through
-  `plugins/withAndroidGradleMemory.js`; no generated `android/` project is tracked
-
-**Build time and the Docker-only speed-ups**
-
-Measured on 2026-09-23 (`lab` profile, 20 CPUs / ~15.5 GB for Docker, warm Bun and Gradle volumes):
-
-| Setup | Total | Gradle |
-|---|---|---|
-| Before (four ABIs, lintVital, no build cache) | 10 m 15 s | 8 m 55 s, 1108 tasks executed |
-| First build with the speed-ups (empty build cache) | 5 m 26 s | 4 m 13 s |
-| Later builds (warm build cache) | 4 m 25 s | 3 m 8 s, 400 of 1044 tasks from cache |
-
-Gradle is ~90 % of the build; everything else (EAS setup, install, prebuild, JS bundle) is about a
-minute. The speed-ups live only in the Docker path, so the CI release build (`release.yml`, which
-runs `eas build --local` on the runner) still produces the universal APK:
-
-- **One ABI.** `ORG_GRADLE_PROJECT_reactNativeArchitectures` builds native code for `arm64-v8a`
-  only (the test tablet). For a universal APK:
-  `AUTOREAS_ANDROID_ABIS=armeabi-v7a,arm64-v8a,x86,x86_64 docker compose -f docker-compose.eas.yml run --rm eas-build`.
-  (`expo-updates` ignores the filter and still builds its small library for every ABI.)
-- **Gradle build cache.** `docker/gradle/gradle.properties` is mounted as the Gradle user-home
-  properties with `org.gradle.caching=true`. EAS extracts the project into a fresh directory on
-  every build, so without it nothing is reused between builds.
-- **No lintVital.** `docker/gradle/init.d/skip-lint-vital.init.gradle` disables
-  `lintVitalAnalyzeRelease`; release builds still run it.
-- **No expo-doctor** (`EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1`): it exits 1 on this project and EAS
-  ignores it anyway.
-- **Git worktrees.** `EAS_NO_VCS=1` lets the build run from a worktree, where `.git` is a file
-  pointing at a Windows path the container cannot read. Files are selected by `.easignore`.
-- **`.easignore` excludes `/android/`, `/ios/` and `build-*.apk`.** A host `npx expo prebuild`
-  output and previous local APKs (~140 MB each) are never uploaded into the build; EAS runs its own
-  prebuild as for any managed project.
-
-A build whose three attempts all fail now exits non-zero with `--- Build FAILED after 3 attempts.
-No APK was produced. ---`; before, it printed "Build complete" and exited 0.
+A build whose three attempts all fail exits non-zero with `--- Build FAILED after 3 attempts.
+No APK was produced. ---`.
 
 ### Option 3 — remote preview build
 

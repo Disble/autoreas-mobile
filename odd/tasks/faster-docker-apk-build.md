@@ -82,8 +82,81 @@ Changes (all Docker-only; CI's `release.yml` runs `eas build --local` on the run
 Evidence: APK signed with the same certificate as the installed build
 (`10a18376…6b8b7d`, `apksigner verify`); Git hooks of the main checkout untouched after four builds.
 
-Next: none — T1–T6 complete. Parent reviews the staged T5/T6 diff and commits (work-unit commits,
-separate for T5 vs T6 per the writer brief).
+## ABI resolution fix and entrypoint extraction (added 2026-09-24, maintainer request)
+
+- [x] T7 Fix `AUTOREAS_ANDROID_ABIS`: `docker-compose.eas.yml` set
+  `ORG_GRADLE_PROJECT_reactNativeArchitectures=${AUTOREAS_ANDROID_ABIS:-arm64-v8a}` in
+  `environment:`, which Compose interpolates on the HOST at parse time — never from
+  `env_file: .env.local`. A developer's `.env.local` override was silently ignored; the build
+  always got the `arm64-v8a` default. Resolve, validate, and log the ABI list **inside the
+  container** instead, and move the entrypoint out of the compose file into
+  `docker/eas-build-entrypoint.sh`.
+- [x] T8 Documentation: `docs/local-android-build.md` (new, single reference for the local Docker
+  build), shrink `docs/build-and-release.md` Option 2 to a summary + link (no fact lost), link it
+  from the README docs table and the "Build a development client" section, update both
+  `mobile-release` skill copies' Path B to point to the new page instead of repeating the ABI
+  options.
+
+### T7/T8 evidence (2026-09-24, delegated writer)
+
+Files: `docker/eas-build-entrypoint.sh` (new — ABI resolution/validation, `bun install`, the
+three-attempt retry loop, dry-run switch), `docker-compose.eas.yml` (removed the host-interpolated
+ABI line; added `AUTOREAS_ANDROID_ABIS_SHELL_OVERRIDE=${AUTOREAS_ANDROID_ABIS:-}` under a
+differently-named key to safely capture a bare shell export; `entrypoint:` now invokes the script),
+`.gitattributes` (new — `*.sh text eol=lf`), `docs/local-android-build.md` (new),
+`docs/build-and-release.md` (Option 2 shrunk to a summary + link), `README.md` (docs table entry +
+the "Build a development client" link retargeted), `.claude/skills/mobile-release/SKILL.md` /
+`.agents/skills/mobile-release/SKILL.md` (Path B now links the new page instead of repeating the
+ABI options; kept byte-identical).
+
+**Root cause, confirmed empirically (Docker Compose v2.40.3-desktop.1, isolated `alpine` probe in
+the scratchpad, not touching `.env.local`):** an `environment:` entry for a key ALWAYS overrides
+`env_file:` for that same key, even when the host variable is completely unset — a bare
+`environment: - AUTOREAS_ANDROID_ABIS` pass-through would have silently emptied out whatever
+`.env.local` set. Fix: capture the bare shell export under a **differently-named** variable
+(`AUTOREAS_ANDROID_ABIS_SHELL_OVERRIDE`, via ordinary `${VAR:-}` interpolation, not a bare
+pass-through), and let the entrypoint script apply explicit precedence: shell export > (`.env.local`
+via `env_file:` or `docker compose run -e`, indistinguishable to the script and not distinguished
+by design — Compose's own `run -e` already beats `env_file:` for the same key) > `arm64-v8a`
+default.
+
+**Precedence matrix** (dry-run, `AUTOREAS_DRY_RUN=1`, against the real `docker-compose.eas.yml`;
+the persistent-config tier used a scratchpad-only additive `env_file` override so `.env.local`
+itself was never read, copied, or modified):
+
+| Source(s) present | Resolved | Printed line |
+|---|---|---|
+| none | `arm64-v8a` | `--- Native ABIs: arm64-v8a (default) ---` |
+| persistent config only (env_file) | `x86_64` | `--- Native ABIs: x86_64 (from AUTOREAS_ANDROID_ABIS) ---` |
+| bare shell export only | `x86_64` | `--- Native ABIs: x86_64 (from AUTOREAS_ANDROID_ABIS (shell)) ---` |
+| `run -e` only | `armeabi-v7a` | `--- Native ABIs: armeabi-v7a (from AUTOREAS_ANDROID_ABIS) ---` |
+| shell export + persistent config together | shell wins | `(from AUTOREAS_ANDROID_ABIS (shell))` |
+| `run -e` + persistent config together | `-e` wins | `(from AUTOREAS_ANDROID_ABIS)` |
+
+**Invalid-value evidence** (`AUTOREAS_ANDROID_ABIS=arm64`, via `run -e`, dry-run):
+`--- Invalid AUTOREAS_ANDROID_ABIS value: 'arm64' (unknown ABI 'arm64') ---` then the accepted-values
+line, `exit=1`, wall time `0.529s` (measured with `time`). Also verified: empty value, trailing
+comma, leading comma, doubled comma, and a whitespace-only middle item are all rejected with the
+same fast path; a set-but-empty `AUTOREAS_ANDROID_ABIS` is deliberately treated as an error, not as
+"unset" (`${VAR+word}` distinguishes the two under `set -u`).
+
+**End-to-end build** (`docker compose -f docker-compose.eas.yml run --rm -d --name
+autoreas-abi-x86_64-test -e AUTOREAS_ANDROID_ABIS=x86_64 eas-build`, default `preview` profile,
+followed with `docker logs -t -f`): printed `--- Native ABIs: x86_64 (from AUTOREAS_ANDROID_ABIS)
+---`, ran end to end in **4 m 47 s** (01:44:39 → 01:49:26 UTC), Gradle itself `295.9s`. `unzip -l`
+on the resulting APK showed only `lib/x86_64/`. APK deleted and the (already `--rm`) container
+confirmed gone afterward.
+
+**Line-ending check:** `grep -c $'\r' docker/eas-build-entrypoint.sh` → `0`, both in the scratch
+draft and the committed working-tree copy.
+
+**Verification:**
+- `docker compose -f docker-compose.eas.yml config --quiet` → parses clean.
+- `npx lefthook run pre-commit` with these files staged: see the line below this section.
+- `.env.local` was never read, printed, copied, or modified at any point — the persistent-config
+  tier was proven with an isolated scratchpad `env_file` instead (see matrix above).
+
+Next: none — T1–T8 complete. Parent reviews the staged T7/T8 diff and commits.
 
 ## Native gates (added 2026-09-23, maintainer request)
 
