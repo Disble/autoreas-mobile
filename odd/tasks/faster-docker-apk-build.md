@@ -3,10 +3,10 @@
 Feature: cut the local Docker APK build (`docker compose -f docker-compose.eas.yml run --rm eas-build
 <profile>`) from ~30 min to under 10 min, without changing what CI releases.
 
-Status: T1–T4 done. Branch `build/faster-docker-apk`, first cut from `dev` at `ac18acb`, then moved on top
-of `fix/native-foreground-sync-service` (`3452620`): `dev` fails the fallow gate on a file that feature
-deletes, and T5–T6 need its Kotlin test harness. Worktree
-`autoreas-mobile-worktrees/faster-docker-build` (the main checkout is busy with
+Status: T1–T6 done, staged (not committed — parent commits separately). Branch `build/faster-docker-apk`,
+first cut from `dev` at `ac18acb`, then moved on top of `fix/native-foreground-sync-service` (`3452620`):
+`dev` fails the fallow gate on a file that feature deletes, and T5–T6 needed its Kotlin test harness.
+Worktree `autoreas-mobile-worktrees/faster-docker-build` (the main checkout is busy with
 `native-foreground-sync-service`).
 
 Delivery strategy: `single-pr` (no PR process; local merge to `main`). Work-unit commits without
@@ -82,7 +82,8 @@ Changes (all Docker-only; CI's `release.yml` runs `eas build --local` on the run
 Evidence: APK signed with the same certificate as the installed build
 (`10a18376…6b8b7d`, `apksigner verify`); Git hooks of the main checkout untouched after four builds.
 
-Next: T5–T6.
+Next: none — T1–T6 complete. Parent reviews the staged T5/T6 diff and commits (work-unit commits,
+separate for T5 vs T6 per the writer brief).
 
 ## Native gates (added 2026-09-23, maintainer request)
 
@@ -90,6 +91,69 @@ Linters and tests run before the build, never inside it. The Docker build only s
 no earlier gate repeats locally; `lintVital` stays in the release build because it is the only
 check over native code, and the new Kotlin unit tests ran in no gate at all.
 
-- [ ] T5 Lefthook runs the Kotlin unit tests when files under `modules/*/android/**` are staged,
+- [x] T5 Lefthook runs the Kotlin unit tests when files under `modules/*/android/**` are staged,
   preparing `android/` with a prebuild when it is missing or stale.
-- [ ] T6 Release CI runs the Kotlin unit tests and Android lint in `guard`, before the build job.
+- [x] T6 Release CI runs the Kotlin unit tests and Android lint in `guard`, before the build job.
+
+### T5/T6 evidence (2026-09-23, delegated writer, worktree `faster-docker-build`)
+
+Files: `scripts/lib/kotlin-tests.mjs` (pure decision logic: prebuild-input hash, `missing`/
+`stale`/`current` staleness verdict, per-platform Gradle wrapper, missing-toolchain description),
+`scripts/kotlin-unit-tests.mjs` (thin entry point: walks `app.json`/`package.json`/`bun.lock`/
+`plugins/**`/`modules/*/{expo-module.config.json,android/build.gradle}`, hashes them, stamps
+`android/.kotlin-tests-prebuild-stamp`, spawns prebuild/Gradle), `tests/scripts/kotlin-tests.test.ts`
+(17 Jest cases), `lefthook.yml` (new top-level `native` job, `glob: 'modules/*/android/**'`),
+`package.json` (`test:kotlin` script) — T5. `.github/workflows/release.yml` (guard job: JDK 17 via
+`actions/setup-java`, `bun run test:kotlin`, then `:sync-engine:lintDebug
+:foreground-sync-ticker:lintDebug`), `docs/build-and-release.md` ("Native gates" table) — T6.
+`CLAUDE.md`/`AGENTS.md` checked: neither enumerates pre-commit jobs, so neither was touched.
+
+TDD: RED (17/17 failing against a stub `kotlin-tests.mjs`) → GREEN (17/17 passing) → mutation, one
+behaviour at a time, staged-index restore each time (`git checkout -- scripts/lib/kotlin-tests.mjs`):
+stale-detection branch removed → 2 focused tests failed; missing-android branch removed → 1 failed;
+`resolveGradleWrapper` collapsed to one branch → 1 failed; `describeMissingToolchain` emptied → 3
+failed. All four restored to the passing GREEN state.
+
+Verification:
+- `bunx jest tests/scripts/kotlin-tests.test.ts`: 17/17 passed.
+- `bun run test`: 181 suites / 1382 tests passed.
+- `bun run typecheck`: clean.
+- `bun run test:kotlin`, no `android/` (cold), via the real `lefthook run pre-commit --job native
+  --file modules/sync-engine/android/build.gradle`: 56 s total (Gradle `BUILD SUCCESSFUL in 51s`,
+  102/138 tasks executed). Warm rerun: 12 s total (`BUILD SUCCESSFUL in 11s`, 1/138 executed,
+  137 up-to-date).
+- `npx lefthook run pre-commit` (real staged set, JS-only): `native (skip) no matching staged
+  files`; `quick`/`heavy` (fallow, lint, typecheck, test, mutation) all passed, 11.4 s.
+  `--job native --file modules/sync-engine/android/build.gradle`: native job runs and passes.
+  Confirms the glob gates the job both ways.
+- Missing-toolchain path exercised live (not just unit-tested): ran `test:kotlin` with `JAVA_HOME`/
+  `ANDROID_HOME`/`ANDROID_SDK_ROOT` unset and the JDK's `bin` stripped from `PATH` (one-shot env
+  override, nothing persisted) → printed both missing-toolchain lines and exited 1.
+- Android lint, run locally before adding the CI step (per instructions, to gate whether to add
+  it at all): `:sync-engine:lintDebug :foreground-sync-ticker:lintDebug` → `BUILD SUCCESSFUL in
+  4m 37s`, zero findings on either module. Added to CI as-is; no pre-existing findings to skip.
+- `.github/workflows/release.yml` validated with `bunx js-yaml .github/workflows/release.yml`
+  (parses; guard job step order confirmed: checkout → version/tag checks → install → typecheck →
+  test → **setup-java → test:kotlin → android lint** → upload-artifact).
+- Fixed one bug found during verification: the prebuild-input path list initially duplicated the
+  `plugins/` prefix (`plugins/plugins/…`), caught by the first cold `test:kotlin` run, not by the
+  unit tests (they exercise `hashPrebuildInputs`/`resolveModuleInputs` with injected paths, not the
+  real filesystem walk). Fixed in `scripts/kotlin-unit-tests.mjs`.
+- Fixed one design defect from the first `bun run audit` after staging: two new functions
+  (`runPrebuild`, `runGradleTests`) exceeded fallow's complexity/CRAP threshold (cyclomatic 5, CRAP
+  30 each, driven by 0% coverage on process-spawning code that the task said needs none). Split
+  each into two smaller single-purpose helpers (`isSpawnFailure`/`describeSpawnFailure`,
+  `reportMissingToolchain`/`exitForGradleResult`); `bun run audit` now exits 0. Also removed the
+  `export` from two constants (`MODULE_INPUT_BASENAMES`, `GRADLE_TEST_TASKS`) that fallow flagged
+  as unused exports — they are only ever consumed inside the same file.
+- JDK 17, matching the existing `release` job exactly (same pinned `actions/setup-java` SHA):
+  the generated `android/` project resolves to Gradle 9.0.0 / AGP 8.12.0, both of which require
+  JDK 17 as a floor, and the `release` job already proves 17 sufficient by running this exact
+  toolchain's full production Gradle build with no other JDK installed on the runner.
+- `ubuntu-latest` Android SDK: not re-verified by a fresh probe: the existing `release` job already
+  runs `eas build --local --platform android` (a full Gradle build) with only `actions/setup-java`
+  and no SDK setup step, which only works if `ANDROID_HOME` is already usable on that runner image;
+  `guard` runs on the same `ubuntu-latest` image.
+
+Open risk: the CI steps (JDK setup, `test:kotlin`, Android lint) were validated locally and via
+YAML parsing, not by an actual GitHub Actions run — this workflow cannot be executed from here.

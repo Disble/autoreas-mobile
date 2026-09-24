@@ -190,6 +190,25 @@ visible until Expo or React Native removes it.
 
 ---
 
+## Native gates
+
+Checks over the Kotlin native modules (`modules/sync-engine`, `modules/foreground-sync-ticker`)
+run before any build, never inside one, so a failing gate never hides behind an otherwise-green
+Docker or CI build.
+
+| Where | What | When |
+| --- | --- | --- |
+| Pre-commit (`lefthook.yml`, job `native`) | `bun run test:kotlin` — regenerates `android/` when it is missing or stale, then `:sync-engine:testDebugUnitTest :foreground-sync-ticker:testDebugUnitTest` | Only when a staged file falls under `modules/*/android/**`; a JS-only commit never pays the Gradle cost |
+| CI `guard` job (`.github/workflows/release.yml`) | The same `bun run test:kotlin`, then `:sync-engine:lintDebug :foreground-sync-ticker:lintDebug` | Every push of a release tag, before the `release` job's build |
+| Release build (`release` job, `eas build --local`) | `lintVitalAnalyzeRelease` for every module (fatal issues only) | Always, as part of the production Gradle build |
+
+`test:kotlin` (`scripts/kotlin-unit-tests.mjs`) is the one command both the local hook and CI run,
+so there is exactly one place that decides what the Kotlin gate does. It needs a host JDK (17+)
+and the local Android SDK; see "Kotlin verification without Docker" in
+`odd/tasks/native-foreground-sync-service.md` for the underlying Gradle commands this wraps.
+
+---
+
 ## Submit and distribute
 
 ```bash
