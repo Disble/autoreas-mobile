@@ -255,11 +255,12 @@ object WireAnimeMapper {
   }
 
   /** A required string; absence throws (retryable parse failure), mirroring zod's required field. */
-  private fun requireString(wire: JSONObject, key: String): Any {
-    if (!wire.has(key) || wire.isNull(key)) {
-      throw ReconcileParseException("snapshot.$key is required")
+  private fun requireString(wire: JSONObject, key: String): String {
+    val value = wire.opt(key)
+    if (value !is String) {
+      throw ReconcileParseException("snapshot.$key is required and must be a string")
     }
-    return wire.get(key)
+    return value
   }
 
   /** A required number; absence or mistype throws (retryable parse failure). */

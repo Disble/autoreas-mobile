@@ -11,7 +11,8 @@ private const val CLAIM_LEASE_SQL =
     "VALUES (?, ?, ?, ?)" +
     " ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at," +
     " fence = excluded.fence" +
-    " WHERE sync_cycle_lock.expires_at <= ? OR sync_cycle_lock.owner = excluded.owner"
+    " WHERE sync_cycle_lock.expires_at <= ? OR (sync_cycle_lock.owner = excluded.owner" +
+    " AND sync_cycle_lock.fence = excluded.fence)"
 
 private const val RELEASE_LEASE_SQL =
   "DELETE FROM sync_cycle_lock WHERE id = ? AND owner = ? AND fence = ?"

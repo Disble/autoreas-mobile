@@ -12,4 +12,26 @@ android {
     versionCode 1
     versionName '0.1.0'
   }
+
+  testOptions {
+    unitTests {
+      // Same recipe as modules/sync-engine/android/build.gradle: Robolectric shadows load
+      // android.jar resources (manifest/xml) for the module, so the unit-test classpath needs
+      // them merged in, same as a real device would see them.
+      includeAndroidResources = true
+      // true (AGP's traditional default): a call to an Android API with no real implementation
+      // returns 0/null/false instead of throwing "not mocked".
+      returnDefaultValues = true
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  // Robolectric 4.14.1: first line supporting API 35 (this module's targetSdk; compileSdk is 36
+  // per android/gradle.properties, but Robolectric shadows the RUNTIME sdk named by
+  // src/test/resources/robolectric.properties, not compileSdk). Same version as
+  // modules/sync-engine/android/build.gradle.
+  testImplementation 'org.robolectric:robolectric:4.14.1'
+  testImplementation 'androidx.test:core:1.6.1'
 }

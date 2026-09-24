@@ -16,6 +16,31 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-09-23
+
+**Background sync no longer depends on the app's JavaScript to keep going.** On the tablet, a routine Android System WebView update killed the app roughly once a day. Android brought the process back a minute later, but the part that was supposed to restart sync ran inside a JavaScript engine that stays frozen when the app has no screen, so sync stayed down, pending changes piled up, and a background wake lock was held until Android disabled it. The persistent sync service, its schedule and every sync attempt now run in native Android code that needs no screen and no JavaScript.
+
+**Nothing new is asked of you.** Keep the battery exception from 1.5.0 granted; the native service relies on it to restart itself in the background.
+
+### Changed
+
+- The persistent sync service is now native. After Android kills the app for any reason other than a force-stop, the next scheduled tick restarts the service and syncs, without you opening the app. Measured on the tablet: back within a minute after an app update, and within about a second when Android simply kills the process.
+- When your PC or the Bridge is off, a background sync attempt now gives up in about a second and a half and leaves your pending changes untouched, instead of waiting on a connection that will not come.
+- The persistent notification now belongs to a new "Sync continuo" notification channel. If you had silenced the old one, adjust the new one in Android's notification settings.
+- Opening the app restarts the sync service if it is not running, so the notification may briefly reappear when you open it.
+
+### Fixed
+
+- Changes you make on the tablet while the app is closed now reach your PC within a sync interval of the Bridge being reachable, instead of waiting until you open the app. Two changes stuck for hours on 1.5.0 synced within minutes of installing this build, with the app closed.
+- Settings now records background sync attempts ("Último intento", last synced count). The screen picks up new values the next time you open it rather than live.
+
+### Internal
+
+- The background sync path no longer uses the Notifee foreground service, the JavaScript sync runner, the headless watchdog or the per-tick JavaScript wake lock; about 3,400 lines of that path were removed.
+- Native Kotlin code now has unit tests (84), run by the pre-commit hook whenever native module files change and by the release check before the build, together with Android lint for the two sync modules.
+- The local Docker build takes about 4.5 minutes instead of about 10, builds only the architecture you need (configurable, see `docs/local-android-build.md`), and now fails loudly instead of reporting success when every attempt fails.
+- Not yet verified: a full 24 hours on the tablet with this build. That observation starts with this release.
+
 ## [1.5.0] — 2026-09-22
 
 **Background sync could die overnight and never come back, and this release gives it a way back.** On the tablet the persistent service stopped at 02:12 and stayed down: the app kept waking, but with no service running Android treated it as ordinary spare memory and killed it twice before morning. Two things caused it. The alarm that paces the sync was delivered to a listener that dies with the app's screen, so the first missed delivery ended the cadence permanently; and nothing was allowed to restart the service from the background, because Android only permits that for apps the user has excused from battery optimisation.

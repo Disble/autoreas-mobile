@@ -13,7 +13,7 @@
   ],
   "mutate": [
     "src/features/sync/native-foreground-sync-ticker.helpers.ts",
-    "src/features/sync/foreground-service-watchdog.helpers.ts",
+    "src/features/sync/native-foreground-sync-adapter/native-foreground-sync-adapter.helpers.ts",
     "src/features/sync/native-battery-optimization.helpers.ts"
   ],
   "ignorePatterns": [

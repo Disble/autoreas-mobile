@@ -33,6 +33,15 @@ import type {
 } from './bridge-client.types';
 
 
+/** Reads a response header when the fetch response exposes a usable Headers-like object. */
+function readResponseHeader(response: Response, name: string): string | null {
+  if (typeof response.headers?.get !== 'function') {
+    return null;
+  }
+
+  return response.headers.get(name);
+}
+
 /**
  * Opens the default bridge WebSocket. React Native accepts a 3-argument constructor form that
  * carries auth headers, which the browser API does not expose, so the cast is deliberate.
@@ -167,10 +176,8 @@ export function createBridgeClient(
       bytes = new Uint8Array(await response.arrayBuffer());
     }
 
-    const etag =
-      typeof response.headers?.get === 'function' ? response.headers.get('ETag') : null;
-    const retryAfterHeader =
-      typeof response.headers?.get === 'function' ? response.headers.get('Retry-After') : null;
+    const etag = readResponseHeader(response, 'ETag');
+    const retryAfterHeader = readResponseHeader(response, 'Retry-After');
     const retryAfterMs = parseRetryAfterMs(retryAfterHeader, Date.now());
 
     logger.debug('[BridgeClient] cover response', { url, status: response.status });

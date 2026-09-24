@@ -62,6 +62,15 @@ simply absent.
 
 ## Where we are now
 
+> **2026-09-23 — read this first; the rest of this section predates 1.5.0.** On the installed `1.5.0`
+> the alarm and the battery exemption work, but the foreground service did not come back after a
+> routine **Android System WebView auto-update** killed the process (06:38:06; the unexplained
+> 2026-09-22 02:12:31 death has the same signature). Recovery depends on headless JS, and in the
+> revived process the JS thread is frozen: eleven consecutive 600 s job timeouts, zero JS and zero
+> engine output, four operations stuck. Recommended direction: a native-owned `START_STICKY`
+> service that the tick receiver restarts and that calls the native engine directly. Full entry:
+> "2026-09-23 (release 1.5.0 installed)" in the log below.
+
 *Last updated: 2026-09-21 (latest autonomous run) — a **24 h measurement window is open** on the
 installed build that carries `823d412` (the cycle-flag fix), the acceptance instrument now runs
 **twelve** checks including the cycle-closure check that measures `consecutive_unclosed_cycles`, and T5
@@ -360,6 +369,56 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 ## Log
 
 Newest first.
+
+### 2026-09-23 (release 1.5.0 installed) — the service died again, the trigger is now known, and the recovery path is behind the hang it was meant to survive
+
+**Context.** Installed build `1.5.0` (`versionCode=12`, `lastUpdateTime=2026-09-22 20:07:04`, not debuggable, not profileable). The maintainer reported four pending operations in the app and no sync attempt toward the bridge, and suspected the background service was down again. Everything below was read on tablet `R52T30686RV` at 09:46 with **read-only** instruments (`dumpsys`, `logcat -d`, `/proc`); the process was not killed, restarted or touched. Raw captures: `logcat -b all -d`, `dumpsys activity services|processes|exit-info`, `alarm`, `deviceidle`, `jobscheduler`, `power`, `notification`, `appops`.
+
+**Verified — what 1.5.0 fixed, and it holds.**
+
+- **T1, the exemption:** `dumpsys deviceidle` lists the package under `Whitelist user apps`, added `2026-09-22 08:07:21 by com.android.settings`. `alarm` lists it under `Exempted bucket packages`; `jobscheduler` reports the job `RUNNABLE WHITELISTED`.
+- **T2+T3, the manifest receiver re-arms without the previous tick:** `ELAPSED_WAKEUP ... tag=*walarm*:expo.modules.foregroundsyncticker.TICK_ALARM` is pending (`+57s`), with **620 wakeups** delivered and the last one 2.7 s before the capture. And the decisive line: `06:39:12.892 am_proc_start: [0,15428,10540,com.disble.autoreasmobile,broadcast,{.../expo.modules.foregroundsyncticker.TickAlarmReceiver}]` — the receiver brought the process back after it died. The `sent=0` defect of 2026-09-22 is gone.
+
+**Verified — the trigger that stopped the service, and the one that stopped it on 2026-09-22.** `dumpsys activity exit-info`:
+
+```
+06:38:06.654 pid=23602 reason=16 (PACKAGE UPDATED) importance=125
+  description=stop com.google.android.webview due to installPackageLI
+```
+
+and in `events`: `am_kill: [0,23602,...,200,stop com.google.android.webview due to installPackageLI]` followed by `am_foreground_service_stop: [...app.notifee.core.ForegroundService,...,19706645,...,STOP_SERVICE,...]` — the FGS had been up for 5 h 28 min (since ~01:09, proc state `TOP` recorded, so most likely started from the UI — inference). **Android System WebView auto-updated, and the platform kills every process that has WebView loaded.** The same `exit-info` shows the unexplained 2026-09-22 death with the identical signature: `02:12:31.316 pid=32561 reason=16 (PACKAGE UPDATED) ... stop com.google.android.webview due to installPackageLI`. That closes the "Still unproven" item of `odd/tasks/background-service-multiday-survival.md`: **what stopped the FGS at 02:12:31 was a WebView update**, not Doze, not LMK, not the 6 h cap. At 06:39–06:40 the same process logs `Package [...] reported as REPLACED` for Chrome, Word, Bitwarden, YouTube Music and others — this is the Play Store's nightly auto-update batch. **It is a routine event, roughly daily, and it cannot be prevented by the app.** A design that is not recoverable from it is not a background design.
+
+**Verified — what happened after the process came back (06:39 → 09:46, 3 h 07 min).**
+
+1. **The FGS was never restored.** `dumpsys activity services` shows only `SystemJobService`, `startForegroundCount=0`; oom `adj=250`, proc state `TRNB`, capability `-------T` (no `F`); no posted notification; no `am_foreground_service_start` after 06:38; the `START_FOREGROUND` app-op was last used 3 h 08 min earlier (the dead process).
+2. **Every headless `expo-background-task` run parks for the full 600 s.** Since the main buffer begins (07:51), eleven consecutive cycles, all identical: `doWork: Running worker` → `Executing task 'autoreas-background-sync'` → exactly ten minutes of nothing → `onStopJob` / `Worker was cancelled` → immediate restart. `jobscheduler` agrees: `3x timeout` / `4x timeout` per stats window. The job wake lock is released at `600006–600114 ms` every time.
+3. **Zero JS output and zero native-engine output in all eleven.** No `ReactNativeJS` line and no `SyncEngine*` / `SyncJournal` line in the entire capture. The engine was never invoked; the `console.warn` in `resolveBackgroundTaskOutcome` never printed. Consistent with the four pending operations never leaving the device.
+4. **The JS thread is frozen, not busy.** `/proc/15428/task/15474` (`mqt_v_js`): state `S`, **88 clock ticks (0.88 s) of CPU in the whole 3 h 07 min life of the process**, unchanged across three samples 10 s apart. The same process's main thread accumulated 8 min 14 s of CPU and was still burning ~0.45 s per 10 s (~4.5 %) during sampling, with no log output. What the main thread is doing could not be read: the build is neither debuggable nor profileable, so no stack is available. **Unexplained, recorded as a hypothesis-free observation.**
+5. **The per-tick wake lock is taken and never returned.** `ForegroundSyncTicker:ticking` is acquired by the live module instance (the headless React host did create it — `activeInstance` is set, and `SyncEngineWatch` exists in the thread list), `onTick` is sent to a JS thread that never runs, `notifyCycleComplete()` never comes, and the lock is held until the platform disables it: `[DIS,600025,ForegroundSyncTicker:ticking...(disabled: nocached)]`, then `[REL,600025,...]`, every ten minutes in lock-step with the job. The only thing bounding it is the platform's cached-process wake-lock policy and the module's own native timeout.
+
+**Verified by reading the code — why T4's watchdog cannot run in this state.** `src/features/sync/background-sync.task.ts` calls `void runForegroundServiceWatchdog()` **after** `await resolveBackgroundTaskOutcome(...)`. `resolveBackgroundTaskOutcome` (`background-sync.helpers.ts:129-150`) is described as "cannot hang or throw", but its bound is `withDeadline`, a JS `setTimeout` — and this log and T4's own document both recorded as device-confirmed (2026-09-04, 2026-09-20) that JS timers do not fire in this headless path. So the watchdog is placed behind exactly the hang the same file says it must not be exposed to. **In today's run it is moot anyway**, because the JS thread did not execute the task callback at all (point 3–4): the watchdog, the cycle and the deadline are all JS, and none of them ran. Either way, the only path 1.5.0 has for restoring the FGS after a process death is a JS path in a headless context, and that path has now been measured dead three separate ways (2026-09-04 timers, 2026-09-20 600 s parks, today a frozen JS thread).
+
+**Correction to earlier entries.** The 2026-09-22 analysis treated the overnight death as "trigger unknown, fix by construction". The trigger is now known and routine. The construction fixed half of it (the alarm), not the half that matters (the service), because the service's recovery was routed through headless JS.
+
+**Refuted today — add to "Refuted".**
+
+- "With the battery exemption granted, the watchdog on the headless wake restores the FGS" — the exemption is granted and verified, the headless wake happens eleven times, and no restore is ever attempted.
+- "`resolveBackgroundTaskOutcome` cannot hang" — it is bounded only by a JS timer; the task was cancelled by the platform at 600 s eleven times in a row.
+
+**What the right shape is, from the evidence (recommendation, not yet decided or implemented).** Every link that worked today is native: the alarm, the receiver, the process restart, the exemption. Every link that failed is JS in a process with no Activity. The design that follows is the one Syncthing uses on this same tablet (see 2026-09-19): **the service, its trigger and the sync attempt must not need JS at all.**
+
+1. **Own the foreground service in Kotlin** (a `specialUse` service in our module, returning `START_STICKY`), instead of Notifee's `app.notifee.core.ForegroundService`, which this log measured returning `START_NOT_STICKY` (`startCommandResult=2`, 2026-09-20). Notifee stays for ordinary notifications only. This reverses the T2+T3 decision "the receiver does not restore the FGS": that decision was right while Notifee owned the service, and it is the ownership that has to move.
+2. **`TickAlarmReceiver` ensures the service is up** on every tick, natively. Starting an FGS from the background is legal here because the app is on the user power allowlist (verified above) — the exemption T1 bought is exactly what makes this call legal, and today nothing uses it.
+3. **The service invokes the native engine directly** (`SyncEngine.runOnce`, which already has its own connections, lease and native watchdog) on each tick, gated by the presence probe. No `onTick` to JS, no JS promise in the loop, no JS timer anywhere on the background path.
+4. **JS keeps the UI only**: it starts/stops the service through the module, reads status, and projects the journal. The headless `expo-background-task` becomes, at most, a native-only nudge that starts the service — or is retired.
+
+Checks this design must pass before it is claimed (and the instruments exist for all of them): after a WebView update the process restarts and `am_foreground_service_start` appears for our own service class **without the app being opened**; `SyncEngineCycle` lines appear within one interval; no `Client timed out ... SystemJobService` in 24 h; `ForegroundSyncTicker:ticking` never reaches the platform's `nocached` disable.
+
+**Open, and how to close each.**
+
+- **Why the headless JS thread never runs the task.** Needs a `lab` (debuggable) build of the same commit to take a stack of `mqt_v_js` and the main thread in this state. It matters less if the design above removes JS from the path, but it should be answered before relying on *any* headless JS.
+- **The main thread's ~4.5 % CPU in a headless process.** Same instrument.
+- **Whether a WebView-update kill restarts a `START_STICKY` service.** Plausible (it is a process kill with reason `PACKAGE UPDATED`, not a force-stop of our package, and our alarm survived it), but not measured. Measure it on the first build that owns its service.
 
 ### 2026-09-21 (release 1.4.0 published) — the release is out, and it carries no device evidence
 
