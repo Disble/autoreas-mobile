@@ -267,16 +267,21 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
 
 ## Landmines
 
-- **The pinned actions target Node 20, which GitHub is retiring.** Both v1.0.0 and
-  v1.0.1 raised the annotation *"Node.js 20 is deprecated. The following actions
-  target Node.js 20 but are being forced to run on Node.js 24:
-  `actions/checkout`, `actions/upload-artifact`"*. It is a warning today and the
-  runner substitutes Node 24 for you, but the substitution is a courtesy that ends.
-  This is the standing cost of pinning: a SHA freezes the runtime an action targets
-  as well as its code, so it is now on you to move it. When `actions/checkout` and
-  `actions/upload-artifact` publish releases built for Node 24, bump both the SHA
-  and its trailing version comment. Do not answer this warning by going back to
-  floating tags.
+- **Pinned actions freeze their runtime, and the runner image floats unless pinned.**
+  v1.0.0 through v1.6.0 raised *"Node.js 20 is deprecated … being forced to run on
+  Node.js 24"* for `actions/checkout`, `actions/setup-java` and the artifact
+  actions, plus *"setup-java v4 is deprecated"*. Resolved after v1.6.0
+  (2026-09-23) by moving each to the **first** major that runs on Node 24 —
+  `checkout` v5.1.0, `setup-java` v5.7.0, `upload-artifact` v6.0.0,
+  `download-artifact` v7.0.0 — not the latest, to keep the jump minimal. Their
+  release notes change only the runtime (runner ≥ 2.327.1), except
+  `download-artifact` v5's path change for downloads **by ID**; this workflow
+  downloads by name, which is unchanged. Both jobs also moved from
+  `ubuntu-latest` to `ubuntu-24.04`, because `ubuntu-latest` becomes Ubuntu 26 on
+  2026-10-19 without this repo changing. When the next deprecation notice
+  appears, repeat the same move: bump the SHA and its trailing version comment
+  together, or the runner image deliberately. Do not answer it by going back to
+  floating tags or `ubuntu-latest`.
 
 - **`Remote versions are not configured.`** With `appVersionSource: "remote"`,
   eas-cli resolves `versionCode` from its servers; when no remote version exists
