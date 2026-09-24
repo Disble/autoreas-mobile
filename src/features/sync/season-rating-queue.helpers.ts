@@ -144,6 +144,7 @@ export function resolveSeasonRatingDelivery(
   };
 }
 
+/** Normalizes a raw `last_failure_kind` column value, rejecting anything that is not a string. */
 function readFailureKind(value: unknown): SeasonRatingQueueEntry['lastFailureKind'] {
   if (typeof value !== 'string') {
     return null;
@@ -151,6 +152,7 @@ function readFailureKind(value: unknown): SeasonRatingQueueEntry['lastFailureKin
   return value as SeasonRatingQueueEntry['lastFailureKind'];
 }
 
+/** Maps a raw `season_rating_queue` SQLite row into its typed `SeasonRatingQueueEntry` shape. */
 function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
   return {
     id: Number(row.id),
@@ -169,6 +171,7 @@ function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
   };
 }
 
+/** Reads every non-terminal season-rating queue row, oldest first. */
 async function readSeasonRatingQueueBacklog(
   rawDb: SQLiteDatabase,
 ): Promise<SeasonRatingQueueEntry[]> {
@@ -197,6 +200,7 @@ async function readSeasonRatingQueueBacklog(
 // `tx` (not `rawDb`) because these two are only ever called from inside an already-open
 // `withLocalWrite` door in `drainSeasonRatingQueue` -- never call the door again here, an
 // already-open door is exactly the no-nested-doors case (design.md Regression Guard).
+/** Persists one season-rating queue row's status/attempt/failure-kind columns. */
 async function updateSeasonRatingQueueEntry(
   tx: SQLiteDatabase,
   entryId: number,
@@ -216,10 +220,12 @@ async function updateSeasonRatingQueueEntry(
   );
 }
 
+/** Deletes one confirmed or terminally-dropped season-rating queue row. */
 async function deleteSeasonRatingQueueEntry(tx: SQLiteDatabase, entryId: number) {
   await tx.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
 }
 
+/** Posts one queued season rating to the bridge and classifies the outcome. */
 async function deliverQueuedSeasonRating(
   connection: BridgeConnection,
   queuedEntry: SeasonRatingQueueEntry,
@@ -246,6 +252,7 @@ async function deliverQueuedSeasonRating(
   }
 }
 
+/** Decides whether a delivery outcome should trigger an active-season refresh. */
 function shouldRefreshAfterSeasonRatingDelivery(
   resolution: SeasonRatingDeliveryResolution,
 ): boolean {
@@ -296,13 +303,16 @@ export async function drainSeasonRatingQueue(
         queuedEntry,
       );
 
-    if (!deliveryResolution.shouldKeepEntry) {
+    // A null `nextQueueStatus` is the drop signal: `resolveSeasonRatingDelivery` pairs it with
+    // `shouldKeepEntry: false` on every return. Branching on the status itself lets the type
+    // narrow, so the kept branch needs no cast and no unreachable guard.
+    const { nextQueueStatus } = deliveryResolution;
+
+    if (nextQueueStatus === null) {
       await withLocalWrite(rawDb, async (_db, tx) => {
         await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!);
       });
-    } else if (deliveryResolution.nextQueueStatus) {
-      const nextQueueStatus = deliveryResolution.nextQueueStatus;
-
+    } else {
       await withLocalWrite(rawDb, async (_db, tx) => {
         await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, {
           ...syncingEntry,

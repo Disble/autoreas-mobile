@@ -5,6 +5,7 @@ import {
 } from "../../../../src/features/sync/merge/field-merge.helpers";
 import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
 
+/** Builds a fixture domain `Anime` snapshot, extended per test via spread overrides. */
 function makeSnapshot(overrides: Partial<Anime> = {}): Anime {
   return {
     _id: "anime-1",
@@ -89,6 +90,31 @@ describe("buildPartialUpdate", () => {
     const result = buildPartialUpdate(["estado"], snapshot);
 
     expect(Object.keys(result.columns)).toEqual(["estado"]);
+  });
+
+  it("normaliza totalcap y tipo ausentes (undefined) a null en vez de escribir undefined", () => {
+    const snapshot = makeSnapshot({
+      totalcap: undefined as unknown as number | null,
+      tipo: undefined as unknown as number | null,
+    });
+
+    const result = buildPartialUpdate(["totalcap", "tipo"], snapshot);
+
+    expect(result.columns).toEqual({ totalcap: null, tipo: null });
+  });
+
+  it("normaliza dias/generos ausentes (undefined, dato legado) a null en vez de JSON.stringify(undefined)", () => {
+    // A row read outside the Zod schema's default (e.g. a pre-migration SQLite value) can carry
+    // `dias`/`generos` as `undefined` instead of the schema's `[]` default; this must persist as
+    // SQL NULL, never the string `"undefined"` `JSON.stringify` would otherwise produce.
+    const snapshot = makeSnapshot({
+      dias: undefined as unknown as Anime["dias"],
+      generos: undefined as unknown as Anime["generos"],
+    });
+
+    const result = buildPartialUpdate(["dias", "generos"], snapshot);
+
+    expect(result.columns).toEqual({ dias: null, generos: null });
   });
 });
 

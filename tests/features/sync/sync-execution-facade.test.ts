@@ -103,6 +103,39 @@ describe('sync-execution-facade', () => {
     expect(foreground.register).toHaveBeenCalledTimes(1);
   });
 
+  it('falls back to the last strategy when none reports registered, rather than leaving no current strategy', async () => {
+    const foreground = createStrategy('android_foreground_service', 'unsupported');
+    const bestEffort = createStrategy('best_effort_background_task', 'unregistered');
+
+    const facade = createSyncExecutionFacade({
+      strategies: [foreground, bestEffort],
+    });
+
+    await facade.registerPreferredStrategy();
+
+    expect(facade.hasCurrentStrategy()).toBe(true);
+    await expect(facade.getStatus()).resolves.toMatchObject({
+      executionMode: 'best_effort_background_task',
+    });
+  });
+
+  it('unregisters the single preferred strategy, and no-ops when nothing is currently registered', async () => {
+    const foreground = createStrategy('android_foreground_service', 'registered');
+
+    const facade = createSyncExecutionFacade({
+      strategies: [foreground],
+    });
+
+    await facade.unregisterCurrentStrategy();
+    expect(foreground.unregister).not.toHaveBeenCalled();
+
+    await facade.registerPreferredStrategy();
+    await facade.unregisterCurrentStrategy();
+
+    expect(foreground.unregister).toHaveBeenCalledTimes(1);
+    expect(facade.hasCurrentStrategy()).toBe(false);
+  });
+
   describe('registerConcurrentStrategies', () => {
     it('registers both the WorkManager floor and the FGS primary independently, never leaving zero paths', async () => {
       const foreground = createStrategy('android_foreground_service', 'registered');

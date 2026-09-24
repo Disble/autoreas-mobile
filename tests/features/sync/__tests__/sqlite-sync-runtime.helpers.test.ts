@@ -124,8 +124,61 @@ describe('sqlite sync runtime helpers', () => {
     expect(rawDb.closeAsync).toHaveBeenCalledTimes(1);
     expect(rawDb.closeSync).toHaveBeenCalledTimes(1);
   });
+
+  it('closes synchronously when the connection carries no closeAsync at all', async () => {
+    const rawDb = buildRawDb({ closeAsync: undefined, closeSync: jest.fn() });
+
+    await closeSyncRuntime(rawDb);
+
+    expect(rawDb.closeSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws the original async-close error when neither strategy can close the connection', async () => {
+    const asyncError = new Error('database is locked');
+    const rawDb = buildRawDb({
+      closeAsync: jest.fn().mockRejectedValue(asyncError),
+      closeSync: undefined,
+    });
+
+    await expect(closeSyncRuntime(rawDb)).rejects.toThrow(
+      'Failed to close the SQLite sync runtime.',
+    );
+  });
+
+  it('reuses the cached connection on a second open() instead of opening a new one', async () => {
+    const rawDb = buildRawDb();
+    const openDatabase = jest.fn().mockReturnValue(rawDb);
+    const runtime = createSyncSQLiteRuntime({
+      owner: 'foreground_service',
+      openDatabase,
+      prepareHeadlessDatabase: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const first = await runtime.open();
+    const second = await runtime.open();
+
+    expect(second).toBe(first);
+    expect(openDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it('joins the same in-flight open() instead of opening a second connection concurrently', async () => {
+    const rawDb = buildRawDb();
+    const openDatabase = jest.fn().mockReturnValue(rawDb);
+    const runtime = createSyncSQLiteRuntime({
+      owner: 'foreground_service',
+      openDatabase,
+      prepareHeadlessDatabase: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const [first, second] = await Promise.all([runtime.open(), runtime.open()]);
+
+    expect(first).toBe(rawDb);
+    expect(second).toBe(rawDb);
+    expect(openDatabase).toHaveBeenCalledTimes(1);
+  });
 });
 
+/** Builds a fixture `SQLiteDatabase` with mocked close strategies, overridable per test. */
 function buildRawDb(
   overrides: Partial<CloseableSQLiteDatabase> = {},
 ): SQLiteDatabase & {

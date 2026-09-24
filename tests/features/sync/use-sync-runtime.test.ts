@@ -11,7 +11,9 @@ import { useSyncRuntime } from "../../../src/features/sync/use-sync-runtime";
 import { useRemoteChangeDrain } from "../../../src/features/sync/use-remote-change-drain";
 import { useWebSocket } from "../../../src/features/ws/use-websocket";
 
+/** Captured `AppState` listeners the mocked `addEventListener` registers, driven via `emitAppState`. */
 const appStateListeners: ((status: string) => void)[] = [];
+/** Captured network-state listeners driven via `emitNetworkState`. */
 const networkListeners: ((state: { isConnected?: boolean | null }) => void)[] = [];
 
 jest.mock("react-native", () => ({
@@ -93,12 +95,14 @@ jest.mock("../../../src/features/sync/use-foreground-resync", () => ({
   useForegroundResync: jest.fn(),
 }));
 
+/** Notifies every captured `AppState` listener of a state transition. */
 function emitAppState(status: string) {
   appStateListeners.forEach((listener) => {
     listener(status);
   });
 }
 
+/** Notifies every captured network-state listener of a connectivity transition. */
 function emitNetworkState(isConnected: boolean | null | undefined) {
   networkListeners.forEach((listener) => {
     listener({ isConnected });
@@ -339,6 +343,48 @@ describe("useSyncRuntime", () => {
 
     expect(mockRefreshActiveSeason).not.toHaveBeenCalled();
     expect(mockClearActiveSeason).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows a refreshActiveSeason/clearActiveSeason rejection instead of surfacing an unhandled rejection", async () => {
+    renderHook(() => useSyncRuntime({ isBootstrapped: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const webSocketArgs = (useWebSocket as jest.Mock).mock.calls.at(-1)?.[0];
+
+    mockRefreshActiveSeason.mockRejectedValueOnce(new Error("season refresh failed"));
+    await act(async () => {
+      webSocketArgs.onPreferencesChanged(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    mockClearActiveSeason.mockRejectedValueOnce(new Error("season clear failed"));
+    await act(async () => {
+      webSocketArgs.onPreferencesChanged(false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("refreshes the active season when the websocket reports the season itself changed", async () => {
+    renderHook(() => useSyncRuntime({ isBootstrapped: true }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const webSocketArgs = (useWebSocket as jest.Mock).mock.calls.at(-1)?.[0];
+    mockRefreshActiveSeason.mockClear();
+
+    await act(async () => {
+      webSocketArgs.onSeasonChanged();
+      await Promise.resolve();
+    });
+
+    expect(mockRefreshActiveSeason).toHaveBeenCalledTimes(1);
   });
 
   it("swallows handled auto-sync failures so Expo does not surface unhandled promise rejections", async () => {

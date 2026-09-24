@@ -62,8 +62,11 @@ pre-commit:
           # and that fires on a pushed v-tag, not on a commit. Narrowing it here would
           # mean these tests never run in full between releases. `--maxWorkers=4`
           # is the cap, not `--runInBand` (measured: 122s serial vs 10s at 4 workers).
+          # `--coverage` enforces the per-file 100/80/0 sync tiers in jest.coverage-tiers.js
+          # (measured +1-4 s). If `dlinter init` rewrites this line, put the flag back:
+          # without it the thresholds are never checked on commit.
           - name: test
-            run: bunx jest --maxWorkers=4
+            run: bunx jest --maxWorkers=4 --coverage
           # dlinter:owned — managed by `dlinter init`; safe to re-run, do not rename
           #
           # Piped after `test` because Stryker drives the same Jest runner; running both

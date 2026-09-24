@@ -134,8 +134,10 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      # `test:coverage`, not `test`: coverage mode is what enforces the per-file sync tiers
+      # (jest.coverage-tiers.js), so a release cannot ship a CORE file below 100 %.
       - name: Test
-        run: bun run test
+        run: bun run test:coverage
 
       # C2: decides whether the `native` job (Kotlin unit tests + Android lint) needs
       # to run at all. Compares this tag's commit against the previous release tag --

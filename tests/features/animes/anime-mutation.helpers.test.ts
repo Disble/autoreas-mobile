@@ -241,4 +241,18 @@ describe('anime mutation helpers', () => {
       primeravez: 0,
     });
   });
+
+  it('toLocalAnimeUpdate normaliza primeravez a 1 cuando firstCycle es true', () => {
+    expect(
+      toLocalAnimeUpdate({
+        episodesWatched: 1,
+        lastWatchedAt: now,
+        firstCycle: true,
+      }),
+    ).toEqual({
+      nrocapvisto: 1,
+      fechaUltCapVisto: now,
+      primeravez: 1,
+    });
+  });
 });

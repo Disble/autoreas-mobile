@@ -98,6 +98,12 @@ export function deriveChangedFields(
 
   for (const field of MERGEABLE_FIELDS) {
     const mapped = mapKnownField(field, snapshot);
+    /* istanbul ignore next -- defensive parity guard: MERGEABLE_FIELDS' 19 entries and
+     * mapKnownField's 19 switch cases are two separately-maintained lists the module comment
+     * documents as mirrored; this `undefined` branch only fires if a future edit adds a field to
+     * one without the other. Deleting it would turn that drift into a crash here (destructuring
+     * `.value` off `undefined`) instead of a skipped field; unreachable only as long as the two
+     * lists are proven in sync, which is exactly the drift this guards against. */
     if (mapped === undefined) {
       continue;
     }

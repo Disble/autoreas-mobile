@@ -328,6 +328,38 @@ describe('headless-sync-cycle helpers', () => {
     expect(runtimeStatusModule.recordCycleActive).toHaveBeenCalledWith(rawDb, false);
   });
 
+  it('falls back to a generic message and vocabulary when the caught failure is not an Error', async () => {
+    // Not `instanceof Error`, but shaped to impersonate one (`name`/`message` matching an
+    // allow-listed error class): if `buildSyncAttemptFailureDetail`/the catch's own message
+    // fallback ever read `.name`/`.message` straight off the rejection instead of gating on
+    // `instanceof Error`, this would leak 'LocalWriteError'/'fake local write' through instead of
+    // the generic fallbacks asserted below.
+    (syncModule.syncPendingOperations as jest.Mock).mockRejectedValue({
+      name: 'LocalWriteError',
+      message: 'fake local write',
+    });
+
+    const result = await runHeadlessSyncCycle({
+      runtime: buildRuntime(),
+      triggerSource: 'foreground_service',
+    });
+
+    expect(result).toEqual({ kind: 'failed', syncedCount: 0 });
+    expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
+      rawDb,
+      'foreground_service',
+      expect.any(Number),
+      'Background sync failed',
+      {
+        cycleId: FIXED_CYCLE_ID,
+        stage: null,
+        errorName: null,
+        errorStage: null,
+        nativeErrcodeByte: null,
+      },
+    );
+  });
+
   it('classifies a caught local-write failure into the closed error vocabulary, with its cycle id and a null stage (no exact correspondence)', async () => {
     const writeError = new LocalWriteError('SQLITE_BUSY: database is locked', {
       errcode: 5,
@@ -405,6 +437,32 @@ describe('headless-sync-cycle helpers', () => {
     expect(result).toEqual({ kind: 'success', syncedCount: 3 });
     expect(runtimeStatusModule.recordSyncAttemptSucceeded).toHaveBeenCalled();
     expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[runHeadlessSyncCycle] Operation-log pruning failed',
+      expect.any(Error),
+    );
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('still reports failed (not a pruning error) when pruning also fails after a failed sync', async () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (syncModule.syncPendingOperations as jest.Mock).mockRejectedValue(new Error('Network Error'));
+    (retentionModule.pruneOperationLog as jest.Mock).mockRejectedValue(new Error('prune failed'));
+
+    const result = await runHeadlessSyncCycle({
+      runtime: buildRuntime(),
+      triggerSource: 'foreground_service',
+    });
+
+    expect(result).toEqual({ kind: 'failed', syncedCount: 0 });
+    expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
+      rawDb,
+      'foreground_service',
+      expect.any(Number),
+      'Network Error',
+      expect.objectContaining({ cycleId: FIXED_CYCLE_ID }),
+    );
     expect(consoleWarnSpy).toHaveBeenCalledWith(
       '[runHeadlessSyncCycle] Operation-log pruning failed',
       expect.any(Error),

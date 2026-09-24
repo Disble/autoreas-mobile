@@ -230,6 +230,73 @@ describe('resyncFromBridgeSnapshot', () => {
     expect(columns).not.toHaveProperty('bridge_modified_at');
   });
 
+  it('returns healed:0 without touching the local write when the bridge snapshot is empty', async () => {
+    mockFetch.mockResolvedValue([]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(mockDeferredWrite).not.toHaveBeenCalled();
+    expect(result.healed).toBe(0);
+  });
+
+  it('keeps a domain-shaped anime unchanged when it does not parse as an English wire anime', async () => {
+    // Production shape (design.md Decision 10, `normalizeFetchedAnime`'s doc comment): `entry.anime`
+    // is already the domain `Anime` (Spanish keys), so `WireAnimeSchema.safeParse` fails and the
+    // identity fallback (`return anime;`) is the branch every real snapshot entry takes. Every other
+    // case in this file feeds a wire-shaped (English-keyed) fixture instead, which is documented drift
+    // that only exercises the opposite (success) branch.
+    const domainAnime = {
+      _id: 'anime-1',
+      nombre: 'Naruto',
+      estado: 1,
+      nrocapvisto: 12,
+      totalcap: 220,
+      dias: [],
+      generos: [],
+      tipo: 1,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: null,
+      fechaEstreno: null,
+      fechaCreacion: null,
+      fechaEliminacion: null,
+      portada: null,
+      pagina: null,
+      carpeta: null,
+      estudios: null,
+      origen: null,
+      duracion: null,
+    };
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 5, estado: 0, lastAppliedChangeMs: 500 })]);
+    mockFetch.mockResolvedValue([{ anime: domainAnime, bridgeModifiedAt: 0 }]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(
+      expect.anything(),
+      'anime-1',
+      { nrocapvisto: 12, estado: 1 },
+      500,
+    );
+    expect(result.healed).toBe(1);
+  });
+
+  it('guards a healed row with 0 when the local row has never applied a changelog entry', async () => {
+    wireWriteWithLocalRows([
+      makeRow({ nrocapvisto: 5, estado: 0, lastAppliedChangeMs: null }),
+    ]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 })]);
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(
+      expect.anything(),
+      'anime-1',
+      { nrocapvisto: 12, estado: 1 },
+      0,
+    );
+  });
+
   it('reads pending outbox ids and local rows independently, regardless of resolve order', async () => {
     // loadPendingOutboxRecordIds resolves AFTER the local rows select to prove the two reads
     // are not sequenced through each other's result (parallelized via Promise.all).

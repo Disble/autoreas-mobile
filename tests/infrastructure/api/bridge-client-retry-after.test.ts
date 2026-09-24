@@ -69,6 +69,9 @@ describe('parseRetryAfterMs (Decision 2)', () => {
     ['negative', '-5'],
     ['fractional', '1.5'],
     ['an unparseable word', 'soon'],
+    // Carries a colon (passes the HTTP-date pre-check) but is not a real date, so `Date.parse`
+    // itself must reject it -- distinct from `'soon'` above, which never reaches `Date.parse`.
+    ['a colon-bearing string Date.parse cannot resolve', 'not:a:date'],
   ])('returns null, never a zero-with-meaning, for a %s value', (_label, raw) => {
     expect(parseRetryAfterMs(raw, NOW)).toBeNull();
   });

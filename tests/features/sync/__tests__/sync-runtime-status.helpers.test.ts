@@ -408,6 +408,16 @@ describe('a terminal sync attempt releases the cycle-active flag (regression: 20
     expect(afterSecondCycle.isCycleActive).toBe(false);
     expect(afterSecondCycle.consecutiveUnclosedCycles).toBe(0);
   });
+
+  it('defaults cycleId to null on both recordSyncAttemptStarted and recordSyncAttemptSucceeded when the caller omits it', async () => {
+    const adapter = await openAdapter();
+
+    await recordSyncAttemptStarted(adapter, 'background_task', 1710000000000);
+    await recordSyncAttemptSucceeded(adapter, 'background_task', 1710000001000, 1);
+
+    const snapshot = await getSyncRuntimeStatusSnapshot(adapter);
+    expect(snapshot.lastCycleId).toBeNull();
+  });
 });
 
 describe('buildCycleBookkeepingPatch folds flush and convergence counters into the single write recordBacklogReadCount already performs (D6)', () => {

@@ -32,6 +32,63 @@ describe('AnimeSchema', () => {
     expect(parsed.fechaUltCapVisto).toBe(1710000000000);
   });
 
+  it('acepta null explícito en un campo de fecha legacy', () => {
+    const parsed = AnimeSchema.parse({
+      ...minimalAnime,
+      fechaEstreno: null,
+    });
+
+    expect(parsed.fechaEstreno).toBeNull();
+  });
+
+  it('coerciona un timestamp numérico almacenado como string a number', () => {
+    const parsed = AnimeSchema.parse({
+      ...minimalAnime,
+      fechaCreacion: '1710000000000',
+    });
+
+    expect(parsed.fechaCreacion).toBe(1710000000000);
+  });
+
+  it('coerciona un timestamp negativo o decimal almacenado como string', () => {
+    expect(
+      AnimeSchema.parse({ ...minimalAnime, fechaCreacion: '-5' }).fechaCreacion,
+    ).toBe(-5);
+    expect(
+      AnimeSchema.parse({ ...minimalAnime, fechaCreacion: '1.5' }).fechaCreacion,
+    ).toBe(1.5);
+  });
+
+  it('desenvuelve el formato legado Mongo $$date a su número interno', () => {
+    const parsed = AnimeSchema.parse({
+      ...minimalAnime,
+      fechaEliminacion: { $$date: 1710000000000 },
+    });
+
+    expect(parsed.fechaEliminacion).toBe(1710000000000);
+  });
+
+  it('rechaza un valor de fecha que no matchea ningún preprocesamiento reconocido (ni número, ni numeric-string, ni $$date)', () => {
+    const result = AnimeSchema.safeParse({
+      ...minimalAnime,
+      fechaUltCapVisto: 'not-a-timestamp',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('deja pasar sin transformar un objeto que no matchea la forma $$date (falls through al passthrough final)', () => {
+    // Has the `$$date` key but with a non-number value: fails the `typeof value.$$date ===
+    // 'number'` guard, so the preprocessor's final `return value;` passes the object through
+    // unchanged, and Zod's own `z.number().nullable()` then rejects the object shape.
+    const result = AnimeSchema.safeParse({
+      ...minimalAnime,
+      fechaUltCapVisto: { $$date: 'not-a-number' },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rechaza $$date en el contrato wire en inglés', () => {
     expect(() =>
       WireAnimeSchema.parse({
@@ -46,6 +103,23 @@ describe('AnimeSchema', () => {
         lastWatchedAt: { $$date: 1710000000000 },
       })
     ).toThrow(z.ZodError);
+  });
+
+  it('coerciona genres/days vacío (string legado) a array vacío en el contrato wire', () => {
+    const parsed = WireAnimeSchema.parse({
+      id: 'anime-1',
+      name: 'Fullmetal Alchemist',
+      status: 0,
+      episodesWatched: 3,
+      active: 1,
+      firstCycle: 0,
+      genres: '',
+      days: '',
+      modified_at: 1788540735366,
+    });
+
+    expect(parsed.genres).toEqual([]);
+    expect(parsed.days).toEqual([]);
   });
 
   it('acepta timestamps numéricos en el contrato wire en inglés', () => {

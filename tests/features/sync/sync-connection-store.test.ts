@@ -3,6 +3,7 @@ import {
   beginSyncConnectionAttempt,
   getSyncConnectionSnapshot,
   markSyncConnectionFailed,
+  markSyncConnectionPending,
   markSyncConnectionSucceeded,
   publishSyncConnectionAttempt,
   resetSyncConnectionStore,
@@ -67,6 +68,50 @@ describe('sync connection store', () => {
       lastSyncAt: null,
       message: unreachableError.message,
     });
+  });
+
+  it('ignores a failure published under a stale (superseded) attempt', () => {
+    const staleAttempt = beginSyncConnectionAttempt();
+    beginSyncConnectionAttempt();
+
+    markSyncConnectionFailed(staleAttempt, new Error('too late'));
+
+    expect(getSyncConnectionSnapshot().kind).toBe('syncing');
+  });
+
+  it('publishes pending for the current attempt but ignores a stale one', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionPending(attempt);
+    expect(getSyncConnectionSnapshot().kind).toBe('idle');
+
+    markSyncConnectionSucceeded(attempt, 1_000);
+    const staleAttempt = attempt;
+    beginSyncConnectionAttempt();
+    markSyncConnectionPending(staleAttempt);
+
+    expect(getSyncConnectionSnapshot().kind).toBe('syncing');
+  });
+
+  it('keeps the publication queue usable after an earlier persistTelemetry rejects', async () => {
+    const attempt = beginSyncConnectionAttempt();
+    const publishConnection = jest.fn();
+    await expect(
+      publishSyncConnectionAttempt({
+        attempt,
+        persistTelemetry: () => Promise.reject(new Error('telemetry write failed')),
+        publishConnection,
+      }),
+    ).rejects.toThrow('telemetry write failed');
+
+    const nextAttempt = beginSyncConnectionAttempt();
+    await expect(
+      publishSyncConnectionAttempt({
+        attempt: nextAttempt,
+        persistTelemetry: async () => undefined,
+        publishConnection,
+      }),
+    ).resolves.toBe(true);
+    expect(publishConnection).toHaveBeenCalledTimes(1);
   });
 
   it('settles newer failure telemetry after an older success write already started', async () => {
