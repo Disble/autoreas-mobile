@@ -366,4 +366,17 @@ Observed cadence: one tick every ~105 s (60 s interval + the inexact alarm's 45 
 `scripts/lib/device-checks.mjs` still checks the retired ticker wake lock and the `dataSync` bit: update
 it before relying on `verify-sync-on-device.mjs` for this build.
 
+### Consolidation (2026-09-23)
+
+Both side worktrees merged into this branch and removed:
+- `build/faster-docker-apk` fast-forwarded (`f344a07`, `c3b6a5e`, `35c6502`): Docker build ~10 → ~4.5
+  min, lefthook `native` job (Kotlin tests when `modules/*/android/**` is staged), release `guard` runs
+  the Kotlin tests and Android lint before the build. Feature doc: `odd/tasks/faster-docker-apk-build.md`.
+- `test/kotlin-native-debt` merged (`5e6e1a9`): the debt session's 43 Kotlin tests (parser, lease,
+  cycle, recovery, applier, request body) plus its fallow complexity fix. One textual conflict,
+  `modules/sync-engine/android/build.gradle`, resolved with this branch's harness, which is a
+  superset of the debt branch's. Verified after the merge: 84 Kotlin tests green (73 sync-engine,
+  11 ticker), 181 suites / 1385 Jest tests, full pre-commit gate including the `native` job.
+  Its document: `odd/tasks/kotlin-native-test-debt.md`.
+
 Next: finish T7 (unlocked app open, bridge-down run, 24 h), then T8.
