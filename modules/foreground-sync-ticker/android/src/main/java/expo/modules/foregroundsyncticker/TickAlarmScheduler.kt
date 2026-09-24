@@ -115,3 +115,29 @@ internal fun cancelTickAlarm(context: Context) {
   val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
   alarmManager.cancel(buildTickPendingIntent(context))
 }
+
+/**
+ * Starts native ticking end-to-end (ODD native-foreground-sync-service T4): persists
+ * [TickingState] with the given interval, arms the next tick alarm, then starts the sync-engine's
+ * foreground service -- in that order, matching [TickAlarmReceiver]'s own "re-arm before starting
+ * the service" rule, so a service-start refusal (see [startSyncForegroundServiceSafely]) never
+ * costs the alarm either. Free of any [ForegroundSyncTickerModule] / `AppContext` dependency on
+ * purpose, so it is testable with a plain Robolectric [Context], the same way every other
+ * function in this file already is; the module's own `start()` is a thin wrapper around this.
+ */
+internal fun startSyncTicking(context: Context, intervalMs: Long) {
+  persistTickingState(context, isTicking = true, intervalMs = intervalMs)
+  scheduleNextTick(context, intervalMs)
+  startSyncForegroundServiceSafely(context)
+}
+
+/**
+ * Stops native ticking end-to-end: persists [TickingState] as not ticking, stops the sync-engine's
+ * foreground service, then cancels the pending tick alarm. Safe to call with nothing currently
+ * started or armed. The module's own `stop()` is a thin wrapper around this.
+ */
+internal fun stopSyncTicking(context: Context, intervalMs: Long) {
+  persistTickingState(context, isTicking = false, intervalMs = intervalMs)
+  stopSyncForegroundService(context)
+  cancelTickAlarm(context)
+}

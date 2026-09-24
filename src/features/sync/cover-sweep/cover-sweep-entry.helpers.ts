@@ -132,13 +132,20 @@ function resolveTransientEntry(
   now: number,
   sourceKey: string | null,
 ): CoverManifestEntry {
-  const nextFailureCount = (previous?.failureCount ?? 0) + 1;
+  const previousEntry = previous ?? {
+    status: 'transient' as const,
+    fileName: null,
+    etag: null,
+    checkedAt: null,
+    failureCount: 0,
+  };
+  const nextFailureCount = previousEntry.failureCount + 1;
 
   return {
-    status: previous?.status ?? 'transient',
-    fileName: previous?.fileName ?? null,
-    etag: previous?.etag ?? null,
-    checkedAt: previous?.checkedAt ?? null,
+    status: previousEntry.status,
+    fileName: previousEntry.fileName,
+    etag: previousEntry.etag,
+    checkedAt: previousEntry.checkedAt,
     nextAttemptAt: now + computeTransientDelayMs(nextFailureCount, retryAfterMs),
     failureCount: nextFailureCount,
     sourceKey,

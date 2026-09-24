@@ -3,7 +3,7 @@
  * Notifee foreground-service type and the manifest-declared tick-alarm receiver.
  *
  * `expo/config-plugins` is mocked at the module boundary (the convention used in
- * `tests/features/sync/notifee-foreground-service-adapter.test.ts`): the real `withAndroidManifest`
+ * `tests/features/sync/native-foreground-sync-adapter.test.ts`): the real `withAndroidManifest`
  * only registers a mod for Expo's prebuild pipeline to run later, so calling the plugin directly in
  * a test would never invoke its callback. The mock makes `withAndroidManifest` invoke its callback
  * synchronously against a fake, already-parsed manifest instead, so the plugin's own logic — the
@@ -61,6 +61,13 @@ const TICK_ALARM_ACTION = 'expo.modules.foregroundsyncticker.TICK_ALARM';
 
 /** Component name of the Notifee foreground service the plugin must keep declaring. */
 const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
+
+/**
+ * Component name of the native Kotlin foreground service the plugin must declare (ODD
+ * native-foreground-sync-service T3); must match `SyncForegroundService.SERVICE_CLASS_NAME` in
+ * `modules/sync-engine/android`.
+ */
+const SYNC_FOREGROUND_SERVICE_NAME = 'expo.modules.syncengine.SyncForegroundService';
 
 /** Builds a minimal fake parsed `AndroidManifest.xml`, with one bare `MainApplication` element. */
 function createFakeConfig(): FakeExpoConfig {
@@ -152,13 +159,17 @@ describe('withAndroidForegroundSync', () => {
 
     const result = withAndroidForegroundSync(config) as unknown as FakeExpoConfig;
 
-    const services = mainApplicationOf(result).service;
-    expect(services).toHaveLength(1);
-
-    const service = services![0];
-    expect(service.$?.['android:name']).toBe(FOREGROUND_SERVICE_NAME);
-    expect(service.$?.['android:foregroundServiceType']).toBe('specialUse');
-    expect(service.property).toEqual([
+    // The plugin now declares two services (Notifee's own, and ODD
+    // native-foreground-sync-service T3's SyncForegroundService); this test only asserts on
+    // Notifee's, which T3 must leave untouched (T5 decides its fate, not T3).
+    const services = mainApplicationOf(result).service ?? [];
+    const service = services.find(
+      (candidate) => candidate.$?.['android:name'] === FOREGROUND_SERVICE_NAME,
+    );
+    expect(service).toBeDefined();
+    expect(service!.$?.['android:name']).toBe(FOREGROUND_SERVICE_NAME);
+    expect(service!.$?.['android:foregroundServiceType']).toBe('specialUse');
+    expect(service!.property).toEqual([
       {
         $: {
           'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
@@ -167,5 +178,46 @@ describe('withAndroidForegroundSync', () => {
         },
       },
     ]);
+  });
+
+  it('declares the native SyncForegroundService with specialUse, exported=false, and the subtype property', () => {
+    const config = createFakeConfig();
+
+    const result = withAndroidForegroundSync(config) as unknown as FakeExpoConfig;
+
+    const services = mainApplicationOf(result).service ?? [];
+    const syncService = services.find(
+      (service) => service.$?.['android:name'] === SYNC_FOREGROUND_SERVICE_NAME,
+    );
+
+    expect(syncService).toBeDefined();
+    expect(syncService!.$?.['android:exported']).toBe('false');
+    expect(syncService!.$?.['android:foregroundServiceType']).toBe('specialUse');
+    expect(syncService!.property).toEqual([
+      {
+        $: {
+          'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
+          'android:value':
+            'continuous background synchronisation of local operations with the paired bridge device',
+        },
+      },
+    ]);
+
+    // Both services must coexist: T5 decides Notifee's fate, T3 only adds the native one.
+    expect(services).toHaveLength(2);
+  });
+
+  it('is idempotent for SyncForegroundService: running it twice does not duplicate it', () => {
+    const config = createFakeConfig();
+
+    withAndroidForegroundSync(config);
+    const result = withAndroidForegroundSync(config) as unknown as FakeExpoConfig;
+
+    const services = mainApplicationOf(result).service ?? [];
+    const syncServices = services.filter(
+      (service) => service.$?.['android:name'] === SYNC_FOREGROUND_SERVICE_NAME,
+    );
+    expect(syncServices).toHaveLength(1);
+    expect(services).toHaveLength(2);
   });
 });

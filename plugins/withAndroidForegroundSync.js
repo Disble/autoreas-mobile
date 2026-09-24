@@ -35,6 +35,13 @@ const FOREGROUND_SERVICE_TYPE = 'specialUse';
 /** Full class name of the manifest-declared receiver that re-arms the tick alarm. */
 const TICK_ALARM_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.TickAlarmReceiver';
 
+// ODD native-foreground-sync-service T3: the Kotlin-owned service that runs one native sync
+// attempt per start command. A JS config plugin and Kotlin native code cannot import each
+// other's constants, so this string is the cross-module contract -- it must match
+// SyncForegroundService.SERVICE_CLASS_NAME in modules/sync-engine/android exactly.
+/** Full class name of the native foreground service that runs the sync attempt. */
+const SYNC_FOREGROUND_SERVICE_NAME = 'expo.modules.syncengine.SyncForegroundService';
+
 // Must match TICK_ALARM_ACTION in TickAlarmScheduler.kt exactly -- the two are not shared
 // through any single source of truth, since a JS config plugin and Kotlin native code cannot
 // import each other's constants.
@@ -131,6 +138,37 @@ function ensureForegroundService(mainApplication) {
 }
 
 /**
+ * Declares our own native foreground service (ODD native-foreground-sync-service T3),
+ * idempotently -- same shape as {@link ensureForegroundService} above, but `exported` stays
+ * `false` (this component is only ever started by this app's own receiver or module, through an
+ * explicit intent naming {@link SYNC_FOREGROUND_SERVICE_NAME}) and no `tools:replace` is needed,
+ * since nothing else in the merged manifest declares this component.
+ */
+function ensureSyncForegroundService(mainApplication) {
+  const services = mainApplication.service ?? [];
+  const existingService = services.find(
+    (service) => service.$?.['android:name'] === SYNC_FOREGROUND_SERVICE_NAME,
+  );
+
+  const serviceAttributes = {
+    'android:name': SYNC_FOREGROUND_SERVICE_NAME,
+    'android:exported': 'false',
+    'android:foregroundServiceType': FOREGROUND_SERVICE_TYPE,
+  };
+
+  if (existingService) {
+    existingService.$ = { ...existingService.$, ...serviceAttributes };
+    ensureSpecialUseSubtypeProperty(existingService);
+  } else {
+    const newService = { $: serviceAttributes };
+    ensureSpecialUseSubtypeProperty(newService);
+    services.push(newService);
+  }
+
+  mainApplication.service = services;
+}
+
+/**
  * Declares the manifest receiver that re-arms the tick alarm, creating or updating it
  * idempotently -- mirroring how {@link ensureForegroundService} treats the Notifee service, and
  * how {@link ensureSpecialUseSubtypeProperty} treats that service's subtype property. `exported`
@@ -178,6 +216,7 @@ module.exports = function withAndroidForegroundSync(config) {
     });
 
     ensureForegroundService(mainApplication);
+    ensureSyncForegroundService(mainApplication);
     ensureReceiver(mainApplication);
 
     return configWithManifest;

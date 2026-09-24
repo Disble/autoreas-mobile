@@ -48,43 +48,51 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
 function createSharedLockStore() {
   let row: { owner: string; expiresAt: number; fence: string } | null = null;
   const statements: string[] = [];
+  const statementResult = (changes: number) => ({ changes, lastInsertRowId: 0 });
+
+  function handleDdl() {
+    return statementResult(0);
+  }
+
+  function handleConditionalClaim(params: unknown[]) {
+    const [, owner, expiresAt, fence, now] = params as [
+      number,
+      string,
+      number,
+      string,
+      number,
+    ];
+
+    if (!row || row.expiresAt <= now || row.owner === owner) {
+      row = { owner, expiresAt, fence };
+      return statementResult(1);
+    }
+
+    return statementResult(0);
+  }
+
+  function handleFencedRelease(params: unknown[]) {
+    const [, owner, fence] = params as [number, string, string];
+
+    // Fenced release: delete only when BOTH the owner and claim's fence token still match.
+    if (row && row.owner === owner && row.fence === fence) {
+      row = null;
+      return statementResult(1);
+    }
+
+    return statementResult(0);
+  }
 
   function createConnection(): SQLiteDatabase {
     return {
       async runAsync(sql: string, ...params: unknown[]) {
         statements.push(sql);
-        if (sql.startsWith('CREATE TABLE')) {
-          return { changes: 0, lastInsertRowId: 0 };
-        }
-
+        if (sql.startsWith('CREATE TABLE')) return handleDdl();
         if (sql.startsWith('INSERT INTO sync_cycle_lock')) {
-          const [, owner, expiresAt, fence, now] = params as [
-            number,
-            string,
-            number,
-            string,
-            number,
-          ];
-
-          if (!row || row.expiresAt <= now || row.owner === owner) {
-            row = { owner, expiresAt, fence };
-            return { changes: 1, lastInsertRowId: 0 };
-          }
-
-          return { changes: 0, lastInsertRowId: 0 };
+          return handleConditionalClaim(params);
         }
-
         if (sql.startsWith('DELETE FROM sync_cycle_lock')) {
-          const [, owner, fence] = params as [number, string, string];
-
-          // Fenced release: the row is deleted only when BOTH the owner and the claim's own
-          // fence token still match -- a reclaimed owner's release must affect zero rows.
-          if (row && row.owner === owner && row.fence === fence) {
-            row = null;
-            return { changes: 1, lastInsertRowId: 0 };
-          }
-
-          return { changes: 0, lastInsertRowId: 0 };
+          return handleFencedRelease(params);
         }
 
         throw new Error(`Unexpected SQL in fake lock store: ${sql}`);
@@ -121,6 +129,14 @@ describe('sync-cycle-lock', () => {
         task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
       ) => task({}, database),
     );
+  });
+
+  it('rejects SQL outside the fake lock store contract', async () => {
+    const store = createSharedLockStore();
+    const rawDb = store.createConnection();
+
+    await expect(rawDb.runAsync('UPDATE sync_cycle_lock SET owner = ?', 'owner'))
+      .rejects.toThrow('Unexpected SQL in fake lock store: UPDATE sync_cycle_lock SET owner = ?');
   });
 
   it('uses the foreground-prepared lock table without issuing headless DDL', async () => {

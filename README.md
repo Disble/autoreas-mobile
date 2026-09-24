@@ -243,7 +243,7 @@ bunx eas-cli build --platform android --profile development
 ```
 
 Install the resulting APK on the device. To build locally with Docker instead, see
-[Build and release](docs/build-and-release.md#option-2--local-preview-build-with-docker).
+[Local Android build with Docker](docs/local-android-build.md).
 
 ### Run
 
@@ -395,6 +395,7 @@ incrementally instead of never.
 | [`docs/specs/`](docs/specs/) | Historical functional specifications (SDD-00 → SDD-07) |
 | [`docs/deployment.md`](docs/deployment.md) | How a release ships: version bump, tag, CI pipeline and its guards |
 | [`docs/build-and-release.md`](docs/build-and-release.md) | EAS and Docker builds, Git hooks, local build paths |
+| [`docs/local-android-build.md`](docs/local-android-build.md) | Building an APK locally with Docker: quick start, profiles, ABI configuration, troubleshooting |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Native module, cleartext HTTP and Expo Router issues |
 | [`docs/postmortems/`](docs/postmortems/) | Incident write-ups |
 | [`docs/Autoreas_mobile_design_doc.md`](docs/Autoreas_mobile_design_doc.md) | The original RFC |

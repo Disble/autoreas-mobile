@@ -5,10 +5,14 @@ import {
 import * as headlessSyncCycleModule from '../../../src/features/sync/headless-sync-cycle.helpers';
 import * as sqliteSyncRuntimeModule from '../../../src/features/sync/sqlite-sync-runtime.helpers';
 import * as syncCycleLockModule from '../../../src/features/sync/sync-cycle-lock.helpers';
+import * as nativeForegroundSyncTickerModule from '../../../src/features/sync/native-foreground-sync-ticker.helpers';
 import type { SyncSQLiteRuntime } from '../../../src/features/sync/sqlite-sync-runtime.types';
 import { SchemaNotReadyError } from '../../../src/infrastructure/db/startup';
 
+/** Mock for the sync SQLite runtime's close(). */
 const mockClose = jest.fn<Promise<void>, []>();
+/** Mock for the native ticker's isRunning(), the FGS-mode gate this file must respect. */
+const mockTickerIsRunning = jest.fn<boolean, []>();
 
 jest.mock('../../../src/features/sync/headless-sync-cycle.helpers', () => ({
   runHeadlessSyncCycle: jest.fn(),
@@ -22,6 +26,14 @@ jest.mock('../../../src/features/sync/sync-cycle-lock.helpers', () => ({
   withExclusiveSyncCycle: jest.fn(
     async (params: { run: () => Promise<void> }) => params.run(),
   ),
+}));
+
+jest.mock('../../../src/features/sync/native-foreground-sync-ticker.helpers', () => ({
+  createNativeForegroundSyncTicker: jest.fn(() => ({
+    start: jest.fn(),
+    stop: jest.fn(),
+    isRunning: mockTickerIsRunning,
+  })),
 }));
 
 describe('background sync helpers', () => {
@@ -41,12 +53,33 @@ describe('background sync helpers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockClose.mockResolvedValue(undefined);
+    // Not ticking by default: every pre-existing case below exercises the ordinary WorkManager
+    // routing unaffected by the FGS gate.
+    mockTickerIsRunning.mockReturnValue(false);
 
     (sqliteSyncRuntimeModule.createSyncSQLiteRuntime as jest.Mock).mockReturnValue(buildRuntime());
     (headlessSyncCycleModule.runHeadlessSyncCycle as jest.Mock).mockResolvedValue({
       kind: 'success',
       syncedCount: 3,
     });
+  });
+
+  it('reports a no-op without touching SQLite or the wire while the native FGS owns the background', async () => {
+    mockTickerIsRunning.mockReturnValue(true);
+
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({ kind: 'no_op', syncedCount: 0 });
+
+    expect(nativeForegroundSyncTickerModule.createNativeForegroundSyncTicker).toHaveBeenCalled();
+    expect(sqliteSyncRuntimeModule.createSyncSQLiteRuntime).not.toHaveBeenCalled();
+    expect(headlessSyncCycleModule.runHeadlessSyncCycle).not.toHaveBeenCalled();
+  });
+
+  it('runs the ordinary routing when the native FGS is not ticking', async () => {
+    mockTickerIsRunning.mockReturnValue(false);
+
+    await expect(runBackgroundSyncCycle()).resolves.toEqual({ kind: 'success', syncedCount: 3 });
+
+    expect(sqliteSyncRuntimeModule.createSyncSQLiteRuntime).toHaveBeenCalled();
   });
 
   it('delegates the background task cycle to the shared headless sync helper using a runtime', async () => {

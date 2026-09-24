@@ -12,4 +12,58 @@ android {
     versionCode 1
     versionName '0.1.0'
   }
+
+  testOptions {
+    unitTests {
+      // Robolectric shadows load android.jar resources (manifest/xml) for the module, so the
+      // unit-test classpath needs them merged in, same as a real device would see them.
+      includeAndroidResources = true
+      // true (AGP's traditional default): a call to an Android API with no real
+      // implementation returns 0/null/false instead of throwing "not mocked". This module
+      // mixes plain-JUnit tests (SyncEngineBridgePresenceTest -- no @RunWith(Robolectric), by
+      // design: the seam under test is pure config -> HTTP) with Robolectric tests
+      // (SyncEngineRunnerTest). Production code on the tested failure paths legitimately calls
+      // android.util.Log (e.g. SyncEngineBridgePresence.probe's transport-failure branch); a
+      // plain-JUnit test has no Robolectric shadow to make that call work, so `false` here
+      // would fail EVERY plain test that exercises a logged failure path on a "not mocked"
+      // RuntimeException that has nothing to do with the behavior under test (confirmed: this
+      // is exactly what happened before this was set to true). Robolectric-based tests are
+      // unaffected either way -- Robolectric's bytecode shadowing intercepts the call before it
+      // ever reaches the mockable-android.jar stub this flag controls.
+      returnDefaultValues = true
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  // Robolectric 4.14.1: first line supporting API 35 (this module's targetSdk; compileSdk is 36
+  // per android/gradle.properties, but Robolectric shadows the RUNTIME sdk named by
+  // src/test/resources/robolectric.properties, not compileSdk).
+  testImplementation 'org.robolectric:robolectric:4.14.1'
+  testImplementation 'androidx.test:core:1.6.1'
+}
+
+// The presence-probe tests (T2) stand in for the bridge with the JDK's own
+// com.sun.net.httpserver.HttpServer -- no new network dependency, per the harness plan. Getting
+// that class to compile in an Android library module's unit-test source set needs TWO overrides
+// scoped to only the *UnitTestKotlin compile tasks (never production/app compilation):
+//   1. noJdk = false. The Kotlin Android Gradle plugin compiles EVERY Kotlin task in an Android
+//      module (including unit tests, which actually run on the host JVM) with `-no-jdk` plus an
+//      explicit classpath of `android.jar` alone, so only java.* signatures android.jar itself
+//      redeclares are visible -- the true desktop JDK is never consulted. android.jar does not
+//      declare com.sun.net.httpserver (device Android never ships it), so it is unresolved
+//      ("Unresolved reference 'sun'") regardless of any module flag, until the real JDK is
+//      allowed back in for these two tasks.
+//   2. -Xadd-modules=jdk.httpserver. With noJdk=false restored, the compiler still resolves
+//      java.* by JPMS module readability, and jdk.httpserver (unlike java.base) is not in the
+//      default `java.se` root set an unnamed-module compilation reads, so it must be added
+//      explicitly.
+// Both were verified independently to be necessary (dropping either reproduces the original
+// "Unresolved reference" errors).
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { task ->
+  if (task.name.contains('UnitTest')) {
+    task.compilerOptions.freeCompilerArgs.add('-Xadd-modules=jdk.httpserver')
+    task.compilerOptions.noJdk.set(false)
+  }
 }

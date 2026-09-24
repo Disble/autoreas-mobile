@@ -19,6 +19,12 @@ services:
       # Cache Gradle downloads and build outputs (~1-2GB, only downloaded once)
       - gradle_cache:/root/.gradle
 
+      # Docker-only Gradle speed-ups, layered over the cache volume (see the files for why):
+      # the build cache switch and an init script that skips lintVital. Read-only; CI never
+      # mounts them, so release builds are unaffected.
+      - ./docker/gradle/gradle.properties:/root/.gradle/gradle.properties:ro
+      - ./docker/gradle/init.d:/root/.gradle/init.d:ro
+
       # Cache Android SDK extras (avoids re-downloading NDK components)
       - android_cache:/root/.android
 
@@ -50,6 +56,27 @@ services:
       # hooks, `CI=true bun install` does not. See ARCHITECTURE.md "Hook installation is
       # host-owned".
       - CI=true
+      # AUTOREAS_ANDROID_ABIS itself is deliberately NOT set here. It reaches the container two
+      # other ways instead -- via `env_file: .env.local` below (a developer's persistent
+      # override) or `docker compose run -e AUTOREAS_ANDROID_ABIS=...` (Compose's own `run -e`
+      # already beats `env_file:` for that key, no help needed) -- and the entrypoint script
+      # resolves the final value, validates it, and prints where it came from. See
+      # docs/local-android-build.md ("Configuration reference") for the full precedence and
+      # docker/eas-build-entrypoint.sh for why: Compose interpolates `${VAR}` in THIS file from
+      # the HOST shell at parse time, never from `.env.local`, so a naive
+      # `${AUTOREAS_ANDROID_ABIS:-arm64-v8a}` here silently ignored .env.local entirely.
+      #
+      # This line only captures a bare shell export (no `-e`) for the entrypoint, under a
+      # DIFFERENT name than AUTOREAS_ANDROID_ABIS on purpose -- a same-named `environment:` entry
+      # always wins over `env_file:` for that key even when the host variable is unset (verified
+      # empirically against Docker Compose v2.40.3-desktop.1), which would silently empty out
+      # whatever .env.local set.
+      - AUTOREAS_ANDROID_ABIS_SHELL_OVERRIDE=${AUTOREAS_ANDROID_ABIS:-}
+      # expo-doctor exits 1 on this project and EAS ignores it anyway; skipping saves ~6 s.
+      - EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1
+      # Select files from .easignore without Git. Required from a Git worktree, where `.git` is a
+      # file pointing at a Windows path the container cannot resolve.
+      - EAS_NO_VCS=1
       - _JAVA_OPTIONS=-Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2,TLSv1.3 -Djdk.tls.client.protocols=TLSv1.2,TLSv1.3
 
     # Load all env vars from .env.local (Supabase keys, Firebase paths, EXPO_TOKEN, etc.)
@@ -58,18 +85,15 @@ services:
 
     # Default profile is "preview" — override by passing arg:
     #   docker compose ... run --rm eas-build production
-    entrypoint: >
-      bash -c "
-        echo '--- Installing dependencies ---' &&
-        bun install --frozen-lockfile &&
-        echo '--- Starting EAS local build ---' &&
-        for attempt in 1 2 3; do
-          bunx eas-cli@latest build --local --platform android --profile $${0:-preview} --non-interactive && break
-          echo \"--- Attempt $$attempt failed, retrying in 5s... ---\" &&
-          sleep 5
-        done &&
-        echo '--- Build complete. APK is in your project folder. ---'
-      "
+    #
+    # The entrypoint itself lives in docker/eas-build-entrypoint.sh (bind-mounted in via
+    # `- .:/app`, same as every other project file). It resolves and validates
+    # AUTOREAS_ANDROID_ABIS, then keeps every behaviour this used to inline here: dependency
+    # install, the profile argument (defaulting to "preview"), three build attempts with a
+    # non-zero exit and "Build FAILED after 3 attempts" if all three fail, and the final success
+    # line. Invoked through `bash` explicitly rather than relying on the file's own execute bit,
+    # which a Windows bind mount does not reliably preserve.
+    entrypoint: ["bash", "docker/eas-build-entrypoint.sh"]
     command: preview
 
 volumes:

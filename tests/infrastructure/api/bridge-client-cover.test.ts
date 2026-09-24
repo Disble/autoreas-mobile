@@ -130,6 +130,32 @@ describe('BridgeClient.getAnimeCover', () => {
     expect(result).toEqual({ kind: 'not_modified', etag: '"abc"' });
   });
 
+  it('returns not_modified when response headers are unavailable', async () => {
+    const response = { status: 304 } as Response;
+    const client = createBridgeClient({
+      fetchFn: jest.fn(async () => response) as unknown as typeof fetch,
+    });
+
+    await expect(client.getAnimeCover(CONNECTION, 'anime-1')).resolves.toEqual({
+      kind: 'not_modified',
+      etag: null,
+    });
+  });
+
+  it('does not read response bytes for a non-200 status', async () => {
+    const response = buildCoverResponse({ status: 503, headers: { 'Retry-After': '5' } });
+    const client = createBridgeClient({
+      fetchFn: jest.fn(async () => response) as unknown as typeof fetch,
+    });
+
+    await expect(client.getAnimeCover(CONNECTION, 'anime-1')).resolves.toEqual({
+      kind: 'transient',
+      status: 503,
+      retryAfterMs: 5_000,
+    });
+    expect(response.arrayBuffer).not.toHaveBeenCalled();
+  });
+
   it('returns absent on 204', async () => {
     const fetchFn = jest.fn(async () => buildCoverResponse({ status: 204 }));
     const client = createBridgeClient({ fetchFn: fetchFn as unknown as typeof fetch });

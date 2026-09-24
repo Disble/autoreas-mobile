@@ -60,9 +60,15 @@ bunx eas-cli build --platform android --profile development
 
 ### Option 2 — local preview build with Docker
 
-To generate the APK locally on Windows with Docker Desktop, this repo already includes the required
-setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs dependencies from
-`bun.lock` with `bun install --frozen-lockfile`.
+Generates the APK on your own machine with Docker Desktop, using the setup already in
+`Dockerfile.eas` and `docker-compose.eas.yml`. A warm build takes about 4.5 minutes (was ~10 minutes
+before the Docker-only speed-ups described there); everything — profiles, ABI selection,
+configuration reference, how the caching works, and a local-vs-CI comparison table — is documented
+in **[Local Android build with Docker](local-android-build.md)**.
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build
+```
 
 > [!WARNING]
 > **The container shares your `.git`.** The `- .:/app` mount is not filtered by `.dockerignore`, so
@@ -70,45 +76,13 @@ setup in `Dockerfile.eas` and `docker-compose.eas.yml`. The container installs d
 > is set in `docker-compose.eas.yml` — without it, `bun install` regenerates your Windows Git hooks
 > with Linux paths. See [Git hooks](#git-hooks).
 
-**Minimum requirements**
+The output APK is written to the project root as `build-*.apk` (gitignored). The speed-ups —
+one ABI by default, a Gradle build cache, and skipping `lintVitalAnalyzeRelease` — live only in the
+Docker path; CI's `release.yml` runs `eas build --local` directly on the runner and still produces
+the universal, fully-linted APK.
 
-- Docker Desktop with the WSL2 backend enabled
-- `EXPO_TOKEN` loaded in `.env.local`
-
-The profile is passed as the last argument; it defaults to `preview` when omitted.
-
-```bash
-# Preview (default) — self-contained APK with the JS bundle included
-docker compose -f docker-compose.eas.yml run --rm eas-build
-
-# Development — APK that connects to Metro on your machine instead of bundling the JS
-docker compose -f docker-compose.eas.yml run --rm eas-build development
-
-# Production — optimized, self-contained APK
-docker compose -f docker-compose.eas.yml run --rm eas-build production
-```
-
-For the development profile: install the APK, start Metro with `bun run start`, then open the app so
-it attaches to the local bundler.
-
-> [!WARNING]
-> **The production profile only emits an APK because `eas.json` sets
-> `production.android.buildType: "apk"`.** EAS defaults that key to APK *only* when a profile
-> declares `distribution: "internal"`; with it unset, the Gradle command falls through to
-> `:app:bundleRelease` and the output is an **AAB**, which cannot be sideloaded. This section
-> described the output as an APK from the start while no `buildType` was set — corrected
-> 2026-09-04. Never trust the extension alone:
->
-> ```bash
-> unzip -l build-*.apk | grep -q BundleConfig.pb && echo "this is an AAB"
-> ```
-
-**Output**
-
-- the APK is written to the project root as `build-*.apk`
-- those local artifacts are ignored by Git
-- the managed prebuild sets Gradle JVM memory to `-Xmx2g` with a `1g` metaspace limit through
-  `plugins/withAndroidGradleMemory.js`; no generated `android/` project is tracked
+A build whose three attempts all fail exits non-zero with `--- Build FAILED after 3 attempts.
+No APK was produced. ---`.
 
 ### Option 3 — remote preview build
 
@@ -153,6 +127,25 @@ visible until Expo or React Native removes it.
 - `foreground-sync-ticker` is a repository-owned Android-only Expo module, so it has no React Native
   Directory entry. It loads through `expo-modules-core`; Android preview builds remain the
   compatibility check for this local native boundary.
+
+---
+
+## Native gates
+
+Checks over the Kotlin native modules (`modules/sync-engine`, `modules/foreground-sync-ticker`)
+run before any build, never inside one, so a failing gate never hides behind an otherwise-green
+Docker or CI build.
+
+| Where | What | When |
+| --- | --- | --- |
+| Pre-commit (`lefthook.yml`, job `native`) | `bun run test:kotlin` — regenerates `android/` when it is missing or stale, then `:sync-engine:testDebugUnitTest :foreground-sync-ticker:testDebugUnitTest` | Only when a staged file falls under `modules/*/android/**`; a JS-only commit never pays the Gradle cost |
+| CI `guard` job (`.github/workflows/release.yml`) | The same `bun run test:kotlin`, then `:sync-engine:lintDebug :foreground-sync-ticker:lintDebug` | Every push of a release tag, before the `release` job's build |
+| Release build (`release` job, `eas build --local`) | `lintVitalAnalyzeRelease` for every module (fatal issues only) | Always, as part of the production Gradle build |
+
+`test:kotlin` (`scripts/kotlin-unit-tests.mjs`) is the one command both the local hook and CI run,
+so there is exactly one place that decides what the Kotlin gate does. It needs a host JDK (17+)
+and the local Android SDK; see "Kotlin verification without Docker" in
+`odd/tasks/native-foreground-sync-service.md` for the underlying Gradle commands this wraps.
 
 ---
 
