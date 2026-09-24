@@ -33,6 +33,17 @@ android {
       returnDefaultValues = true
     }
   }
+
+  sourceSets {
+    test {
+      // T2 (JS<->Kotlin wire contract): ReconcileWireContractTest reads the SAME JSON fixture
+      // files the Jest suite reads (tests/fixtures/sync-contract/reconcile-*.json), wired in
+      // here as an extra test-resources dir -- never copied -- so a fixture edit is picked up
+      // by both suites with no sync step. Path is relative to this module
+      // (modules/sync-engine/android/), three levels up to the repo root.
+      resources.srcDirs += '../../../tests/fixtures/sync-contract'
+    }
+  }
 }
 
 dependencies {

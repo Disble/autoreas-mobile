@@ -107,7 +107,7 @@ Known gaps at the start:
 - [x] **T1 — JS tier gate.** Add per-file `coverageThreshold` to Jest (CORE 100, IMPORTANT 80). Bring
   every CORE JS file to 100 %. Decide where the gate runs (pre-commit vs a dedicated script) from its
   measured cost.
-- [ ] **T2 — JS↔Kotlin wire contract.** Shared golden fixtures (reconcile request and response, wire
+- [x] **T2 — JS↔Kotlin wire contract.** Shared golden fixtures (reconcile request and response, wire
   anime) that the Jest tests and the Kotlin tests both read. Divergence fails a test on both sides.
 - [ ] **T3 — Kotlin tier gate.** Add Kover or JaCoCo to `sync-engine` (and the ticker for IMPORTANT),
   with per-class rules. Write the missing `OperationLogPruner` tests and bring the CORE classes to
@@ -168,6 +168,49 @@ their own branch tests; nothing was split artificially.
      survives. This is disclosed as the one weak spot in the CORE JS set.
 
 Checks: `bun run test:coverage` exit 0 (184 suites / 1498 tests, all thresholds met);
-`bun run typecheck` exit 0; `npx lefthook run pre-commit` green before the commit (see commit).
+`bun run typecheck` exit 0; `npx lefthook run pre-commit` green. Commit `d528426`.
 
-Next: T2 (JS↔Kotlin contract).
+### T2 — JS↔Kotlin wire contract (done)
+
+Route: delegated writer (writer trigger: 8 files across JS, Kotlin, Gradle and lefthook), plus one
+parent fix. Authored lines: ~1400, most of them fixture JSON.
+
+- **Fixtures.** They live only in `tests/fixtures/sync-contract/`:
+  - 11 request cases;
+  - 13 response cases;
+  - 11 cases that both engines must reject;
+  - 6 documented divergences.
+- **How both engines read them.** `tests/contract/sync/reconcile-wire-contract.test.ts` loads them
+  with `require`. `ReconcileWireContractTest.kt` loads them from the classpath: the
+  `modules/sync-engine/android/build.gradle` test sourceSet adds that directory as a resource dir,
+  and nothing is copied.
+- **Triggers.**
+  - The lefthook `native` job glob now also watches `tests/fixtures/sync-contract/**`. This was
+    verified: a fixture-only commit ran the Kotlin job.
+  - **Parent fix:** the release CI native gate (`NATIVE_GATE_WATCHED_GLOBS` in
+    `scripts/lib/release-native-gate.mjs`) did not watch the fixtures, so a fixture-only change
+    would have skipped the Kotlin tests in CI. It was added RED-first: the new watched-path test
+    failed (1 of 37), then passed.
+- **MUTATE.**
+  - JS: `buildOptimisticBaseKey` was forced to `null`, and 3 request cases failed.
+  - Kotlin: the required `timestamp` throw was removed, and 2 tests failed.
+
+  Both were restored from the index.
+- **Six real divergences, none of them fixed.** In every one, **Kotlin accepts what JS rejects**.
+  Each case records both outcomes, and fixing either side forces the fixture to change.
+  1. A snapshot without `modified_at` (required by `WireAnimeSchema`).
+  2. A `days[]` entry without `day`/`order` (Kotlin defaults them).
+  3. A non-string element in `genres[]` (Kotlin does not check elements).
+  4. A non-numeric date string (Kotlin coerces it to `null`).
+  5. A `{ "$$date": n }` date (JS wire schema rejects it; Kotlin unwraps it).
+  6. A numeric-string date (JS rejects it; Kotlin parses it).
+
+  Consequence: for such a response the foreground (JS) path rejects the whole reconcile, while the
+  background (Kotlin) path applies it. Which behaviour is correct is a product decision for the
+  maintainer.
+
+Checks: `bunx jest tests/contract` 41/41; `bun run test:coverage` 185 suites / 1539 tests, tiers met;
+`bun run test:kotlin` BUILD SUCCESSFUL (contract test 4/4); `npx lefthook run pre-commit` green,
+`native` job included.
+
+Next: T3 (Kotlin tier gate).
