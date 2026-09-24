@@ -27,7 +27,62 @@ export interface FlushSyncDiagnosticsOutboxParams {
    * of draining after the switch was turned off. Nullish means enabled, exactly as it does there.
    */
   readonly config?: { isSyncTelemetryEnabled?: unknown } | null;
+  /**
+   * Body `kind`s this build declares the bridge will never accept -- the ONLY authority that lets
+   * this pass destroy a stored row without asking the bridge. Defaults to
+   * `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`, which is empty today and must be empty until a kind is
+   * deliberately placed there: absence from the accepted registry is not a destruction trigger.
+   * Injectable for the same reason `store`, `client` and `now` are -- the destruction branch has to
+   * be pinnable by a test while the shipped declaration stays empty.
+   */
+  readonly undeliverableKinds?: readonly string[];
 }
+
+/**
+ * One stored body's routing class, decided by the ONE field the bridge itself classifies on: the
+ * body's top-level `kind`. Produced by the classifier in `sync-diagnostics-flush.helpers.ts` and
+ * consumed by the pure disposition ladder in `sync-diagnostics-disposition.helpers.ts`.
+ */
+export type SyncDiagnosticsPayloadClass = 'routable' | 'undeliverable' | 'unclassified';
+
+/**
+ * What one candidate's round trip resolved to, flattened so the flush loop is a tally, not a
+ * ladder. Every value names one outbox outcome the pass has to count separately, except
+ * `'failed_removal'`, which the thin executor produces when a 2xx was answered but the removal it
+ * authorizes was not confirmed.
+ */
+export type SyncDiagnosticsEnvelopeDisposition =
+  | 'delivered'
+  | 'failed_removal'
+  | 'discarded'
+  | 'undeliverable'
+  | 'unclassified'
+  | 'stop';
+
+/**
+ * The three fields of one diagnostics POST verdict the disposition ladder reads -- nothing else.
+ *
+ * Deliberately narrower than the transport's own result type: the ladder must not be able to grow
+ * a branch on `data`, `rawBody` or `url`, all of which describe the wire rather than the verdict.
+ * `retryAfterMs` is `null` when the response declared no usable `Retry-After` at all, which is a
+ * different state from a declared wait of `0`.
+ */
+export interface SyncDiagnosticsPostVerdict {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly retryAfterMs: number | null;
+}
+
+/**
+ * The MUTABLE running tallies one flush pass folds every candidate's disposition into.
+ *
+ * Derived from the public result rather than restated, so a counter can never exist in one shape
+ * and be missing from the other: the result IS this object with its members made `readonly`. The
+ * pass copies it once on the way out, so no caller can observe a tally that is still accumulating.
+ */
+export type SyncDiagnosticsFlushTally = {
+  -readonly [Counter in keyof SyncDiagnosticsFlushResult]: SyncDiagnosticsFlushResult[Counter];
+};
 
 /** Outcome of one bounded flush pass. Always resolves -- never rejects (Decision 5). */
 export interface SyncDiagnosticsFlushResult {
@@ -41,10 +96,26 @@ export interface SyncDiagnosticsFlushResult {
   /** Number of entries confirmed delivered -- a 2xx response AND a confirmed outbox removal. */
   readonly delivered: number;
   /**
-   * Number of entries permanently rejected by the bridge as malformed (400/413/422) and
-   * discarded client-side -- a report destroyed, distinct from one still pending redelivery.
+   * Number of entries the bridge's own verdict permanently rejected (400/413) and that were
+   * discarded client-side -- a report destroyed by the BRIDGE's judgement, which is the only kind
+   * of destruction its contract authorizes.
    */
   readonly discarded: number;
+  /**
+   * Number of entries DESTROYED BY DECLARATION: their `kind` is in
+   * `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`, so this build knows the bridge refuses them forever and
+   * parking could never be resolved by anything this app can do. Deliberately NOT folded into
+   * `discarded`: that counter answers "the bridge condemned these bytes", this one answers "we did",
+   * and only this one is a decision the registry can get wrong.
+   */
+  readonly undeliverable: number;
+  /**
+   * Number of entries PARKED because this build does not know their `kind`: never posted, never
+   * deleted, never counted as `attempted`. A GAP counter, not a loss counter -- they belong to a
+   * different build of this app and rolling forward is what recovers them, so destroying them would
+   * convert a recoverable registry mistake into an irreversible one.
+   */
+  readonly unclassified: number;
   /**
    * Number of entries that received a 2xx but whose outbox removal failed. The row remains
    * queued and re-sends next cycle instead of being counted as delivered.

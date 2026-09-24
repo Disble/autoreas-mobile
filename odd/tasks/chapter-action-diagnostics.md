@@ -27,6 +27,46 @@ Make the four chapter-control callbacks (`capPlus`, `capMinus`, `capPlusHalf`, `
 - The four questions are individually answerable or explicitly reported as unobservable; two sequential actions must not accidentally coalesce across distinct outcomes.
 - The duplicate `client_telemetry` is removed from `/api/sync/reconcile` on both sides ONLY once the dedicated path actually carries the data. Removing it earlier would zero out the native path's only telemetry and leave episode observations still rejected.
 
+## Outbox delivery policy (decided, agreed with the bridge team)
+
+This is a CHOSEN policy with stated costs, not an emergent property of local fixes. It was settled across a cross-repo review with the bridge maintainers, who verified each claim against their handler and store.
+
+**Eviction sheds the tail, not the head.** *(DECIDED — NOT YET IMPLEMENTED: the cap trigger still deletes the OLDEST rows today, which is the defect this line fixes. Landing it is queued with the read-order invariant test and the `shed for capacity` counter; do not read this paragraph as shipped behaviour.)* The cap trigger must delete the NEWEST overflow rather than the oldest, because the candidate query reads oldest-first: under the old ordering an insert could evict rows a drainer had just read, and a failing POST then lost them silently, making the bridge's own "a delivery failure never silently loses it" promise false in exactly the case it was written for. With tail-shedding the retained prefix is always the oldest rows, so a row in flight is unreachable by eviction and can only be removed by the drainer that owns it — no claim, no lease, no per-row state, no migration. **Load-bearing invariant, to be pinned by a test**: the guarantee holds only while the candidate query's order matches the retained-prefix order; a filtered or reordered read breaks it silently with nothing to catch it.
+
+**Classification by recoverability, three ways, on the payload's top-level `kind`** (that one field is read; everything else stays opaque and the body is posted byte-identical):
+
+| Case | Action | Why |
+|---|---|---|
+| `kind` absent, or in `SYNC_DIAGNOSTICS_ACCEPTED_KINDS` | ROUTABLE — POST; delete only on a definitive verdict | deliverable |
+| `kind` in `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS` (declared; **empty today**) | never post; DELETE on sight; count; batch continues | this build KNOWS the bridge does not accept it, so parking could never be resolved by anything we can do — the stall would be permanent |
+| `kind` in neither set | never post; **NEVER delete**; count separately; batch continues | it belongs to a DIFFERENT build of our own app (an app rollback does exactly this), so rolling forward recovers it — the stall is contingent on an operator action, not permanent |
+
+The cut is recoverability, not familiarity. An earlier revision destroyed anything not currently in the registry, which made a normal app rollback destroy a whole kind's backlog in one pass and turned a recoverable registry mistake into an irreversible one. **Destruction now requires a positive declaration**; "not currently in the registry" is no longer a destruction trigger.
+
+**No state is unresolvable.** A kind no build will ever accept — a bug, or a build that is long gone — parks forever with no roll-forward to rescue it, and is recovered through the same door: an operator moves it into `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`. That is why the positive set can legitimately be empty and still complete.
+
+**Verdict set — the other half of the destruction authority, defined by the bridge's contract, not by our registry.** The bridge's authoritative declaration: the contract for `POST /api/sync/diagnostics` has exactly ONE permanence property, and **permanent-for-the-body is exactly `400` and `413`**. `isEnvelopeRejection` is being corrected from `400 | 413 | 422` to `400 | 413`:
+
+| Status | Meaning |
+|---|---|
+| `204` | accepted in both branches (stored or duplicate) — always safe to delete on |
+| `400` both shapes, `413` | DEFINITIVE — permanent for that body, destruction justified |
+| `405` | not a body verdict: reachable only for a non-POST method, so seeing it means a routing bug, not a rejection of our bytes |
+| `404`, `408`, `422`, `429` | NOT in the contract at all — and anything the contract does not declare must be treated as retryable |
+| `401`, `404`, `408`, `429`, `500`, `503`, transport failure | NOT definitive — retry, never destroy |
+
+**The general rule that makes the specific list safe to remember: permanence is declared by the bridge's contract and by nothing else, so anything that contract does not declare is retryable.** `401` is a credential problem, never a body problem, so destroying on it would be data loss on the first token rotation. `405` is a routing bug if a client that always POSTs ever sees it. **`422` was removed**: it was in this set by inheritance from the bridge's `season_rating_handler.go`, a different endpoint whose answer about a grade says nothing about whether the diagnostics endpoint will reject the same bytes forever — inheriting it is the same error the vocabulary rules already forbid for shared sets across positions, and it was an undeclared destructive assumption, which the classification above had just committed us to avoid. Re-adding it requires the bridge to declare a permanent `422` for this endpoint. Note also that the bridge's backpressure is `503` with `Retry-After: 5`, not `429`.
+
+**Counters — three, distinct, never conflated**: `undeliverable` (destroyed by judgement), `unclassified` (parked and unknown to this build), `shed for capacity` (dropped at the door by the cap). Recorded at the point of the event.
+
+**Costs, stated so they are not hidden transfers:**
+- A sustained rollback with a saturated queue of unclassified rows consumes delivery capacity and stalls the deliverable rows until roll-forward. That is the deliberate price of not destroying another build's data; it is bounded by an operator action, not permanent.
+- Tail-shedding trades freshness for durability: after a long outage the retained telemetry is the ONSET of the problem rather than its current state, while the surface that reads it shows current sync state. This is product-visible and was surfaced as a policy question rather than presented as an internal detail.
+- **Negative-schema items**: we have no client-side body-size guard, so an oversize body is learned about only as a vanished row plus a discard counter. Latent because our ring cap of 20 cannot reach the bridge's 8 KiB bound; the headroom is on the bridge's side, since their server accepts up to `maxRecentEvents = 32`. **The latent item becomes live the day the client ring is raised toward that limit**, so the two numbers belong coupled in one comment next to the ring constant.
+- **Declaration, not yet an artifact**: the bridge declared the verdict set authoritatively in a coordination message so we could stop a destructive predicate, and explicitly could not land it as an artifact yet — it belongs in their `docs/openapi.yaml` plus a dated API-consumer-impact entry, both in WU1 scope. Until it lands, that message is the declaration. The shipped-versus-designed distinction applies to contracts too, one layer down.
+
+**Flip-round trigger (agreed)**: `skipped`, `undeliverable` and `unclassified` must all become visible when the registry is flipped. If any is still invisible at that point it stops being a recorded gap and becomes a live one — with extra force for `undeliverable`, because it is a DESTRUCTION counter rather than a gap counter.
+
 ## Status/evidence/next step
 - **C1: complete, independently verified, committed.** Recorder plus mutation-path wiring emit `received` / `skipped(in_flight|anime_missing|db_unavailable)` / `finished(committed|failed, closed cause, duration_ms)` / `sync(ok|failed)` into the durable outbox, one `correlation_id` per tap. Two review slices: `65efc10` (recorder + vocabulary + unit tests) and `a69e0b3` (wiring + tests).
 - **Verification of record (independent agent, different model from the writer).** Eight adversarial claims checked; the privacy boundary, single-clock semantics, correlation uniqueness, caller safety, best-effort guarantee and test honesty all held. Two real defects were found and fixed before staging: the test file broke `npx tsc --noEmit` with two `TS2345` errors (the casts indexed optional observation members, so they included `undefined`) — this would have failed the pre-commit typecheck while Jest stayed green; and the missing-SQLite-context path threw before the `try`, so a tap emitted only `received` with no terminal phase while a comment claimed the opposite. That path now reports `skipped`/`db_unavailable`, a new closed vocabulary value: the write never ran, so `finished`/`failed` would overstate what the device knows.

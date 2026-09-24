@@ -129,7 +129,16 @@ describe('diagnostics outbox round trip against a real database and a faked wire
 
     // Cycle 1: the envelope is captured, then the diagnostics POST fails -- the row must
     // survive. Reconcile itself still succeeds; the two are independent (Decision 5).
-    fakeBridge.queueResponse({ status: 503, body: {} });
+    //
+    // `500`, deliberately NOT `503`. A header-less `503` is the bridge's own backpressure verdict
+    // and now defers the next pass by its declared wait (`SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS`,
+    // 5s), so a cycle running immediately after would find the not-before gate closed and read no
+    // candidates at all -- the rule working as intended, not a delivery failure to survive here.
+    // That deferral is pinned by the focused suite (`sync-diagnostics-flush.helpers.test.ts`,
+    // "defers by the bridge-declared wait on a 503 that carries no usable Retry-After"). `500`
+    // declares no wait, so this test keeps proving the one property it exists for: a failing
+    // diagnostics POST is survived and cleared once a later cycle gets a success.
+    fakeBridge.queueResponse({ status: 500, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
     await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-1'));

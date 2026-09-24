@@ -416,6 +416,8 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     delivered: 1,
     discarded: 2,
     failedRemovals: 1,
+    undeliverable: 0,
+    unclassified: 0,
   };
 
   const CONVERGENCE: OperationLogConvergence = {
@@ -455,6 +457,8 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
       delivered: 0,
       discarded: 0,
       failedRemovals: 0,
+      undeliverable: 0,
+      unclassified: 0,
     };
 
     expect(

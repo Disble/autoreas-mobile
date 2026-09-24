@@ -3,7 +3,12 @@ import {
   flushSyncDiagnosticsOutbox,
   isSyncDiagnosticsPayloadAccepted,
 } from '../../../../src/features/sync/sync-diagnostics-flush.helpers';
-import { SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS } from '../../../../src/features/sync/sync-diagnostics-flush.constants';
+import {
+  SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS,
+  SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS,
+  SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS,
+} from '../../../../src/features/sync/sync-diagnostics-flush.constants';
+import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
 import type { WireSyncCycleTelemetry } from '../../../../src/features/sync/sync-telemetry.types';
 import type {
   SyncDiagnosticsOutboxRecord,
@@ -24,6 +29,28 @@ const WIRE: WireSyncCycleTelemetry = {
   counters: { consecutive_unclosed_cycles: 0, pending_ops_count: 0, cursor: 0 },
   recent_events: [],
 };
+
+/** The tally of a pass that did nothing, plus whichever counters the caller names as moved. */
+function tally(overrides: Partial<SyncDiagnosticsFlushResult> = {}): SyncDiagnosticsFlushResult {
+  return {
+    attempted: 0,
+    delivered: 0,
+    discarded: 0,
+    failedRemovals: 0,
+    undeliverable: 0,
+    unclassified: 0,
+    ...overrides,
+  };
+}
+
+/**
+ * One stored chapter observation: a body whose `kind` the bridge does not declare. It is NOT
+ * POSTed and NOT deleted -- not being in the registry is not a destruction trigger -- so it parks,
+ * keeps its batch slot, and every later pass re-reads it.
+ */
+const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify(
+  { kind: 'chapter_action', action: 'cap_plus', phase: 'received', at: 1_000, correlation_id: 'corr-1' },
+);
 
 /** Builds a fake store double whose methods are individually assertable jest mocks. */
 function buildFakeStore(
@@ -51,20 +78,6 @@ function buildRecord(
   };
 }
 
-/**
- * One stored chapter observation: a body whose `kind` the bridge does not declare, so the bridge
- * answers 400 for it -- and this flush reads 400 as "this envelope is malformed forever" and
- * deletes the row. A device that ran a build from before the recorder was gated still holds rows
- * exactly like this one, and they must never be POSTed again.
- */
-const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify({
-  kind: 'chapter_action',
-  action: 'cap_plus',
-  phase: 'received',
-  at: 1_000,
-  correlation_id: 'corr-1',
-});
-
 /** Builds a bridge HTTP result double for one disposition. */
 function buildResult(overrides: Partial<BridgeHttpResult> = {}): BridgeHttpResult {
   return {
@@ -76,6 +89,45 @@ function buildResult(overrides: Partial<BridgeHttpResult> = {}): BridgeHttpResul
     retryAfterMs: null,
     ...overrides,
   };
+}
+
+/**
+ * Runs one flush pass over `records`, answering each POST with the next queued verdict (an `Error`
+ * verdict is a transport failure). A POST beyond the queue rejects loudly instead of resolving to
+ * `undefined`, so an unexpected request fails the call-count assertions rather than passing.
+ */
+async function runFlush(
+  records: readonly SyncDiagnosticsOutboxRecord[],
+  verdicts: readonly (BridgeHttpResult | Error)[] = [],
+  overrides: Partial<{
+    now: () => number;
+    config: { isSyncTelemetryEnabled?: unknown } | null;
+    undeliverableKinds: readonly string[];
+    removeResult: 'removed' | 'failed';
+  }> = {},
+) {
+  const { removeResult = 'removed', ...flushParams } = overrides;
+  const store = buildFakeStore({
+    readFlushCandidates: jest.fn().mockReturnValue([...records]),
+    remove: jest.fn().mockReturnValue(removeResult),
+  });
+  const postSyncDiagnostics = jest.fn().mockRejectedValue(new Error('unexpected POST'));
+  for (const verdict of verdicts) {
+    if (verdict instanceof Error) {
+      postSyncDiagnostics.mockRejectedValueOnce(verdict);
+    } else {
+      postSyncDiagnostics.mockResolvedValueOnce(verdict);
+    }
+  }
+
+  const result = await flushSyncDiagnosticsOutbox({
+    connection: CONNECTION,
+    store,
+    client: { postSyncDiagnostics },
+    ...flushParams,
+  });
+
+  return { store, postSyncDiagnostics, result };
 }
 
 describe('captureSyncDiagnosticsEnvelope', () => {
@@ -121,37 +173,31 @@ describe('isSyncDiagnosticsPayloadAccepted', () => {
     expect(isSyncDiagnosticsPayloadAccepted([])).toBe(false);
     expect(isSyncDiagnosticsPayloadAccepted('chapter_action')).toBe(false);
   });
+
+  it('refuses an explicit null kind -- absence is the legacy rule, null is a declaration', () => {
+    // `[undefined].includes(null)` is false: the registry reads absent keys, never null values.
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: null })).toBe(false);
+  });
 });
 
 describe('flushSyncDiagnosticsOutbox', () => {
   it('issues zero POSTs when the gate is shut (readFlushCandidates returns [])', async () => {
-    const store = buildFakeStore({ readFlushCandidates: jest.fn().mockReturnValue([]) });
-    const client = { postSyncDiagnostics: jest.fn() };
+    const { postSyncDiagnostics, result } = await runFlush([]);
 
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
-
-    expect(client.postSyncDiagnostics).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 });
+    expect(postSyncDiagnostics).not.toHaveBeenCalled();
+    expect(result).toEqual(tally());
   });
 
   it('removes the row and continues to the next candidate on a 2xx', async () => {
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const second = buildRecord({ cycleId: 'cycle-2' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }))
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
-
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: true, status: 200 }), buildResult({ ok: true, status: 200 })],
+    );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
     expect(store.remove).toHaveBeenCalledWith('cycle-2');
-    expect(result).toEqual({ attempted: 2, delivered: 2, discarded: 0, failedRemovals: 0 });
+    expect(result).toEqual(tally({ attempted: 2, delivered: 2 }));
     // Timeout is passed through as the diagnostics-specific budget, never the reconcile one.
     expect(postSyncDiagnostics).toHaveBeenCalledWith(
       CONNECTION,
@@ -161,248 +207,256 @@ describe('flushSyncDiagnosticsOutbox', () => {
   });
 
   it('does not count delivered when the 2xx removal is not confirmed -- counts failedRemovals instead', async () => {
-    // The 600,055 ms replay this change exists to close: a confirmed 2xx whose DELETE throws
-    // must not be counted as delivered, since the row is still there for the next cycle to re-send.
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first]),
-      remove: jest.fn().mockReturnValue('failed'),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
+    // The 600,055 ms replay this change exists to close: a 2xx whose DELETE throws is not delivered, since the row is still there to re-send.
+    const { store, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' })],
+      [buildResult({ ok: true, status: 200 })],
+      { removeResult: 'failed' },
+    );
 
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
-
+    expect(result).toEqual(tally({ attempted: 1, failedRemovals: 1 }));
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
-    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 1 });
   });
 
   it('leaves the row queued and stops the batch when the request throws', async () => {
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const second = buildRecord({ cycleId: 'cycle-2' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-    });
-    const postSyncDiagnostics = jest.fn().mockRejectedValueOnce(new Error('unreachable'));
-    const client = { postSyncDiagnostics };
-
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [new Error('unreachable')],
+    );
 
     // Only the first row is even attempted -- the next row would fail identically.
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
   });
 
   it('leaves the row queued AND stops the batch on a 404 -- the endpoint is not built yet', async () => {
-    // BINDING per the orchestrator's amendment to Decision 4. The bridge endpoint does not
-    // exist yet, so every POST returns 404 today; a blanket 4xx-deletes rule would silently
-    // drain the whole queue during the dual-write window, reproducing the exact invisible-loss
-    // failure this change exists to close. This case is a REGRESSION GUARD, not a maybe.
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const second = buildRecord({ cycleId: 'cycle-2' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: false, status: 404, retryAfterMs: null }));
-    const client = { postSyncDiagnostics };
-
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    // BINDING per the orchestrator's amendment to Decision 4. The endpoint does not exist yet, so
+    // every POST returns 404 today; a blanket 4xx-deletes rule would silently drain the whole queue
+    // during the dual-write window, reproducing the invisible-loss failure this change closes.
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: false, status: 404, retryAfterMs: null })],
+    );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
   });
 
   it('removes the row and continues on a 400 -- the bridge names the offending field, it will reject the same bytes forever', async () => {
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const second = buildRecord({ cycleId: 'cycle-2' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: false, status: 400, retryAfterMs: null }))
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
-
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: false, status: 400, retryAfterMs: null }), buildResult()],
+    );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
     expect(store.remove).toHaveBeenCalledWith('cycle-2');
-    expect(result).toEqual({ attempted: 2, delivered: 1, discarded: 1, failedRemovals: 0 });
+    expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1 }));
   });
 
-  it.each([413, 422])(
-    'removes the row and continues on a %d -- same envelope-malformed family as 400',
-    async (status) => {
-      const first = buildRecord({ cycleId: 'cycle-1' });
-      const second = buildRecord({ cycleId: 'cycle-2' });
-      const store = buildFakeStore({
-        readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-      });
-      const postSyncDiagnostics = jest
-        .fn()
-        .mockResolvedValueOnce(buildResult({ ok: false, status, retryAfterMs: null }))
-        .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-      const client = { postSyncDiagnostics };
+  it('removes the row and continues on a 413 -- the declared permanence set is exactly 400 and 413', async () => {
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: false, status: 413, retryAfterMs: null }), buildResult()],
+    );
 
-      const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
+    expect(store.remove).toHaveBeenCalledWith('cycle-1');
+    expect(result.delivered).toBe(1);
+    expect(result.discarded).toBe(1);
+  });
 
-      expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
-      expect(store.remove).toHaveBeenCalledWith('cycle-1');
-      expect(result.delivered).toBe(1);
-      expect(result.discarded).toBe(1);
-    },
-  );
+  it('keeps the row, defers nothing and stops the batch on a 422 -- NOT a permanence verdict here', async () => {
+    // CONTRACT CORRECTION, not a weakened assertion: the old revision asserted a 422 discarded the
+    // row, and that was the error. The bridge's only permanence property for this endpoint is 400
+    // and 413; the inherited 422 belongs to another endpoint's handler (`season_rating_handler.go`),
+    // whose answer about a grade says nothing about these bytes. Permanence is declared by the
+    // contract and by nothing else, so anything undeclared is retryable -- and the row survives.
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: false, status: 422, retryAfterMs: null })],
+    );
 
-  it('leaves an unroutable body in place and still delivers the routable envelope behind it', async () => {
-    // The row a pre-fix build queued, which the bridge answers 400 for: POSTing it buys the same
-    // rejection and the row is deleted. So it is SKIPPED -- not removed, not discarded -- and the
-    // batch keeps going, because stopping here would starve the deliverable cycle envelope queued
-    // behind it. The price is the batch slot: `readFlushCandidates` handed back two candidates
-    // and only one POST was issued, which is why the RECORDER gate, not this one, is the primary
-    // fix -- a skipped row stays at the head of the queue and is re-read by every later pass.
-    const unroutable = buildRecord({ cycleId: 'chapter-1', payload: UNROUTABLE_CHAPTER_PAYLOAD });
-    const routable = buildRecord({ cycleId: 'cycle-2' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([unroutable, routable]),
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
+  });
+
+  it('destroys nothing by declaration today -- and never destroys what it merely does not know', () => {
+    // Empty ON PURPOSE: destruction needs a declaration that the bridge refuses that kind forever.
+    expect(SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS).toHaveLength(0);
+  });
+
+  it('deletes a DECLARED undeliverable kind without a request, counts it, and continues the batch', async () => {
+    // The only destructive-by-judgement branch: this build KNOWS the bridge will never take that
+    // kind, so parking could never resolve it. Injected, because the production set is empty.
+    const undeliverable = buildRecord({
+      cycleId: 'retired-1',
+      payload: JSON.stringify({ kind: 'retired_kind' }),
     });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
+    const routable = buildRecord({ cycleId: 'cycle-2' });
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [undeliverable, routable],
+      [buildResult()],
+      { undeliverableKinds: ['retired_kind'] },
+    );
 
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    // Never posted, deleted on sight, and the deliverable row behind it still goes out.
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(postSyncDiagnostics).toHaveBeenCalledWith(CONNECTION, WIRE, expect.anything());
+    expect(store.remove).toHaveBeenCalledWith('retired-1');
+    expect(store.remove).toHaveBeenCalledWith('cycle-2');
+    expect(result).toEqual(tally({ attempted: 1, delivered: 1, undeliverable: 1 }));
+  });
 
-    // The chapter body is never asked about, never deleted, and never deferred.
+  it('parks an unknown kind -- never posted, never deleted, counted as unclassified, batch continues', async () => {
+    // The row a pre-fix build queued, plus the row a LATER build would queue: neither is delivered
+    // here and neither is destroyed, because rolling forward recovers them. Stopping would instead
+    // let one unclassified row starve every deliverable envelope behind it.
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [
+        buildRecord({ cycleId: 'chapter-1', payload: UNROUTABLE_CHAPTER_PAYLOAD }),
+        buildRecord({ cycleId: 'chapter-2', payload: JSON.stringify({ kind: 'episode_action' }) }),
+        buildRecord({ cycleId: 'cycle-3' }),
+      ],
+      [buildResult()],
+    );
+
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(postSyncDiagnostics).toHaveBeenCalledWith(
       CONNECTION,
       WIRE,
       expect.objectContaining({ timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS }),
     );
-    expect(store.remove).toHaveBeenCalledWith('cycle-2');
-    expect(store.remove).not.toHaveBeenCalledWith('chapter-1');
+    expect(store.remove).toHaveBeenCalledTimes(1);
+    expect(store.remove).toHaveBeenCalledWith('cycle-3');
     expect(store.deferUntil).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+    expect(result).toEqual(tally({ attempted: 1, delivered: 1, unclassified: 2 }));
   });
 
-  it('skips every unroutable body ahead of a routable one instead of stopping at the first', async () => {
-    const firstUnroutable = buildRecord({
-      cycleId: 'chapter-1',
-      payload: UNROUTABLE_CHAPTER_PAYLOAD,
-    });
-    const secondUnroutable = buildRecord({
-      cycleId: 'chapter-2',
-      payload: JSON.stringify({ kind: 'chapter_action', phase: 'sync', outcome: 'ok' }),
-    });
-    const routable = buildRecord({ cycleId: 'cycle-3' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([firstUnroutable, secondUnroutable, routable]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
+  it.each(['{ not json', '[1,2,3]', '"chapter_action"', 'null'])(
+    'parks a body that is not a JSON object (%s) and keeps the batch going instead of stopping',
+    async (payload) => {
+      // STOP-ON-UNPARSEABLE WAS THE DEFECT. A body this build cannot read as an object is an
+      // unclassified row, not a stop: stopping strands every deliverable row behind one poison row
+      // on every future pass -- the starvation class this work already fixed twice. Such bytes can
+      // only be authored by a build that is not this one, and the bridge owns their fate.
+      const { store, postSyncDiagnostics, result } = await runFlush(
+        [buildRecord({ cycleId: 'poison-1', payload }), buildRecord({ cycleId: 'cycle-2' })],
+        [buildResult()],
+      );
 
-    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+      expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+      expect(store.remove).toHaveBeenCalledTimes(1);
+      expect(store.remove).toHaveBeenCalledWith('cycle-2');
+      expect(result).toEqual(tally({ attempted: 1, delivered: 1, unclassified: 1 }));
+    },
+  );
+
+  it('parks a present null kind as unclassified -- absence is legacy, null is a declaration', async () => {
+    // `{"kind": null}` is NOT the legacy rule -- that is the ABSENCE of the key. A present null is a declaration this build cannot name: parked, never deleted, batch goes on.
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [
+        buildRecord({ cycleId: 'null-kind-1', payload: JSON.stringify({ kind: null }) }),
+        buildRecord({ cycleId: 'cycle-2' }),
+      ],
+      [buildResult()],
+    );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).toHaveBeenCalledTimes(1);
-    expect(store.remove).toHaveBeenCalledWith('cycle-3');
-    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+    expect(store.remove).toHaveBeenCalledWith('cycle-2');
+    expect(result).toEqual(tally({ attempted: 1, delivered: 1, unclassified: 1 }));
   });
 
-  it.each([408, 429, 500, 503])(
-    'leaves the row queued and stops the batch on a %d',
-    async (status) => {
-      const first = buildRecord({ cycleId: 'cycle-1' });
-      const second = buildRecord({ cycleId: 'cycle-2' });
-      const store = buildFakeStore({
-        readFlushCandidates: jest.fn().mockReturnValue([first, second]),
-      });
-      const postSyncDiagnostics = jest
-        .fn()
-        .mockResolvedValueOnce(buildResult({ ok: false, status, retryAfterMs: null }));
-      const client = { postSyncDiagnostics };
+  it('keeps the three destruction counters distinct in one mixed batch', async () => {
+    const { result } = await runFlush(
+      [
+        buildRecord({ cycleId: 'retired-1', payload: JSON.stringify({ kind: 'retired_kind' }) }),
+        buildRecord({ cycleId: 'chapter-1', payload: UNROUTABLE_CHAPTER_PAYLOAD }),
+        buildRecord({ cycleId: 'cycle-2' }),
+        buildRecord({ cycleId: 'cycle-3' }),
+      ],
+      [buildResult(), buildResult({ ok: false, status: 400, retryAfterMs: null })],
+      { undeliverableKinds: ['retired_kind'] },
+    );
 
-      const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
+    // `attempted` counts REQUESTS (2); `discarded` is the bridge's verdict destroying a body (1);
+    // `undeliverable` is this build's declaration destroying one (1); `unclassified` is a parked
+    // row this build does not know (1) -- none of them is a synonym for another.
+    expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1, undeliverable: 1, unclassified: 1 }));
+  });
+
+  it.each([401, 408, 429, 500])(
+    'leaves the row queued, stops the batch and defers nothing on a %d',
+    async (status) => {
+      const { store, postSyncDiagnostics, result } = await runFlush(
+        [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+        [buildResult({ ok: false, status, retryAfterMs: null })],
+      );
 
       expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
       expect(store.remove).not.toHaveBeenCalled();
-      expect(result).toEqual({ attempted: 1, delivered: 0, discarded: 0, failedRemovals: 0 });
+      expect(store.deferUntil).not.toHaveBeenCalled();
+      expect(result).toEqual(tally({ attempted: 1 }));
     },
   );
 
   it('persists deferUntil(now + retryAfterMs) on a transient failure that carries a Retry-After', async () => {
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: false, status: 429, retryAfterMs: 30_000 }));
-    const client = { postSyncDiagnostics };
     const now = jest.fn().mockReturnValue(1_000_000);
-
-    await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client, now });
+    const { store } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' })],
+      [buildResult({ ok: false, status: 429, retryAfterMs: 30_000 })],
+      { now },
+    );
 
     expect(store.deferUntil).toHaveBeenCalledWith(1_030_000);
   });
 
-  it('never calls deferUntil when the transient failure carries no Retry-After', async () => {
-    const first = buildRecord({ cycleId: 'cycle-1' });
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([first]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValueOnce(buildResult({ ok: false, status: 503, retryAfterMs: null }));
-    const client = { postSyncDiagnostics };
+  it('defers by the bridge-declared wait on a 503 that carries no usable Retry-After', async () => {
+    // REACHABLE, not defensive: the bridge has two 503 paths and only the write-budget shed sends
+    // the header -- the ingestion-unavailable path sends none. Without this fallback the gate stays
+    // open and the very next trigger POSTs back into a bridge already asking for room. Scoped to
+    // 503 ALONE: every other retryable verdict declares no wait, so a gate there would be a backoff
+    // this app made up rather than one the bridge asked for.
+    const now = jest.fn().mockReturnValue(1_000_000);
+    const { store, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult({ ok: false, status: 503, retryAfterMs: null })],
+      { now },
+    );
 
-    await flushSyncDiagnosticsOutbox({ connection: CONNECTION, store, client });
-
-    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(store.deferUntil).toHaveBeenCalledWith(1_000_000 + SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS);
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
   });
 
   it('performs no POST, no candidate read, no remove and no deferUntil while the switch is off', async () => {
-    // The declared contract of the switch (database.schema.ts:113-115) is that turning it off
-    // stops the payload being built or sent AT ALL. Gating only capture would leave every row
-    // queued before the switch was flipped draining to the bridge afterwards.
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([buildRecord({ cycleId: 'cycle-1' })]),
-    });
-    const client = { postSyncDiagnostics: jest.fn().mockResolvedValue(buildResult()) };
+    // The switch's contract (database.schema.ts:113-115) is that turning it off stops the payload being built or sent AT ALL: gating only capture would leave every row queued before the flip draining to the bridge afterwards.
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' })],
+      [],
+      { config: { isSyncTelemetryEnabled: false } },
+    );
 
-    const result = await flushSyncDiagnosticsOutbox({
-      connection: CONNECTION,
-      store,
-      client,
-      config: { isSyncTelemetryEnabled: false },
-    });
-
-    expect(client.postSyncDiagnostics).not.toHaveBeenCalled();
+    expect(postSyncDiagnostics).not.toHaveBeenCalled();
     // Not merely "no eligible candidate": the pass must not even look at the outbox.
     expect(store.readFlushCandidates).not.toHaveBeenCalled();
     expect(store.remove).not.toHaveBeenCalled();
     expect(store.deferUntil).not.toHaveBeenCalled();
-    expect(result).toEqual({ attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0 });
+    expect(result).toEqual(tally());
   });
 
   it('leaves the queued rows untouched while off, and delivers them once the switch is back on', async () => {
-    const pending = [buildRecord({ cycleId: 'cycle-1' })];
     const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue(pending),
+      readFlushCandidates: jest.fn().mockReturnValue([buildRecord({ cycleId: 'cycle-1' })]),
     });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValue(buildResult({ ok: true, status: 200 }));
+    const postSyncDiagnostics = jest.fn().mockResolvedValue(buildResult());
     const client = { postSyncDiagnostics };
 
     await flushSyncDiagnosticsOutbox({
@@ -412,8 +466,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
       config: { isSyncTelemetryEnabled: false },
     });
 
-    // The switch is per-pass: no row is deleted or deferred because it is off, so the SAME
-    // candidates are eligible again under the pre-existing rules the moment it comes back on.
+    // The switch is per-pass: nothing is deleted or deferred while off, so the SAME candidates are eligible again the moment it comes back on.
     expect(store.remove).not.toHaveBeenCalled();
     expect(store.deferUntil).not.toHaveBeenCalled();
 
@@ -426,28 +479,19 @@ describe('flushSyncDiagnosticsOutbox', () => {
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
-    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+    expect(result).toEqual(tally({ attempted: 1, delivered: 1 }));
   });
 
   it('behaves exactly as today when the switch is on', async () => {
-    const store = buildFakeStore({
-      readFlushCandidates: jest.fn().mockReturnValue([buildRecord({ cycleId: 'cycle-1' })]),
-    });
-    const postSyncDiagnostics = jest
-      .fn()
-      .mockResolvedValue(buildResult({ ok: true, status: 200 }));
-    const client = { postSyncDiagnostics };
-
-    const result = await flushSyncDiagnosticsOutbox({
-      connection: CONNECTION,
-      store,
-      client,
-      config: { isSyncTelemetryEnabled: true },
-    });
+    const { store, postSyncDiagnostics, result } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' })],
+      [buildResult()],
+      { config: { isSyncTelemetryEnabled: true } },
+    );
 
     expect(store.readFlushCandidates).toHaveBeenCalledTimes(1);
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
-    expect(result).toEqual({ attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 });
+    expect(result).toEqual(tally({ attempted: 1, delivered: 1 }));
   });
 });
