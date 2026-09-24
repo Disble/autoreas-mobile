@@ -1,16 +1,26 @@
 # EAS Local Build Image
 # Based on the official React Native Android image which has:
 #   Java, Android SDK, NDK, CMake, Gradle all pre-installed
-FROM reactnativecommunity/react-native-android:latest
+#
+# Pinned by digest, never `:latest`. On 2026-09-23 a routine `docker compose build` re-pulled
+# `:latest` (91 s of download), and the new image moved GRADLE_USER_HOME to /opt/gradle-home: the
+# persistent Gradle cache, the build-cache switch and the lintVital init script (all under
+# /root/.gradle) stopped applying without any repo change, and a warm 4.5 min build became a
+# 14.5 min cold one. Bump this digest deliberately, then rebuild and measure
+# (docs/local-android-build.md, "Recipes"). Resolve the current one with:
+#   docker buildx imagetools inspect reactnativecommunity/react-native-android:latest
+FROM reactnativecommunity/react-native-android@sha256:d4b8ea0773d62096261cf0ed356004fe2c8292f5e5cdb260d11da953c8c84374
 
 # Update CA certificates — the base image ships with outdated certs that cause
 # TLS handshake failures against Maven Central and other HTTPS hosts in Docker Desktop Windows
 RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates && update-ca-certificates
 
-# Install Bun with its supported Linux installer. EAS CLI runs through Bunx so
-# project dependency installation and CLI resolution share Bun's cache.
+# Install Bun with its supported Linux installer, pinned: the unpinned installer silently moved the
+# image from Bun 1.3.14 to 1.4.2 on a rebuild. EAS CLI runs through Bunx so project dependency
+# installation and CLI resolution share Bun's cache.
+ARG BUN_VERSION=1.4.2
 RUN apt-get update -qq && apt-get install -y --no-install-recommends curl unzip \
-  && curl -fsSL https://bun.com/install | bash \
+  && curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}" \
   && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/root/.bun/bin:${PATH}"

@@ -40,7 +40,7 @@ Only the last step differs: who runs the build, and where the artifact lands.
 | Path | Runs the build | Artifact lands in | Use it for |
 |---|---|---|---|
 | **CI** (default) | GitHub Actions, on a pushed tag | a published GitHub Release | anything anyone installs |
-| **Local** | Docker Desktop on your machine | the project root as `build-*.apk` | smoke-testing before tagging |
+| **Local** | Docker Desktop on your machine | `dist/android/autoreas-mobile-<version>-<profile>-<abis>-<timestamp>[-g<commit>].apk` | smoke-testing before tagging |
 
 A local build is a rehearsal, not a release. It ships nothing and is never the
 answer to "cut a release" on its own.
@@ -234,8 +234,9 @@ one.
 8. Confirm the artifact is an APK and reports the version you expect. Do not trust
    the filename:
    ```bash
-   unzip -l build-*.apk | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
-   aapt2 dump badging build-*.apk | head -1
+   apk="$(ls -t dist/android/*.apk | head -1)"
+   unzip -l "$apk" | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
+   aapt2 dump badging "$apk" | head -1
    ```
 9. Install it and exercise what neither tests nor those checks can reach — startup,
    pairing, SQLite, sync against a running Bridge, background sync with the screen

@@ -56,6 +56,11 @@ services:
       # hooks, `CI=true bun install` does not. See ARCHITECTURE.md "Hook installation is
       # host-owned".
       - CI=true
+      # The persistent Gradle volume and the files mounted over it live in /root/.gradle. The base
+      # image sets GRADLE_USER_HOME to /opt/gradle-home, which silently bypassed all three (cache,
+      # build-cache switch, lintVital init script). Pin it here; the entrypoint refuses to build
+      # when Gradle would not see that configuration.
+      - GRADLE_USER_HOME=/root/.gradle
       # AUTOREAS_ANDROID_ABIS itself is deliberately NOT set here. It reaches the container two
       # other ways instead -- via `env_file: .env.local` below (a developer's persistent
       # override) or `docker compose run -e AUTOREAS_ANDROID_ABIS=...` (Compose's own `run -e`

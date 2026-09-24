@@ -76,7 +76,9 @@ docker compose -f docker-compose.eas.yml run --rm eas-build
 > is set in `docker-compose.eas.yml` — without it, `bun install` regenerates your Windows Git hooks
 > with Linux paths. See [Git hooks](#git-hooks).
 
-The output APK is written to the project root as `build-*.apk` (gitignored). The speed-ups —
+The output APK is written to `dist/android/` (gitignored) as
+`autoreas-mobile-<version>-<profile>-<abis>-<UTC timestamp>[-g<commit>].apk`; see
+[Output](local-android-build.md#output). The speed-ups —
 one ABI by default, a Gradle build cache, and skipping `lintVitalAnalyzeRelease` — live only in the
 Docker path; CI's `release.yml` runs `eas build --local` directly on the runner and still produces
 the universal, fully-linted APK.

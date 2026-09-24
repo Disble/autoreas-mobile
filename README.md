@@ -396,6 +396,7 @@ incrementally instead of never.
 | [`docs/deployment.md`](docs/deployment.md) | How a release ships: version bump, tag, CI pipeline and its guards |
 | [`docs/build-and-release.md`](docs/build-and-release.md) | EAS and Docker builds, Git hooks, local build paths |
 | [`docs/local-android-build.md`](docs/local-android-build.md) | Building an APK locally with Docker: quick start, profiles, ABI configuration, troubleshooting |
+| [`docs/logbooks/`](docs/logbooks/README.md) | Append-only measurement records; [build performance](docs/logbooks/build-performance.md) of the Docker build and the CI release |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Native module, cleartext HTTP and Expo Router issues |
 | [`docs/postmortems/`](docs/postmortems/) | Incident write-ups |
 | [`docs/Autoreas_mobile_design_doc.md`](docs/Autoreas_mobile_design_doc.md) | The original RFC |

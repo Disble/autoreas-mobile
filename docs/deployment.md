@@ -204,8 +204,9 @@ docker compose -f docker-compose.eas.yml run --rm eas-build production
 Never trust the filename — confirm the artifact is an APK and reports the version you expect:
 
 ```bash
-unzip -l build-*.apk | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
-aapt2 dump badging build-*.apk | head -1
+apk="$(ls -t dist/android/*.apk | head -1)"
+unzip -l "$apk" | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
+aapt2 dump badging "$apk" | head -1
 ```
 
 Then install it and exercise what neither the tests nor those checks can reach: startup, pairing,
