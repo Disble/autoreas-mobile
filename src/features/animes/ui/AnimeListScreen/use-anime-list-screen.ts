@@ -15,18 +15,11 @@ import {
   getDefaultAnimeDayFilter,
 } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
-import { buildAnimeMutationFailureFeedback } from "../../anime-mutation-failure.helpers";
-import {
-  beginChapterAction,
-  recordChapterActionSkipped,
-} from "../../chapter-action-diagnostics.helpers";
-import type {
-  ChapterActionContext,
-  ChapterActionLabel,
-} from "../../chapter-action-diagnostics.types";
+import type { ChapterActionLabel } from "../../chapter-action-diagnostics.types";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { useSeasonRatingIntent } from "../../use-season-rating-intent";
+import { runChapterMutation } from "./anime-list-screen-callback.helpers";
 import { ANIME_LIST_SCREEN_REFRESH_LABEL } from "./anime-list-screen.constants";
 import {
   buildRefreshFailureFeedback,
@@ -36,6 +29,7 @@ import {
   deriveVisibleSyncStatus,
 } from "./anime-list-screen.helpers";
 import type {
+  AnimeListScreenChapterActionRunner,
   AnimeListScreenProps,
   AnimeListScreenViewModel,
   AnimeStateSheetRequest,
@@ -206,60 +200,20 @@ export function useAnimeListScreen(
     toast,
   ]);
 
+  // The lock, the telemetry boundary and the failure toast all live in the module-level runner:
+  // this adapter keeps the hook's callback identity stable while the compiler can still memoize it.
   const runMutation = useCallback(
     async (
       animeId: string,
       actionLabel: ChapterActionLabel,
-      action: (id: string, actionContext: ChapterActionContext) => Promise<void>,
+      action: AnimeListScreenChapterActionRunner,
     ) => {
-      // Opened BEFORE the same-anime guard, because this is the only point that can answer "did the
-      // tap reach JS at all": a disabled button never gets here, and neither does a tap a dead JS
-      // thread swallowed. Everything after this line is attributable to a callback that ran. The
-      // switch is resolved once here and carried by the context, so a muted tap stays muted for
-      // every later phase of the same gesture.
-      const actionContext = beginChapterAction(actionLabel, { isTelemetryEnabled });
-
-      if (mutatingAnimeByIdRef.current[animeId]) {
-        // The callback ran and the same-anime guard dropped it. Distinct from a failure: nothing
-        // was attempted, so nothing can have been lost. The resolved value is restated at this
-        // second boundary call so both observations of one tap come from the same render.
-        recordChapterActionSkipped(actionContext, "in_flight", { isTelemetryEnabled });
-        return;
-      }
-
-      const nextMutatingState = {
-        ...mutatingAnimeByIdRef.current,
-        [animeId]: true,
-      };
-      mutatingAnimeByIdRef.current = nextMutatingState;
-      setIsMutatingAnimeById(nextMutatingState);
-
-      try {
-        await action(animeId, actionContext);
-      } catch (error) {
-        // Callers fire this through `void handleCapPlus(...)`, so an escaping rejection would
-        // become an unhandled promise and the button would just look dead. Surface it instead.
-        console.warn("[AnimeListScreen] Anime mutation failed:", error);
-        const feedback = buildAnimeMutationFailureFeedback(error);
-
-        try {
-          toast.show({
-            variant: "danger",
-            label: feedback.label,
-            description: feedback.description,
-            duration: 4000,
-          });
-        } catch (toastError) {
-          // A throwing toast would escape past `finally` into the caller's `void handleCapPlus(id)`
-          // and become an unhandled rejection -- the exact failure this catch block removes.
-          console.warn("[AnimeListScreen] Failed to show mutation failure toast:", toastError);
-        }
-      } finally {
-        const nextMutatingState = { ...mutatingAnimeByIdRef.current };
-        delete nextMutatingState[animeId];
-        mutatingAnimeByIdRef.current = nextMutatingState;
-        setIsMutatingAnimeById(nextMutatingState);
-      }
+      await runChapterMutation(animeId, actionLabel, action, {
+        isTelemetryEnabled,
+        mutatingAnimeByIdRef,
+        setIsMutatingAnimeById,
+        toast,
+      });
     },
     // `isTelemetryEnabled` is load-bearing: this callback closes over the resolved switch, so
     // without it a tap made after the user turned telemetry off would still be recorded by the
