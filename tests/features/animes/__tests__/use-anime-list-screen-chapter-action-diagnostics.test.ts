@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react-native";
 import { useNetworkState } from "expo-network";
 import type { AnimeDayFilter } from "../../../../src/features/animes/anime.types";
 import { useAnimeListScreen } from "../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-screen";
+import { isSyncDiagnosticsPayloadAccepted } from "../../../../src/features/sync/sync-diagnostics-flush.helpers";
 import type { SyncDiagnosticsOutboxEntry } from "../../../../src/infrastructure/db/sync-diagnostics-outbox";
 import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
 
@@ -91,37 +92,13 @@ const mockDiagnosticsOutbox = jest.requireMock(
   "../../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants",
 ) as { syncDiagnosticsOutboxStore: { enqueue: jest.Mock } };
 
-/**
- * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
- *
- * The bridge does not declare this kind yet, so the phase assertions below would otherwise have no
- * observations left to read, and the screen-to-recorder wiring the bridge will start reading the
- * day the registry flips would sit unguarded until then. Stubbing the DECISION keeps those
- * assertions driving the real callback path, while the last case in this file re-arms the real
- * decision and proves the production truth: with the registry as it ships, a tap enqueues nothing.
- */
-jest.mock("../../../../src/features/sync/sync-diagnostics-flush.helpers", () => {
-  const actual = jest.requireActual("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  };
-
-  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
-});
-
-/** The acceptance decision as it actually ships, read from the real module this file replaces. */
-const actualIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireActual("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
-/** The stub of that decision which the recorder actually consults in this suite. */
-const mockIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireMock("../../../../src/features/sync/sync-diagnostics-flush.helpers") as {
-    isSyncDiagnosticsPayloadAccepted: jest.Mock;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
+// NO STUB OF THE ACCEPTANCE DECISION LIVES HERE ANY MORE. This file used to replace
+// `isSyncDiagnosticsPayloadAccepted` with a stub that always answered `true`, because the registry
+// carried no chapter kind and the recorder legitimately refused to enqueue one; the tap assertions
+// below would otherwise have had no observations to read. `SYNC_DIAGNOSTICS_ACCEPTED_KINDS` now
+// names `episode_action`, so the REAL decision accepts the very payload a tap produces and the stub
+// had become a second copy of a fact production already states. Every case below reads the registry
+// as it ships; the last one pins the refusal side on a kind no build here names.
 /** The mocked bridge-config hook, re-pointed by the cases that exercise the telemetry switch. */
 const { useBridgeConfig: mockUseBridgeConfig } = jest.requireMock(
   "../../../../src/features/settings/use-bridge-config",
@@ -185,9 +162,6 @@ function parsePayload(entry: SyncDiagnosticsOutboxEntry): Record<string, unknown
 describe("useAnimeListScreen chapter action diagnostics", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Re-armed for every case: the phase cases below run with the kind ACCEPTED (see the mock's own
-    // comment), and the last case installs the real decision for itself only.
-    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
     mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue.mockReset();
     mockUseBridgeConfig.mockReturnValue(mockBuildBridgeConfigResult());
     (useNetworkState as jest.Mock).mockReturnValue({
@@ -371,11 +345,13 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     expect(readPersistedEntries()).toHaveLength(0);
   });
 
-  it("enqueues nothing for a tap while the bridge does not accept the chapter kind", async () => {
-    // The production truth of this suite, asserted with the REAL registry instead of the stub
-    // above: the bridge answers 400 for a `kind` it does not declare and the flush deletes a 400,
-    // so the tap boundary must stay entirely off the wire. The mutation itself is untouched.
-    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+  it("persists the tap's receipt now that the registry serves the chapter kind, without gating the mutation", async () => {
+    // CONTRACT CORRECTION, not an inversion to make a red test green: this case used to assert that
+    // the tap boundary stayed entirely off the wire, because the registry carried no chapter kind
+    // and the flush deletes a body its 400 condemns. The registry now names the kind the bridge
+    // serves (v1.15.0), so the same tap persists its `received` observation through the REAL
+    // decision. The mutation itself is untouched: this gate is a diagnostics decision, never a gate
+    // on the write the button was pressed for.
     mockCapPlus.mockResolvedValueOnce(undefined);
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -384,12 +360,25 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
       await result.current.handleCapPlus("thu-1");
     });
 
-    expect(readPersistedEntries()).toHaveLength(0);
-    // The user's own write still happened: this gate is a diagnostics decision, never a gate on
-    // the mutation the button was pressed for.
+    const entries = readPersistedEntries();
+    expect(entries).toHaveLength(1);
+    expect(parsePayload(entries[0])).toEqual({
+      kind: "episode_action",
+      observation_id: expect.any(String),
+      action: "episode_plus_one",
+      phase: "received",
+      observed_at_ms: expect.any(Number),
+      correlation_id: expect.any(String),
+      duration_ms: null,
+    });
     expect(mockCapPlus).toHaveBeenCalledWith(
       "thu-1",
       expect.objectContaining({ action: "capPlus", correlationId: expect.any(String) }),
     );
+
+    // And the admission is the REGISTRY's, never a blanket yes: the decision as it ships accepts
+    // the kind this build emits and still refuses a kind no build here names.
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: "episode_action" })).toBe(true);
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: "watch_session" })).toBe(false);
   });
 });

@@ -46,9 +46,9 @@ function tally(overrides: Partial<SyncDiagnosticsFlushResult> = {}): SyncDiagnos
 
 /**
  * One stored observation whose `kind` this build does not declare: `watch_session` belongs to a
- * different build of ours, and only the top-level `kind` is ever read -- every other field stays
- * opaque and the body reaches the wire byte-identical. It is NOT POSTed and NOT deleted (registry
- * absence is not a destruction trigger), so it parks and keeps its batch slot for later passes.
+ * different build of ours. Only the top-level `kind` is ever read -- every other field stays opaque
+ * and the body reaches the wire byte-identical -- so it is NOT POSTed and NOT deleted (registry
+ * absence is not a destruction trigger): it parks and keeps its batch slot for later passes.
  */
 const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify(
   { kind: 'watch_session', action: 'cap_plus', phase: 'received', at: 1_000, correlation_id: 'corr-1' },
@@ -162,8 +162,9 @@ describe('captureSyncDiagnosticsEnvelope', () => {
 });
 
 describe('isSyncDiagnosticsPayloadAccepted', () => {
-  it('accepts the kindless legacy cycle envelope, the one kind the registry still carries', () => {
+  it('accepts the kindless legacy cycle envelope AND the chapter kind the registry now serves', () => {
     expect(isSyncDiagnosticsPayloadAccepted(WIRE)).toBe(true);
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'episode_action' })).toBe(true);
   });
 
   it('refuses a body that declares a kind the bridge does not accept', () => {
@@ -317,13 +318,12 @@ describe('flushSyncDiagnosticsOutbox', () => {
   });
 
   it('parks an unknown kind -- never posted, never deleted, counted as unclassified, batch continues', async () => {
-    // The row a pre-fix build queued, plus the row a LATER build would queue: neither is delivered
-    // here and neither is destroyed, because rolling forward recovers them. Stopping would instead
-    // let one unclassified row starve every deliverable envelope behind it.
+    // CONTRACT CORRECTION to the FIXTURE: the second row used to be `{"kind":"episode_action"}`,
+    // which the registry now serves, so it would be POSTED; the park is pinned on an unknown kind.
     const { store, postSyncDiagnostics, result } = await runFlush(
       [
         buildRecord({ cycleId: 'chapter-1', payload: UNROUTABLE_CHAPTER_PAYLOAD }),
-        buildRecord({ cycleId: 'chapter-2', payload: JSON.stringify({ kind: 'episode_action' }) }),
+        buildRecord({ cycleId: 'chapter-2', payload: JSON.stringify({ kind: 'season_rating' }) }),
         buildRecord({ cycleId: 'cycle-3' }),
       ],
       [buildResult()],

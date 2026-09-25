@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { beginChapterAction } from '../../../src/features/animes/chapter-action-diagnostics.helpers';
 import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
+import { isSyncDiagnosticsPayloadAccepted } from '../../../src/features/sync/sync-diagnostics-flush.helpers';
 import { animes } from '../../../src/infrastructure/db/schema';
 import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../../../src/infrastructure/db/native-runtime/native-runtime.constants';
 import type { SyncDiagnosticsOutboxEntry } from '../../../src/infrastructure/db/sync-diagnostics-outbox';
@@ -22,37 +23,14 @@ jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn().mockResolvedValue(undefined),
 }));
 
-/**
- * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
- *
- * The bridge does not declare this kind yet, so the phase, correlation and duration assertions
- * below would have no observations left to read, and the recorder that the bridge will start
- * reading the day the registry flips would sit unguarded until then. Stubbing the DECISION keeps
- * those assertions driving the real mutation path, while the case that pins today's registry (the
- * last one in this file) re-arms the real decision and proves the whole path obeys it.
- */
-jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => {
-  const actual = jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  };
-
-  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
-});
-
-/** The acceptance decision as it actually ships, read from the real module this file replaces. */
-const actualIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
-/** The stub of that decision which the recorder actually consults in this suite. */
-const mockIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireMock('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    isSyncDiagnosticsPayloadAccepted: jest.Mock;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
+// NO STUB OF THE ACCEPTANCE DECISION LIVES HERE ANY MORE. This file used to replace
+// `isSyncDiagnosticsPayloadAccepted` with a stub that always answered `true`, because the registry
+// carried no chapter kind and the recorder legitimately refused to enqueue one; the phase,
+// correlation and duration assertions below would otherwise have had no observations to read.
+// `SYNC_DIAGNOSTICS_ACCEPTED_KINDS` now names `episode_action`, so the REAL decision accepts the
+// very payload these cases drive and the stub had become a second copy of a fact production
+// already states. The registry is read as it ships; the refusal side is pinned by a kind no build
+// here names.
 // The recorder resolves this store by default, so replacing it in the module registry is what lets
 // a case read exactly what the mutation path persisted -- no SQLite file, and no assertion on an
 // internal collaborator's call count.
@@ -182,10 +160,6 @@ describe('chapter action diagnostics on the mutation path', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Re-armed for every case: `jest.restoreAllMocks` in `afterEach` wipes the implementation, and
-    // the gate case's real decision must not leak into the payload cases either. The
-    // bridge-accepts-this-kind world is what keeps the phase assertions below meaningful.
-    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
     mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue.mockReset();
     consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Date, 'now').mockReturnValue(now);
@@ -406,11 +380,12 @@ describe('chapter action diagnostics on the mutation path', () => {
     expect((thrown as Error).message).toBe(EXPO_SQLITE_UNAVAILABLE_MESSAGE);
   });
 
-  it('enqueues nothing for any phase while the bridge does not accept the chapter kind', async () => {
-    // The bridge answers 400 for a `kind` it does not declare and the flush deletes a 400, so the
-    // whole path must stay off the wire: receipt, commit and the post-write sync outcome included.
-    // The mutation itself is never gated by a diagnostics decision.
-    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+  it('persists every phase of a tap now that the registry serves the chapter kind, without touching the write', async () => {
+    // CONTRACT CORRECTION, not an inversion to make a red test green: this case used to assert that
+    // the whole path stayed off the wire, because the registry carried no chapter kind and the
+    // flush deletes a body its 400 condemns. The registry now names the kind the bridge serves
+    // (v1.15.0), so the same tap persists the receipt, the commit and the post-write sync outcome.
+    // The mutation itself is still never gated by a diagnostics decision.
     mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
     const txMocks = createTxDbMocks();
     configureMutationWrite(txMocks.txDb);
@@ -420,12 +395,25 @@ describe('chapter action diagnostics on the mutation path', () => {
 
     await act(async () => {
       await result.current.capPlus('anime-1', context);
-      await Promise.resolve();
+      await waitForPersistedCount(3);
     });
 
-    expect(readPersistedEntries()).toHaveLength(0);
+    const payloads = readPersistedPayloads();
+    expect(payloads.map((payload) => payload.phase)).toEqual(['received', 'finished', 'sync']);
+    expect(payloads[0]).toMatchObject({
+      kind: 'episode_action',
+      action: 'episode_plus_one',
+      phase: 'received',
+      duration_ms: null,
+    });
+    expect(payloads[2]).toMatchObject({ phase: 'sync', outcome: 'ok', duration_ms: null });
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.insert).toHaveBeenCalled();
     expect(mockSyncPendingOperations).toHaveBeenCalled();
+
+    // The admission is the REGISTRY's, not a blanket yes: the decision as it ships accepts the kind
+    // the recorder now emits, and still refuses a kind no build here names.
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'episode_action' })).toBe(true);
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'watch_session' })).toBe(false);
   });
 });

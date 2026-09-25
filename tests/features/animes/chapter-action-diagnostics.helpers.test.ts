@@ -10,6 +10,7 @@ import {
   recordChapterActionSkipped,
   recordChapterActionSync,
 } from '../../../src/features/animes/chapter-action-diagnostics.helpers';
+import { isSyncDiagnosticsPayloadAccepted } from '../../../src/features/sync/sync-diagnostics-flush.helpers';
 import type {
   ChapterActionContext,
   ChapterActionObservation,
@@ -19,38 +20,14 @@ import type {
   ChapterActionWirePayload,
 } from '../../../src/features/animes/chapter-action-diagnostics.types';
 
-/**
- * The acceptance decision the recorder consults, stubbed to ACCEPT the chapter kind by default.
- *
- * The bridge does not declare this kind yet, so every payload-contract case below -- the privacy
- * allowlist, the closed vocabulary, the phase-specific fields, the shared correlation id -- would
- * otherwise have no payload left to assert on, and the builder that the bridge will start reading
- * the day the registry flips would sit unguarded until then. Stubbing the DECISION keeps those
- * assertions driving the real builder, while the case that pins today's registry (the last one in
- * this file) re-arms the real decision and proves the recorder obeys it.
- */
-jest.mock('../../../src/features/sync/sync-diagnostics-flush.helpers', () => {
-  const actual = jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  };
-
-  return { ...actual, isSyncDiagnosticsPayloadAccepted: jest.fn(() => true) };
-});
-
-/** The acceptance decision as it actually ships, read from the real module this file replaces. */
-const actualIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireActual('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    readonly isSyncDiagnosticsPayloadAccepted: (payload: unknown) => boolean;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
-/** The stub of that decision which the recorder actually consults in this suite. */
-const mockIsSyncDiagnosticsPayloadAccepted = (
-  jest.requireMock('../../../src/features/sync/sync-diagnostics-flush.helpers') as {
-    isSyncDiagnosticsPayloadAccepted: jest.Mock;
-  }
-).isSyncDiagnosticsPayloadAccepted;
-
+// NO STUB OF THE ACCEPTANCE DECISION LIVES HERE ANY MORE. This file used to replace
+// `isSyncDiagnosticsPayloadAccepted` with a stub that always answered `true`, because the registry
+// carried no chapter kind and the recorder legitimately refused to enqueue one; every payload case
+// below would otherwise have had nothing to assert on. `SYNC_DIAGNOSTICS_ACCEPTED_KINDS` now names
+// `episode_action`, so the REAL decision accepts the very payload these cases drive: the stub had
+// become a second copy of a fact production already states, hiding the real gate behind a
+// replacement of it. The registry is read as it ships, and the refusal side is pinned from the
+// other direction by a kind no build here names.
 /** A store that keeps what the recorder persisted, so a case can read the wire payload itself. */
 type CapturingStore = Pick<SyncDiagnosticsOutboxStore, 'enqueue'> & {
   readonly entries: SyncDiagnosticsOutboxEntry[];
@@ -120,13 +97,6 @@ function payloadKeys(payload: ChapterActionWirePayload | null): string[] {
 }
 
 describe('chapter action diagnostics', () => {
-  beforeEach(() => {
-    // Re-armed for every case: `jest.restoreAllMocks` would otherwise leave the stub answering
-    // `undefined`, and the gate case's real decision must not leak into the payload cases. The
-    // bridge-accepts-this-kind world is what keeps the payload assertions below meaningful.
-    mockIsSyncDiagnosticsPayloadAccepted.mockReturnValue(true);
-  });
-
   it('records one received observation naming the wire action', () => {
     const store = createCapturingStore();
     const ids = ['correlation', 'outbox-received'];
@@ -464,14 +434,13 @@ describe('chapter action diagnostics', () => {
     });
   });
 
-  it('enqueues nothing for any phase while the bridge does not accept the chapter kind', () => {
-    // The bridge strict-decodes this endpoint with `DisallowUnknownFields()` and answers 400 for a
-    // `kind` it does not declare, and the flush reads 400 as "this body is malformed forever" and
-    // deletes the row. So the recorder must not create one in the first place: with the registry
-    // as it ships, EVERY phase is silent -- the receipt, the skip, the commit, the failure and the
-    // post-write sync outcome. The action still opens and still carries its correlation id, because
-    // the mutation path depends on that context whether or not anything is being recorded.
-    mockIsSyncDiagnosticsPayloadAccepted.mockImplementation(actualIsSyncDiagnosticsPayloadAccepted);
+  it('enqueues every phase now that the registry serves the chapter kind, and still refuses a kind it does not name', () => {
+    // CONTRACT CORRECTION, not an inversion to make a red test green: this case used to assert that
+    // EVERY phase stayed silent, because `SYNC_DIAGNOSTICS_ACCEPTED_KINDS` carried no chapter kind
+    // and the recorder refuses to create a row the flush would delete on its first 400. The
+    // registry now names the kind the bridge serves (v1.15.0), so the same five calls produce the
+    // five real observations -- and the gate itself stays pinned from the other side, on a kind
+    // this build still does not name.
     const store = createCapturingStore();
     const params = { store, now: () => fixedNow, generateId: () => 'obs' };
 
@@ -481,14 +450,29 @@ describe('chapter action diagnostics', () => {
     recordChapterActionFailed(context, new Error('database is locked'), params);
     recordChapterActionSync(context, 'ok', params);
 
-    expect(store.entries).toHaveLength(0);
+    // The whole action, in order, through the REAL registry: the receipt, the commit, the drop, the
+    // failure and the post-write sync outcome all reach the outbox now.
+    expect(store.entries.map((entry) => parsePayload(entry).phase)).toEqual([
+      'received',
+      'finished',
+      'skipped',
+      'finished',
+      'sync',
+    ]);
+    expect(parsePayload(store.entries[2])).toMatchObject({
+      kind: 'episode_action',
+      action: 'episode_plus_one',
+      phase: 'skipped',
+      reason: 'anime_missing',
+      correlation_id: 'obs',
+    });
     expect(context.correlationId).toBe('obs');
 
-    // And the parking above is the REGISTRY's doing rather than a malformed body: the decision as
-    // it ships refuses the kind this build now emits, and still accepts the kindless legacy cycle
-    // envelope. Admitting `episode_action` is a separate one-line change, made only once the
-    // bridge declares it accepts that kind.
-    expect(actualIsSyncDiagnosticsPayloadAccepted({ kind: 'episode_action' })).toBe(false);
-    expect(actualIsSyncDiagnosticsPayloadAccepted({ cycle_id: 'cycle-1' })).toBe(true);
+    // And the admission is the REGISTRY's decision, never a blanket yes: the decision as it ships
+    // accepts the kind this build now emits AND the kindless legacy cycle envelope, whose absence
+    // of `kind` is the frozen rule, and still refuses a kind no build here names.
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'episode_action' })).toBe(true);
+    expect(isSyncDiagnosticsPayloadAccepted({ cycle_id: 'cycle-1' })).toBe(true);
+    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'watch_session' })).toBe(false);
   });
 });

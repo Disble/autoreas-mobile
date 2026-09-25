@@ -340,11 +340,13 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     expect(shed).toEqual([]);
   });
 
-  it('never reaps a row a bridge verdict decided: a stale routable row is DELIVERED, not retired', async () => {
+  it('never reaps a row a bridge verdict decided: a stale CHAPTER observation is DELIVERED, not retired', async () => {
     const adapter = await openPairedDatabase();
-    // Eight days old and perfectly deliverable: the bound lands on how long we WAIT, never on the
-    // bytes, so a row a later bridge finally accepts must be counted as the delivery it is.
-    await plantStoredRow('stale-routable', JSON.stringify({ cycle_id: 'stale-routable' }), STALE_AGE_MS);
+    // The stored body is a REAL chapter observation -- the kind this build now serves -- so this is
+    // the flip end to end: the real classifier routes it and the wire receives it instead of
+    // parking it. Eight days old and perfectly deliverable: the bound lands on how long we WAIT,
+    // never on the bytes, so a row the bridge accepts must be counted as the delivery it is.
+    await plantStoredRow('stale-routable', JSON.stringify({ kind: 'episode_action' }), STALE_AGE_MS);
     // Two diagnostics POSTs (the planted row and this cycle's own envelope) then the reconcile.
     fakeBridge.queueResponse({ status: 200, body: {} });
     fakeBridge.queueResponse({ status: 200, body: {} });
