@@ -259,6 +259,60 @@ describe('sync diagnostics outbox store', () => {
     });
   });
 
+  describe('readShedCount (the honest read a status surface needs)', () => {
+    it('returns 0, not null, before the cap has ever shed: an absent counter row is a measured zero', () => {
+      // Absence is a KNOWN answer here, not an unknown one: the trigger writes the row in the same
+      // statement that drops a row, so no row means exactly zero rows dropped so far.
+      const opener = buildOpener();
+      const store = createSyncDiagnosticsOutboxStore({
+        openDatabase: opener.open,
+        now: () => 1_000,
+      });
+
+      store.enqueue({ cycleId: 'cycle-1', payload: '{}' });
+
+      expect(store.readShedCount()).toBe(0);
+    });
+
+    it('returns the cumulative total once the cap has shed rows', () => {
+      const opener = buildOpener();
+      let clock = 0;
+      const store = createSyncDiagnosticsOutboxStore({
+        openDatabase: opener.open,
+        now: () => (clock += 1),
+      });
+
+      for (let i = 0; i < SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS; i += 1) {
+        store.enqueue({ cycleId: `cycle-${i}`, payload: '{}' });
+      }
+      store.enqueue({ cycleId: 'cycle-overflow-1', payload: '{}' });
+      store.enqueue({ cycleId: 'cycle-overflow-2', payload: '{}' });
+
+      expect(store.readShedCount()).toBe(2);
+    });
+
+    it('returns null instead of 0 when the counter cannot be read, while getShedCount stays 0', () => {
+      // The whole reason this read exists beside `getShedCount`: a status surface must be able to
+      // tell a measured zero from an unreadable counter and render the second as ABSENT instead of
+      // fabricating a zero. `getShedCount` keeps its original never-throws/reads-as-0 contract.
+      const opener = buildOpener();
+      const store = createSyncDiagnosticsOutboxStore({
+        openDatabase: opener.open,
+        now: () => 1_000,
+      });
+
+      store.enqueue({ cycleId: 'cycle-1', payload: '{}' });
+      getNativeHandle(opener.adapter).close();
+
+      let shed: number | null = 0;
+      expect(() => {
+        shed = store.readShedCount();
+      }).not.toThrow();
+      expect(shed).toBeNull();
+      expect(store.getShedCount()).toBe(0);
+    });
+  });
+
   describe('the not-before gate is a clock comparison (Decision 6, guard cycle #2)', () => {
     it('returns [] when the cycle starts before the persisted not-before', () => {
       const opener = buildOpener();

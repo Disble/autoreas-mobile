@@ -355,6 +355,9 @@ describe('settings-screen.helpers', () => {
       expect.arrayContaining([
         'diagnosticsDiscardedCount',
         'diagnosticsFailedRemovalCount',
+        'diagnosticsUndeliverableCount',
+        'diagnosticsUnclassifiedCount',
+        'diagnosticsReapedCount',
         'outboxFailedWriteCount',
         'deadLetterCount',
         'conflictExhaustedCount',
@@ -385,6 +388,9 @@ describe('settings-screen.helpers', () => {
         ...CYCLE_POSTMORTEM_DEFAULTS,
         lastDiagnosticsDiscardedCount: 2,
         lastDiagnosticsFailedRemovalCount: 1,
+        lastDiagnosticsUndeliverableCount: 5,
+        lastDiagnosticsUnclassifiedCount: 6,
+        lastDiagnosticsReapedCount: 7,
         lastOutboxFailedWriteCount: 3,
         lastDeadLetterCount: 4,
         lastConflictExhaustedCount: 1,
@@ -398,6 +404,14 @@ describe('settings-screen.helpers', () => {
 
     expect(tileMap.diagnosticsDiscardedCount).toMatchObject({ value: '2', tone: 'danger' });
     expect(tileMap.diagnosticsFailedRemovalCount).toMatchObject({ value: '1', tone: 'warning' });
+    // The three persisted loss counters answer three different facts and must never read alike:
+    // destruction by DECLARATION (danger), a parked UNKNOWN kind (warning, recoverable by
+    // roll-forward), and an age-bounded REAP (danger, permanent).
+    expect(tileMap.diagnosticsUndeliverableCount).toMatchObject({ label: 'Diagnósticos destruidos por declaración', value: '5', tone: 'danger' });
+    expect(tileMap.diagnosticsUnclassifiedCount).toMatchObject({ label: 'Diagnósticos sin clasificar', value: '6', tone: 'warning' });
+    expect(tileMap.diagnosticsReapedCount).toMatchObject({ label: 'Diagnósticos retirados por antigüedad', value: '7', tone: 'danger' });
+    const diagnosticsLabels = ['diagnosticsDiscardedCount', 'diagnosticsFailedRemovalCount', 'diagnosticsUndeliverableCount', 'diagnosticsUnclassifiedCount', 'diagnosticsReapedCount'].map((id) => tileMap[id].label);
+    expect(new Set(diagnosticsLabels).size).toBe(5);
     expect(tileMap.outboxFailedWriteCount).toMatchObject({ value: '3', tone: 'danger' });
     expect(tileMap.deadLetterCount).toMatchObject({ value: '4', tone: 'danger' });
     expect(tileMap.conflictExhaustedCount).toMatchObject({ value: '1', tone: 'danger' });
@@ -428,6 +442,9 @@ describe('settings-screen.helpers', () => {
         ...CYCLE_POSTMORTEM_DEFAULTS,
         lastDiagnosticsDiscardedCount: 0,
         lastDiagnosticsFailedRemovalCount: 0,
+        lastDiagnosticsUndeliverableCount: 0,
+        lastDiagnosticsUnclassifiedCount: 0,
+        lastDiagnosticsReapedCount: 0,
         lastOutboxFailedWriteCount: 0,
         lastDeadLetterCount: 0,
         lastConflictExhaustedCount: 0,
@@ -440,6 +457,9 @@ describe('settings-screen.helpers', () => {
     const tileMap = Object.fromEntries(section.tiles.map((tile) => [tile.id, tile]));
 
     expect(tileMap.diagnosticsDiscardedCount).toMatchObject({ value: '0', tone: 'default' });
+    expect(tileMap.diagnosticsUndeliverableCount).toMatchObject({ value: '0', tone: 'default' });
+    expect(tileMap.diagnosticsUnclassifiedCount).toMatchObject({ value: '0', tone: 'default' });
+    expect(tileMap.diagnosticsReapedCount).toMatchObject({ value: '0', tone: 'default' });
     expect(tileMap.deadLetterCount).toMatchObject({ value: '0', tone: 'default' });
     // A backlog at or under the batch limit reports `hasMore` false (spec: has_more boundary).
     expect(tileMap.pendingRowCount).toMatchObject({ value: '12', tone: 'default' });

@@ -81,4 +81,14 @@ export interface SyncDiagnosticsOutboxStore {
    * throws: an unreadable counter reads as `0`, since instrumentation must never fail a cycle.
    */
   readonly getShedCount: () => number;
+  /**
+   * The same cumulative total as `getShedCount`, but HONEST about a failed read: `null` when the
+   * counter could not be read, `0` only when it was read and no row has ever been shed.
+   *
+   * Exists BESIDE `getShedCount` rather than replacing it: that method's never-throws/reads-as-0
+   * contract has callers that legitimately want "no evidence of a shed" and must keep working
+   * unchanged. A status surface is the opposite caller -- it must render an unreadable counter as
+   * ABSENT, and a fabricated `0` there would state a measurement that was never taken.
+   */
+  readonly readShedCount: () => number | null;
 }

@@ -53,15 +53,16 @@ const val SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS = 5_000L
 /**
  * Diagnostics body `kind`s this build may POST, mirroring `SYNC_DIAGNOSTICS_ACCEPTED_KINDS`.
  *
- * Empty, and that is the registry's real state: its single JS entry is `undefined`, which
- * identifies the ABSENCE of a `kind` key -- the frozen compatibility rule for the already-deployed
- * cycle report. JSON cannot represent `undefined`, so that entry is structurally unreachable from
- * a NAMED token and is handled where it is read instead ([classifyDiagnosticsPayload] treats an
- * ABSENT `kind` as that legacy envelope, and parks a present JSON `null` as a declaration naming
- * no token this build knows). Adding `episode_action` here is the whole change that lets
- * observations flow, on both the JS and the native side.
+ * `episode_action` is the registry's only NAMED entry, and it is the whole change that lets episode
+ * observations flow: the recorder enqueues them and the drain posts them off this same list the
+ * moment the bridge answers that kind (bridge v1.15.0, confirmed deployed). The JS registry
+ * additionally carries an `undefined` entry, which identifies the ABSENCE of a `kind` key -- the
+ * frozen compatibility rule for the already-deployed cycle report. JSON cannot represent
+ * `undefined`, so that entry is structurally unreachable from a NAMED token and is handled where it
+ * is read instead ([classifyDiagnosticsPayload] treats an ABSENT `kind` as that legacy envelope, and
+ * parks a present JSON `null` as a declaration naming no token this build knows).
  */
-val SYNC_DIAGNOSTICS_ACCEPTED_KINDS: Set<String> = emptySet()
+val SYNC_DIAGNOSTICS_ACCEPTED_KINDS: Set<String> = setOf("episode_action")
 
 /**
  * Diagnostics body `kind`s this build KNOWS the bridge does not accept, mirroring
@@ -291,8 +292,9 @@ object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
  * reported through the tally and the attempt's own outcome stays untouched.
  *
  * [acceptedKinds] and [undeliverableKinds] are the registry and the destruction declaration, both
- * injectable so a test can pin all three classification branches and so the flip that ships the
- * first accepted kind is a one-line change at the call site.
+ * injectable so a test can pin all three classification branches; production passes neither and
+ * therefore drains off the shipped defaults ([SYNC_DIAGNOSTICS_ACCEPTED_KINDS] for kind parity with
+ * the JS drainer, [SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS] empty).
  */
 class SyncEngineDiagnosticsCourier(
   private val telemetryFile: File?,

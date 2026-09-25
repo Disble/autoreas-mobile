@@ -57,6 +57,13 @@ export interface BackgroundSyncSection {
 export interface BuildBackgroundSyncSectionInput {
   readonly isConfigured: boolean;
   readonly snapshot: SyncRuntimeStatusSnapshot;
+  /**
+   * The outbox's CUMULATIVE capacity-shed count, read live from the store's own counter table --
+   * deliberately NOT a `SyncRuntimeStatusSnapshot` field, because surfacing it must not require a
+   * schema migration or a new status write. `null` (or an omitted field) means the counter could
+   * not be read, and the tile is omitted rather than rendered as a fabricated zero.
+   */
+  readonly shedCount?: number | null;
 }
 
 /** Defines the settings sync summary action kind value shape. */

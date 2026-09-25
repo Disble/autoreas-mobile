@@ -129,9 +129,10 @@ function appendPendingRowCountTile(tiles: MetricTile[], count: number | null): v
 }
 
 /**
- * Appends the eight convergence-instrumentation tiles (design.md
- * `2026-09-09-convergence-instrumentation` Decision 6), one per counter, beside
- * `backlogReadCount`. Each renders ONLY when its counter is not `null` (Decision 7).
+ * Appends the eleven convergence-instrumentation tiles (design.md
+ * `2026-09-09-convergence-instrumentation` Decision 6, extended with the three persisted
+ * diagnostics-loss counters), one per counter, beside `backlogReadCount`. Each renders ONLY
+ * when its counter is not `null` (Decision 7).
  */
 function appendConvergenceMetricTiles(
   tiles: MetricTile[],
@@ -148,6 +149,24 @@ function appendConvergenceMetricTiles(
     label: 'Diagnósticos a reintentar',
     iconName: 'repeat-outline',
     nonZeroTone: 'warning',
+  });
+  pushCountTile(tiles, snapshot.lastDiagnosticsUndeliverableCount, {
+    id: 'diagnosticsUndeliverableCount',
+    label: 'Diagnósticos destruidos por declaración',
+    iconName: 'remove-circle-outline',
+    nonZeroTone: 'danger',
+  });
+  pushCountTile(tiles, snapshot.lastDiagnosticsUnclassifiedCount, {
+    id: 'diagnosticsUnclassifiedCount',
+    label: 'Diagnósticos sin clasificar',
+    iconName: 'help-circle-outline',
+    nonZeroTone: 'warning',
+  });
+  pushCountTile(tiles, snapshot.lastDiagnosticsReapedCount, {
+    id: 'diagnosticsReapedCount',
+    label: 'Diagnósticos retirados por antigüedad',
+    iconName: 'alarm-outline',
+    nonZeroTone: 'danger',
   });
   pushCountTile(tiles, snapshot.lastOutboxFailedWriteCount, {
     id: 'outboxFailedWriteCount',
@@ -177,6 +196,22 @@ function appendConvergenceMetricTiles(
     tiles.push({ id: 'oldestPendingAgeMs', label: 'Antigüedad máxima pendiente', value: formatOldestPendingAge(snapshot.lastOldestPendingAgeMs), tone: 'default', iconName: 'time-outline' });
   }
   appendPendingRowCountTile(tiles, snapshot.lastPendingRowCount);
+}
+
+/**
+ * Appends the cumulative CAPACITY-SHED tile. Distinct from every snapshot counter above: it is
+ * not written by a cycle at all, but read live from the outbox store's own persisted counter (the
+ * cap trigger's own record of the rows it dropped). `null` means the counter could not be read --
+ * an absent tile, never a fabricated zero -- while a measured `0` (the trigger has shed nothing)
+ * renders as a neutral tile carrying the same "this was measured" meaning as its siblings.
+ */
+function appendCapacityShedTile(tiles: MetricTile[], shedCount: number | null): void {
+  pushCountTile(tiles, shedCount, {
+    id: 'diagnosticsCapacityShedCount',
+    label: 'Diagnósticos perdidos por capacidad',
+    iconName: 'funnel-outline',
+    nonZeroTone: 'danger',
+  });
 }
 
 /**
@@ -217,6 +252,7 @@ function buildRegistrationPathTiles(
 /** Builds the full ordered tile list the Settings background-sync card renders. */
 function buildRuntimeMetricTiles(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+  shedCount: number | null,
 ): MetricTile[] {
   const registrationShape = resolveRegistrationTile(snapshot.registrationStatus);
   const tiles: MetricTile[] = [
@@ -250,6 +286,7 @@ function buildRuntimeMetricTiles(
   );
 
   appendConvergenceMetricTiles(tiles, snapshot);
+  appendCapacityShedTile(tiles, shedCount);
 
   if (snapshot.lastFailureMessage) {
     tiles.push({ id: 'lastFailure', label: 'Último fallo', value: snapshot.lastFailureMessage, tone: 'danger', iconName: 'alert-circle-outline', span: 'full' });
@@ -260,8 +297,9 @@ function buildRuntimeMetricTiles(
 /** Builds the section copy and status tone for a bridge that IS configured (paired). */
 function buildConfiguredBackgroundSyncSection(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+  shedCount: number | null,
 ): BackgroundSyncSection {
-  const tiles = buildRuntimeMetricTiles(snapshot);
+  const tiles = buildRuntimeMetricTiles(snapshot, shedCount);
   if (snapshot.lastFailureMessage) {
     return {
       title: 'Último sync con error',
@@ -315,6 +353,7 @@ function buildConfiguredBackgroundSyncSection(
 export function buildBackgroundSyncSection({
   isConfigured,
   snapshot,
+  shedCount = null,
 }: BuildBackgroundSyncSectionInput): BackgroundSyncSection {
   if (!isConfigured) {
     return {
@@ -336,7 +375,7 @@ export function buildBackgroundSyncSection({
     };
   }
 
-  return buildConfiguredBackgroundSyncSection(snapshot);
+  return buildConfiguredBackgroundSyncSection(snapshot, shedCount);
 }
 
 /**

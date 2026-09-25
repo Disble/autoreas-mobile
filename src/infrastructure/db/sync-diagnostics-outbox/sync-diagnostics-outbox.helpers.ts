@@ -128,7 +128,7 @@ export function createSyncDiagnosticsOutboxStore(
     }
   }
 
-  function getShedCount(): number {
+  function readShedCount(): number | null {
     try {
       const rows = connect().getAllSync<SyncDiagnosticsOutboxShedCountRow>(
         SYNC_DIAGNOSTICS_OUTBOX_SHED_COUNT_SELECT_SQL,
@@ -137,12 +137,17 @@ export function createSyncDiagnosticsOutboxStore(
       // No row until the first shed: absent means zero rows dropped, not an unknown quantity.
       return rows[0]?.shed_rows ?? 0;
     } catch {
-      // Same contract as `readFlushCandidates`'s empty result: a read that fails is not evidence
-      // of a shed, and instrumentation never throws into the cycle it instruments. Deliberately
-      // NOT counted as a failed write -- nothing was written, and `getFailedWriteCount` answers
-      // for writes.
-      return 0;
+      // DISTINCT from `getShedCount`'s `0`: a failed read is NOT a measured zero, and a caller
+      // that renders a number must be able to tell those apart. Still never throws --
+      // instrumentation must never fail the cycle it instruments.
+      return null;
     }
+  }
+
+  function getShedCount(): number {
+    // Backward-compatible wrapper: the original contract is "never throws, an unreadable counter
+    // reads as 0", so it collapses the nullable read's unknown case back to zero.
+    return readShedCount() ?? 0;
   }
 
   return {
@@ -152,5 +157,6 @@ export function createSyncDiagnosticsOutboxStore(
     deferUntil,
     getFailedWriteCount: () => failedWriteCount,
     getShedCount,
+    readShedCount,
   };
 }

@@ -239,7 +239,7 @@ class SyncEngineDiagnosticsCourierTest {
       fixture.seedTelemetryEntry("cycle-1", """{"cycle_id":"cycle-1"}""", 10L)
       fixture.seedTelemetryEntry(
         "cycle-2",
-        """{"cycle_id":"cycle-2","kind":"episode_action"}""",
+        """{"cycle_id":"cycle-2","kind":"watch_session"}""",
         20L,
       )
       fixture.seedTelemetryEntry("cycle-3", """{"cycle_id":"cycle-3"}""", 30L)
@@ -256,7 +256,7 @@ class SyncEngineDiagnosticsCourierTest {
         transport.posts.map { it.body },
       )
       assertEquals(
-        listOf("cycle-2" to """{"cycle_id":"cycle-2","kind":"episode_action"}"""),
+        listOf("cycle-2" to """{"cycle_id":"cycle-2","kind":"watch_session"}"""),
         fixture.telemetryEntries(),
       )
     }
@@ -265,7 +265,7 @@ class SyncEngineDiagnosticsCourierTest {
   @Test
   fun `a kind the registry accepts is routed verbatim`() {
     SyncEngineTestDatabase().use { fixture ->
-      val payload = """{"cycle_id":"cycle-flip","kind":"episode_action"}"""
+      val payload = """{"cycle_id":"cycle-flip","kind":"watch_session"}"""
       fixture.seedTelemetryEntry("cycle-flip", payload, 10L)
       val transport = RecordingDiagnosticsTransport()
 
@@ -273,12 +273,12 @@ class SyncEngineDiagnosticsCourierTest {
         telemetryFile = fixture.telemetryDatabaseFile,
         transport = transport,
         now = { NOW_MS },
-        acceptedKinds = setOf("episode_action"),
+        acceptedKinds = setOf("watch_session"),
       )
       val result = courier.drain(isSyncTelemetryEnabled = true, connection = CONNECTION)
 
-      // The flip that ships the first accepted kind is this one set, and nothing else changes:
-      // the same body that parked above is delivered, byte for byte.
+      // The injectable SEAM, not the shipped registry: `watch_session` is deliberately not in the
+      // DEFAULT set (pinned, injecting nothing, in `SyncEngineDiagnosticsAcceptedKindsTest`).
       assertEquals(SyncDiagnosticsFlushResult(attempted = 1, delivered = 1), result)
       assertEquals(listOf(payload), transport.posts.map { it.body })
       assertEquals(emptyList<Pair<String, String>>(), fixture.telemetryEntries())
