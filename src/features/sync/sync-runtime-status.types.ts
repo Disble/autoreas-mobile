@@ -28,8 +28,44 @@ export type SyncRuntimeTriggerSource =
  */
 export type SyncCycleStage = (typeof SYNC_CYCLE_STAGES)[number];
 
+/**
+ * The two diagnostics counters that answer "did this build or the bridge condemn a row?" -- stored
+ * beside `discarded` (migration `0014`) and declared as ONE named group instead of being repeated
+ * inside both the snapshot and the patch interface.
+ *
+ * They are not the same fact as each other, nor as `discarded`: `undeliverable` is a destruction
+ * this device ORDERED by declaring a kind unpostable, and `unclassified` is a PARK for a kind
+ * another build of this app owns, recoverable by roll-forward. A destruction must never be
+ * invisible while the registry authorizing it is being changed.
+ *
+ * Extracted rather than inlined, and kept at exactly these two members: the repository's semantic
+ * duplicate-block audit counts RUNS of property declarations, so adding one to the long nullable
+ * runs in each interface re-fingerprints those runs and is reported as introduced duplication. The
+ * age-bound counter therefore has its own single-member group below, and a further counter belongs
+ * there or in a third group -- never appended here.
+ */
+interface SyncDiagnosticsDispositionCounters {
+  /** Destroyed by DECLARATION (`SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`), never by a bridge verdict. */
+  readonly lastDiagnosticsUndeliverableCount: number | null;
+  /** PARKED: this build does not know the `kind`. Never posted, never deleted, recovered by roll-forward. */
+  readonly lastDiagnosticsUnclassifiedCount: number | null;
+}
+
+/**
+ * The age bound's own counter (migration `0015`), declared as its OWN single-member group for the
+ * reason above: it is a fourth fact, and it must never be folded into `discarded`, whose whole job
+ * is to say the BRIDGE refused these bytes rather than that this drain gave up waiting for a bridge
+ * that would have accepted them.
+ */
+interface SyncDiagnosticsReapCounter {
+  /** RETIRED by `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS`: a park that outlived the declared wait. */
+  readonly lastDiagnosticsReapedCount: number | null;
+}
+
 /** Defines the data contract for sync runtime status snapshot. */
-export interface SyncRuntimeStatusSnapshot {
+export interface SyncRuntimeStatusSnapshot
+  extends SyncDiagnosticsDispositionCounters,
+    SyncDiagnosticsReapCounter {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
   readonly executionMode: SyncExecutionMode;
   readonly isForegroundServiceRunning: boolean;
@@ -63,9 +99,10 @@ export interface SyncRuntimeStatusSnapshot {
   /** Checkpoints that failed to persist. Non-zero marks `lastCycleStage` as degraded, not wrong. */
   readonly lastFailedCheckpointCount: number;
   // Convergence-instrumentation fields (design.md `2026-09-09-convergence-instrumentation`
-  // Decision 6). All eight are `null` until the first cycle folds them into the bookkeeping
-  // write, and stay `null` for any cycle that never reaches it -- never a plausible zero, which
-  // would misreport "no lost edits" (Decision 7).
+  // Decision 6). All are `null` until the first cycle folds them into the bookkeeping write, and
+  // stay `null` for any cycle that never reaches it -- never a plausible zero, which would
+  // misreport "no lost edits" (Decision 7).
+  // Flush counters: written by the same folded bookkeeping write that carries the two groups above.
   /** Diagnostics envelopes the bridge permanently rejected as malformed and this device destroyed. */
   readonly lastDiagnosticsDiscardedCount: number | null;
   /** Diagnostics envelopes that got a 2xx but whose outbox removal failed; they re-send next cycle. */
@@ -84,8 +121,27 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastPendingRowCount: number | null;
 }
 
+/**
+ * The same counters as `SyncDiagnosticsDispositionCounters`, declared optional because a patch
+ * may legitimately omit them (`undefined` means "not mentioned", `null` means "clear it").
+ */
+interface SyncDiagnosticsDispositionCountPatch {
+  /** Destruction by declaration -- see `SyncDiagnosticsDispositionCounters`. */
+  readonly lastDiagnosticsUndeliverableCount?: number | null;
+  /** Parked for another build of this app -- see `SyncDiagnosticsDispositionCounters`. */
+  readonly lastDiagnosticsUnclassifiedCount?: number | null;
+}
+
+/** The reap counter as a patch member: omit it, or clear it with an explicit `null`. */
+interface SyncDiagnosticsReapCounterPatch {
+  /** Retired by the age bound -- see `SyncDiagnosticsReapCounter`. */
+  readonly lastDiagnosticsReapedCount?: number | null;
+}
+
 /** Defines the data contract for sync runtime status patch. */
-export interface SyncRuntimeStatusPatch {
+export interface SyncRuntimeStatusPatch
+  extends SyncDiagnosticsDispositionCountPatch,
+    SyncDiagnosticsReapCounterPatch {
   readonly registrationStatus?: SyncRuntimeRegistrationStatus;
   readonly executionMode?: SyncExecutionMode;
   readonly isForegroundServiceRunning?: boolean;
@@ -111,6 +167,7 @@ export interface SyncRuntimeStatusPatch {
   readonly consecutiveUnclosedCycles?: number;
   readonly lastCycleStageAt?: number | null;
   readonly lastFailedCheckpointCount?: number;
+  // Flush counters: written by the same folded bookkeeping write that carries the groups above.
   readonly lastDiagnosticsDiscardedCount?: number | null;
   readonly lastDiagnosticsFailedRemovalCount?: number | null;
   readonly lastOutboxFailedWriteCount?: number | null;

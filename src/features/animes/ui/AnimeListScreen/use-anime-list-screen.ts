@@ -7,6 +7,7 @@ import { useAppTheme } from "../../../../contexts/app-theme-context";
 import { useActiveSeasonStore } from "../../../../infrastructure/store/active-season-store";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
+import { isSyncTelemetryEnabled } from "../../../sync/sync-telemetry-preference.helpers";
 import { useSyncFacade } from "../../../sync/use-sync-facade";
 import { ANIME_DAY_FILTER_OPTIONS } from "../../anime.constants";
 import {
@@ -15,6 +16,14 @@ import {
 } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import { buildAnimeMutationFailureFeedback } from "../../anime-mutation-failure.helpers";
+import {
+  beginChapterAction,
+  recordChapterActionSkipped,
+} from "../../chapter-action-diagnostics.helpers";
+import type {
+  ChapterActionContext,
+  ChapterActionLabel,
+} from "../../chapter-action-diagnostics.types";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { useSeasonRatingIntent } from "../../use-season-rating-intent";
@@ -74,11 +83,18 @@ export function useAnimeListScreen(
   const { capPlus, capMinus, capPlusHalf, capMinusHalf, setEstado } =
     useMutateAnime();
   const { submitSeasonRatingIntent } = useSeasonRatingIntent();
-  const { isConfigured } = useBridgeConfig();
+  const { config, isConfigured } = useBridgeConfig();
   const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount, syncError } =
     useSyncFacade();
 
   // 5. Derived State (useMemo)
+  // The user's diagnostics switch, derived from the pairing row the query above already holds:
+  // no second read, and the tap boundary sees exactly what Settings wrote. Memoised on the ROW
+  // rather than on the boolean so the flag follows the row, not a render.
+  const isTelemetryEnabled = useMemo(
+    () => isSyncTelemetryEnabled(config),
+    [config],
+  );
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
   const isEmpty = animes.length === 0;
   const selectedFilterOption = useMemo(
@@ -191,8 +207,23 @@ export function useAnimeListScreen(
   ]);
 
   const runMutation = useCallback(
-    async (animeId: string, action: (id: string) => Promise<void>) => {
+    async (
+      animeId: string,
+      actionLabel: ChapterActionLabel,
+      action: (id: string, actionContext: ChapterActionContext) => Promise<void>,
+    ) => {
+      // Opened BEFORE the same-anime guard, because this is the only point that can answer "did the
+      // tap reach JS at all": a disabled button never gets here, and neither does a tap a dead JS
+      // thread swallowed. Everything after this line is attributable to a callback that ran. The
+      // switch is resolved once here and carried by the context, so a muted tap stays muted for
+      // every later phase of the same gesture.
+      const actionContext = beginChapterAction(actionLabel, { isTelemetryEnabled });
+
       if (mutatingAnimeByIdRef.current[animeId]) {
+        // The callback ran and the same-anime guard dropped it. Distinct from a failure: nothing
+        // was attempted, so nothing can have been lost. The resolved value is restated at this
+        // second boundary call so both observations of one tap come from the same render.
+        recordChapterActionSkipped(actionContext, "in_flight", { isTelemetryEnabled });
         return;
       }
 
@@ -204,7 +235,7 @@ export function useAnimeListScreen(
       setIsMutatingAnimeById(nextMutatingState);
 
       try {
-        await action(animeId);
+        await action(animeId, actionContext);
       } catch (error) {
         // Callers fire this through `void handleCapPlus(...)`, so an escaping rejection would
         // become an unhandled promise and the button would just look dead. Surface it instead.
@@ -230,26 +261,29 @@ export function useAnimeListScreen(
         setIsMutatingAnimeById(nextMutatingState);
       }
     },
-    [toast],
+    // `isTelemetryEnabled` is load-bearing: this callback closes over the resolved switch, so
+    // without it a tap made after the user turned telemetry off would still be recorded by the
+    // stale closure -- the exact resurrection the per-action resolution exists to prevent.
+    [isTelemetryEnabled, toast],
   );
 
   const handleCapPlus = useCallback(
-    (animeId: string) => runMutation(animeId, capPlus),
+    (animeId: string) => runMutation(animeId, "capPlus", capPlus),
     [capPlus, runMutation],
   );
 
   const handleCapMinus = useCallback(
-    (animeId: string) => runMutation(animeId, capMinus),
+    (animeId: string) => runMutation(animeId, "capMinus", capMinus),
     [capMinus, runMutation],
   );
 
   const handleCapPlusHalf = useCallback(
-    (animeId: string) => runMutation(animeId, capPlusHalf),
+    (animeId: string) => runMutation(animeId, "capPlusHalf", capPlusHalf),
     [capPlusHalf, runMutation],
   );
 
   const handleCapMinusHalf = useCallback(
-    (animeId: string) => runMutation(animeId, capMinusHalf),
+    (animeId: string) => runMutation(animeId, "capMinusHalf", capMinusHalf),
     [capMinusHalf, runMutation],
   );
 

@@ -8,7 +8,6 @@ import {
   withPatchOverride,
 } from '../../../../src/features/sync/sync-runtime-status.helpers';
 import {
-  buildCycleBookkeepingPatch,
   buildSyncAttemptFailedPatch,
   buildSyncAttemptStartedPatch,
   buildSyncAttemptSucceededPatch,
@@ -20,8 +19,6 @@ import {
   SYNC_CYCLE_ERROR_STAGES,
 } from '../../../../src/features/sync/sync-telemetry.constants';
 import type { SyncRuntimeStatusSnapshot } from '../../../../src/features/sync/sync-runtime-status.types';
-import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
-import type { OperationLogConvergence } from '../../../../src/features/sync/operation-log-convergence.types';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { runMigrations } from '../../../../src/infrastructure/db/client/client.helpers';
 import {
@@ -80,6 +77,9 @@ describe('sync runtime status helpers', () => {
       lastStuckProcessingCount: null,
       lastOldestPendingAgeMs: null,
       lastPendingRowCount: null,
+      lastDiagnosticsUndeliverableCount: null,
+      lastDiagnosticsUnclassifiedCount: null,
+      lastDiagnosticsReapedCount: null,
     });
   });
 
@@ -417,58 +417,5 @@ describe('a terminal sync attempt releases the cycle-active flag (regression: 20
 
     const snapshot = await getSyncRuntimeStatusSnapshot(adapter);
     expect(snapshot.lastCycleId).toBeNull();
-  });
-});
-
-describe('buildCycleBookkeepingPatch folds flush and convergence counters into the single write recordBacklogReadCount already performs (D6)', () => {
-  const DIAGNOSTICS_FLUSH: SyncDiagnosticsFlushResult = {
-    attempted: 4,
-    delivered: 1,
-    discarded: 2,
-    failedRemovals: 1,
-  };
-
-  const CONVERGENCE: OperationLogConvergence = {
-    deadLetterCount: 3,
-    conflictExhaustedCount: 1,
-    stuckProcessingCount: 2,
-    oldestPendingAgeMs: 5_000,
-    pendingRowCount: 210,
-    hasMore: true,
-  };
-
-  it('folds the backlog read count, the flush counters, the outbox write-failure count and the convergence projection into one patch', () => {
-    expect(buildCycleBookkeepingPatch(5, DIAGNOSTICS_FLUSH, 3, CONVERGENCE)).toEqual({
-      lastBacklogReadCount: 5,
-      lastDiagnosticsDiscardedCount: 2,
-      lastDiagnosticsFailedRemovalCount: 1,
-      lastOutboxFailedWriteCount: 3,
-      lastDeadLetterCount: 3,
-      lastConflictExhaustedCount: 1,
-      lastStuckProcessingCount: 2,
-      lastOldestPendingAgeMs: 5_000,
-      lastPendingRowCount: 210,
-    });
-  });
-
-  it('persists a null oldest-pending age rather than fabricating zero when the queue is empty (D7)', () => {
-    const emptyQueueConvergence: OperationLogConvergence = {
-      deadLetterCount: 0,
-      conflictExhaustedCount: 0,
-      stuckProcessingCount: 0,
-      oldestPendingAgeMs: null,
-      pendingRowCount: 0,
-      hasMore: false,
-    };
-    const emptyFlush: SyncDiagnosticsFlushResult = {
-      attempted: 0,
-      delivered: 0,
-      discarded: 0,
-      failedRemovals: 0,
-    };
-
-    expect(
-      buildCycleBookkeepingPatch(0, emptyFlush, 0, emptyQueueConvergence).lastOldestPendingAgeMs,
-    ).toBeNull();
   });
 });

@@ -7,6 +7,8 @@ import {
   SYNC_DIAGNOSTICS_OUTBOX_INSERT_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_REMOVE_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_SELECT_CANDIDATES_SQL,
+  SYNC_DIAGNOSTICS_OUTBOX_SHED_COUNT_SELECT_SQL,
+  SYNC_DIAGNOSTICS_OUTBOX_SHED_COUNT_TABLE_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_STATE_TABLE_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_STATE_UPSERT_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_TABLE_SQL,
@@ -15,6 +17,7 @@ import type {
   SyncDiagnosticsOutboxEntry,
   SyncDiagnosticsOutboxRecord,
   SyncDiagnosticsOutboxRow,
+  SyncDiagnosticsOutboxShedCountRow,
   SyncDiagnosticsOutboxStore,
   SyncDiagnosticsOutboxStoreParams,
   SyncDiagnosticsOutboxWriteOutcome,
@@ -38,6 +41,9 @@ function toRecord(row: SyncDiagnosticsOutboxRow): SyncDiagnosticsOutboxRecord {
  * `getFirstAsync` on the same argument its own constants file makes: `busy_timeout`, enforced
  * natively inside SQLite, is the only bound that fires in a runtime where JS timers are paused.
  * `withLocalWrite` is rejected outright -- that is the failure domain this store exists to escape.
+ *
+ * `getShedCount` reports the cap's own bounded loss, recorded by the eviction trigger in the same
+ * statement that drops the rows (see the trigger's comment for why that ordering is load-bearing).
  */
 export function createSyncDiagnosticsOutboxStore(
   params: SyncDiagnosticsOutboxStoreParams = {},
@@ -61,6 +67,10 @@ export function createSyncDiagnosticsOutboxStore(
 
     opened.execSync(SYNC_DIAGNOSTICS_OUTBOX_TABLE_SQL);
     opened.execSync(SYNC_DIAGNOSTICS_OUTBOX_STATE_TABLE_SQL);
+    // Provisioned BEFORE the trigger that writes it: the eviction records the shed into this
+    // table, so it has to exist for the very first insert that overflows. `IF NOT EXISTS` makes
+    // the re-run on every connect a no-op on a device that already has it.
+    opened.execSync(SYNC_DIAGNOSTICS_OUTBOX_SHED_COUNT_TABLE_SQL);
     opened.execSync(SYNC_DIAGNOSTICS_OUTBOX_EVICT_TRIGGER_SQL);
     rawDb = opened;
 
@@ -118,11 +128,29 @@ export function createSyncDiagnosticsOutboxStore(
     }
   }
 
+  function getShedCount(): number {
+    try {
+      const rows = connect().getAllSync<SyncDiagnosticsOutboxShedCountRow>(
+        SYNC_DIAGNOSTICS_OUTBOX_SHED_COUNT_SELECT_SQL,
+      );
+
+      // No row until the first shed: absent means zero rows dropped, not an unknown quantity.
+      return rows[0]?.shed_rows ?? 0;
+    } catch {
+      // Same contract as `readFlushCandidates`'s empty result: a read that fails is not evidence
+      // of a shed, and instrumentation never throws into the cycle it instruments. Deliberately
+      // NOT counted as a failed write -- nothing was written, and `getFailedWriteCount` answers
+      // for writes.
+      return 0;
+    }
+  }
+
   return {
     enqueue,
     readFlushCandidates,
     remove,
     deferUntil,
     getFailedWriteCount: () => failedWriteCount,
+    getShedCount,
   };
 }

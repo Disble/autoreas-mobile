@@ -106,37 +106,97 @@ data class BridgeConfigRow(
   val port: String?,
   val token: String?,
   val lastChangelogId: Long?,
+  /** The user's diagnostics-telemetry switch, already mapped onto its boolean meaning. */
+  val isSyncTelemetryEnabled: Boolean = true,
 )
+
+/** Column carrying the user-owned diagnostics switch; mirrors `is_sync_telemetry_enabled`. */
+const val BRIDGE_CONFIG_TELEMETRY_SWITCH_COLUMN = "is_sync_telemetry_enabled"
+
+/**
+ * Maps the STORED value of `bridge_config.is_sync_telemetry_enabled` onto the user's switch
+ * position, mirroring `isSyncTelemetryEnabled` in `sync-telemetry-preference.helpers.ts` combined
+ * with drizzle's boolean reader (`Number(value) === 1`):
+ *
+ * - `null` (the column is NULL) -> ENABLED: absence is not a choice, so a row that predates the
+ *   column must not be silenced;
+ * - a value that reads as exactly `1` -> ENABLED (`"1"`, `" 1 "`, `"1.0"`);
+ * - every other stored value -- `""`, `"0"`, `"2"`, `"-1"`, and any text that is not a number --
+ *   -> DISABLED. The direction is deliberate: a value the user never chose must never start a
+ *   transmission, while a value that cannot be read at all is handled a level up, where the whole
+ *   COLUMN is missing (see [readBridgeConfig]) and the config still reads as ENABLED.
+ */
+fun isSyncTelemetryEnabled(storedValue: String?): Boolean {
+  // An explicit null check, not `storedValue?.trim() ?: return true`: the elvis would also branch
+  // on `trim()` returning null, which cannot happen, and leave an unreachable branch in a CORE
+  // class that must stay at 100 % branch coverage.
+  if (storedValue == null) {
+    return true
+  }
+  return storedValue.trim().toDoubleOrNull() == 1.0
+}
 
 /**
  * Reads the single `bridge_config` row; `null` when absent, or on a not-yet-migrated store.
  * Lives beside the other database plumbing so the cycle keeps to its pipeline shape.
+ *
+ * Two tolerances, both real on a device and both distinct:
+ * - the telemetry-switch COLUMN may not exist yet (a store that predates that migration), in which
+ *   case the config still reads and the absent switch reports ENABLED;
+ * - the whole TABLE may not exist (a fresh install whose first foreground open has not run yet),
+ *   in which case there is no config to read and the answer is `null` -- the same shape the cycle
+ *   already handles as `not_applicable`, exactly like the JS side's `SchemaNotReadyError`
+ *   tolerance. A missing schema must never surface as an exception out of a read whose KDoc
+ *   promises `null`, which is what the nested tolerance below pins.
  */
 fun readBridgeConfig(appDb: SQLiteDatabase): BridgeConfigRow? {
   return try {
-    appDb.rawQuery(
-      "SELECT id, device_id, ip, port, token, last_changelog_id FROM bridge_config " +
-        "ORDER BY id DESC LIMIT 1",
-      null,
-    ).use { cursor ->
-      if (!cursor.moveToFirst()) {
-        null
-      } else {
-        BridgeConfigRow(
-          id = cursor.getLong(0),
-          deviceId = cursor.getString(1),
-          ip = cursor.getString(2),
-          port = cursor.getString(3),
-          token = cursor.getString(4),
-          lastChangelogId = if (cursor.isNull(5)) null else cursor.getLong(5),
-        )
-      }
-    }
+    readBridgeConfigRow(appDb, withTelemetrySwitch = true)
   } catch (error: SQLiteException) {
-    // A fresh install has no schema until the foreground's first open; mirror the JS
-    // SchemaNotReadyError -> no-op handling with `not_applicable`.
-    Log.w(TAG_DATABASE_READS, "bridge_config unreadable (schema not ready?)", error)
-    null
+    Log.w(TAG_DATABASE_READS, "bridge_config unreadable with the telemetry switch column", error)
+    try {
+      readBridgeConfigRow(appDb, withTelemetrySwitch = false)
+    } catch (fallbackError: SQLiteException) {
+      // Not one column missing but the whole table: a store that has not been provisioned yet.
+      Log.w(TAG_DATABASE_READS, "bridge_config unreadable on this store", fallbackError)
+      null
+    }
+  }
+}
+
+private const val BRIDGE_CONFIG_COLUMNS = "id, device_id, ip, port, token, last_changelog_id"
+
+/**
+ * One `bridge_config` read. [withTelemetrySwitch] `false` is the pre-migration fallback: the
+ * config still reads, and the absent switch column reports ENABLED (see [isSyncTelemetryEnabled]).
+ */
+private fun readBridgeConfigRow(
+  appDb: SQLiteDatabase,
+  withTelemetrySwitch: Boolean,
+): BridgeConfigRow? {
+  val columns = if (withTelemetrySwitch) {
+    "$BRIDGE_CONFIG_COLUMNS, $BRIDGE_CONFIG_TELEMETRY_SWITCH_COLUMN"
+  } else {
+    BRIDGE_CONFIG_COLUMNS
+  }
+  return appDb.rawQuery(
+    "SELECT $columns FROM bridge_config ORDER BY id DESC LIMIT 1",
+    null,
+  ).use { cursor ->
+    if (!cursor.moveToFirst()) {
+      null
+    } else {
+      BridgeConfigRow(
+        id = cursor.getLong(0),
+        deviceId = cursor.getString(1),
+        ip = cursor.getString(2),
+        port = cursor.getString(3),
+        token = cursor.getString(4),
+        lastChangelogId = if (cursor.isNull(5)) null else cursor.getLong(5),
+        isSyncTelemetryEnabled = !withTelemetrySwitch || cursor.isNull(6) ||
+          isSyncTelemetryEnabled(cursor.getString(6)),
+      )
+    }
   }
 }
 

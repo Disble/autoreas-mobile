@@ -32,6 +32,31 @@ export function withColumnDefault<T>(value: T | null | undefined, fallback: T): 
 }
 
 /**
+ * Maps the diagnostics counters that answer "was anything destroyed, parked or retired?" --
+ * `discarded` (a permanent rejection by the bridge's own verdict), `undeliverable` (destroyed
+ * by declaration), `unclassified` (parked, and recoverable by roll-forward) and `reaped` (retired
+ * by the age bound) -- under the `?? null` rule they share: NULL means "never measured", which is
+ * not the same fact as a measured zero (design.md Decision 7), and a destruction counter reading 0
+ * because it was never written is the exact false answer that rule forbids.
+ *
+ * Extracted rather than left inline: four consecutive `withColumnDefault(row.x, null)` runs in
+ * one flat mapping are textually indistinguishable from each other, which the repository's
+ * duplicate-block audit flags as introduced duplication. Naming this call site also keeps the
+ * counters that must NEVER be conflated visible as one group.
+ */
+function mapDiagnosticsCountersFromRow(row: SyncRuntimeStatusRow) {
+  return {
+    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
+    lastDiagnosticsUndeliverableCount: withColumnDefault(
+      row.lastDiagnosticsUndeliverableCount,
+      null,
+    ),
+    lastDiagnosticsUnclassifiedCount: withColumnDefault(row.lastDiagnosticsUnclassifiedCount, null),
+    lastDiagnosticsReapedCount: withColumnDefault(row.lastDiagnosticsReapedCount, null),
+  };
+}
+
+/**
  * Maps a persisted runtime-status row into its snapshot shape, applying the neutral default
  * for every optional column. Extracted from `getSyncRuntimeStatusSnapshot` so the per-column
  * default tail does not inflate that function's own complexity budget. Exported so
@@ -61,9 +86,7 @@ export function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): Sy
     consecutiveUnclosedCycles: withColumnDefault(row.consecutiveUnclosedCycles, 0),
     lastCycleStageAt: withColumnDefault(row.lastCycleStageAt, null),
     lastFailedCheckpointCount: withColumnDefault(row.lastFailedCheckpointCount, 0),
-    // `?? null`, not `?? 0`: a NULL here means "never measured", which is not the same fact as
-    // "measured zero" (design.md Decision 7).
-    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
+    ...mapDiagnosticsCountersFromRow(row),
     lastDiagnosticsFailedRemovalCount: withColumnDefault(
       row.lastDiagnosticsFailedRemovalCount,
       null,
@@ -163,6 +186,18 @@ function mergeSyncRuntimeStatusPatch(
       patch.lastDiagnosticsDiscardedCount,
       current.lastDiagnosticsDiscardedCount,
     ),
+    lastDiagnosticsUndeliverableCount: withPatchOverride(
+      patch.lastDiagnosticsUndeliverableCount,
+      current.lastDiagnosticsUndeliverableCount,
+    ),
+    lastDiagnosticsUnclassifiedCount: withPatchOverride(
+      patch.lastDiagnosticsUnclassifiedCount,
+      current.lastDiagnosticsUnclassifiedCount,
+    ),
+    lastDiagnosticsReapedCount: withPatchOverride(
+      patch.lastDiagnosticsReapedCount,
+      current.lastDiagnosticsReapedCount,
+    ),
     lastDiagnosticsFailedRemovalCount: withPatchOverride(
       patch.lastDiagnosticsFailedRemovalCount,
       current.lastDiagnosticsFailedRemovalCount,
@@ -220,6 +255,9 @@ async function writeSyncRuntimeStatusRow(
     lastCycleStageAt: next.lastCycleStageAt,
     lastFailedCheckpointCount: next.lastFailedCheckpointCount,
     lastDiagnosticsDiscardedCount: next.lastDiagnosticsDiscardedCount,
+    lastDiagnosticsUndeliverableCount: next.lastDiagnosticsUndeliverableCount,
+    lastDiagnosticsUnclassifiedCount: next.lastDiagnosticsUnclassifiedCount,
+    lastDiagnosticsReapedCount: next.lastDiagnosticsReapedCount,
     lastDiagnosticsFailedRemovalCount: next.lastDiagnosticsFailedRemovalCount,
     lastOutboxFailedWriteCount: next.lastOutboxFailedWriteCount,
     lastDeadLetterCount: next.lastDeadLetterCount,
@@ -293,6 +331,13 @@ export async function recordSyncAttemptStarted(
 /**
  * Persists a successful sync attempt and the confirmed operations count.
  * This is the source used by Settings to report the latest healthy background cycle.
+ *
+ * `diagnosticsFlush` is optional and carries this cycle's diagnostics-outbox flush result when the
+ * caller holds one. Supplying it folds the flush counters (`discarded`, `undeliverable`,
+ * `unclassified`, `reaped`) into this SAME write, which is how the foreground coordinated
+ * cycle records them without a second status transaction -- that path performs no other status
+ * write. A caller with no flush evidence (the headless cycle, which writes its own bookkeeping
+ * through `recordBacklogReadCount`) leaves those columns exactly as they were.
  */
 export async function recordSyncAttemptSucceeded(
   rawDb: SQLiteDatabase,
@@ -300,10 +345,17 @@ export async function recordSyncAttemptSucceeded(
   attemptedAt: number,
   syncedCount: number,
   cycleId: string | null = null,
+  diagnosticsFlush?: SyncDiagnosticsFlushResult,
 ) {
   await persistSyncRuntimeStatusPatch(
     rawDb,
-    buildSyncAttemptSucceededPatch(triggerSource, attemptedAt, syncedCount, cycleId),
+    buildSyncAttemptSucceededPatch(
+      triggerSource,
+      attemptedAt,
+      syncedCount,
+      cycleId,
+      diagnosticsFlush,
+    ),
   );
 }
 

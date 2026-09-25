@@ -293,7 +293,7 @@ describe('database startup helpers', () => {
     );
   });
 
-  it('reports ready at version 14 when bridge_modified_at and conflict_attempt_count are present', async () => {
+  it('reports ready at the current journal version when bridge_modified_at and conflict_attempt_count are present', async () => {
     const rawDb = {
       execAsync: jest.fn().mockResolvedValue(undefined),
       getFirstAsync: jest
@@ -315,7 +315,11 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(14);
+    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0015`
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`. Pinned as a
+    // literal rather than against the exported constant so a migration that silently fails to
+    // register in the journal is caught here instead of agreeing with itself.
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(16);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });
