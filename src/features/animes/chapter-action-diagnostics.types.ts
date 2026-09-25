@@ -1,6 +1,7 @@
 import type { SYNC_CYCLE_ERROR_CAUSES } from '../sync/sync-telemetry.constants';
 import type { SyncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox';
 import type {
+  CHAPTER_ACTION_EVENT_KIND,
   CHAPTER_ACTION_FINISHED_OUTCOMES,
   CHAPTER_ACTION_OPTIONAL_FIELDS,
   CHAPTER_ACTION_PHASES,
@@ -23,6 +24,15 @@ export type ChapterActionFinishedOutcome = (typeof CHAPTER_ACTION_FINISHED_OUTCO
 
 /** How the post-write push to the bridge ended. */
 export type ChapterActionSyncOutcome = (typeof CHAPTER_ACTION_SYNC_OUTCOMES)[number];
+
+/**
+ * Every outcome token any phase may carry, across both closed vocabularies.
+ *
+ * Deliberately a union of the two rather than one shared list: `failed` is the only token the two
+ * have in common, and that overlap is why a payload's outcome means nothing until the payload's
+ * own phase is read next to it -- a `failed` write and a `failed` push are different findings.
+ */
+export type ChapterActionOutcome = ChapterActionFinishedOutcome | ChapterActionSyncOutcome;
 
 /**
  * One phase-specific observation field, as named on `ChapterActionObservation`.
@@ -89,8 +99,43 @@ export interface ChapterActionDiagnosticsParams {
 export interface ChapterActionObservation {
   readonly action: ChapterActionLabel;
   readonly phase: ChapterActionPhase;
-  readonly outcome?: ChapterActionFinishedOutcome | ChapterActionSyncOutcome;
+  readonly outcome?: ChapterActionOutcome;
   readonly reason?: ChapterActionSkippedReason;
   readonly cause?: ChapterActionCause;
+  /**
+   * A measured elapsed time, honored only on `finished`.
+   *
+   * Absent means "measure it from the action's receipt", which the builder does for a finished
+   * write. On every other phase the field is a mistake rather than a missing value: those bodies
+   * carry `duration_ms: null` on purpose, so a duration reaching the builder from any phase but
+   * `finished` drops the whole observation instead of being forwarded.
+   */
   readonly durationMs?: number;
+}
+
+/**
+ * The exact JSON body one observation becomes, and the complete list of keys it may carry.
+ *
+ * There is deliberately no field for an anime, a title, a patch, SQL or an error message: the
+ * bridge stores request bodies verbatim, so any key added here persists at rest and travels with
+ * backups. The bridge decodes this body strictly -- an undeclared key anywhere is a rejection --
+ * so this interface is the complete contract rather than a helpful subset of one.
+ *
+ * Two keys exist to constrain the shape rather than to describe the event:
+ * - `observation_id` is minted once per observation and is ALSO the outbox row's own id, so a
+ *   stored body re-posted after a restart carries the idempotency key the bridge deduplicates on;
+ * - `duration_ms` is present on every body, `null` where a duration does not apply, because the
+ *   decoder expects the key on every phase and accepts a non-null value on `finished` only.
+ */
+export interface ChapterActionWirePayload {
+  readonly kind: typeof CHAPTER_ACTION_EVENT_KIND;
+  readonly observation_id: string;
+  readonly action: (typeof CHAPTER_ACTION_WIRE_ACTIONS)[ChapterActionLabel];
+  readonly phase: ChapterActionPhase;
+  readonly observed_at_ms: number;
+  readonly correlation_id: string;
+  readonly duration_ms: number | null;
+  readonly outcome?: ChapterActionOutcome;
+  readonly reason?: ChapterActionSkippedReason;
+  readonly cause?: ChapterActionCause;
 }

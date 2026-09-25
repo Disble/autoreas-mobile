@@ -218,7 +218,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     const payloads = readPersistedPayloads();
     expect(payloads.map((payload) => payload.phase)).toEqual(['received', 'skipped']);
     expect(payloads[1]).toMatchObject({
-      action: 'cap_plus',
+      action: 'episode_plus_one',
       phase: 'skipped',
       reason: 'anime_missing',
     });
@@ -247,15 +247,20 @@ describe('chapter action diagnostics on the mutation path', () => {
       'sync',
     ]);
     expect(payloads[1]).toMatchObject({
-      action: 'cap_minus',
+      action: 'episode_minus_one',
       phase: 'finished',
       outcome: 'committed',
       duration_ms: 137,
     });
     expect(payloads[2]).toMatchObject({ phase: 'sync', outcome: 'ok' });
-    expect(payloads[2]).not.toHaveProperty('duration_ms');
+    expect(payloads[2]).toHaveProperty('duration_ms', null);
     expect(payloads[1].correlation_id).toBe(payloads[0].correlation_id);
     expect(payloads[2].correlation_id).toBe(payloads[0].correlation_id);
+    // The wire id and the outbox row id are the same value on every observation, which is what
+    // makes a re-post of the stored body idempotent on the bridge's side.
+    expect(readPersistedEntries().map((entry) => entry.cycleId)).toEqual(
+      payloads.map((payload) => payload.observation_id),
+    );
     expect(txMocks.update).toHaveBeenCalledWith(animes);
   });
 
@@ -276,7 +281,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     const payloads = readPersistedPayloads();
     expect(payloads.map((payload) => payload.phase)).toEqual(['received', 'finished']);
     expect(payloads[1]).toMatchObject({
-      action: 'cap_plus_half',
+      action: 'episode_plus_half',
       phase: 'finished',
       outcome: 'failed',
       cause: 'lock_contention',
@@ -331,7 +336,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     const payloads = readPersistedPayloads();
     expect(payloads.map((payload) => payload.phase)).toEqual(['received', 'skipped']);
     expect(payloads[1]).toMatchObject({
-      action: 'cap_plus',
+      action: 'episode_plus_one',
       phase: 'skipped',
       reason: 'db_unavailable',
     });

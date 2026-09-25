@@ -6,50 +6,36 @@ import { causeFromError } from '../sync/sync-telemetry.helpers';
 import { isSyncTelemetryEnabled } from '../sync/sync-telemetry-preference.helpers';
 import {
   CHAPTER_ACTION_EVENT_KIND,
-  CHAPTER_ACTION_FINISHED_OUTCOMES,
   CHAPTER_ACTION_OPTIONAL_FIELDS,
+  CHAPTER_ACTION_PHASE_OUTCOMES,
   CHAPTER_ACTION_PHASES,
   CHAPTER_ACTION_SKIPPED_REASONS,
-  CHAPTER_ACTION_SYNC_OUTCOMES,
   CHAPTER_ACTION_WIRE_ACTIONS,
 } from './chapter-action-diagnostics.constants';
 import type {
-  ChapterActionCause,
   ChapterActionContext,
   ChapterActionDiagnosticsParams,
-  ChapterActionFinishedOutcome,
   ChapterActionLabel,
   ChapterActionObservation,
   ChapterActionOptionalField,
+  ChapterActionOutcome,
   ChapterActionPhase,
   ChapterActionSkippedReason,
   ChapterActionSyncOutcome,
+  ChapterActionWirePayload,
 } from './chapter-action-diagnostics.types';
 
 /**
- * The exact JSON body one observation becomes, and the complete list of keys it may carry.
+ * The phase-specific half of a payload: the duration every phase must state, plus the fields only
+ * some phases may add.
  *
- * There is deliberately no field for an anime, a title, a patch, SQL or an error message: the
- * bridge stores request bodies verbatim, so any key added here persists at rest and travels with
- * backups. The name of this interface is the contract -- `buildWirePayload` is the only producer,
- * and it drops an observation rather than forwarding a value it cannot place in this shape.
+ * `duration_ms` is REQUIRED here rather than optional because the bridge expects the key on every
+ * body -- `null` is how a phase says "not applicable" -- so a phase that forgot it would answer
+ * with a rejection instead of an omission. Making it non-optional means a new phase cannot compile
+ * until it has decided what to say.
  */
-interface ChapterActionWirePayload {
-  readonly kind: typeof CHAPTER_ACTION_EVENT_KIND;
-  readonly action: (typeof CHAPTER_ACTION_WIRE_ACTIONS)[ChapterActionLabel];
-  readonly phase: ChapterActionPhase;
-  readonly at: number;
-  readonly correlation_id: string;
-  readonly outcome?: ChapterActionFinishedOutcome | ChapterActionSyncOutcome;
-  readonly reason?: ChapterActionSkippedReason;
-  readonly cause?: ChapterActionCause;
-  readonly duration_ms?: number;
-}
-
-/** The phase-specific half of a payload; a phase may only contribute the fields it declares. */
-type ChapterActionWireFields = Partial<
-  Pick<ChapterActionWirePayload, 'outcome' | 'reason' | 'cause' | 'duration_ms'>
->;
+type ChapterActionWireFields = Pick<ChapterActionWirePayload, 'duration_ms'> &
+  Partial<Pick<ChapterActionWirePayload, 'outcome' | 'reason' | 'cause'>>;
 
 /**
  * Generates one id when no generator was injected.
@@ -121,13 +107,31 @@ function carriesForeignFields(
 }
 
 /**
- * Fields a `received` observation contributes: none.
+ * The SINGLE cross-field rule pairing `outcome` with `phase`.
+ *
+ * Returns the token when the pair is declared and null when it is not, which covers both ways a
+ * body can break the rule: an `outcome` the phase does not declare (`committed` on a `sync`, `ok`
+ * on a `finished`), and an `outcome` on a phase that declares none at all (`received` and
+ * `skipped`, whose vocabulary is empty). A mismatch is refused, never repaired, because the bridge
+ * answers a rejection for it and this payload is stored verbatim before it is ever POSTed.
+ */
+function resolvePhaseOutcome(
+  phase: ChapterActionPhase,
+  outcome: ChapterActionOutcome | undefined,
+): ChapterActionOutcome | null {
+  const vocabulary: readonly ChapterActionOutcome[] = CHAPTER_ACTION_PHASE_OUTCOMES[phase];
+
+  return isVocabularyMember(outcome, vocabulary) ? outcome : null;
+}
+
+/**
+ * Fields a `received` observation contributes: none, and an explicit "no duration".
  *
  * Receipt is the bare fact that the callback ran, so anything phase-specific here means a caller
  * conflated two milestones -- dropped rather than forwarded, like every other out-of-place value.
  */
 function buildReceivedFields(observation: ChapterActionObservation): ChapterActionWireFields | null {
-  return carriesForeignFields(observation, []) ? null : {};
+  return carriesForeignFields(observation, []) ? null : { duration_ms: null };
 }
 
 /** Fields a `skipped` observation contributes: the closed reason the action produced no change. */
@@ -137,45 +141,48 @@ function buildSkippedFields(observation: ChapterActionObservation): ChapterActio
   }
 
   return isVocabularyMember(observation.reason, CHAPTER_ACTION_SKIPPED_REASONS)
-    ? { reason: observation.reason }
+    ? { reason: observation.reason, duration_ms: null }
     : null;
 }
 
 /**
- * Fields a `finished` observation contributes: the outcome, its closed cause, and its duration.
+ * Fields a `finished` observation contributes: its outcome, the closed cause of a failure, and the
+ * measured duration.
  *
- * The duration is measured here from `at` and the context's `startedAt` when the caller supplied
- * none, so the measurement and the timestamp it is reported against come from the same clock read;
- * a caller-supplied value is still honored, but validated like any other.
+ * The duration is measured here from the observation's `observedAtMs` and the context's `startedAt`
+ * when the caller supplied none, so the measurement and the timestamp it is reported against come
+ * from the same clock read; a caller-supplied value is still honored, but validated like any other.
  *
  * `committed` and `failed` are not symmetric: only a failure carries a cause, because "which fix
- * applies" is meaningless for a write that landed.
+ * applies" is meaningless for a write that landed -- and a cause on a committed write is answered
+ * with a rejection rather than ignored, so it drops the observation instead of riding along.
  */
 function buildFinishedFields(
   context: ChapterActionContext,
   observation: ChapterActionObservation,
-  at: number,
+  observedAtMs: number,
 ): ChapterActionWireFields | null {
   if (carriesForeignFields(observation, ['outcome', 'cause', 'durationMs'])) {
     return null;
   }
 
-  if (!isVocabularyMember(observation.outcome, CHAPTER_ACTION_FINISHED_OUTCOMES)) {
+  const outcome = resolvePhaseOutcome(observation.phase, observation.outcome);
+  if (outcome === null) {
     return null;
   }
 
-  const durationMs = observation.durationMs ?? at - context.startedAt;
+  const durationMs = observation.durationMs ?? observedAtMs - context.startedAt;
   if (!isUsableDuration(durationMs)) {
     return null;
   }
 
-  if (observation.outcome === 'committed') {
+  if (outcome === 'committed') {
     return observation.cause === undefined
       ? { outcome: 'committed', duration_ms: durationMs }
       : null;
   }
 
-  if (observation.outcome === 'failed') {
+  if (outcome === 'failed') {
     return isVocabularyMember(observation.cause, SYNC_CYCLE_ERROR_CAUSES)
       ? { outcome: 'failed', cause: observation.cause, duration_ms: durationMs }
       : null;
@@ -185,20 +192,21 @@ function buildFinishedFields(
 }
 
 /**
- * Fields a `sync` observation contributes: its outcome, and deliberately no duration.
+ * Fields a `sync` observation contributes: its outcome, and an explicit "no duration".
  *
  * The push is fire-and-forget, so a duration captured here would measure how long the enqueue took
- * rather than how long the transfer took -- an answer to neither question. A duration arriving on
- * this phase is therefore a field out of place, and drops the observation.
+ * rather than how long the transfer took -- an answer to neither question. The key still has to be
+ * present, so this phase says `null` rather than omitting it; a real duration arriving on this
+ * phase is a field out of place, and drops the observation.
  */
 function buildSyncFields(observation: ChapterActionObservation): ChapterActionWireFields | null {
   if (carriesForeignFields(observation, ['outcome'])) {
     return null;
   }
 
-  return isVocabularyMember(observation.outcome, CHAPTER_ACTION_SYNC_OUTCOMES)
-    ? { outcome: observation.outcome }
-    : null;
+  const outcome = resolvePhaseOutcome(observation.phase, observation.outcome);
+
+  return outcome === null ? null : { outcome, duration_ms: null };
 }
 
 /**
@@ -210,7 +218,7 @@ function buildSyncFields(observation: ChapterActionObservation): ChapterActionWi
 function buildPhaseFields(
   context: ChapterActionContext,
   observation: ChapterActionObservation,
-  at: number,
+  observedAtMs: number,
 ): ChapterActionWireFields | null {
   if (observation.phase === 'received') {
     return buildReceivedFields(observation);
@@ -221,7 +229,7 @@ function buildPhaseFields(
   }
 
   if (observation.phase === 'finished') {
-    return buildFinishedFields(context, observation, at);
+    return buildFinishedFields(context, observation, observedAtMs);
   }
 
   if (observation.phase === 'sync') {
@@ -237,11 +245,17 @@ function buildPhaseFields(
  * Returns null rather than a repaired payload: this function is the single gate between an
  * in-memory observation and a row that will be POSTed, stored verbatim, and copied into backups.
  * A dropped observation is a missing data point; a forwarded one is permanent.
+ *
+ * Exported because it IS the frozen wire contract, and a contract that can only be reached through
+ * the four recorders cannot be exercised for the phase and field combinations those recorders are
+ * built never to produce -- a cause on a committed write, a reason outside a skip, a duration off
+ * a finished write. `emitChapterAction` remains its only production caller.
  */
-function buildWirePayload(
+export function buildChapterActionWirePayload(
   context: ChapterActionContext,
   observation: ChapterActionObservation,
-  at: number,
+  observedAtMs: number,
+  observationId: string,
 ): ChapterActionWirePayload | null {
   if (observation.action !== context.action) {
     return null;
@@ -255,16 +269,17 @@ function buildWirePayload(
     return null;
   }
 
-  const phaseFields = buildPhaseFields(context, observation, at);
+  const phaseFields = buildPhaseFields(context, observation, observedAtMs);
   if (phaseFields === null) {
     return null;
   }
 
   return {
     kind: CHAPTER_ACTION_EVENT_KIND,
+    observation_id: observationId,
     action: CHAPTER_ACTION_WIRE_ACTIONS[observation.action],
     phase: observation.phase,
-    at,
+    observed_at_ms: observedAtMs,
     correlation_id: context.correlationId,
     ...phaseFields,
   };
@@ -275,9 +290,14 @@ function buildWirePayload(
  *
  * The outbox is the ONLY capture for these observations: the in-memory diagnostics ring is
  * volatile and is not what the bridge receives, so routing here is what makes the answer survive
- * the process that produced it. The clock is read once so the payload's `at` and any duration
- * derived from it describe the same instant, and the write is swallowed by contract -- the store
- * already never throws, and instrumentation must never be the reason a user mutation fails.
+ * the process that produced it. The clock is read once so the payload's `observed_at_ms` and any
+ * duration derived from it describe the same instant, and the write is swallowed by contract -- the
+ * store already never throws, and instrumentation must never be the reason a user mutation fails.
+ *
+ * ONE id is minted per observation and used twice: the outbox row's own id and the payload's
+ * `observation_id`. The bridge deduplicates on that id, so the two must be the same value -- a
+ * stored body re-posted after a restart has to carry the id that was stored WITH it, which is why
+ * the id is generated before the payload is built rather than by the `enqueue` call.
  *
  * Gated FIRST on the action's resolved switch position, before the clock is read and before any
  * payload is built: while the user's telemetry is off this returns without observing anything, so
@@ -299,8 +319,14 @@ function emitChapterAction(
     return;
   }
 
-  const at = (params.now ?? Date.now)();
-  const payload = buildWirePayload(context, observation, at);
+  const observedAtMs = (params.now ?? Date.now)();
+  const observationId = (params.generateId ?? generateChapterActionId)();
+  const payload = buildChapterActionWirePayload(
+    context,
+    observation,
+    observedAtMs,
+    observationId,
+  );
   if (payload === null) {
     return;
   }
@@ -311,7 +337,7 @@ function emitChapterAction(
 
   try {
     (params.store ?? syncDiagnosticsOutboxStore).enqueue({
-      cycleId: (params.generateId ?? generateChapterActionId)(),
+      cycleId: observationId,
       payload: JSON.stringify(payload),
     });
   } catch {

@@ -213,11 +213,13 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     const entries = readPersistedEntries();
     expect(entries).toHaveLength(1);
     expect(parsePayload(entries[0])).toEqual({
-      kind: "chapter_action",
-      action: "cap_plus",
+      kind: "episode_action",
+      observation_id: expect.any(String),
+      action: "episode_plus_one",
       phase: "received",
-      at: expect.any(Number),
+      observed_at_ms: expect.any(Number),
       correlation_id: expect.any(String),
+      duration_ms: null,
     });
   });
 
@@ -252,10 +254,10 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     expect(entries).toHaveLength(3);
 
     const [firstReceived, droppedReceived, droppedSkipped] = entries.map(parsePayload);
-    expect(firstReceived).toMatchObject({ action: "cap_plus", phase: "received" });
-    expect(droppedReceived).toMatchObject({ action: "cap_plus", phase: "received" });
+    expect(firstReceived).toMatchObject({ action: "episode_plus_one", phase: "received" });
+    expect(droppedReceived).toMatchObject({ action: "episode_plus_one", phase: "received" });
     expect(droppedSkipped).toMatchObject({
-      action: "cap_plus",
+      action: "episode_plus_one",
       phase: "skipped",
       reason: "in_flight",
     });
@@ -279,11 +281,13 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     const entries = readPersistedEntries();
     expect(entries).toHaveLength(1);
     expect(parsePayload(entries[0])).toEqual({
-      kind: "chapter_action",
-      action: "cap_plus",
+      kind: "episode_action",
+      observation_id: expect.any(String),
+      action: "episode_plus_one",
       phase: "received",
-      at: expect.any(Number),
+      observed_at_ms: expect.any(Number),
       correlation_id: expect.any(String),
+      duration_ms: null,
     });
   });
 

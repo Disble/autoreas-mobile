@@ -44,12 +44,14 @@ function tally(overrides: Partial<SyncDiagnosticsFlushResult> = {}): SyncDiagnos
 }
 
 /**
- * One stored chapter observation: a body whose `kind` the bridge does not declare. It is NOT
- * POSTed and NOT deleted -- not being in the registry is not a destruction trigger -- so it parks,
- * keeps its batch slot, and every later pass re-reads it.
+ * One stored observation whose `kind` this build does not declare: `watch_session` belongs to a
+ * different build of ours, and only the top-level `kind` is ever read -- every other field stays
+ * opaque and the body reaches the wire byte-identical. It is NOT POSTed and NOT deleted -- not
+ * being in the registry is not a destruction trigger -- so it parks, keeps its batch slot, and
+ * every later pass re-reads it.
  */
 const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify(
-  { kind: 'chapter_action', action: 'cap_plus', phase: 'received', at: 1_000, correlation_id: 'corr-1' },
+  { kind: 'watch_session', action: 'cap_plus', phase: 'received', at: 1_000, correlation_id: 'corr-1' },
 );
 
 /** Builds a fake store double whose methods are individually assertable jest mocks. */
