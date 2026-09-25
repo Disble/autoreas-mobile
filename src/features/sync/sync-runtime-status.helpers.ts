@@ -325,6 +325,13 @@ export async function recordSyncAttemptStarted(
 /**
  * Persists a successful sync attempt and the confirmed operations count.
  * This is the source used by Settings to report the latest healthy background cycle.
+ *
+ * `diagnosticsFlush` is optional and carries this cycle's diagnostics-outbox flush result when the
+ * caller holds one. Supplying it folds the three destruction counters (`discarded`,
+ * `undeliverable`, `unclassified`) into this SAME write, which is how the foreground coordinated
+ * cycle records them without a second status transaction -- that path performs no other status
+ * write. A caller with no flush evidence (the headless cycle, which writes its own bookkeeping
+ * through `recordBacklogReadCount`) leaves the three columns exactly as they were.
  */
 export async function recordSyncAttemptSucceeded(
   rawDb: SQLiteDatabase,
@@ -332,10 +339,17 @@ export async function recordSyncAttemptSucceeded(
   attemptedAt: number,
   syncedCount: number,
   cycleId: string | null = null,
+  diagnosticsFlush?: SyncDiagnosticsFlushResult,
 ) {
   await persistSyncRuntimeStatusPatch(
     rawDb,
-    buildSyncAttemptSucceededPatch(triggerSource, attemptedAt, syncedCount, cycleId),
+    buildSyncAttemptSucceededPatch(
+      triggerSource,
+      attemptedAt,
+      syncedCount,
+      cycleId,
+      diagnosticsFlush,
+    ),
   );
 }
 

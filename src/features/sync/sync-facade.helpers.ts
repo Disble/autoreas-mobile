@@ -91,6 +91,21 @@ async function persistSyncFailureTelemetrySafely(
 /**
  * Runs every step owned by one foreground sync cycle and publishes exactly one terminal outcome.
  * Reconcile alone is not success: season-rating delivery and telemetry must complete first.
+ *
+ * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
+ * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
+ * the three destruction counters cost ZERO extra status transactions here. That is the reason the
+ * headless cycle's `recordBacklogReadCount` call is NOT mirrored into this path -- mirroring it
+ * would add one status write per foreground cycle and would also pull the whole operation-log
+ * convergence projection and the outbox failed-write count into a path that reads neither (they are
+ * `recordBacklogReadCount`'s other inputs), widening what THIS runtime reports far beyond the three
+ * counters that were being dropped.
+ *
+ * Deliberate consequence of folding: the counters are written only where this path writes status at
+ * all. A cycle that returns early on `hasMorePending` -- and one that throws after reconcile, since
+ * the failure write carries no flush evidence -- leaves the columns at the previous cycle's
+ * measurement rather than reporting a fresh one. Neither path fabricates a zero (design.md
+ * Decision 7), and both are pinned by tests so adding a write there is a conscious contract change.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
@@ -124,10 +139,20 @@ export async function runCoordinatedForegroundSyncCycle({
     }
 
     const syncedAt = Date.now();
+
+    // `result.diagnosticsFlush` is the only place a destruction is visible on the foreground path:
+    // when the native engine owns background, this cycle is the one performing the discarding.
     await publishSyncConnectionAttempt({
       attempt,
       persistTelemetry: () =>
-        recordSyncAttemptSucceeded(rawDb, source, syncedAt, result.syncedCount),
+        recordSyncAttemptSucceeded(
+          rawDb,
+          source,
+          syncedAt,
+          result.syncedCount,
+          null,
+          result.diagnosticsFlush,
+        ),
       publishConnection: () => markSyncConnectionSucceeded(attempt, syncedAt),
     });
 

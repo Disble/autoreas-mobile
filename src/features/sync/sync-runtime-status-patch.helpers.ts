@@ -59,6 +59,36 @@ export function buildSyncAttemptStartedPatch(
 }
 
 /**
+ * Maps the three flush counters that answer "was anything destroyed, parked or rejected?" onto
+ * their patch columns, or an empty patch when the caller holds no flush evidence at all.
+ *
+ * Extracted so the two writes that can carry them map them through ONE function: the headless
+ * cycle's `recordBacklogReadCount` and the foreground cycle's terminal `recordSyncAttemptSucceeded`.
+ * They are NOT derived from one another and never fold into one another. `discarded` counts what
+ * the BRIDGE condemned (400/413 -- a permanent rejection by its own verdict) and keeps exactly
+ * that meaning in both writes; `undeliverable` counts what THIS build ordered destroyed because the
+ * row's `kind` can never be accepted; `unclassified` counts what was PARKED because it belongs to a
+ * different build, where rolling forward is what recovers it -- a gap counter, not a loss counter.
+ *
+ * Absent evidence yields NO fields rather than three zeros: an unmeasured cycle must leave the
+ * columns exactly as they were, because a destruction counter reading 0 because it was never
+ * written is the precise false answer the `?? null` rule forbids (design.md Decision 7).
+ */
+function buildDiagnosticsCounterPatchFields(
+  diagnosticsFlush: SyncDiagnosticsFlushResult | undefined,
+): SyncRuntimeStatusPatch {
+  if (!diagnosticsFlush) {
+    return {};
+  }
+
+  return {
+    lastDiagnosticsDiscardedCount: diagnosticsFlush.discarded,
+    lastDiagnosticsUndeliverableCount: diagnosticsFlush.undeliverable,
+    lastDiagnosticsUnclassifiedCount: diagnosticsFlush.unclassified,
+  };
+}
+
+/**
  * Builds the snapshot patch for a successful sync cycle.
  *
  * Success records both the latest attempt timestamp and how many operations were confirmed, and
@@ -70,12 +100,20 @@ export function buildSyncAttemptStartedPatch(
  * unclosed. The explicit `recordCycleActive(false)` in the cycle's `finally` stays -- it is
  * idempotent -- but it is no longer the only thing standing between a reported outcome and a
  * flag stuck on.
+ *
+ * `diagnosticsFlush` is optional and, when supplied, folds this cycle's three destruction
+ * counters into the SAME write -- the foreground coordinated cycle has no bookkeeping write of its
+ * own, so folding is what keeps its counters from costing a second transaction (see
+ * `runCoordinatedForegroundSyncCycle`). Callers without flush evidence (the headless cycle, which
+ * writes its own bookkeeping through `recordBacklogReadCount`, and every pre-existing caller) leave
+ * the three columns untouched instead of fabricating three zeros.
  */
 export function buildSyncAttemptSucceededPatch(
   triggerSource: SyncRuntimeTriggerSource,
   attemptedAt: number,
   syncedCount: number,
   cycleId: string | null = null,
+  diagnosticsFlush?: SyncDiagnosticsFlushResult,
 ): SyncRuntimeStatusPatch {
   return {
     lastAttemptAt: attemptedAt,
@@ -91,6 +129,7 @@ export function buildSyncAttemptSucceededPatch(
     lastNativeErrcodeByte: null,
     consecutiveUnclosedCycles: 0,
     isCycleActive: false,
+    ...buildDiagnosticsCounterPatchFields(diagnosticsFlush),
   };
 }
 
@@ -158,7 +197,9 @@ export function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatu
  * Every counter here comes from a value its caller already computed this cycle (the flush
  * result, the outbox store's own failure count, the convergence projection), so none of them is
  * ever fabricated: an unmeasured cycle simply never calls this, and the columns stay `null`
- * (Decision 7) rather than reporting a plausible zero.
+ * (Decision 7) rather than reporting a plausible zero. The three destruction counters themselves
+ * are mapped by `buildDiagnosticsCounterPatchFields`, shared with the foreground cycle's terminal
+ * `recordSyncAttemptSucceeded` so the two writes that carry them cannot drift apart.
  */
 export function buildCycleBookkeepingPatch(
   backlogReadCount: number,
@@ -168,16 +209,7 @@ export function buildCycleBookkeepingPatch(
 ): SyncRuntimeStatusPatch {
   return {
     lastBacklogReadCount: backlogReadCount,
-    lastDiagnosticsDiscardedCount: diagnosticsFlush.discarded,
-    // The two counters the flush result has always carried beside `discarded`, carried here the
-    // same way it carries `discarded` -- same patch helper, same write, same call site, so there
-    // is one shape to reason about rather than two. They are NOT derived from `discarded` and
-    // never fold into it: `undeliverable` counts what THIS build ordered destroyed because the
-    // kind can never be accepted, `unclassified` counts what was parked because it belongs to a
-    // different build and rolling forward is what recovers it. `discarded` keeps its exact
-    // meaning: a permanent rejection by the bridge's own verdict.
-    lastDiagnosticsUndeliverableCount: diagnosticsFlush.undeliverable,
-    lastDiagnosticsUnclassifiedCount: diagnosticsFlush.unclassified,
+    ...buildDiagnosticsCounterPatchFields(diagnosticsFlush),
     lastDiagnosticsFailedRemovalCount: diagnosticsFlush.failedRemovals,
     lastOutboxFailedWriteCount: outboxFailedWriteCount,
     lastDeadLetterCount: convergence.deadLetterCount,
