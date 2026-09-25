@@ -118,6 +118,8 @@ data class SyncDiagnosticsConnection(
  * - [undeliverable] -- this build's declaration destroyed the body; a loss, by judgement, and the
  *   counter whose visibility matters most when the registry is flipped;
  * - [unclassified] -- another build's body, parked untouched; a gap, not a loss;
+ * - [failedRemovals] -- a removal the store did not CONFIRM on any branch that removes a row; the
+ *   row is STILL STORED, so it may never be folded into the disposition that authorised it;
  * - [reaped] -- a PARKED row the age bound retired; a loss by EXPIRY, and the one counter that must
  *   never be folded into [discarded]: that one answers "the bridge refused these bytes" while this
  *   one answers "we gave up waiting for a bridge that would have accepted them", which are opposite
@@ -254,8 +256,10 @@ object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
  * - the user's switch is consulted FIRST, and a disabled switch returns the zeroed tally without
  *   reading, POSTing, removing or deferring anything, so queued rows survive the switch being off
  *   untouched;
- * - `2xx` removes the row and counts it `delivered` only when the removal is CONFIRMED, otherwise
- *   `failedRemovals` (the row is still there for the next pass);
+ * - EVERY removal this pass performs -- `2xx`'s `delivered`, `413`/`400`'s `discarded`, the
+ *   declaration's `undeliverable` and the age bound's `reaped` -- counts as its disposition only
+ *   when the removal is CONFIRMED, otherwise `failedRemovals` (the row is still there for the next
+ *   pass);
  * - `413` with or without a code, or a `400` that DECLARED one, is the bridge's ENTIRE permanence
  *   declaration for this endpoint: it removes the row, counts it `discarded` and continues the
  *   batch, UNLESS the refusal declared `kind_not_served`, which KEEPS the row and stops the batch
@@ -333,8 +337,7 @@ class SyncEngineDiagnosticsCourier(
 
           when (classifyDiagnosticsPayload(candidate.payload, acceptedKinds, undeliverableKinds)) {
             DiagnosticsPayloadKind.UNDELIVERABLE -> {
-              outbox.remove(candidate.cycleId)
-              undeliverable += 1
+              if (outbox.remove(candidate.cycleId)) undeliverable += 1 else failedRemovals += 1
               continue
             }
 
@@ -344,8 +347,7 @@ class SyncEngineDiagnosticsCourier(
               // CONTINUES, which is this park's OWN decision rather than the bound's.
               val rowAgeMs = now() - candidate.createdAt
               if (shouldReapParkedDiagnosticsRow(DiagnosticsPayloadKind.UNCLASSIFIED, null, rowAgeMs)) {
-                outbox.remove(candidate.cycleId)
-                reaped += 1
+                if (outbox.remove(candidate.cycleId)) reaped += 1 else failedRemovals += 1
               } else {
                 unclassified += 1
               }
@@ -382,8 +384,7 @@ class SyncEngineDiagnosticsCourier(
             // forever, so keeping the row would only strand it. A codeless `400` is NOT one of
             // these: it is a version state, so it never reaches `discarded` here. The batch
             // continues -- the next envelope may be perfectly deliverable.
-            outbox.remove(candidate.cycleId)
-            discarded += 1
+            if (outbox.remove(candidate.cycleId)) discarded += 1 else failedRemovals += 1
             continue
           }
 
@@ -394,8 +395,7 @@ class SyncEngineDiagnosticsCourier(
           // before its deferral would have run.
           val rowAgeMs = now() - candidate.createdAt
           if (shouldReapParkedDiagnosticsRow(DiagnosticsPayloadKind.ROUTABLE, result, rowAgeMs)) {
-            outbox.remove(candidate.cycleId)
-            reaped += 1
+            if (outbox.remove(candidate.cycleId)) reaped += 1 else failedRemovals += 1
             break
           }
 
