@@ -1,10 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { runMigrations } from '../../../src/infrastructure/db/client';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
+import { flushSyncDiagnosticsOutbox } from '../../../src/features/sync/sync-diagnostics-flush.helpers';
 import {
   getSyncRuntimeStatusSnapshot,
   recordSyncAttemptSucceeded,
 } from '../../../src/features/sync/sync-runtime-status.helpers';
+import { syncDiagnosticsOutboxStore } from '../../../src/infrastructure/db/sync-diagnostics-outbox';
 import type { ReconcileTelemetryContext } from '../../../src/features/sync/reconcile.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../src/features/sync/sync-runtime-status.types';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
@@ -73,7 +75,10 @@ async function clearTelemetryOutbox(): Promise<void> {
   }
 
   await mockTelemetryAdapter.execAsync(
-    'DELETE FROM sync_diagnostics_outbox; ' +
+    // Dropped FIRST: a case that blocked removals at the SQLite level must never block the cleanup
+    // of the case after it, which clears the very table the trigger guards.
+    'DROP TRIGGER IF EXISTS sync_diagnostics_outbox_block_removal; ' +
+      'DELETE FROM sync_diagnostics_outbox; ' +
       'DELETE FROM sync_diagnostics_outbox_state; ' +
       'DELETE FROM sync_diagnostics_outbox_shed_count;',
   );
@@ -387,5 +392,105 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     );
 
     expect(survivors.map((row) => row.cycle_id)).toEqual(['young-unknown-kind']);
+  });
+
+  /**
+   * The rest of the executor's contract, against the REAL store and a faked wire: what a pass
+   * counts when a removal it was authorized to perform does NOT happen.
+   *
+   * Here rather than in either focused suite because BOTH of those sit at the 500-line ceiling, and
+   * because an unconfirmed removal is a property of the store itself: `remove()` answers `'failed'`
+   * only when the DELETE throws, which no fake store can prove.
+   */
+  describe('when a removal is not confirmed', () => {
+    const CONNECTION = { ip: '192.168.0.10', port: 8080, token: 'token-1' };
+
+    /**
+     * Wakes the production outbox store: its first connect is what creates the private telemetry
+     * database, its schema and the raw handle these cases plant and read through.
+     */
+    function wakeOutbox(): SQLiteDatabase {
+      syncDiagnosticsOutboxStore.getShedCount();
+
+      return mockTelemetryAdapter!;
+    }
+
+    /**
+     * Makes every outbox DELETE throw -- the ONLY way the real store answers `'failed'` -- so a case
+     * can watch a pass whose removals did not happen. Dropped by the NEXT case's cleanup.
+     */
+    async function blockOutboxRemovals(): Promise<void> {
+      await wakeOutbox().execAsync(
+        'CREATE TRIGGER IF NOT EXISTS sync_diagnostics_outbox_block_removal ' +
+          "BEFORE DELETE ON sync_diagnostics_outbox BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+      );
+    }
+
+    /** The outbox oldest-first, the order the candidate read itself uses. */
+    async function readOutbox(): Promise<readonly string[]> {
+      const rows = await wakeOutbox().getAllAsync<StoredDiagnosticsOutboxRow>(
+        'SELECT cycle_id, payload FROM sync_diagnostics_outbox ORDER BY created_at ASC, rowid ASC',
+      );
+
+      return rows.map((row) => row.cycle_id);
+    }
+
+    it('counts an UNCONFIRMED removal as failedRemovals for a reap, a destruction and a delivery alike', async () => {
+      // Three authorized removals, none of which happened: the stale unknown-kind park the clock
+      // retires, the routable row the bridge permanently rejects, and the routable row it accepts.
+      // Every row STAYS, so counting any of them as the disposition it replaced would report a
+      // removal -- for the park, a destruction -- that the device never performed.
+      await wakeOutbox();
+      await plantStoredRow('stale-unknown-kind', JSON.stringify({ kind: 'watch_session' }), STALE_AGE_MS);
+      await plantStoredRow('stale-refused', JSON.stringify({ cycle_id: 'stale-refused' }), STALE_AGE_MS - 1_000);
+      await plantStoredRow('accepted', JSON.stringify({ cycle_id: 'accepted' }), STALE_AGE_MS - 2_000);
+      await blockOutboxRemovals();
+      fakeBridge.queueResponse({ status: 400, body: { code: 'field_rejected' } });
+      fakeBridge.queueResponse({ status: 200, body: {} });
+
+      const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
+
+      expect(result).toEqual({
+        attempted: 2,
+        delivered: 0,
+        discarded: 0,
+        failedRemovals: 3,
+        undeliverable: 0,
+        unclassified: 0,
+        reaped: 0,
+      });
+      expect(await readOutbox()).toEqual(['stale-unknown-kind', 'stale-refused', 'accepted']);
+    });
+
+    it('reaps a stale codeless-400 park and STILL stops the batch, so the row behind it is never POSTed', async () => {
+      // A KINDLESS row is routable under the frozen legacy rule, so it IS posted -- and a bridge
+      // older than the refusal vocabulary answers the generic codeless `400`, which parks it and
+      // STOPS the batch. The clock then retires the parked row, and the STOP must survive that
+      // retirement: it is the RETIRED disposition's own answer, never the reap's.
+      await wakeOutbox();
+      await plantStoredRow('stale-codeless', JSON.stringify({ cycle_id: 'stale-codeless' }), STALE_AGE_MS);
+      await plantStoredRow('stale-behind', JSON.stringify({ cycle_id: 'stale-behind' }), STALE_AGE_MS - 1_000);
+      fakeBridge.queueResponse({ status: 400, body: { error: 'invalid request body' } });
+
+      const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
+
+      expect(result).toEqual({
+        attempted: 1,
+        delivered: 0,
+        discarded: 0,
+        failedRemovals: 0,
+        undeliverable: 0,
+        unclassified: 0,
+        reaped: 1,
+      });
+      // Exactly ONE diagnostics POST, and only the reaped row left the outbox: the row behind it is
+      // still queued, because the batch stopped instead of carrying on into the same refusal.
+      const diagnosticsPosts = fakeBridge.requests.filter((request) =>
+        request.url.includes('/api/sync/diagnostics'),
+      );
+
+      expect(diagnosticsPosts).toHaveLength(1);
+      expect(await readOutbox()).toEqual(['stale-behind']);
+    });
   });
 });

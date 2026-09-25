@@ -48,9 +48,10 @@ export type SyncDiagnosticsPayloadClass = 'routable' | 'undeliverable' | 'unclas
 /**
  * What one candidate's round trip resolved to, flattened so the flush loop is a tally, not a
  * ladder. Every value names one outbox outcome the pass has to count separately, except
- * `'failed_removal'`, which the thin executor produces when a 2xx was answered but the removal it
- * authorizes was not confirmed, and `'reaped'`, which it produces when the age bound retired a PARKED
- * row the disposition ladder had already decided to keep.
+ * `'failed_removal'`, which the thin executor produces whenever a disposition authorized a removal
+ * the store did NOT confirm -- a 2xx, a reap and a destruction alike -- and `'reaped'`, which it
+ * produces when the age bound retired a PARKED row the disposition ladder had already decided to
+ * keep.
  */
 export type SyncDiagnosticsEnvelopeDisposition =
   | 'delivered'
@@ -136,7 +137,9 @@ export interface SyncDiagnosticsFlushResult {
   /**
    * Number of entries the age bound RETIRED: PARKED rows that outlived
    * `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS` and were removed because this drain gave up waiting
-   * for a bridge that would have accepted them. Deliberately NOT folded into `discarded`: that
+   * for a bridge that would have accepted them -- counted only once that removal was CONFIRMED, so a
+   * reap whose DELETE failed is `failedRemovals` and the row is re-read next pass. Deliberately NOT
+   * folded into `discarded`: that
    * counter answers "the bridge refused these bytes" and this one answers "we gave up waiting",
    * which are opposite conclusions -- the first says the client sent something bad, the second says
    * the pairing was mismatched -- and folding them would destroy the distinction the counter exists
@@ -149,8 +152,11 @@ export interface SyncDiagnosticsFlushResult {
    */
   readonly reaped: number;
   /**
-   * Number of entries that received a 2xx but whose outbox removal failed. The row remains
-   * queued and re-sends next cycle instead of being counted as delivered.
+   * Number of entries whose authorized outbox removal was NOT confirmed, whatever disposition
+   * authorized it: a 2xx (`delivered`), the age bound (`reaped`) or a destruction
+   * (`discarded`/`undeliverable`). The row remains queued and re-sends next cycle instead of being
+   * counted as the disposition it replaced, because that counter's whole job is to be evidence about
+   * rows the device no longer holds.
    */
   readonly failedRemovals: number;
 }

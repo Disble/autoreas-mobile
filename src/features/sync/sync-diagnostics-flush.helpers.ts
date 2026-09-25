@@ -213,8 +213,11 @@ function deferStoredEnvelope(
  *
  * Thin on purpose: the ladder lives in `resolveSyncDiagnosticsDisposition`, which knows nothing
  * about stores, clients or clocks, and this knows nothing about verdicts beyond their persistence.
- * The single exceptions are the 2xx path, where `'delivered'` can only be claimed after CONFIRMING
- * the removal (Decision 2/3), and the age bound, which retires a row the ladder decided to KEEP --
+ * Two rules are this function's own, both about the STORE rather than the verdict. EVERY removal
+ * performed here is CONFIRMED before it is counted as the removal its disposition names: a 2xx, a
+ * reap and both destruction dispositions alike answer `'failed_removal'` when the store does not
+ * confirm it (Decision 2/3), since an unconfirmed removal leaves the row queued and counted again
+ * next pass. And the age bound, which retires a row the ladder decided to KEEP --
  * `shouldReapSyncDiagnosticsParkedRow` owns that decision (parked? older than the declared bound?),
  * and this only performs the removal it authorizes.
  */
@@ -238,10 +241,9 @@ function applySyncDiagnosticsDisposition(
   ) {
     // The bound expired on a PARKED row: retired exactly like the two destruction dispositions, and
     // counted apart from both of them. Reached only for a park, so a row whose fate a verdict already
-    // decided can never arrive here however old it is.
-    params.store.remove(candidate.cycleId);
-
-    return { disposition: 'reaped', posted, continuesBatch };
+    // decided can never arrive here however old it is. The removal is CONFIRMED like every other one.
+    const removed = params.store.remove(candidate.cycleId) === 'removed';
+    return { disposition: removed ? 'reaped' : 'failed_removal', posted, continuesBatch };
   }
 
   if (disposition === 'unclassified') {
@@ -249,11 +251,8 @@ function applySyncDiagnosticsDisposition(
   }
 
   if (disposition === 'delivered') {
-    return {
-      disposition: params.store.remove(candidate.cycleId) === 'removed' ? 'delivered' : 'failed_removal',
-      posted,
-      continuesBatch,
-    };
+    const removed = params.store.remove(candidate.cycleId) === 'removed';
+    return { disposition: removed ? 'delivered' : 'failed_removal', posted, continuesBatch };
   }
 
   if (disposition === 'stop') {
@@ -266,10 +265,10 @@ function applySyncDiagnosticsDisposition(
   // the bridge's own permanence verdict, `undeliverable` is this build's positive declaration that
   // the bridge would answer the same forever. Both remove; both were counted where they were
   // resolved. Never posted when `undeliverable`, since no request is spent learning what the
-  // registry already declared.
-  params.store.remove(candidate.cycleId);
-
-  return { disposition, posted, continuesBatch };
+  // registry already declared. The removal is CONFIRMED like every other one here: the row is only
+  // gone once the store says so, and an unconfirmed removal is `failedRemovals` instead.
+  const removed = params.store.remove(candidate.cycleId) === 'removed';
+  return { disposition: removed ? disposition : 'failed_removal', posted, continuesBatch };
 }
 
 /**
@@ -395,13 +394,16 @@ async function tallyFlushCandidate(
  * `kind` before any request is made:
  * - `kind` absent or in the accepted registry: ROUTABLE. 2xx is delivered only if the removal is
  *   CONFIRMED (Decision 2/3) -- an unconfirmed removal counts as `failedRemovals` instead, since
- *   the row is still there for the next cycle to re-send.
+ *   the row is still there for the next cycle to re-send -- and the SAME confirmation governs every
+ *   other removal this pass performs: `reaped`, `discarded` and `undeliverable` answer
+ *   `failedRemovals` too, so no counter reports a removal the device did not perform.
  * - `kind` declared undeliverable: destroyed on sight, counted as `undeliverable`, batch continues.
  * - everything else (`kind` unknown, `kind` null, body not a JSON object): PARKED -- never posted,
  *   never deleted, counted as `unclassified`, and the batch CONTINUES, so one row this build does
  *   not understand cannot starve the deliverable envelopes behind it.
  * - a row EITHER park kept, once it is older than `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS`: retired
- *   and counted as `reaped`, which is the only removal in this pass that is neither a bridge verdict
+ *   and counted as `reaped` once its removal is confirmed (`failedRemovals` otherwise), which is the
+ *   only removal in this pass that is neither a bridge verdict
  *   nor this build's declaration. The bound exists for liveness: a park sits at the HEAD of an
  *   oldest-first queue and the cap sheds the TAIL, so an indefinite mismatch eventually spends the
  *   whole retained window on rows that can never drain and sheds the telemetry that would have. A
