@@ -1,6 +1,10 @@
 plugins {
   id 'com.android.library'
   id 'expo-module-gradle-plugin'
+  // Pinned (T3, sync-core-test-assurance): per-class line+branch coverage gate. Same choice and
+  // version as modules/sync-engine/android/build.gradle -- see the comment there for why Kover
+  // over JaCoCo.
+  id 'org.jetbrains.kotlinx.kover' version '0.9.9'
 }
 
 group = 'expo.modules.foregroundsyncticker'
@@ -34,4 +38,57 @@ dependencies {
   // modules/sync-engine/android/build.gradle.
   testImplementation 'org.robolectric:robolectric:4.14.1'
   testImplementation 'androidx.test:core:1.6.1'
+}
+
+// Per-class coverage gate (T3, sync-core-test-assurance) -- IMPORTANT tier only (80%), this
+// module carries no CORE class. See modules/sync-engine/android/build.gradle for the full
+// rationale/comment; the class names below were measured the same way, against
+// modules/foreground-sync-ticker/android/build/reports/kover/report.xml.
+def IMPORTANT_CLASSES = [
+  // ForegroundSyncTickerModule.kt is INFRA, like SyncEngineModule: the Expo module adapter only
+  // runs inside a React Native context, which the unit-test harness does not build.
+  // TickAlarmReceiver.kt
+  'TickAlarmReceiver', 'TickAlarmReceiver$*',
+  // TickAlarmScheduler.kt (no object/class wrapper -> file facade class, + the TickingState enum)
+  'TickAlarmSchedulerKt', 'TickAlarmSchedulerKt$*', 'TickingState', 'TickingState$*',
+  // SyncForegroundServiceBridge.kt -- "SyncForegroundServiceBridge (sync-engine)" in the tier
+  // list: conceptually part of the sync-engine service boundary, physically in this module.
+  'SyncForegroundServiceBridgeKt', 'SyncForegroundServiceBridgeKt$*',
+].collect { "expo.modules.foregroundsyncticker.$it" }
+
+kover {
+  reports {
+    filters {
+      excludes {
+        classes(
+          'expo.modules.foregroundsyncticker.BuildConfig',
+          'expo.modules.foregroundsyncticker.BuildConfig$*',
+        )
+      }
+    }
+
+    variant('debug') {
+      filters {
+        includes { classes(IMPORTANT_CLASSES) }
+      }
+      verify {
+        rule('IMPORTANT classes: 80% line coverage') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.APPLICATION
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 80
+          }
+        }
+        rule('IMPORTANT classes: 80% branch coverage') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.APPLICATION
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.BRANCH
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 80
+          }
+        }
+      }
+    }
+  }
 }

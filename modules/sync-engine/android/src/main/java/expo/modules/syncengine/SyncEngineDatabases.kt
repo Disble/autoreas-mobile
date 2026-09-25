@@ -181,7 +181,13 @@ fun resolveAppDatabaseFile(context: Context): File {
  */
 fun openAppDatabase(context: Context): SQLiteDatabase {
   val file = resolveAppDatabaseFile(context)
-  file.parentFile?.mkdirs()
+  // `!!` (not `?.`, T3 sync-core-test-assurance): [resolveAppDatabaseFile] always builds `file`
+  // via the two-argument `File(parent, child)` constructor, which Java guarantees never has a
+  // null `getParentFile()` -- a `?.` here guarded an unreachable null branch. `!!` compiles to a
+  // plain `Intrinsics.checkNotNull` call, not a local branch, so this removes the dead branch
+  // instead of just relocating it (Kotlin's `File.getParentFile()` mapping IS `File?`, so a bare
+  // unchecked call is a compile error here, unlike a true Java platform type).
+  file.parentFile!!.mkdirs()
   val db = SQLiteDatabase.openOrCreateDatabase(file, null)
   db.compileStatement("PRAGMA busy_timeout = $APP_DB_BUSY_TIMEOUT_MS").execute()
   return db

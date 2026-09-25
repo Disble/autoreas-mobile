@@ -311,7 +311,13 @@ object WireAnimeMapper {
     return when (value) {
       is Number -> value
       is String -> value.trim().toDoubleOrNull() ?: JSONObject.NULL
-      is JSONObject -> if (value.has("\$\$date")) value.opt("\$\$date") ?: JSONObject.NULL else JSONObject.NULL
+      // `.opt("\$\$date")` (not `?: JSONObject.NULL`, T3 sync-core-test-assurance; proven
+      // unreachable, removed): org.json never stores a raw Java `null` for a key -- a JSON
+      // `null` value is stored as the `JSONObject.NULL` sentinel -- so once `has("\$\$date")`
+      // is true, `.opt("\$\$date")` can only return that sentinel or the real value, never
+      // Kotlin `null`. The elvis's right side could only run for a caller this function does
+      // not have (its guarding `has()` check already forces the left side non-null).
+      is JSONObject -> if (value.has("\$\$date")) value.opt("\$\$date") else JSONObject.NULL
       else -> JSONObject.NULL
     }
   }

@@ -71,15 +71,14 @@ object SyncEngineBridgePresence {
       return PresenceProbeResult(isPresent = false, reason = "no bridge_config row")
     }
 
-    if (config.ip.isNullOrBlank() || config.port.isNullOrBlank() || config.token.isNullOrBlank()) {
+    // Local aliases first: `isNullOrBlank`'s contract smart-casts them to non-null below, so no
+    // unreachable `?: ""` fallback is needed.
+    val ip = config.ip
+    val port = config.port
+    val token = config.token
+    if (ip.isNullOrBlank() || port.isNullOrBlank() || token.isNullOrBlank()) {
       return PresenceProbeResult(isPresent = false, reason = "bridge_config incomplete")
     }
-
-    // Non-null by the check above; local aliases keep the smart-cast (same idiom as the
-    // analogous `hasCompleteBridgeConnection` check in SyncEngineCycle.runCycle).
-    val ip = config.ip ?: ""
-    val port = config.port ?: ""
-    val token = config.token ?: ""
 
     return try {
       SyncEngineHttp.get(

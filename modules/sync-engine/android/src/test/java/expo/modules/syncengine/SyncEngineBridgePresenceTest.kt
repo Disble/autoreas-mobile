@@ -157,6 +157,26 @@ class SyncEngineBridgePresenceTest {
   }
 
   @Test
+  fun `null ip, port or token is absence without any HTTP request`() {
+    val requestCount = AtomicInteger(0)
+    val srv = startServer()
+    srv.createContext("/api/status") { exchange ->
+      requestCount.incrementAndGet()
+      exchange.sendResponseHeaders(200, -1)
+      exchange.close()
+    }
+    srv.start()
+    val complete = config(port = srv.address.port)
+
+    listOf(complete.copy(ip = null), complete.copy(port = null), complete.copy(token = null)).forEach {
+      val result = SyncEngineBridgePresence.probe(it)
+      assertFalse(result.isPresent)
+      assertEquals("bridge_config incomplete", result.reason)
+    }
+    assertEquals(0, requestCount.get())
+  }
+
+  @Test
   fun `blank ip is absence without any HTTP request`() {
     val requestCount = AtomicInteger(0)
     val srv = startServer()

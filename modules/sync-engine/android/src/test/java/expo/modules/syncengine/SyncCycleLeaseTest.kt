@@ -110,6 +110,29 @@ class SyncCycleLeaseTest {
     assertEquals(0, readLeaseRowCount())
   }
 
+  @Test
+  fun claimReturnsFalseInsteadOfThrowingWhenTheLockTableIsMissing() {
+    // Mirrors a fresh install: no schema until the foreground's first open.
+    val freshDb = SQLiteDatabase.create(null)
+    try {
+      assertFalse(SyncCycleLease(freshDb).claim("cycle-no-schema"))
+    } finally {
+      freshDb.close()
+    }
+  }
+
+  @Test
+  fun releaseSwallowsAFailureInsteadOfThrowing() {
+    val attempt = SyncCycleLease(database)
+    assertTrue(attempt.claim("cycle-broken-schema"))
+    // Drops the table AFTER the claim succeeded and its fence was recorded in memory, so
+    // release()'s own DELETE throws -- must be warned and swallowed, never propagated (same
+    // masking rule as the lease's own expiry backstop).
+    database.execSQL("DROP TABLE sync_cycle_lock")
+
+    attempt.release()
+  }
+
   private fun readFence(): String? = database.rawQuery(
     "SELECT fence FROM sync_cycle_lock WHERE id = 1",
     null,

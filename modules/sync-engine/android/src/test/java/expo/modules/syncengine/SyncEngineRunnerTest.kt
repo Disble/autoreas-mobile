@@ -218,6 +218,32 @@ class SyncEngineRunnerTest {
     }
   }
 
+  @Test
+  fun `requirePresence defaults to false when the caller omits it, exactly like SyncEngineModule's own call`() {
+    // SyncEngineModule.runAttempt calls runOnce(context, triggerSource, cycleId, startMs) {... }
+    // with NO requirePresence argument at all -- this is the only test exercising that omitted-
+    // argument default, every other test in this file passes it explicitly.
+    seedAppSchema(withOperationLog = true) // bridge_config exists but is empty
+
+    val results = mutableListOf<CycleOutcome>()
+    val latch = CountDownLatch(1)
+
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-default-presence",
+      startMs = System.currentTimeMillis(),
+    ) { outcome ->
+      results.add(outcome)
+      latch.countDown()
+    }
+
+    assertTrue(latch.await(5, TimeUnit.SECONDS))
+    // Same fast "not_applicable" as `requirePresence = false` explicitly: the gate never ran.
+    assertEquals("not_applicable", results.single().outcome)
+    assertNull(results.single().errorName)
+  }
+
   // --- Task C.1 -------------------------------------------------------------------------------
 
   @Test

@@ -54,11 +54,21 @@ object ReconcileConfirmation {
    * Mirrors JavaScript's `===` for the value types org.json can produce: numbers compare by
    * value, strings and booleans by equality, and every object/array by identity (i.e. never
    * equal to a parsed copy), so a structural coincidence cannot fabricate confirmation.
+   *
+   * The `else` branch is `false`, not `a === b` (T3, sync-core-test-assurance; proven
+   * unreachable, not just simplified): [a] is always `snapshot.get(field)` and [b] is always
+   * `payload.get(field)` (see [isOperationConfirmed]) -- one value from the response's
+   * `bridge_changes[].snapshot`, the other from a freshly re-parsed `operation_log.payload`
+   * string. Two independently parsed `org.json` object/array values are never the same
+   * instance, so `a === b` could only ever evaluate `true` here for a caller this private
+   * function does not have; hardcoding `false` states the doc comment's own intent ("never
+   * equal to a parsed copy") directly instead of leaving an identity check whose `true` side is
+   * dead.
    */
   private fun jsStrictEquals(a: Any?, b: Any?): Boolean = when {
     a is Number && b is Number -> a.toDouble() == b.toDouble()
     a is String && b is String -> a == b
     a is Boolean && b is Boolean -> a == b
-    else -> a === b
+    else -> false
   }
 }

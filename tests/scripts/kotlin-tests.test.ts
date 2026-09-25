@@ -60,10 +60,15 @@ const { buildGradleTestArgs, decidePrebuildStatus, describeMissingToolchain, has
   loadKotlinTestsModule();
 
 describe('buildGradleTestArgs', () => {
-  it('runs both modules with the build cache on and --console=plain, lint tasks omitted by default', () => {
+  it('runs both modules\' unit tests THEN both modules\' per-class coverage verify tasks, build cache on, lint tasks omitted by default', () => {
     expect(buildGradleTestArgs()).toEqual([
       ':sync-engine:testDebugUnitTest',
       ':foreground-sync-ticker:testDebugUnitTest',
+      ':sync-engine:koverVerifyCore',
+      ':sync-engine:koverVerifyImportant',
+      ':sync-engine:koverVerifyCoreFloor',
+      ':sync-engine:koverVerifyCoreFloorRunner',
+      ':foreground-sync-ticker:koverVerifyDebug',
       '--build-cache',
       '--console=plain',
     ]);
@@ -73,6 +78,11 @@ describe('buildGradleTestArgs', () => {
     expect(buildGradleTestArgs({ withLint: true })).toEqual([
       ':sync-engine:testDebugUnitTest',
       ':foreground-sync-ticker:testDebugUnitTest',
+      ':sync-engine:koverVerifyCore',
+      ':sync-engine:koverVerifyImportant',
+      ':sync-engine:koverVerifyCoreFloor',
+      ':sync-engine:koverVerifyCoreFloorRunner',
+      ':foreground-sync-ticker:koverVerifyDebug',
       ':sync-engine:lintDebug',
       ':foreground-sync-ticker:lintDebug',
       '--build-cache',

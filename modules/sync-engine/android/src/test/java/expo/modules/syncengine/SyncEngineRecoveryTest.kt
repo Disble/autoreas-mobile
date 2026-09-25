@@ -117,6 +117,63 @@ class SyncEngineRecoveryTest {
     }
   }
 
+  @Test
+  fun abandonSweepFailureIsWarnedAndSwallowedWhenTheAppendItselfFails() {
+    SyncEngineTestDatabase().use { fixture ->
+      val lease = claimLease(fixture, "cycle-recoverer")
+      val staleAt = System.currentTimeMillis() - (ENGINE_LEASE_MS * 2)
+      assertTrue(
+        fixture.journal.append("cycle-stale", "sent", "claimed", "interrupted", staleAt),
+      )
+      // A trigger that blocks only INSERTs, on a SECOND connection to the SAME journal file:
+      // readLatestTransition (a SELECT) must still succeed and find the stale row, but the
+      // subsequent append() (an INSERT) must throw -- proving abandonStaleAttempt's own
+      // catch(Throwable) (never the read path) is what turns that failure into "nothing to
+      // abandon" instead of crashing the sweep.
+      val journalFile = java.io.File(fixture.journalDirectory, "sync-journal.db")
+      val blocker = android.database.sqlite.SQLiteDatabase.openDatabase(
+        journalFile.absolutePath,
+        null,
+        android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
+      )
+      try {
+        blocker.execSQL(
+          "CREATE TRIGGER block_insert BEFORE INSERT ON journal " +
+            "BEGIN SELECT RAISE(ABORT, 'blocked for test'); END",
+        )
+      } finally {
+        blocker.close()
+      }
+
+      val result = SyncEngineRecovery(fixture.appDatabase, fixture.journal)
+        .sweep("cycle-recoverer", lease)
+
+      assertEquals(null, result.abandonedCycleId)
+      assertFalse(result.leaseLost)
+      // The stale row is unchanged: the blocked append never landed.
+      assertEquals("claimed", fixture.journal.readLatestTransition("cycle-recoverer")!!.toState)
+    }
+  }
+
+  @Test
+  fun returnOrphanedClaimsFailureIsWarnedAndSwallowedReportingZeroReturned() {
+    SyncEngineTestDatabase().use { fixture ->
+      val lease = claimLease(fixture, "cycle-current")
+      fixture.addOperation(1, "processing")
+      // Drops the table the orphan compensation writes to, AFTER the lease is claimed: the
+      // sweep's own abandon pass still runs cleanly (nothing stale), and the orphan-claim
+      // UPDATE then throws "no such table", which must be warned and swallowed as 0, never
+      // thrown out of sweep().
+      fixture.appDatabase.execSQL("DROP TABLE operation_log")
+
+      val result = SyncEngineRecovery(fixture.appDatabase, fixture.journal)
+        .sweep("cycle-current", lease)
+
+      assertEquals(0, result.processingReturned)
+      assertFalse(result.leaseLost)
+    }
+  }
+
   private fun claimLease(fixture: SyncEngineTestDatabase, cycleId: String): LeaseFence {
     val lease = SyncCycleLease(fixture.appDatabase)
     assertTrue("expected lease claim for $cycleId", lease.claim(cycleId))
