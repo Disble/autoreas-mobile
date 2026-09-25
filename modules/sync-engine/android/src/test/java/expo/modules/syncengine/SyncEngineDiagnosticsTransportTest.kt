@@ -149,6 +149,21 @@ class SyncEngineDiagnosticsTransportTest {
     assertEquals(null, readDiagnosticsRefusalCode("""{"code":{"nested":true}}"""))
   }
 
+  @Test
+  fun `answers null for a blank code and never trims a non-blank one`() {
+    // A BLANK code names nothing: the premise of "a 400 that declares a code is permanent" is that
+    // the code names THESE BYTES refused forever, so an empty field declares nothing and the row
+    // parks exactly as it does when no code arrived. Read as a declaration it became a destruction
+    // verdict instead. Neither is this read WIDENED: the declared text is returned untouched, so an
+    // unrecognised non-blank code keeps the verdict its status declares and nothing unnoticed is
+    // promoted into the ONE recoverable member.
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":""}"""))
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":"   "}"""))
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":"\t\n"}"""))
+    assertEquals("body_too_large", readDiagnosticsRefusalCode("""{"code":"body_too_large"}"""))
+    assertEquals(" kind_not_served ", readDiagnosticsRefusalCode("""{"code":" kind_not_served "}"""))
+  }
+
   private fun postTo(port: Int): SyncDiagnosticsPostResult = HttpSyncDiagnosticsTransport.post(
     url = "http://127.0.0.1:$port$SYNC_DIAGNOSTICS_PATH",
     token = "token-1",

@@ -10,8 +10,6 @@ import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import org.json.JSONException
-import org.json.JSONObject
 
 /** Batch size per drain; mirrors `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE`. */
 const val SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE = 3
@@ -112,14 +110,19 @@ data class SyncDiagnosticsConnection(
 )
 
 /**
- * Per-drain tally; mirrors `SyncDiagnosticsFlushResult` plus the two counters the native drain
- * keeps beside it. Three counts are deliberately NEVER conflated, because they answer three
- * different questions and only one of them is a data loss:
- * - [discarded] -- the bridge's own verdict destroyed the body (`400`/`413` unless the refusal was
- *   the recoverable one); a loss, by contract;
+ * Per-drain tally; mirrors `SyncDiagnosticsFlushResult` plus the counters the native drain keeps
+ * beside it. Four counts are deliberately NEVER conflated, because they answer four different
+ * questions and only two of them are a data loss:
+ * - [discarded] -- the bridge's own verdict destroyed the body (`413` with or without a code, or a
+ *   `400` that declared one, unless the refusal was the recoverable one); a loss, by contract;
  * - [undeliverable] -- this build's declaration destroyed the body; a loss, by judgement, and the
  *   counter whose visibility matters most when the registry is flipped;
- * - [unclassified] -- another build's body, parked untouched; a gap, not a loss.
+ * - [unclassified] -- another build's body, parked untouched; a gap, not a loss;
+ * - [reaped] -- a PARKED row the age bound retired; a loss by EXPIRY, and the one counter that must
+ *   never be folded into [discarded]: that one answers "the bridge refused these bytes" while this
+ *   one answers "we gave up waiting for a bridge that would have accepted them", which are opposite
+ *   conclusions about the client. It is not the cap's shed count either -- a shed drops rows for
+ *   CAPACITY at the door, while a reap is a decision about one row this pass read.
  */
 data class SyncDiagnosticsFlushResult(
   val attempted: Int = 0,
@@ -128,6 +131,7 @@ data class SyncDiagnosticsFlushResult(
   val failedRemovals: Int = 0,
   val undeliverable: Int = 0,
   val unclassified: Int = 0,
+  val reaped: Int = 0,
 )
 
 /**
@@ -188,96 +192,6 @@ private fun parseHttpDate(raw: String): Long? {
     if (parsed != null && position.index == normalized.length) return parsed.time
   }
   return null
-}
-
-/** One stored body's routing class, decided by the ONE field the bridge classifies on. */
-private enum class DiagnosticsPayloadKind {
-  /** POST it; delete only on a definitive verdict. */
-  ROUTABLE,
-
-  /** Never POST it; delete on sight, because this build declares the bridge cannot take it. */
-  UNDELIVERABLE,
-
-  /** Never POST it and never delete it: it belongs to another build of this app. */
-  UNCLASSIFIED,
-}
-
-/**
- * Classifies one stored body by its top-level `kind`, the only field the drain ever reads: the body
- * itself stays opaque and reaches the wire byte-identical.
- *
- * The cut is RECOVERABILITY, not familiarity (odd/tasks/chapter-action-diagnostics.md):
- * - the ABSENCE of `kind` -- and nothing else -- is ROUTABLE: it is the kindless legacy cycle
- *   envelope, the shape already-deployed builds send and the one the bridge's frozen compatibility
- *   rule accepts. Parking it would strand a deployed build's queue on a field it never sent;
- * - a NAMED kind in [acceptedKinds] is ROUTABLE;
- * - a NAMED kind in [undeliverableKinds] is UNDELIVERABLE -- destroyed by explicit declaration;
- * - every other DECLARATION is UNCLASSIFIED -- parked and counted, never posted and never deleted.
- *   That covers a kind string in neither set, a `kind` that is not even a string (a number or an
- *   object), a `kind` that is present but JSON `null`, and bytes that do not parse as a JSON object
- *   at all.
- *
- * The last two are ALIGNED with the JS drainer's `disposeOfEnvelope`, not a divergence from it:
- * both drainers read the same outbox, so a disagreement about what is routable would be a
- * disagreement about what is DESTROYED. Parking is the safe side of both because destruction
- * requires a POSITIVE declaration: the frozen rule is about the `kind` KEY being absent, so a
- * present `null` declares a value this build cannot name rather than an absence (the bridge's
- * strict decode answers it 400, and a 400 is definitive -- routing it would DELETE the row); and
- * this build cannot read any declaration out of bytes it cannot parse into an object. Such bytes
- * are only ever authored by a build that is not this one, and the bridge's own verdict still owns
- * their fate once this build does route their kind. Parking never STOPS the batch either: one row
- * this build does not understand must not strand the deliverable envelopes behind it.
- *
- * UNCLASSIFIED is what a rollback to an older build of this app looks like, and rolling forward is
- * what recovers it, so destroying it would convert a recoverable registry mistake into an
- * irreversible loss.
- */
-private fun classifyDiagnosticsPayload(
-  payload: String,
-  acceptedKinds: Set<String>,
-  undeliverableKinds: Set<String>,
-): DiagnosticsPayloadKind {
-  // Bytes this build cannot read as an object carry no readable `kind` -- and also no positive
-  // declaration, so they park. They are NOT the legacy envelope: its marker is an absent key, and
-  // `JSON.parse` does not fail for it in the JS drainer either.
-  val envelope = try {
-    JSONObject(payload)
-  } catch (error: JSONException) {
-    return DiagnosticsPayloadKind.UNCLASSIFIED
-  }
-
-  if (!envelope.has("kind")) return DiagnosticsPayloadKind.ROUTABLE
-  // Present but JSON `null`: the key EXISTS, so this is a declaration. `has` is true and the value
-  // is the null sentinel, which names no token this build knows -- so it parks with every other
-  // unnamed declaration rather than being read as the legacy envelope's absent key.
-  if (envelope.isNull("kind")) return DiagnosticsPayloadKind.UNCLASSIFIED
-
-  // `optString` renders a non-string token too (a number, an object), which then matches no set and
-  // parks -- the conservative direction for a declaration this build cannot name.
-  val kind = envelope.optString("kind", "")
-  return when {
-    kind.isBlank() -> DiagnosticsPayloadKind.UNCLASSIFIED
-    acceptedKinds.contains(kind) -> DiagnosticsPayloadKind.ROUTABLE
-    undeliverableKinds.contains(kind) -> DiagnosticsPayloadKind.UNDELIVERABLE
-    else -> DiagnosticsPayloadKind.UNCLASSIFIED
-  }
-}
-
-/**
- * Reads the bridge's refusal `code` out of a response body, best effort; mirrors the JS drainer's
- * `readSyncDiagnosticsRefusalCode`. Every unreadable shape -- absent body, non-string `code`,
- * non-JSON bytes, a body that is not an object -- answers `null` and none throws, so the status
- * verdict always survives: `null` is "no code declared" (the shared-authentication `401` and any
- * pre-discriminated bridge), never the recoverable refusal and never a class of its own.
- */
-fun readDiagnosticsRefusalCode(body: String?): String? {
-  if (body.isNullOrEmpty()) return null
-  val envelope = try {
-    JSONObject(body)
-  } catch (error: JSONException) {
-    return null
-  }
-  return envelope.opt("code") as? String
 }
 
 /**
@@ -342,16 +256,25 @@ object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
  *   untouched;
  * - `2xx` removes the row and counts it `delivered` only when the removal is CONFIRMED, otherwise
  *   `failedRemovals` (the row is still there for the next pass);
- * - `400`/`413` -- the bridge's ENTIRE permanence declaration for this endpoint -- remove the row,
- *   count it `discarded`, and continue the batch, UNLESS the refusal declared `kind_not_served`,
- *   which KEEPS the row and stops the batch: those bytes are not wrong, that bridge build simply
- *   does not serve that kind, so a forward roll recovers every row kept. The set is exactly these
- *   two: `422` is NOT a body verdict here (inherited from a different endpoint's handler, and
- *   anything the contract does not declare must be retryable). A non-2xx verdict ALWAYS wins over
- *   the budget check;
+ * - `413` with or without a code, or a `400` that DECLARED one, is the bridge's ENTIRE permanence
+ *   declaration for this endpoint: it removes the row, counts it `discarded` and continues the
+ *   batch, UNLESS the refusal declared `kind_not_served`, which KEEPS the row and stops the batch
+ *   because those bytes are not wrong -- that bridge build simply does not serve that kind, so a
+ *   forward roll recovers every row kept. A codeless `400` is NOT a verdict at all: it is a VERSION
+ *   state, so the row is KEPT and the batch STOPS, and discarding on it would destroy the whole
+ *   backlog on first contact with a bridge older than the refusal vocabulary. The permanence set is
+ *   exactly those two statuses: `422` is NOT a body verdict here (inherited from a different
+ *   endpoint's handler, and anything the contract does not declare must be retryable). A non-2xx
+ *   verdict ALWAYS wins over the budget check;
  * - a body whose `kind` parks or is destroyed by declaration never reaches the wire (see
  *   [classifyDiagnosticsPayload]) and the batch continues, so one unroutable row cannot starve the
  *   deliverable envelopes behind it;
+ * - a PARKED row -- an unnamed `kind`, or a codeless-`400` stop -- that outlives
+ *   [SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS] is REAPED and counted as `reaped`, never as
+ *   `discarded`, and the batch keeps the disposition's OWN decision: the codeless-`400` park still
+ *   stops it, the unnamed kind still continues it. The bound is about liveness rather than about
+ *   the bytes: an indefinite park spends every batch on rows that can never drain while the cap
+ *   sheds the newest telemetry, which is the loss this bound exists to shorten;
  * - every other outcome -- `401`/`404`/`408`/`422`/`429`/`5xx`, or a transport failure -- leaves
  *   the row and STOPS the batch: the link or the bridge is down, and the rows behind it would fail
  *   identically. A usable `Retry-After` (or the bridge's declared `503` wait) is persisted as a
@@ -396,6 +319,7 @@ class SyncEngineDiagnosticsCourier(
     var failedRemovals = 0
     var undeliverable = 0
     var unclassified = 0
+    var reaped = 0
     val budgetEndsAt = now() + SYNC_DIAGNOSTICS_DRAIN_BUDGET_MS
 
     try {
@@ -415,7 +339,16 @@ class SyncEngineDiagnosticsCourier(
             }
 
             DiagnosticsPayloadKind.UNCLASSIFIED -> {
-              unclassified += 1
+              // A park answers for itself and no request is spent on it. Past the age bound it is
+              // REAPED instead of counted -- apart from both destructions -- and the batch still
+              // CONTINUES, which is this park's OWN decision rather than the bound's.
+              val rowAgeMs = now() - candidate.createdAt
+              if (shouldReapParkedDiagnosticsRow(DiagnosticsPayloadKind.UNCLASSIFIED, null, rowAgeMs)) {
+                outbox.remove(candidate.cycleId)
+                reaped += 1
+              } else {
+                unclassified += 1
+              }
               continue
             }
 
@@ -441,14 +374,29 @@ class SyncEngineDiagnosticsCourier(
 
           // Checked BEFORE the permanence set: the recoverable refusal keeps the row and stops.
           val recoverableRefusal = result.refusalCode == SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE
-          val permanent = result.code == HTTP_BAD_REQUEST || result.code == HTTP_PAYLOAD_TOO_LARGE
-          if (permanent && !recoverableRefusal) {
-            // The bridge's ENTIRE permanence declaration for this endpoint: it will answer these
-            // for the same bytes forever, so keeping the row would only strand it. The batch
+          val permanent = !recoverableRefusal &&
+            isPermanentDiagnosticsRejection(result.code, result.refusalCode)
+          if (permanent) {
+            // The bridge's ENTIRE permanence declaration for this endpoint -- a `413` with or
+            // without a code, or a `400` that DECLARED one: it will answer these for the same bytes
+            // forever, so keeping the row would only strand it. A codeless `400` is NOT one of
+            // these: it is a version state, so it never reaches `discarded` here. The batch
             // continues -- the next envelope may be perfectly deliverable.
             outbox.remove(candidate.cycleId)
             discarded += 1
             continue
+          }
+
+          // Kept, so this row was parked (a `400` that declared no code) or is pending. Past the
+          // age bound the PARK is REAPED -- apart from both destructions -- and the park's OWN
+          // decision still STOPS the batch, because the bridge is still the wrong version and the
+          // next row would be refused identically. No gate is written: the reap replaced the park
+          // before its deferral would have run.
+          val rowAgeMs = now() - candidate.createdAt
+          if (shouldReapParkedDiagnosticsRow(DiagnosticsPayloadKind.ROUTABLE, result, rowAgeMs)) {
+            outbox.remove(candidate.cycleId)
+            reaped += 1
+            break
           }
 
           val retryAfterMillis = result.retryAfterMillis
@@ -472,6 +420,7 @@ class SyncEngineDiagnosticsCourier(
       failedRemovals = failedRemovals,
       undeliverable = undeliverable,
       unclassified = unclassified,
+      reaped = reaped,
     )
   }
 
@@ -494,6 +443,4 @@ class SyncEngineDiagnosticsCourier(
   }
 }
 
-private const val HTTP_BAD_REQUEST = 400
-private const val HTTP_PAYLOAD_TOO_LARGE = 413
 private const val HTTP_SERVICE_UNAVAILABLE = 503

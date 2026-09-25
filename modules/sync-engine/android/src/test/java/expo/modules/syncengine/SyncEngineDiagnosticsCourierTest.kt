@@ -84,8 +84,8 @@ class SyncEngineDiagnosticsCourierTest {
     // itself, and would keep passing while a mutated constant destroyed a recoverable backlog.
     // `kind_not_served` is the vocabulary's ONE recoverable member -- its bytes are not wrong, that
     // build simply does not serve the kind -- so the row is KEPT and the batch STOPS. Every other
-    // member, and a refusal declaring NO code (`401`, written by shared authentication, not the
-    // handler), keeps the status verdict, leaving the `{400, 413}` permanence set itself unchanged.
+    // DECLARED member keeps the status verdict, and a refusal declaring NO code -- `401` is written
+    // by shared authentication -- is answered by its status alone (see the codeless `400` row).
     val rows = listOf("cycle-1" to legacyEnvelope("cycle-1"), "cycle-2" to legacyEnvelope("cycle-2"))
     val stopped = SyncDiagnosticsFlushResult(attempted = 1) to rows
     val destroyed = SyncDiagnosticsFlushResult(attempted = 2, delivered = 1, discarded = 1) to
@@ -96,7 +96,7 @@ class SyncEngineDiagnosticsCourierTest {
       SyncDiagnosticsPostResult(400, refusalCode = "body_unreadable") to destroyed,
       SyncDiagnosticsPostResult(400, refusalCode = "field_rejected") to destroyed,
       SyncDiagnosticsPostResult(413, refusalCode = "body_too_large") to destroyed,
-      SyncDiagnosticsPostResult(400) to destroyed,
+      SyncDiagnosticsPostResult(400) to stopped, // CONTRACT CORRECTION: codeless 400 = bridge VERSION state -> PARKS
       SyncDiagnosticsPostResult(401) to stopped,
     )
     for ((refusal, expected) in refusals) {

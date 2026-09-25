@@ -79,7 +79,12 @@ class SyncEngineDiagnosticsCycleTest {
     SyncEngineTestDatabase().use { fixture ->
       SyncEngineTestHttpServer(200, RECONCILE_RESPONSE).use { server ->
         insertCycleInput(fixture, server.port)
-        fixture.seedTelemetryEntry("cycle-diag-1", "payload-1", 10L)
+        // A ROUTABLE envelope, and a fresh one. "payload-1" is not JSON, so it was classified as an
+        // unknown-name PARK and never reached the transport this test names: the row was kept for a
+        // reason the test does not pin. A row planted at the epoch is also past the parked-row bound
+        // against this courier's real clock, so the fixture is corrected rather than the assertion.
+        val payload = """{"cycle_id":"cycle-diag-1"}"""
+        fixture.seedTelemetryEntry("cycle-diag-1", payload, System.currentTimeMillis())
         val courier = SyncEngineDiagnosticsCourier(
           telemetryFile = fixture.telemetryDatabaseFile,
           transport = SyncDiagnosticsTransport { _, _, _, _ -> throw SocketException("bridge down") },
@@ -90,7 +95,7 @@ class SyncEngineDiagnosticsCycleTest {
 
         assertEquals(CycleOutcome("closed", "closed", 1, 1, null), outcome)
         assertEquals(listOf("/api/sync/reconcile"), server.requests.map { it.path })
-        assertEquals(listOf("cycle-diag-1" to "payload-1"), fixture.telemetryEntries())
+        assertEquals(listOf("cycle-diag-1" to payload), fixture.telemetryEntries())
       }
     }
   }
