@@ -1,6 +1,7 @@
 import type {
   BackgroundSyncSection,
   BuildBackgroundSyncSectionInput,
+  CountTileConfig,
   MetricTile,
   MetricTileIconName,
   BackgroundSyncSectionTone,
@@ -12,6 +13,7 @@ import {
   BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
   BACKGROUND_SYNC_REGISTRATION_LABELS,
   BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
+  CONVERGENCE_COUNT_TILE_DESCRIPTORS,
 } from './settings-screen.constants';
 
 /**
@@ -82,20 +84,10 @@ function formatOldestPendingAge(ms: number | null): string {
   return `${Math.round(ms / 3_600_000)} h`;
 }
 
-/** Static shape shared by every count-only convergence tile: id, label, icon, and the tone it escalates to once the count is non-zero. */
-interface CountTileConfig {
-  readonly id: string;
-  readonly label: string;
-  readonly iconName: MetricTileIconName;
-  readonly nonZeroTone: BackgroundSyncSectionTone;
-}
-
 /**
  * Pushes one count-based convergence tile, ONLY when `count` is not `null`: a `null` counter
  * means "never measured" (Decision 7), not zero, so omitting the tile is the honest choice --
- * exactly how `appendOptionalRuntimeTiles` already treats `lastAttempt`/`lastSuccess`. Factored
- * out so `appendConvergenceMetricTiles` reads as a flat list of calls instead of six near-
- * identical `if` blocks inflating its own complexity budget.
+ * exactly how `appendOptionalRuntimeTiles` already treats `lastAttempt`/`lastSuccess`.
  */
 function pushCountTile(tiles: MetricTile[], count: number | null, config: CountTileConfig): void {
   if (count === null) {
@@ -133,65 +125,19 @@ function appendPendingRowCountTile(tiles: MetricTile[], count: number | null): v
  * `2026-09-09-convergence-instrumentation` Decision 6, extended with the three persisted
  * diagnostics-loss counters), one per counter, beside `backlogReadCount`. Each renders ONLY
  * when its counter is not `null` (Decision 7).
+ *
+ * The nine count-only tiles come from ONE descriptor table, in table order: id, Spanish label,
+ * icon and escalation tone are data, so they cannot drift apart across nine near-identical calls.
+ * The age and backlog-depth tiles below stay bespoke -- their values are formatted and suffixed,
+ * not raw counts.
  */
 function appendConvergenceMetricTiles(
   tiles: MetricTile[],
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
 ): void {
-  pushCountTile(tiles, snapshot.lastDiagnosticsDiscardedCount, {
-    id: 'diagnosticsDiscardedCount',
-    label: 'Diagnósticos descartados',
-    iconName: 'close-circle-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastDiagnosticsFailedRemovalCount, {
-    id: 'diagnosticsFailedRemovalCount',
-    label: 'Diagnósticos a reintentar',
-    iconName: 'repeat-outline',
-    nonZeroTone: 'warning',
-  });
-  pushCountTile(tiles, snapshot.lastDiagnosticsUndeliverableCount, {
-    id: 'diagnosticsUndeliverableCount',
-    label: 'Diagnósticos destruidos por declaración',
-    iconName: 'remove-circle-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastDiagnosticsUnclassifiedCount, {
-    id: 'diagnosticsUnclassifiedCount',
-    label: 'Diagnósticos sin clasificar',
-    iconName: 'help-circle-outline',
-    nonZeroTone: 'warning',
-  });
-  pushCountTile(tiles, snapshot.lastDiagnosticsReapedCount, {
-    id: 'diagnosticsReapedCount',
-    label: 'Diagnósticos retirados por antigüedad',
-    iconName: 'alarm-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastOutboxFailedWriteCount, {
-    id: 'outboxFailedWriteCount',
-    label: 'Escrituras de outbox fallidas',
-    iconName: 'warning-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastDeadLetterCount, {
-    id: 'deadLetterCount',
-    label: 'Operaciones bloqueadas',
-    iconName: 'ban-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastConflictExhaustedCount, {
-    id: 'conflictExhaustedCount',
-    label: 'Conflictos sin resolver',
-    iconName: 'alert-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastStuckProcessingCount, {
-    id: 'stuckProcessingCount',
-    label: 'Operaciones atascadas',
-    iconName: 'hourglass-outline',
-    nonZeroTone: 'warning',
-  });
+  for (const descriptor of CONVERGENCE_COUNT_TILE_DESCRIPTORS) {
+    pushCountTile(tiles, snapshot[descriptor.snapshotField], descriptor);
+  }
   if (snapshot.lastOldestPendingAgeMs !== null) {
     tiles.push({ id: 'oldestPendingAgeMs', label: 'Antigüedad máxima pendiente', value: formatOldestPendingAge(snapshot.lastOldestPendingAgeMs), tone: 'default', iconName: 'time-outline' });
   }
