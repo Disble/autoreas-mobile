@@ -2,10 +2,12 @@ import {
   readSyncDiagnosticsRefusalCode,
   resolveSyncDiagnosticsDeferralMs,
   resolveSyncDiagnosticsDisposition,
+  shouldReapSyncDiagnosticsParkedRow,
 } from '../../../../src/features/sync/sync-diagnostics-disposition.helpers';
 import { flushSyncDiagnosticsOutbox } from '../../../../src/features/sync/sync-diagnostics-flush.helpers';
 import { SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS } from '../../../../src/features/sync/sync-diagnostics-flush.constants';
 import type {
+  SyncDiagnosticsEnvelopeDisposition,
   SyncDiagnosticsFlushResult,
   SyncDiagnosticsPostVerdict,
 } from '../../../../src/features/sync/sync-diagnostics-flush.types';
@@ -190,6 +192,70 @@ describe('readSyncDiagnosticsRefusalCode', () => {
   it('answers null for a body that is not a string at all', () => {
     expect(readSyncDiagnosticsRefusalCode({ code: 'kind_not_served' })).toBeNull();
   });
+
+  it('answers null for a BLANK code -- an empty code names nothing, so the refusal parks instead', () => {
+    // The premise of "a 400 that declares a code is permanent" is that the code names THESE BYTES
+    // refused forever, so a blank field names nothing: read as declared it became a destruction
+    // verdict. `null` parks the row, as an absent code does.
+    expect(readSyncDiagnosticsRefusalCode('{"code":""}')).toBeNull();
+    expect(readSyncDiagnosticsRefusalCode('{"code":"   "}')).toBeNull();
+    // NOT widened to unrecognised non-blank codes and NOT trimmed: the declared text is returned
+    // untouched, so nothing unnoticed is promoted into the ONE recoverable member.
+    expect(readSyncDiagnosticsRefusalCode('{"code":"body_too_large"}')).toBe('body_too_large');
+    expect(readSyncDiagnosticsRefusalCode('{"code":" kind_not_served "}')).toBe(' kind_not_served ');
+  });
+});
+
+/**
+ * The age bound's own rule: which kept rows are PARKED (and so bounded by a clock) and which are
+ * PENDING (and must never be destroyed by one). Ages are LITERALS, never the declared constant:
+ * a fixture reading the same constant as the rule would move with it and pin nothing.
+ */
+describe('shouldReapSyncDiagnosticsParkedRow', () => {
+  const YOUNG_MS = 6 * 24 * 60 * 60 * 1_000;
+  const AT_BOUND_MS = 7 * 24 * 60 * 60 * 1_000;
+  const STALE_MS = 8 * 24 * 60 * 60 * 1_000;
+  /** The ONE `stop` verdict that IS a park: a `400` that declared no code at all. */
+  const CODELESS_400 = verdict({ ok: false, status: 400, refusalCode: null });
+
+  /** Runs the rule for one disposition and the verdict its POST produced, at `ageMs`. */
+  function at(d: SyncDiagnosticsEnvelopeDisposition, v: SyncDiagnosticsPostVerdict | null, ageMs: number): boolean {
+    return shouldReapSyncDiagnosticsParkedRow(d, v, ageMs);
+  }
+
+  it('keeps a park until the bound is EXCEEDED, not merely reached, then reaps BOTH park kinds', () => {
+    // `>` and not `>=`: an age exactly at the declared one is still inside the wait, so mutating
+    // the bound either way fails this case. Both park kinds share that ONE bound: the unknown kind
+    // (never posted, so no build here can name it) and the routable row the bridge answered with a
+    // codeless `400` (posted, and refused for the bridge's own VERSION rather than for its bytes).
+    for (const ageMs of [YOUNG_MS, AT_BOUND_MS]) {
+      expect(at('unclassified', null, ageMs)).toBe(false);
+      expect(at('stop', CODELESS_400, ageMs)).toBe(false);
+    }
+
+    expect(at('unclassified', null, STALE_MS)).toBe(true);
+    expect(at('stop', CODELESS_400, STALE_MS)).toBe(true);
+  });
+
+  it('never reaps a PENDING stop, however old the row is', () => {
+    // PENDING, not parked: the bridge did not answer about these bytes, or answered "come back".
+    // Destroying them by age would lose a backlog on nothing worse than a long outage.
+    expect(at('stop', null, STALE_MS)).toBe(false);
+    expect(at('stop', verdict({ ok: false, status: 400, refusalCode: 'kind_not_served' }), STALE_MS)).toBe(false);
+    for (const status of [401, 404, 405, 408, 422, 429, 500, 503]) {
+      expect(at('stop', verdict({ ok: false, status, refusalCode: null }), STALE_MS)).toBe(false);
+    }
+  });
+
+  it('never reaps a row that was not kept as a park, however old it is', () => {
+    // A destruction and a delivery remove the row for their own reason, so the clock must not touch
+    // them -- or `reaped` would stop separating "we gave up waiting" from "the bridge condemned".
+    expect(at('undeliverable', null, STALE_MS)).toBe(false);
+    expect(at('delivered', verdict(), STALE_MS)).toBe(false);
+    expect(at('failed_removal', verdict(), STALE_MS)).toBe(false);
+    expect(at('discarded', verdict({ ok: false, status: 413, refusalCode: null }), STALE_MS)).toBe(false);
+    expect(at('discarded', verdict({ ok: false, status: 400, refusalCode: 'field_rejected' }), STALE_MS)).toBe(false);
+  });
 });
 
 describe('resolveSyncDiagnosticsDeferralMs', () => {
@@ -252,9 +318,17 @@ describe('the refusal code through flushSyncDiagnosticsOutbox', () => {
       failedRemovals: 0,
       undeliverable: 0,
       unclassified: 0,
+      reaped: 0,
       ...overrides,
     };
   }
+
+  /**
+   * The instant every pass here runs at: 6 days after each row's `created_at`, i.e. INSIDE the
+   * declared reap bound. Explicit because the bound is now a real decision -- without it these rows
+   * would be as old as the epoch and every park case below would reap instead of pinning the park.
+   */
+  const PASS_NOW_MS = 1_000 + 6 * 24 * 60 * 60 * 1_000;
 
   /** One stored, POSTable body: no `kind` key at all is the frozen legacy cycle envelope. */
   function storedRecord(cycleId: string): SyncDiagnosticsOutboxRecord {
@@ -298,6 +372,7 @@ describe('the refusal code through flushSyncDiagnosticsOutbox', () => {
       connection: CONNECTION,
       store,
       client: { postSyncDiagnostics },
+      now: () => PASS_NOW_MS,
     });
 
     return { store, postSyncDiagnostics, result };
@@ -375,6 +450,22 @@ describe('the refusal code through flushSyncDiagnosticsOutbox', () => {
       expect(result).toEqual(tally({ attempted: 1 }));
     },
   );
+
+  it('keeps the row and stops the batch on a 400 that declares only BLANK whitespace as its code', async () => {
+    // CONTRACT CHANGE: this exact body used to DISCARD the row, because `""` reads as a declared
+    // code and a 400 that declares a code was read as permanent. An empty code names nothing, so
+    // nothing was declared about these bytes and the row parks -- the same fate as a body with no
+    // code at all. It still cost a request, so `attempted` moves and nothing else does.
+    const { store, postSyncDiagnostics, result } = await flush(
+      [storedRecord('cycle-1'), storedRecord('cycle-2')],
+      [response({ status: 400, rawBody: '{"code":"   "}' })],
+    );
+
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
+  });
 
   it('still destroys the row and continues on a 413 whose body carries no readable code', async () => {
     // The one status that stays permanent WITHOUT a code: a body too large is too large for every

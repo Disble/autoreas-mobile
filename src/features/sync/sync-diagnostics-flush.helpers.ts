@@ -5,6 +5,7 @@ import {
   readSyncDiagnosticsRefusalCode,
   resolveSyncDiagnosticsDeferralMs,
   resolveSyncDiagnosticsDisposition,
+  shouldReapSyncDiagnosticsParkedRow,
 } from './sync-diagnostics-disposition.helpers';
 import {
   SYNC_DIAGNOSTICS_ACCEPTED_KINDS,
@@ -42,6 +43,24 @@ interface FlushCollaborators {
 /** Collaborators one envelope's round trip needs: the pass's own, plus the connection it POSTs to. */
 interface DisposeOfEnvelopeParams extends FlushCollaborators {
   readonly connection: BridgeConnection;
+}
+
+/**
+ * Everything one candidate's round trip resolved to, including the two facts the tally cannot read
+ * off the disposition alone once the age bound retires a parked row.
+ *
+ * `posted` is what keeps `attempted` honest: the row of an unknown `kind` is never sent, so it must
+ * not be counted as a request even when the bound retires it, while the routable row a codeless
+ * `400` parked WAS sent and must be. `continuesBatch` is the RETIRED disposition's own answer, not
+ * the reap's: the age bound changes who removes the row and which counter moves, and never whether
+ * the batch may carry on past it. That is what leaves the codeless-`400` park's stop exactly as it
+ * was -- the bridge is still the wrong version, so the next row would be refused identically --
+ * while the unknown-kind park keeps the continuation it always had.
+ */
+interface DisposedEnvelope {
+  readonly disposition: SyncDiagnosticsEnvelopeDisposition;
+  readonly posted: boolean;
+  readonly continuesBatch: boolean;
 }
 
 /**
@@ -190,31 +209,57 @@ function deferStoredEnvelope(
 
 /**
  * Applies one already-resolved disposition -- the ONLY outbox write a disposition authorizes -- and
- * answers what the pass must count that candidate as.
+ * answers what the pass must count that candidate as, plus whether it may continue the batch.
  *
  * Thin on purpose: the ladder lives in `resolveSyncDiagnosticsDisposition`, which knows nothing
  * about stores, clients or clocks, and this knows nothing about verdicts beyond their persistence.
- * The single exception is the 2xx path, where `'delivered'` can only be claimed after CONFIRMING
- * the removal (Decision 2/3): a removal that reports anything but `removed` leaves the row queued
- * for the next cycle, so it is counted as `failedRemovals` instead of as a delivery.
+ * The single exceptions are the 2xx path, where `'delivered'` can only be claimed after CONFIRMING
+ * the removal (Decision 2/3), and the age bound, which retires a row the ladder decided to KEEP --
+ * `shouldReapSyncDiagnosticsParkedRow` owns that decision (parked? older than the declared bound?),
+ * and this only performs the removal it authorizes.
  */
 function applySyncDiagnosticsDisposition(
   params: DisposeOfEnvelopeParams,
   candidate: FlushCandidate,
   disposition: SyncDiagnosticsEnvelopeDisposition,
   verdict: SyncDiagnosticsPostVerdict | null,
-): SyncDiagnosticsEnvelopeDisposition {
+): DisposedEnvelope {
+  // Read BEFORE anything is written: these two describe the disposition the LADDER reached, which
+  // the reap may replace but never re-decides.
+  const posted = disposition !== 'unclassified' && disposition !== 'undeliverable';
+  const continuesBatch = disposition !== 'stop';
+
+  if (
+    shouldReapSyncDiagnosticsParkedRow(
+      disposition,
+      verdict,
+      params.now() - candidate.createdAt,
+    )
+  ) {
+    // The bound expired on a PARKED row: retired exactly like the two destruction dispositions, and
+    // counted apart from both of them. Reached only for a park, so a row whose fate a verdict already
+    // decided can never arrive here however old it is.
+    params.store.remove(candidate.cycleId);
+
+    return { disposition: 'reaped', posted, continuesBatch };
+  }
+
   if (disposition === 'unclassified') {
-    return disposition; // parked: never posted, never deleted
+    return { disposition, posted, continuesBatch }; // parked: never posted, never deleted
   }
 
   if (disposition === 'delivered') {
-    return params.store.remove(candidate.cycleId) === 'removed' ? 'delivered' : 'failed_removal';
+    return {
+      disposition: params.store.remove(candidate.cycleId) === 'removed' ? 'delivered' : 'failed_removal',
+      posted,
+      continuesBatch,
+    };
   }
 
   if (disposition === 'stop') {
     deferStoredEnvelope(params, verdict);
-    return disposition;
+
+    return { disposition, posted, continuesBatch };
   }
 
   // The two destruction dispositions, which differ in AUTHORITY and not in effect: `discarded` is
@@ -223,7 +268,8 @@ function applySyncDiagnosticsDisposition(
   // resolved. Never posted when `undeliverable`, since no request is spent learning what the
   // registry already declared.
   params.store.remove(candidate.cycleId);
-  return disposition;
+
+  return { disposition, posted, continuesBatch };
 }
 
 /**
@@ -243,7 +289,7 @@ function applySyncDiagnosticsDisposition(
 async function disposeOfEnvelope(
   params: DisposeOfEnvelopeParams,
   candidate: FlushCandidate,
-): Promise<SyncDiagnosticsEnvelopeDisposition> {
+): Promise<DisposedEnvelope> {
   const payload = parseStoredPayload(candidate.payload);
   const classification = classifyStoredPayload(payload, params.undeliverableKinds);
   // Only a ROUTABLE body is ever posted: the other two classes answer from the registry alone, and
@@ -283,66 +329,61 @@ export function captureSyncDiagnosticsEnvelope(
  * Runs ONE candidate through the disposition ladder and folds the answer into the running tallies.
  *
  * Answers whether the batch may continue: only a `'stop'` verdict closes it, since the next row
- * would fail identically -- every other disposition is per-row and leaves the queue's order intact.
- * Extracted from the pass itself so the pass stays a loop and a tally instead of a branch ladder,
- * and so one candidate's accounting can be read on its own.
+ * would fail identically. That answer is the RETIRED disposition's own -- the age bound changes who
+ * removes a parked row and which counter moves, never whether the batch may carry on past it.
+ *
+ * `attempted` counts REQUESTS, so it is read from whether one was spent: an unknown-kind row is
+ * never sent, so the bound must not turn it into a request when it retires one, while the routable
+ * row a codeless `400` parked WAS sent and must be.
+ *
+ * `reaped` is the AGE BOUND's own counter, and it stays distinct from both of the counters it could
+ * be confused with. Not `discarded`: the bridge condemned nothing here -- it declared nothing at
+ * all, or does not name the kind -- and folding the two together would make a non-zero `discarded`
+ * unable to separate "the bridge refused these bytes" from "we gave up waiting for a bridge that
+ * would have accepted them", which are opposite conclusions about the client. Not `shed`: that one
+ * is the cap dropping rows for capacity, while a reap is a decision about one row.
+ *
+ * `unclassified` is deliberately NOT `attempted`: no request was issued, so `attempted` would be a
+ * lie, and nothing was destroyed, so `discarded` would be one too. What such a row spends is one of
+ * the batch slots -- it keeps its place at the head of the outbox and is re-read by every later
+ * pass -- which is why the recorder's acceptance gate, not this defensive one, is what keeps such
+ * rows from being written in the first place. Both parks share ONE age bound: whichever of them
+ * outlives it leaves through `reaped`, which is the only state either can exit by.
+ *
+ * The three `stop` cases (a transport failure, the ONE recoverable refusal code, and a codeless
+ * `400` -- a bridge older than the refusal vocabulary) share `attempted` alone, all of them "posted,
+ * kept, nothing destroyed". The codeless `400` is deliberately NOT `unclassified`: that counter is
+ * documented as a body never posted whose `kind` this build does not know, while this one WAS posted
+ * and was routable -- a different fact, decided by a different input. Past the bound it is retired
+ * as `reaped` instead of stopping here, so the shared trace is left only for rows still inside the
+ * wait.
  */
 async function tallyFlushCandidate(
   tallies: SyncDiagnosticsFlushTally,
   params: DisposeOfEnvelopeParams,
   candidate: FlushCandidate,
 ): Promise<boolean> {
-  const disposition = await disposeOfEnvelope(params, candidate);
+  const { disposition, posted, continuesBatch } = await disposeOfEnvelope(params, candidate);
 
-  if (disposition === 'unclassified') {
-    // Counted as PARKED, not as `attempted`: no request was issued, so `attempted` would be a
-    // lie, and the row was not destroyed, so `discarded` would be one too. What it did spend is
-    // one of the batch slots -- it keeps its place at the head of the outbox and is re-read by
-    // every later pass -- which is exactly why the recorder's acceptance gate, not this
-    // defensive one, is what keeps such rows from being written in the first place.
-    //
-    // This is NOT the codeless-`400` park below: that one WAS posted and its `kind` was routable,
-    // and its cause is the BRIDGE's version rather than a gap in this build's kind registry. The
-    // two parks are kept apart because they are different facts, and neither is a loss.
+  if (posted) {
+    tallies.attempted += 1;
+  }
+
+  if (disposition === 'reaped') {
+    tallies.reaped += 1;
+  } else if (disposition === 'unclassified') {
     tallies.unclassified += 1;
-    return true;
-  }
-
-  if (disposition === 'undeliverable') {
-    // Destroyed by this build's own declaration, and counted apart from `discarded` (the
-    // bridge's verdict) because only this one is a decision the registry can get wrong.
+  } else if (disposition === 'undeliverable') {
     tallies.undeliverable += 1;
-    return true;
-  }
-
-  tallies.attempted += 1;
-
-  if (disposition === 'stop') {
-    // One tally, three different facts, all of them "posted, kept, nothing destroyed": a transport
-    // failure, the ONE recoverable refusal code, and a codeless `400` -- a bridge older than the
-    // refusal vocabulary. A request WAS issued, so `attempted` is exactly right and is the only
-    // tally any of the three can honestly use. The codeless `400` is deliberately NOT recorded as
-    // `unclassified`: that counter is documented as a body never posted whose `kind` this build does
-    // not know, and this one was posted and was routable -- a different fact, decided by a different
-    // input. Separating it from the other two stops would need a counter of its own and a persisted
-    // column beside the three in `sync_runtime_status`; until that exists, a pass that stops with
-    // `attempted > 0` and nothing else moved is the whole visible trace, shared with a transport
-    // failure.
-    return false;
-  }
-
-  if (disposition === 'delivered') {
+  } else if (disposition === 'delivered') {
     tallies.delivered += 1;
-    return true;
-  }
-
-  if (disposition === 'failed_removal') {
+  } else if (disposition === 'failed_removal') {
     tallies.failedRemovals += 1;
-    return true;
+  } else if (disposition === 'discarded') {
+    tallies.discarded += 1;
   }
 
-  tallies.discarded += 1;
-  return true;
+  return continuesBatch;
 }
 
 /**
@@ -359,16 +400,25 @@ async function tallyFlushCandidate(
  * - everything else (`kind` unknown, `kind` null, body not a JSON object): PARKED -- never posted,
  *   never deleted, counted as `unclassified`, and the batch CONTINUES, so one row this build does
  *   not understand cannot starve the deliverable envelopes behind it.
+ * - a row EITHER park kept, once it is older than `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS`: retired
+ *   and counted as `reaped`, which is the only removal in this pass that is neither a bridge verdict
+ *   nor this build's declaration. The bound exists for liveness: a park sits at the HEAD of an
+ *   oldest-first queue and the cap sheds the TAIL, so an indefinite mismatch eventually spends the
+ *   whole retained window on rows that can never drain and sheds the telemetry that would have. A
+ *   clock is also the one authority a `reaped` row needs, because nothing in the response was a
+ *   judgement about its bytes.
  * - a `413` with or without a code, or a `400` that DECLARED a code (the bridge's whole permanence
  *   rule): remove, count as `discarded`, continue -- UNLESS the refusal declared `kind_not_served`,
  *   the vocabulary's only recoverable member, which keeps the row and stops the batch exactly as an
  *   undeclared verdict does.
- * - a `400` that declared NO code: KEEP the row and STOP the batch, destroying nothing. Reading it
- *   as a verdict is the defect this rule closes: a bridge older than the refusal vocabulary (the
- *   shipped 1.14.0 declares no `kind` at all, so it answers the generic `400 {"error":"invalid
- *   request body"}` with no `field` and no `code`) says nothing about these bytes -- it names its own
- *   version -- and reading that answer as permanence destroyed the whole episode backlog, whose only
- *   copy is this outbox, on first contact with a bridge that was never upgraded.
+ * - a `400` that declared NO code (an absent one, or a blank one, which occupies the same state):
+ *   KEEP the row and STOP the batch, destroying nothing -- until the row exceeds the age bound, at
+ *   which point it is retired as `reaped` and the batch still stops. Reading it as a verdict is the
+ *   defect this rule closes: a bridge older than the refusal vocabulary (the shipped 1.14.0 declares
+ *   no `kind` at all, so it answers the generic `400 {"error":"invalid request body"}` with no
+ *   `field` and no `code`) says nothing about these bytes -- it names its own version -- and reading
+ *   that answer as permanence destroyed the whole episode backlog, whose only copy is this outbox, on
+ *   first contact with a bridge that was never upgraded.
  * - every other failure -- 401/404/408/422/429/5xx/throw -- leaves the row and STOPS the whole batch,
  *   since the link or the bridge is down and the next rows would fail identically. A usable
  *   `Retry-After`, or the bridge's declared wait for a `503` that lost its header, is persisted as
@@ -399,6 +449,7 @@ export async function flushSyncDiagnosticsOutbox(
       failedRemovals: 0,
       undeliverable: 0,
       unclassified: 0,
+      reaped: 0,
     };
   }
 
@@ -413,6 +464,7 @@ export async function flushSyncDiagnosticsOutbox(
     failedRemovals: 0,
     undeliverable: 0,
     unclassified: 0,
+    reaped: 0,
   };
 
   try {

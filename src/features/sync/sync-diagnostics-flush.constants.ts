@@ -85,6 +85,39 @@ export const SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE = 3;
 export const SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS = 3_000;
 
 /**
+ * How long a PARKED row stays in the outbox before a drain gives up on it and REAPS it -- the one
+ * clock this pipeline has, and the only thing besides the bridge's own verdict that may remove a
+ * stored row.
+ *
+ * A PARK is a mismatch between this build and the bridge's version, and nothing this app does on
+ * its own resolves it: either the row's `kind` is one this build does not name (a different build
+ * of our own app wrote it, which a roll-forward recovers), or the bridge answered a `400` that
+ * declared NO code (it predates the refusal vocabulary, so it never judged these bytes). Both park
+ * the row at the HEAD of an oldest-first queue, and the outbox cap sheds the TAIL -- so while the
+ * mismatch lasts the retained window fills with never-drainable rows and the telemetry that WOULD
+ * have delivered is what gets shed. The bound is what turns that indefinite stall into a bounded
+ * wait, and `reaped` is the operator signal that it expired.
+ *
+ * ONE WEEK, for three reasons. (1) It is measured against the OPERATOR's response, not against any
+ * retry cadence: every cadence the app owns is seconds-to-minutes (the background floor is 15 min,
+ * a cycle budget 45 s, the not-before gate 5 s), and none of them can change the version on either
+ * side, so the real question is how long a person takes to install the bridge or roll the app
+ * forward -- days. (2) The row is the ONLY copy from the moment it is captured, so the wait has to
+ * cover at least one plausible human response cycle rather than the first convenient sweep.
+ * (3) It is a REAL bound rather than a longer stall: the retained window is at most
+ * `SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS` (100) rows and a pass retires up to
+ * `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE` (3) of them, so a saturated window retires in at most 34
+ * passes -- well under a day at the background floor -- while a transport outage NEVER reaches this
+ * bound at all, because a row the bridge never answered about is PENDING and no clock may destroy
+ * it.
+ *
+ * No UI reads this: it is a drainer-side bound whose only observable is the persisted `reaped`
+ * counter. Raising it lengthens the stall; lowering it destroys rows a slower operator would have
+ * recovered.
+ */
+export const SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/**
  * The wait applied to a `503` that declares no usable `Retry-After`; mirrors the native drainer's
  * `SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS`.
  *

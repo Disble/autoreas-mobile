@@ -25,6 +25,7 @@ const CYCLE_POSTMORTEM_DEFAULTS = {
   lastDiagnosticsDiscardedCount: null,
   lastDiagnosticsUndeliverableCount: null,
   lastDiagnosticsUnclassifiedCount: null,
+  lastDiagnosticsReapedCount: null,
   lastDiagnosticsFailedRemovalCount: null,
   lastOutboxFailedWriteCount: null,
   lastDeadLetterCount: null,

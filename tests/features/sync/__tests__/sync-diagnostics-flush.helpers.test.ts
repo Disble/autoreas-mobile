@@ -39,6 +39,7 @@ function tally(overrides: Partial<SyncDiagnosticsFlushResult> = {}): SyncDiagnos
     failedRemovals: 0,
     undeliverable: 0,
     unclassified: 0,
+    reaped: 0,
     ...overrides,
   };
 }
@@ -46,9 +47,8 @@ function tally(overrides: Partial<SyncDiagnosticsFlushResult> = {}): SyncDiagnos
 /**
  * One stored observation whose `kind` this build does not declare: `watch_session` belongs to a
  * different build of ours, and only the top-level `kind` is ever read -- every other field stays
- * opaque and the body reaches the wire byte-identical. It is NOT POSTed and NOT deleted -- not
- * being in the registry is not a destruction trigger -- so it parks, keeps its batch slot, and
- * every later pass re-reads it.
+ * opaque and the body reaches the wire byte-identical. It is NOT POSTed and NOT deleted (registry
+ * absence is not a destruction trigger), so it parks and keeps its batch slot for later passes.
  */
 const UNROUTABLE_CHAPTER_PAYLOAD = JSON.stringify(
   { kind: 'watch_session', action: 'cap_plus', phase: 'received', at: 1_000, correlation_id: 'corr-1' },
@@ -68,14 +68,14 @@ function buildFakeStore(
   } as unknown as SyncDiagnosticsOutboxStore;
 }
 
-/** Builds one flush candidate record, defaulting to a serialized copy of WIRE. */
+/** Builds one flush candidate record, defaulting to a serialized copy of WIRE, just captured. */
 function buildRecord(
   overrides: Partial<SyncDiagnosticsOutboxRecord> = {},
 ): SyncDiagnosticsOutboxRecord {
   return {
     cycleId: WIRE.cycle_id,
     payload: JSON.stringify(WIRE),
-    createdAt: 1_000,
+    createdAt: Date.now(), // just captured: inside the reap bound, so a PARK rule is what is pinned
     ...overrides,
   };
 }

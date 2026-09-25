@@ -59,8 +59,8 @@ export function buildSyncAttemptStartedPatch(
 }
 
 /**
- * Maps the three flush counters that answer "was anything destroyed, parked or rejected?" onto
- * their patch columns, or an empty patch when the caller holds no flush evidence at all.
+ * Maps the flush counters that answer "was anything destroyed, parked or retired?" onto their patch
+ * columns, or an empty patch when the caller holds no flush evidence at all.
  *
  * Extracted so the two writes that can carry them map them through ONE function: the headless
  * cycle's `recordBacklogReadCount` and the foreground cycle's terminal `recordSyncAttemptSucceeded`.
@@ -68,9 +68,13 @@ export function buildSyncAttemptStartedPatch(
  * the BRIDGE condemned (400/413 -- a permanent rejection by its own verdict) and keeps exactly
  * that meaning in both writes; `undeliverable` counts what THIS build ordered destroyed because the
  * row's `kind` can never be accepted; `unclassified` counts what was PARKED because it belongs to a
- * different build, where rolling forward is what recovers it -- a gap counter, not a loss counter.
+ * different build, where rolling forward is what recovers it -- a gap counter, not a loss counter;
+ * and `reaped` counts what the AGE BOUND retired, which is neither a verdict nor a declaration but
+ * the one place this pipeline gave up waiting. That last one is why all four keep their own column:
+ * a non-zero `discarded` has to go on separating "the bridge refused these bytes" from "we gave up
+ * waiting for a bridge that would have accepted them".
  *
- * Absent evidence yields NO fields rather than three zeros: an unmeasured cycle must leave the
+ * Absent evidence yields NO fields rather than zeros: an unmeasured cycle must leave the
  * columns exactly as they were, because a destruction counter reading 0 because it was never
  * written is the precise false answer the `?? null` rule forbids (design.md Decision 7).
  */
@@ -85,6 +89,7 @@ function buildDiagnosticsCounterPatchFields(
     lastDiagnosticsDiscardedCount: diagnosticsFlush.discarded,
     lastDiagnosticsUndeliverableCount: diagnosticsFlush.undeliverable,
     lastDiagnosticsUnclassifiedCount: diagnosticsFlush.unclassified,
+    lastDiagnosticsReapedCount: diagnosticsFlush.reaped,
   };
 }
 

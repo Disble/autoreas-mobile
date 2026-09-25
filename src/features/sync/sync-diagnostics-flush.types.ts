@@ -49,7 +49,8 @@ export type SyncDiagnosticsPayloadClass = 'routable' | 'undeliverable' | 'unclas
  * What one candidate's round trip resolved to, flattened so the flush loop is a tally, not a
  * ladder. Every value names one outbox outcome the pass has to count separately, except
  * `'failed_removal'`, which the thin executor produces when a 2xx was answered but the removal it
- * authorizes was not confirmed.
+ * authorizes was not confirmed, and `'reaped'`, which it produces when the age bound retired a PARKED
+ * row the disposition ladder had already decided to keep.
  */
 export type SyncDiagnosticsEnvelopeDisposition =
   | 'delivered'
@@ -57,6 +58,7 @@ export type SyncDiagnosticsEnvelopeDisposition =
   | 'discarded'
   | 'undeliverable'
   | 'unclassified'
+  | 'reaped'
   | 'stop';
 
 /**
@@ -131,6 +133,21 @@ export interface SyncDiagnosticsFlushResult {
    * convert a recoverable registry mistake into an irreversible one.
    */
   readonly unclassified: number;
+  /**
+   * Number of entries the age bound RETIRED: PARKED rows that outlived
+   * `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS` and were removed because this drain gave up waiting
+   * for a bridge that would have accepted them. Deliberately NOT folded into `discarded`: that
+   * counter answers "the bridge refused these bytes" and this one answers "we gave up waiting",
+   * which are opposite conclusions -- the first says the client sent something bad, the second says
+   * the pairing was mismatched -- and folding them would destroy the distinction the counter exists
+   * for. Deliberately NOT folded into `undeliverable` either: that destruction is this build's
+   * DECLARATION, made before any request, while this one is a clock expiring on rows this build
+   * would happily have sent. Only a PARK is reachable here: a delivered, discarded or declared-
+   * undeliverable row is removed by its own verdict, and a pending retry (transport failure,
+   * `401`, `404`, `405`, `408`, `422`, `429`, `5xx`, and the ONE declared recoverable code) is never
+   * destroyed by a clock however long the outage lasts.
+   */
+  readonly reaped: number;
   /**
    * Number of entries that received a 2xx but whose outbox removal failed. The row remains
    * queued and re-sends next cycle instead of being counted as delivered.

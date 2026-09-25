@@ -66,6 +66,7 @@ const FOREGROUND_DIAGNOSTICS_FLUSH: SyncDiagnosticsFlushResult = {
   failedRemovals: 1,
   undeliverable: 3,
   unclassified: 4,
+  reaped: 5,
 };
 
 describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {

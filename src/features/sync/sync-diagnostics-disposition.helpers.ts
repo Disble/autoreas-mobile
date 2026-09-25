@@ -1,4 +1,5 @@
 import {
+  SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS,
   SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE,
   SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS,
 } from './sync-diagnostics-flush.constants';
@@ -24,6 +25,14 @@ import type {
  * nothing else (see `isSyncDiagnosticsPermanentRejection`): a `401` keeps the verdict its status
  * declares, and a `400` becomes a version state -- a bridge that does not speak the vocabulary --
  * rather than a verdict about these bytes.
+ *
+ * A BLANK code is `null` too, and that is a decision rather than tidiness. The premise of "a `400`
+ * that declares a code is permanent" is that the code names THESE BYTES refused forever, and `""`
+ * or whitespace names nothing: it is not a member of the closed vocabulary. Read as a declaration
+ * (which `code !== null` did), an empty field became a destruction verdict and discarded the row.
+ * The declared TEXT is returned untouched rather than trimmed, so an unrecognised non-blank code
+ * still keeps the status verdict: `kind_not_served` is the only recoverable member the bridge
+ * declares, and widening the recovery would need the vocabulary list this build must not keep.
  */
 export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
   if (typeof body !== 'string') {
@@ -44,7 +53,7 @@ export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
 
   const code = (parsed as { readonly code?: unknown }).code;
 
-  return typeof code === 'string' ? code : null;
+  return typeof code === 'string' && code.trim() !== '' ? code : null;
 }
 
 /**
@@ -144,6 +153,64 @@ export function resolveSyncDiagnosticsDisposition(
   }
 
   return isSyncDiagnosticsPermanentRejection(verdict) ? 'discarded' : 'stop';
+}
+
+/**
+ * Whether ONE kept row is PARKED rather than merely PENDING -- the split the age bound rests on, and
+ * the reason a clock may retire this row but must never touch another.
+ *
+ * A row is parked when its cause is a MISMATCH between this build and the bridge's version, so no
+ * amount of retrying resolves it and only an operator action (a new bridge, or a roll-forward of
+ * our own app) does. There are exactly two such causes, and they are the repository's own two
+ * parks:
+ * - `unclassified`: this build does not name the row's `kind`, so the row belongs to a different
+ *   build of our own app and rolling forward recovers it;
+ * - `stop` after a `400` that declared NO code: the bridge predates the refusal vocabulary, so its
+ *   answer names its own version rather than judging these bytes.
+ *
+ * Everything else that keeps a row is PENDING, and a clock must never destroy it. A transport
+ * failure (`null`, no verdict at all), a `401`, a `404`, a `405`, a `408`, a `422`, a `429` and
+ * every `5xx` are the bridge asking us to come back, not a judgement about the envelope; and the ONE
+ * declared recoverable code is a refusal the bridge DID make, whose own rule is to keep the row and
+ * forward-roll it. Reaping any of them by age would lose a backlog on nothing worse than a long
+ * outage, which is the opposite of what the bound is for.
+ */
+function isSyncDiagnosticsParkedDisposition(
+  disposition: SyncDiagnosticsEnvelopeDisposition,
+  verdict: SyncDiagnosticsPostVerdict | null,
+): boolean {
+  if (disposition === 'unclassified') {
+    return true;
+  }
+
+  return disposition === 'stop' && verdict !== null && verdict.status === 400 && verdict.refusalCode === null;
+}
+
+/**
+ * Whether the age bound should RETIRE one already-kept candidate -- the exact rule behind the
+ * `reaped` counter, and the ONLY destruction in this pipeline that is not a verdict or a
+ * declaration.
+ *
+ * It is a conjunction, and the order is the point: the row must be PARKED before its age is even
+ * looked at, so no clock can remove a row whose fate belongs to a verdict (see
+ * `isSyncDiagnosticsParkedDisposition`). The age test is strict -- a row is retired once it EXCEEDS
+ * the declared bound, never when it merely reaches it, so the bound reads as "how long we wait"
+ * rather than "the first instant we can" -- and it compares the row's OWN `created_at` against the
+ * pass's clock, both supplied by the caller: this module stays pure, with no store, client or clock
+ * of its own.
+ *
+ * The age is computed by the CALLER (`now - candidate.createdAt`) so that a row's age has exactly
+ * one definition and it lives where the clock does.
+ */
+export function shouldReapSyncDiagnosticsParkedRow(
+  disposition: SyncDiagnosticsEnvelopeDisposition,
+  verdict: SyncDiagnosticsPostVerdict | null,
+  rowAgeMs: number,
+): boolean {
+  return (
+    isSyncDiagnosticsParkedDisposition(disposition, verdict) &&
+    rowAgeMs > SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS
+  );
 }
 
 /**

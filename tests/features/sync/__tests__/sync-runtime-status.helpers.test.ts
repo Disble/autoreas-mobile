@@ -83,6 +83,7 @@ describe('sync runtime status helpers', () => {
       lastPendingRowCount: null,
       lastDiagnosticsUndeliverableCount: null,
       lastDiagnosticsUnclassifiedCount: null,
+      lastDiagnosticsReapedCount: null,
     });
   });
 
@@ -419,9 +420,10 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     delivered: 1,
     discarded: 2,
     failedRemovals: 1,
-    // Distinct from `discarded` on purpose: 2 / 3 / 4, so a shared column cannot pass.
+    // Distinct from `discarded` on purpose: 2 / 3 / 4 / 5, so a shared column cannot pass.
     undeliverable: 3,
     unclassified: 4,
+    reaped: 5,
   };
 
   const CONVERGENCE: OperationLogConvergence = {
@@ -434,12 +436,13 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
   };
 
   it('folds the backlog read count, the flush counters, the outbox write-failure count and the convergence projection into one patch', () => {
-    // CONTRACT UPDATE: the stored shape gains the two counters the flush result already carried.
+    // CONTRACT UPDATE: the stored shape gains the counters the flush result already carried.
     expect(buildCycleBookkeepingPatch(5, DIAGNOSTICS_FLUSH, 3, CONVERGENCE)).toEqual({
       lastBacklogReadCount: 5,
       lastDiagnosticsDiscardedCount: 2,
       lastDiagnosticsUndeliverableCount: 3,
       lastDiagnosticsUnclassifiedCount: 4,
+      lastDiagnosticsReapedCount: 5,
       lastDiagnosticsFailedRemovalCount: 1,
       lastOutboxFailedWriteCount: 3,
       lastDeadLetterCount: 3,
@@ -459,17 +462,9 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
       pendingRowCount: 0,
       hasMore: false,
     };
-    const emptyFlush: SyncDiagnosticsFlushResult = {
-      attempted: 0,
-      delivered: 0,
-      discarded: 0,
-      failedRemovals: 0,
-      undeliverable: 0,
-      unclassified: 0,
-    };
 
     expect(
-      buildCycleBookkeepingPatch(0, emptyFlush, 0, emptyQueueConvergence).lastOldestPendingAgeMs,
+      buildCycleBookkeepingPatch(0, DIAGNOSTICS_FLUSH, 0, emptyQueueConvergence).lastOldestPendingAgeMs,
     ).toBeNull();
   });
 
@@ -477,15 +472,17 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     const patch = buildCycleBookkeepingPatch(1, DIAGNOSTICS_FLUSH, 0, CONVERGENCE);
     expect(patch.lastDiagnosticsUndeliverableCount).toBe(3);
     expect(patch.lastDiagnosticsDiscardedCount).toBe(2);
+    expect(patch.lastDiagnosticsReapedCount).toBe(5);
   });
 
   it('folds unclassified into its own field without conflating it with discarded', () => {
     const patch = buildCycleBookkeepingPatch(1, DIAGNOSTICS_FLUSH, 0, CONVERGENCE);
     expect(patch.lastDiagnosticsUnclassifiedCount).toBe(4);
     expect(patch.lastDiagnosticsDiscardedCount).toBe(2);
+    expect(patch.lastDiagnosticsReapedCount).toBe(5);
   });
 
-  it('persists both counters into the singleton row through the migrated schema', async () => {
+  it('persists every counter into the singleton row through the migrated schema', async () => {
     const adapter = createTestSqliteAdapter();
     await applyMigrationFiles(adapter);
     await runMigrations(adapter);
@@ -495,5 +492,8 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     expect(stored.lastDiagnosticsDiscardedCount).toBe(2);
     expect(stored.lastDiagnosticsUndeliverableCount).toBe(3);
     expect(stored.lastDiagnosticsUnclassifiedCount).toBe(4);
+    // The AGE BOUND's own column: persisted by `0015` (fresh install) and the repair twin (installed
+    // device) on this same write, and still separate from `discarded`.
+    expect(stored.lastDiagnosticsReapedCount).toBe(5);
   });
 });

@@ -32,17 +32,17 @@ export function withColumnDefault<T>(value: T | null | undefined, fallback: T): 
 }
 
 /**
- * Maps the three diagnostics counters that answer "was anything destroyed, parked or rejected?"
- * -- `discarded` (a permanent rejection by the bridge's own verdict), `undeliverable` (destroyed
- * by declaration) and `unclassified` (parked, and recoverable by roll-forward) -- under the
- * `?? null` rule they share: NULL means "never measured", which is not the same fact as a
- * measured zero (design.md Decision 7), and a destruction counter reading 0 because it was never
- * written is the exact false answer that rule forbids.
+ * Maps the diagnostics counters that answer "was anything destroyed, parked or retired?" --
+ * `discarded` (a permanent rejection by the bridge's own verdict), `undeliverable` (destroyed
+ * by declaration), `unclassified` (parked, and recoverable by roll-forward) and `reaped` (retired
+ * by the age bound) -- under the `?? null` rule they share: NULL means "never measured", which is
+ * not the same fact as a measured zero (design.md Decision 7), and a destruction counter reading 0
+ * because it was never written is the exact false answer that rule forbids.
  *
- * Extracted rather than left inline: three consecutive `withColumnDefault(row.x, null)` runs in
+ * Extracted rather than left inline: four consecutive `withColumnDefault(row.x, null)` runs in
  * one flat mapping are textually indistinguishable from each other, which the repository's
  * duplicate-block audit flags as introduced duplication. Naming this call site also keeps the
- * three counters that must NEVER be conflated visible as one group.
+ * counters that must NEVER be conflated visible as one group.
  */
 function mapDiagnosticsCountersFromRow(row: SyncRuntimeStatusRow) {
   return {
@@ -52,6 +52,7 @@ function mapDiagnosticsCountersFromRow(row: SyncRuntimeStatusRow) {
       null,
     ),
     lastDiagnosticsUnclassifiedCount: withColumnDefault(row.lastDiagnosticsUnclassifiedCount, null),
+    lastDiagnosticsReapedCount: withColumnDefault(row.lastDiagnosticsReapedCount, null),
   };
 }
 
@@ -193,6 +194,10 @@ function mergeSyncRuntimeStatusPatch(
       patch.lastDiagnosticsUnclassifiedCount,
       current.lastDiagnosticsUnclassifiedCount,
     ),
+    lastDiagnosticsReapedCount: withPatchOverride(
+      patch.lastDiagnosticsReapedCount,
+      current.lastDiagnosticsReapedCount,
+    ),
     lastDiagnosticsFailedRemovalCount: withPatchOverride(
       patch.lastDiagnosticsFailedRemovalCount,
       current.lastDiagnosticsFailedRemovalCount,
@@ -252,6 +257,7 @@ async function writeSyncRuntimeStatusRow(
     lastDiagnosticsDiscardedCount: next.lastDiagnosticsDiscardedCount,
     lastDiagnosticsUndeliverableCount: next.lastDiagnosticsUndeliverableCount,
     lastDiagnosticsUnclassifiedCount: next.lastDiagnosticsUnclassifiedCount,
+    lastDiagnosticsReapedCount: next.lastDiagnosticsReapedCount,
     lastDiagnosticsFailedRemovalCount: next.lastDiagnosticsFailedRemovalCount,
     lastOutboxFailedWriteCount: next.lastOutboxFailedWriteCount,
     lastDeadLetterCount: next.lastDeadLetterCount,
@@ -327,11 +333,11 @@ export async function recordSyncAttemptStarted(
  * This is the source used by Settings to report the latest healthy background cycle.
  *
  * `diagnosticsFlush` is optional and carries this cycle's diagnostics-outbox flush result when the
- * caller holds one. Supplying it folds the three destruction counters (`discarded`,
- * `undeliverable`, `unclassified`) into this SAME write, which is how the foreground coordinated
+ * caller holds one. Supplying it folds the flush counters (`discarded`, `undeliverable`,
+ * `unclassified`, `reaped`) into this SAME write, which is how the foreground coordinated
  * cycle records them without a second status transaction -- that path performs no other status
  * write. A caller with no flush evidence (the headless cycle, which writes its own bookkeeping
- * through `recordBacklogReadCount`) leaves the three columns exactly as they were.
+ * through `recordBacklogReadCount`) leaves those columns exactly as they were.
  */
 export async function recordSyncAttemptSucceeded(
   rawDb: SQLiteDatabase,

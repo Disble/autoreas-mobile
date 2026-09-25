@@ -94,11 +94,11 @@ async function persistSyncFailureTelemetrySafely(
  *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
- * the three destruction counters cost ZERO extra status transactions here. That is the reason the
+ * the destruction and reap counters cost ZERO extra status transactions here. That is the reason the
  * headless cycle's `recordBacklogReadCount` call is NOT mirrored into this path -- mirroring it
  * would add one status write per foreground cycle and would also pull the whole operation-log
  * convergence projection and the outbox failed-write count into a path that reads neither (they are
- * `recordBacklogReadCount`'s other inputs), widening what THIS runtime reports far beyond the three
+ * `recordBacklogReadCount`'s other inputs), widening what THIS runtime reports far beyond the
  * counters that were being dropped.
  *
  * Deliberate consequence of folding: the counters are written only where this path writes status at
