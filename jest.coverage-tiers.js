@@ -118,9 +118,10 @@ function buildCoverageThreshold() {
   return threshold;
 }
 
-// Only the built threshold map is consumed (by jest.config.js). CORE_FILES/IMPORTANT_FILES stay
-// module-private: read this file directly to see the tier lists, rather than importing them
-// elsewhere, so this stays the single place the coverageThreshold map is derived from.
+// `buildCoverageThreshold` is consumed by jest.config.js. `CORE_FILES` is also consumed by
+// stryker.core.conf.js (T4, odd/tasks/sync-core-test-assurance.md), so the on-demand mutation run
+// always targets exactly the CORE tier. `IMPORTANT_FILES` stays module-private.
 module.exports = {
   buildCoverageThreshold,
+  CORE_FILES,
 };

@@ -10,7 +10,7 @@ gate applies the maintainer's **100/80/0** tiers per file, not a global number:
 - **INFRA: 0 %.** Self-validating code: types, constants with no logic, thin native seams, barrels,
   task registration.
 
-Status: in progress. Branch `test/sync-core-assurance`, cut from `dev` at `51497b3`.
+Status: **done 2026-09-24** (T4 closed as an on-demand run, see below). Branch `test/sync-core-assurance`, cut from `dev` at `51497b3`.
 
 Delivery strategy: `single-pr`, for the same reason as `native-foreground-sync-service.md`: there is
 no PR process, and delivery is a local merge. Each work-unit commit stands alone.
@@ -112,7 +112,7 @@ Known gaps at the start:
 - [x] **T3 — Kotlin tier gate.** Add Kover or JaCoCo to `sync-engine` (and the ticker for IMPORTANT),
   with per-class rules. Write the missing `OperationLogPruner` tests and bring the CORE classes to
   100 %.
-- [ ] **T4 — Mutation on CORE JS.** Extend the staged mutation surface to the CORE JS files, measure
+- [x] **T4 — Mutation on CORE JS (on demand, not per commit).** Extend the staged mutation surface to the CORE JS files, measure
   the score, and set the break threshold.
 
 Checks per task: focused tests, `bun run test`, `bun run test:kotlin` when Kotlin changes, and
@@ -251,5 +251,47 @@ Route: delegated writer, interrupted twice by usage limits and resumed; the pare
 
 Checks: `bun run test:kotlin` BUILD SUCCESSFUL, with all five verify tasks executed;
 `bunx jest tests/scripts/kotlin-tests.test.ts` 18/18.
+Commit `45a66b5`.
 
-Next: T4 (mutation on CORE JS).
+### T4 — Mutation on CORE JS (done, as an on-demand run)
+
+The planned design, the CORE files as the staged pre-commit mutation surface, was **measured and
+rejected**:
+
+- **Cost.** One CORE file (`anime-mutation.helpers.ts`, 108 mutants) took 284 s. The whole tier is
+  ~1700 mutants, roughly 75 min. Every commit touching a CORE file would pay minutes.
+- **Crash loop.** The first full run crash-looped. Mutants in the fire-and-forget sync of
+  `anime-mutation.helpers.ts` raise an unhandled rejection that kills the Jest worker. There were 40
+  respawns, then the run was killed for memory. `--unhandled-rejections=warn` fixes it: the same file
+  then scored normally.
+
+Shipped instead:
+
+- `stryker.core.conf.js`: mutates exactly `CORE_FILES`, imported from `jest.coverage-tiers.js`, so
+  there is no second list to drift. It carries the rejection fix and emits an HTML report under
+  `reports/mutation/` (gitignored).
+- Run it with `bun run test:mutation:core`. It is report-only (`break: null`) until a full baseline
+  exists.
+- The per-commit guarantee for CORE stays the 100 % coverage gate (T1). `stryker.dlinter.json` and
+  the staged guard are unchanged.
+
+Scores measured so far:
+
+| File | Mutation score |
+|---|---|
+| `last-changelog.helpers.ts` | 82.6 % |
+| `anime-mutation.helpers.ts` | **65.5 %** |
+
+In `anime-mutation.helpers.ts`, 57 mutants survived, mostly in the telemetry/log paths of the
+fire-and-forget sync.
+
+## Follow-ups (not blocking)
+
+1. Run the full CORE mutation baseline (~75 min), record it here, then set `break` in
+   `stryker.core.conf.js` to the measured score.
+2. Raise `anime-mutation.helpers.ts` above 80 % mutation.
+3. Add test seams to lift `SyncEngineCycle` / `SyncEngineRunner` from their floors to 100 %.
+4. Decide the **6 JS↔Kotlin divergences** (T2): should Kotlin be as strict as JS, or JS as lenient as
+   Kotlin? This is the maintainer's decision.
+5. Delete the dead `use-reconcile.ts`.
+6. Split `SyncEngineRunnerTest.kt` (632 lines).
