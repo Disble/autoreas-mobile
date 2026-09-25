@@ -77,10 +77,25 @@ val SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS: Set<String> = emptySet()
 /** Endpoint one stored envelope is posted to; mirrors `BRIDGE_API_PATHS.syncDiagnostics`. */
 const val SYNC_DIAGNOSTICS_PATH = "/api/sync/diagnostics"
 
-/** One diagnostics POST's observable result. */
+/**
+ * The bridge's ONE recoverable refusal code, mirroring the JS drainer's constant of the same name:
+ * `kind_not_served`, whose bytes are NOT wrong -- that bridge build simply does not serve the kind,
+ * so a forward roll recovers every row kept. Every other vocabulary member, and a refusal declaring
+ * no `code` at all, keeps the verdict its status declares.
+ *
+ * DUPLICATION RISK: the JS drainer holds this same constant across a language boundary with no
+ * shared artifact, and drift between the two is a disagreement about what may be DESTROYED.
+ */
+const val SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE = "kind_not_served"
+
+/**
+ * One diagnostics POST's observable result: the status, the declared wait, and the body's top-level
+ * refusal `code` ([readDiagnosticsRefusalCode]).
+ */
 data class SyncDiagnosticsPostResult(
   val code: Int,
   val retryAfterMillis: Long? = null,
+  val refusalCode: String? = null,
 )
 
 /** Transport one stored diagnostics envelope is posted through. */
@@ -100,7 +115,8 @@ data class SyncDiagnosticsConnection(
  * Per-drain tally; mirrors `SyncDiagnosticsFlushResult` plus the two counters the native drain
  * keeps beside it. Three counts are deliberately NEVER conflated, because they answer three
  * different questions and only one of them is a data loss:
- * - [discarded] -- the bridge's own verdict destroyed the body (`400`/`413`); a loss, by contract;
+ * - [discarded] -- the bridge's own verdict destroyed the body (`400`/`413` unless the refusal was
+ *   the recoverable one); a loss, by contract;
  * - [undeliverable] -- this build's declaration destroyed the body; a loss, by judgement, and the
  *   counter whose visibility matters most when the registry is flipped;
  * - [unclassified] -- another build's body, parked untouched; a gap, not a loss.
@@ -248,15 +264,32 @@ private fun classifyDiagnosticsPayload(
 }
 
 /**
+ * Reads the bridge's refusal `code` out of a response body, best effort; mirrors the JS drainer's
+ * `readSyncDiagnosticsRefusalCode`. Every unreadable shape -- absent body, non-string `code`,
+ * non-JSON bytes, a body that is not an object -- answers `null` and none throws, so the status
+ * verdict always survives: `null` is "no code declared" (the shared-authentication `401` and any
+ * pre-discriminated bridge), never the recoverable refusal and never a class of its own.
+ */
+fun readDiagnosticsRefusalCode(body: String?): String? {
+  if (body.isNullOrEmpty()) return null
+  val envelope = try {
+    JSONObject(body)
+  } catch (error: JSONException) {
+    return null
+  }
+  return envelope.opt("code") as? String
+}
+
+/**
  * HTTP transport for one diagnostics POST: the same header contract as [SyncEngineHttp.postJson]
  * (POST, `Content-Type: application/json`, `Authorization: Bearer <token>`, the caller's
- * connect/read budget), plus the one thing that call cannot report -- the `Retry-After` response
- * header the drain's gate is built from.
+ * connect/read budget), plus the two things that call cannot report -- the `Retry-After` response
+ * header the drain's gate is built from, and the refusal `code` its ladder branches on.
  *
  * Any status code is a normal return, never an exception: a 4xx/5xx is a VERDICT the drain must
  * tally, and only a transport failure (timeout, refused connection, DNS) throws, exactly like the
- * JS bridge client. The response body is read and discarded from whichever stream the status code
- * makes readable, so a bridge error body cannot stall the connection.
+ * JS bridge client. The response body is read best effort from whichever stream the status code
+ * makes readable, so a bridge error body cannot stall the connection either.
  */
 object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
   override fun post(url: String, token: String, body: String, timeoutMs: Int): SyncDiagnosticsPostResult {
@@ -275,24 +308,27 @@ object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
       }
       val code = connection.responseCode
       val retryAfter = connection.getHeaderField("Retry-After")
-      discardBody(if (code in 200..299) connection.inputStream else connection.errorStream)
+      // Best effort: a body this build cannot read is never a delivery failure.
+      val responseBody = readBodyQuietly(
+        if (code in 200..299) connection.inputStream else connection.errorStream,
+      )
       return SyncDiagnosticsPostResult(
         code = code,
         retryAfterMillis = parseRetryAfterMillis(retryAfter, System.currentTimeMillis()),
+        refusalCode = readDiagnosticsRefusalCode(responseBody),
       )
     } finally {
       connection.disconnect()
     }
   }
 
-  /** Reads and throws away the response body; a body nobody reads must never fail the exchange. */
-  private fun discardBody(stream: InputStream?) {
+  /** Reads the response body best effort, or `null`: not reading it is never a delivery failure. */
+  private fun readBodyQuietly(stream: InputStream?): String? =
     try {
-      stream?.use { it.readBytes() }
+      stream?.use { String(it.readBytes(), Charsets.UTF_8) }
     } catch (error: Throwable) {
-      // The body is deliberately unused: not being able to read it is not a delivery failure.
+      null
     }
-  }
 }
 
 /**
@@ -307,10 +343,12 @@ object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
  * - `2xx` removes the row and counts it `delivered` only when the removal is CONFIRMED, otherwise
  *   `failedRemovals` (the row is still there for the next pass);
  * - `400`/`413` -- the bridge's ENTIRE permanence declaration for this endpoint -- remove the row,
- *   count it `discarded`, and continue the batch. The set is exactly these two: `422` is NOT a
- *   body verdict here (it was inherited from a different endpoint's handler, and anything the
- *   bridge's contract does not declare must be treated as retryable). A non-2xx verdict ALWAYS
- *   wins over the budget check;
+ *   count it `discarded`, and continue the batch, UNLESS the refusal declared `kind_not_served`,
+ *   which KEEPS the row and stops the batch: those bytes are not wrong, that bridge build simply
+ *   does not serve that kind, so a forward roll recovers every row kept. The set is exactly these
+ *   two: `422` is NOT a body verdict here (inherited from a different endpoint's handler, and
+ *   anything the contract does not declare must be retryable). A non-2xx verdict ALWAYS wins over
+ *   the budget check;
  * - a body whose `kind` parks or is destroyed by declaration never reaches the wire (see
  *   [classifyDiagnosticsPayload]) and the batch continues, so one unroutable row cannot starve the
  *   deliverable envelopes behind it;
@@ -401,7 +439,10 @@ class SyncEngineDiagnosticsCourier(
             continue
           }
 
-          if (result.code == HTTP_BAD_REQUEST || result.code == HTTP_PAYLOAD_TOO_LARGE) {
+          // Checked BEFORE the permanence set: the recoverable refusal keeps the row and stops.
+          val recoverableRefusal = result.refusalCode == SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE
+          val permanent = result.code == HTTP_BAD_REQUEST || result.code == HTTP_PAYLOAD_TOO_LARGE
+          if (permanent && !recoverableRefusal) {
             // The bridge's ENTIRE permanence declaration for this endpoint: it will answer these
             // for the same bytes forever, so keeping the row would only strand it. The batch
             // continues -- the next envelope may be perfectly deliverable.

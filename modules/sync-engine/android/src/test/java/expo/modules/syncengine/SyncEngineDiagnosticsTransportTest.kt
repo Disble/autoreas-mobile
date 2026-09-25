@@ -7,13 +7,22 @@ import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
- * The native diagnostics transport and its `Retry-After` reader. Plain JUnit, deliberately: the
- * seam under test is `java.net.HttpURLConnection` plus pure parsing, so the JDK's own sockets
- * stand in for the bridge with no new dependency (the same choice `SyncEngineBridgePresenceTest`
- * makes).
+ * The native diagnostics transport and its two response readers: `Retry-After` and the refusal
+ * `code`.
+ *
+ * ROBOLECTRIC, not the plain JUnit this file used to need: the refusal `code` is read through
+ * `org.json`, and AGP's `returnDefaultValues = true` puts its mockable stub FIRST on the
+ * plain-JUnit classpath, where `JSONObject("{\"code\":\"kind_not_served\"}")` answers an empty
+ * object instead of throwing -- so every refusal-code assertion here passed as `null` while looking
+ * like a real read. Robolectric supplies the real `org.json` implementation the device runs, which is
+ * the only classpath where these assertions are about the reader instead of about the stub. The
+ * `java.net` socket seam is unchanged by it.
  */
+@RunWith(RobolectricTestRunner::class)
 class SyncEngineDiagnosticsTransportTest {
 
   @Test
@@ -103,6 +112,41 @@ class SyncEngineDiagnosticsTransportTest {
     assertEquals(0L, parseRetryAfterMillis("Sun, 06 Nov 1994 08:49:37 GMT", now))
     assertEquals(0L, parseRetryAfterMillis("Sunday, 06-Nov-94 08:49:37 GMT", now))
     assertEquals(0L, parseRetryAfterMillis("Sun Nov  6 08:49:37 1994", now))
+  }
+
+  @Test
+  fun `carries the refusal code an error body declares and never invents one`() {
+    SyncEngineTestHttpServer(400, """{"error":"unknown kind","code":"kind_not_served","field":"kind"}""").use { server ->
+      val result = postTo(server.port)
+
+      assertEquals(400, result.code)
+      assertEquals("kind_not_served", result.refusalCode)
+      assertEquals(null, result.retryAfterMillis)
+    }
+
+    // The auth-layer 401 and any bridge older than the discriminated endpoint declare no `code`:
+    // the read answers null for every body it cannot read, and the status keeps the verdict.
+    SyncEngineTestHttpServer(400, """{"error":"invalid request body"}""").use { server ->
+      assertEquals(null, postTo(server.port).refusalCode)
+    }
+  }
+
+  @Test
+  fun `answers null rather than throwing for every body that declares no code`() {
+    assertEquals(
+      "kind_not_served",
+      readDiagnosticsRefusalCode("""{"code":"kind_not_served"}"""),
+    )
+    assertEquals(null, readDiagnosticsRefusalCode(null))
+    assertEquals(null, readDiagnosticsRefusalCode(""))
+    assertEquals(null, readDiagnosticsRefusalCode("not json"))
+    assertEquals(null, readDiagnosticsRefusalCode("[1,2,3]"))
+    assertEquals(null, readDiagnosticsRefusalCode("\"kind_not_served\""))
+    assertEquals(null, readDiagnosticsRefusalCode("null"))
+    assertEquals(null, readDiagnosticsRefusalCode("42"))
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":42}"""))
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":null}"""))
+    assertEquals(null, readDiagnosticsRefusalCode("""{"code":{"nested":true}}"""))
   }
 
   private fun postTo(port: Int): SyncDiagnosticsPostResult = HttpSyncDiagnosticsTransport.post(

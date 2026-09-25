@@ -78,19 +78,41 @@ class SyncEngineDiagnosticsCourierTest {
   }
 
   @Test
-  fun `a malformed envelope status deletes the row and the batch continues`() {
-    SyncEngineTestDatabase().use { fixture ->
-      fixture.seedTelemetryEntry("cycle-1", legacyEnvelope("cycle-1"), 10L)
-      fixture.seedTelemetryEntry("cycle-2", legacyEnvelope("cycle-2"), 20L)
-      val transport = RecordingDiagnosticsTransport { index ->
-        if (index == 0) SyncDiagnosticsPostResult(400) else SyncDiagnosticsPostResult(200)
+  fun `a declared refusal code decides before the permanence set`() {
+    // The codes are asserted as LITERAL strings, never read through the constant the drainer
+    // branches on: a test using the same constant as the code asserts only that the constant equals
+    // itself, and would keep passing while a mutated constant destroyed a recoverable backlog.
+    // `kind_not_served` is the vocabulary's ONE recoverable member -- its bytes are not wrong, that
+    // build simply does not serve the kind -- so the row is KEPT and the batch STOPS. Every other
+    // member, and a refusal declaring NO code (`401`, written by shared authentication, not the
+    // handler), keeps the status verdict, leaving the `{400, 413}` permanence set itself unchanged.
+    val rows = listOf("cycle-1" to legacyEnvelope("cycle-1"), "cycle-2" to legacyEnvelope("cycle-2"))
+    val stopped = SyncDiagnosticsFlushResult(attempted = 1) to rows
+    val destroyed = SyncDiagnosticsFlushResult(attempted = 2, delivered = 1, discarded = 1) to
+      emptyList<Pair<String, String>>()
+    val refusals = listOf(
+      SyncDiagnosticsPostResult(400, refusalCode = "kind_not_served") to stopped,
+      SyncDiagnosticsPostResult(400, refusalCode = "kind_malformed") to destroyed,
+      SyncDiagnosticsPostResult(400, refusalCode = "body_unreadable") to destroyed,
+      SyncDiagnosticsPostResult(400, refusalCode = "field_rejected") to destroyed,
+      SyncDiagnosticsPostResult(413, refusalCode = "body_too_large") to destroyed,
+      SyncDiagnosticsPostResult(400) to destroyed,
+      SyncDiagnosticsPostResult(401) to stopped,
+    )
+    for ((refusal, expected) in refusals) {
+      SyncEngineTestDatabase().use { fixture ->
+        fixture.seedTelemetryEntry("cycle-1", legacyEnvelope("cycle-1"), 10L)
+        fixture.seedTelemetryEntry("cycle-2", legacyEnvelope("cycle-2"), 20L)
+        val transport = RecordingDiagnosticsTransport { index ->
+          if (index == 0) refusal else SyncDiagnosticsPostResult(200)
+        }
+
+        val result = drain(fixture, transport)
+        // Kept: still stored, one request spent. Destroyed: gone, batch went on to cycle-2.
+        assertEquals("$refusal", expected.first, result)
+        assertEquals("$refusal", expected.second, fixture.telemetryEntries())
+        assertEquals("$refusal", result.attempted, transport.posts.size)
       }
-
-      val result = drain(fixture, transport)
-
-      assertEquals(SyncDiagnosticsFlushResult(attempted = 2, delivered = 1, discarded = 1), result)
-      assertEquals(emptyList<Pair<String, String>>(), fixture.telemetryEntries())
-      assertEquals(2, transport.posts.size)
     }
   }
 
