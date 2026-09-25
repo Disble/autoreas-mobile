@@ -248,10 +248,12 @@ describe('flushSyncDiagnosticsOutbox', () => {
     expect(result).toEqual(tally({ attempted: 1 }));
   });
 
-  it('removes the row and continues on a 400 -- the bridge names the offending field, it will reject the same bytes forever', async () => {
+  it('removes the row and continues on a 400 that DECLARES a code -- the code condemns these exact bytes', async () => {
+    // CONTRACT CORRECTION: this case used to pin a codeless 400 discarding the row, and a codeless
+    // 400 now PARKS; the code below is a LITERAL because reading the constant would pin nothing.
     const { store, postSyncDiagnostics, result } = await runFlush(
       [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
-      [buildResult({ ok: false, status: 400, retryAfterMs: null }), buildResult()],
+      [buildResult({ ok: false, status: 400, retryAfterMs: null, rawBody: '{"code":"body_unreadable"}' }), buildResult()],
     );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
@@ -260,7 +262,7 @@ describe('flushSyncDiagnosticsOutbox', () => {
     expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1 }));
   });
 
-  it('removes the row and continues on a 413 -- the declared permanence set is exactly 400 and 413', async () => {
+  it('removes the row and continues on a 413 with no code -- size is a property of the bytes', async () => {
     const { store, postSyncDiagnostics, result } = await runFlush(
       [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
       [buildResult({ ok: false, status: 413, retryAfterMs: null }), buildResult()],
@@ -273,11 +275,9 @@ describe('flushSyncDiagnosticsOutbox', () => {
   });
 
   it('keeps the row, defers nothing and stops the batch on a 422 -- NOT a permanence verdict here', async () => {
-    // CONTRACT CORRECTION, not a weakened assertion: the old revision asserted a 422 discarded the
-    // row, and that was the error. The bridge's only permanence property for this endpoint is 400
-    // and 413; the inherited 422 belongs to another endpoint's handler (`season_rating_handler.go`),
-    // whose answer about a grade says nothing about these bytes. Permanence is declared by the
-    // contract and by nothing else, so anything undeclared is retryable -- and the row survives.
+    // CONTRACT CORRECTION: the old revision asserted a 422 discarded the row, and that was the
+    // error. The inherited 422 belongs to another endpoint's handler (`season_rating_handler.go`),
+    // whose answer about a grade says nothing about these bytes; anything undeclared is retryable.
     const { store, postSyncDiagnostics, result } = await runFlush(
       [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
       [buildResult({ ok: false, status: 422, retryAfterMs: null })],
@@ -384,13 +384,13 @@ describe('flushSyncDiagnosticsOutbox', () => {
         buildRecord({ cycleId: 'cycle-2' }),
         buildRecord({ cycleId: 'cycle-3' }),
       ],
-      [buildResult(), buildResult({ ok: false, status: 400, retryAfterMs: null })],
+      [buildResult(), buildResult({ ok: false, status: 400, retryAfterMs: null, rawBody: '{"code":"field_rejected"}' })],
       { undeliverableKinds: ['retired_kind'] },
     );
 
-    // `attempted` counts REQUESTS (2); `discarded` is the bridge's verdict destroying a body (1);
-    // `undeliverable` is this build's declaration destroying one (1); `unclassified` is a parked
-    // row this build does not know (1) -- none of them is a synonym for another.
+    // `attempted` counts REQUESTS (2); `discarded` is the bridge's verdict destroying a body that
+    // DECLARED a code (1); `undeliverable` is this build's declaration destroying one (1);
+    // `unclassified` is a parked row this build does not know (1) -- none is a synonym for another.
     expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1, undeliverable: 1, unclassified: 1 }));
   });
 

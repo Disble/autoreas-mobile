@@ -57,14 +57,34 @@ describe('resolveSyncDiagnosticsDisposition', () => {
     );
   });
 
-  it.each([400, 413])(
-    'discards a routable candidate on %d -- the bridge\'s entire permanence declaration',
-    (status) => {
-      expect(
-        resolveSyncDiagnosticsDisposition('routable', verdict({ ok: false, status, retryAfterMs: null })),
-      ).toBe('discarded');
-    },
-  );
+  it('discards a routable candidate on a 413 that declares NO code -- size is a property of the bytes', () => {
+    // `413` is permanent ON ITS OWN, code or no code: a body that is too large is too large for
+    // every build there will ever be, and no release makes these same bytes smaller. Written as a
+    // LITERAL so the status the ladder reads stays load-bearing -- mutating it must fail this test.
+    expect(
+      resolveSyncDiagnosticsDisposition(
+        'routable',
+        verdict({ ok: false, status: 413, retryAfterMs: null, refusalCode: null }),
+      ),
+    ).toBe('discarded');
+  });
+
+  it('keeps the row and stops the batch on a 400 that declares NO code -- a version state, not a verdict', () => {
+    // CONTRACT CORRECTION, not a weakened assertion: the previous revision asserted that a codeless
+    // 400 discarded the row, and THAT is what destroyed a whole episode backlog on first contact
+    // with a bridge older than the refusal vocabulary. A shipped 1.14.0 strict-decodes the body
+    // into a report that declares no `kind` at all, so it answers the generic
+    // `400 {"error":"invalid request body"}` with no `field` and no `code` -- and that build is
+    // immutable, so no client-side rule can make it answer differently. Nothing in the response is
+    // a judgement about these bytes: it is a statement about the endpoint's version, and a later
+    // bridge resolves it. The row is therefore KEPT and the batch STOPS.
+    expect(
+      resolveSyncDiagnosticsDisposition(
+        'routable',
+        verdict({ ok: false, status: 400, retryAfterMs: null, refusalCode: null }),
+      ),
+    ).toBe('stop');
+  });
 
   it.each([401, 404, 405, 408, 422, 429, 500, 503])(
     'stops without destroying anything on %d -- the contract declares no permanence for it',
@@ -98,14 +118,14 @@ describe('resolveSyncDiagnosticsDisposition', () => {
     { status: 400, refusalCode: 'body_unreadable' },
     { status: 400, refusalCode: 'field_rejected' },
     { status: 413, refusalCode: 'body_too_large' },
-    { status: 400, refusalCode: null },
   ])(
-    'keeps the status verdict for a refusal that is not that member (%j)',
+    'discards on a refusal that declares a NON-recoverable code -- the code names bytes no build accepts (%j)',
     ({ status, refusalCode }) => {
-      // NOT one status list per refusal class: the status still owns permanence, and the code only
-      // names the single exception. A malformed discriminator, an unreadable body and an
-      // off-vocabulary field are bytes no build will accept, and a body that declares no code at
-      // all (the 401 written by the shared auth layer) keeps the verdict its status declares.
+      // NOT one status list per refusal class: the status still owns permanence for every member
+      // except the one recoverable one, and each code here is a LITERAL, so a test that only agreed
+      // with the constant the ladder reads could not pass. These name a permanent judgement about
+      // these exact bytes -- an undecodable body, a discriminator off the closed vocabulary, an
+      // off-vocabulary field, an oversize body -- so the row is destroyed.
       expect(
         resolveSyncDiagnosticsDisposition(
           'routable',
@@ -118,7 +138,9 @@ describe('resolveSyncDiagnosticsDisposition', () => {
   it('reads an absent code as no declaration, never as the recoverable one', () => {
     // A missing code must NOT be treated as unclassified (parked) or as kind_not_served (kept):
     // nothing was declared, so the status answers -- and for 401 that answer is retry and destroy
-    // nothing, exactly as it answered before the vocabulary existed.
+    // nothing, exactly as it answered before the vocabulary existed. A codeless `400` now parks
+    // instead, so what the absence of a code means is decided by the STATUS, never by the absence
+    // itself: absence never became a recovery.
     expect(
       resolveSyncDiagnosticsDisposition(
         'routable',
@@ -319,18 +341,54 @@ describe('the refusal code through flushSyncDiagnosticsOutbox', () => {
     expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1 }));
   });
 
-  it('falls back to the status verdict when the refusal body carries no readable code', async () => {
-    // Unparseable bytes declare nothing, so the status answers -- and 400 is a permanent verdict.
-    // Had the read thrown or the fallback parked, this row would have been KEPT instead of
-    // destroyed; had it been read as the recoverable code, it would have stopped the batch.
+  it('keeps the row and stops the batch on a 400 whose body carries no readable code', async () => {
+    // CONTRACT CORRECTION: this case used to assert a DISCARD. Unparseable bytes declare no code,
+    // and a codeless `400` is a version state rather than a verdict about the bytes -- exactly the
+    // shape an un-upgraded bridge answers. The row is KEPT (no removal), the batch STOPS, nothing is
+    // deferred (a `400` declares no wait) and the discard counter stays 0: the outbox is the only
+    // copy, so a bridge that cannot speak the vocabulary must never be able to destroy it.
     const { store, postSyncDiagnostics, result } = await flush(
-      [storedRecord('cycle-1')],
+      [storedRecord('cycle-1'), storedRecord('cycle-2')],
       [response({ status: 400, rawBody: '{ not json' })],
     );
 
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(store.deferUntil).not.toHaveBeenCalled();
+    expect(result).toEqual(tally({ attempted: 1 }));
+  });
+
+  it.each(['{ not json', 'null', '"kind_not_served"', null])(
+    'parks every unreadable 400 body shape (%s): unreadable bytes never become a verdict',
+    async (rawBody) => {
+      // The best-effort read answers `null` for all of these -- an ABSENT body, a body that is not
+      // JSON, a JSON `null`, and a JSON string that merely CONTAINS the recoverable token as its
+      // text. Each one is the state that parks, and the parked row is counted as neither
+      // `unclassified` (it WAS posted, and its `kind` was routable) nor `discarded` (nothing was
+      // destroyed).
+      const { store, result } = await flush(
+        [storedRecord('cycle-1'), storedRecord('cycle-2')],
+        [response({ status: 400, rawBody })],
+      );
+
+      expect(store.remove).not.toHaveBeenCalled();
+      expect(result).toEqual(tally({ attempted: 1 }));
+    },
+  );
+
+  it('still destroys the row and continues on a 413 whose body carries no readable code', async () => {
+    // The one status that stays permanent WITHOUT a code: a body too large is too large for every
+    // build there will ever be, and no release makes these same bytes smaller. So the row goes, and
+    // the batch carries on -- unlike the codeless `400` above.
+    const { store, postSyncDiagnostics, result } = await flush(
+      [storedRecord('cycle-1'), storedRecord('cycle-2')],
+      [response({ status: 413, rawBody: '{ not json' }), response({ ok: true, status: 204 })],
+    );
+
+    expect(postSyncDiagnostics).toHaveBeenCalledTimes(2);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
-    expect(result).toEqual(tally({ attempted: 1, discarded: 1 }));
+    expect(store.remove).toHaveBeenCalledWith('cycle-2');
+    expect(result).toEqual(tally({ attempted: 2, delivered: 1, discarded: 1 }));
   });
 
   it('leaves a 401 with no code exactly as it was -- retry and destroy nothing', async () => {

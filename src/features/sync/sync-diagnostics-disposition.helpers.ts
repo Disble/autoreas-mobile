@@ -18,10 +18,12 @@ import type {
  *
  * Every failure mode is a `null`, and none of them throws -- the fallback to the status verdict has
  * to survive a body that is absent, not a string, not JSON, or not a JSON object, because `401` and
- * any future refusal written outside the handler carry no code at all and must keep the verdict
- * their status declares. `null` means "no code declared", which is deliberately NOT the same state
- * as a code this build does not know: that one still names a vocabulary member, and neither is ever
- * read as "unclassified" or as `kind_not_served`.
+ * any future refusal written outside the handler carry no code at all. `null` means "no code
+ * declared", which is deliberately NOT the same state as a code this build does not know: that one
+ * still names a vocabulary member. What a MISSING code means is decided by the status and by
+ * nothing else (see `isSyncDiagnosticsPermanentRejection`): a `401` keeps the verdict its status
+ * declares, and a `400` becomes a version state -- a bridge that does not speak the vocabulary --
+ * rather than a verdict about these bytes.
  */
 export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
   if (typeof body !== 'string') {
@@ -46,8 +48,22 @@ export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
 }
 
 /**
- * The bridge's ENTIRE permanence declaration for `POST /api/sync/diagnostics` -- exactly `400` and
- * `413`, per the contract agreed with team-bridge (odd/tasks/chapter-action-diagnostics.md).
+ * Whether one refusal is a verdict about THESE BYTES -- the only thing that makes destroying them
+ * justified. This is the bridge's whole permanence declaration for `POST /api/sync/diagnostics`,
+ * refined by the contract to `413` unconditionally and `400` only when the body DECLARES a code:
+ *
+ * - **`413` is permanent with or without a code.** Size is a property of the bytes themselves, and
+ *   no build makes a body smaller: an oversize refusal stays true for every bridge there will ever
+ *   be, so a bridge too old to declare a code still means "these bytes are too large".
+ * - **`400` is permanent only when the refusal declared a code.** A code names a member of the
+ *   closed refusal vocabulary and therefore a judgement about these bytes. A `400` that declares no
+ *   code carries no judgement at all: it is the answer of a bridge OLDER than the vocabulary. The
+ *   shipped 1.14.0 strict-decodes the body into a report that declares no `kind` at all, so it
+ *   answers the generic `400 {"error":"invalid request body"}` with no `field` and no `code`, and
+ *   that build is immutable -- no client-side rule can make it answer differently. Reading it as a
+ *   verdict would destroy the user's whole episode backlog, whose only copy is this outbox, on the
+ *   first cycle after a bridge that was never upgraded; keeping the row costs a stall that ends
+ *   when the bridge does.
  *
  * The general rule that makes this short list safe to remember: **permanence is declared by the
  * bridge's contract and by nothing else, so anything the contract does not declare must be treated
@@ -59,8 +75,14 @@ export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
  * a grade says nothing about whether these bytes are refused forever. Re-adding it requires the
  * bridge to declare a permanent `422` for THIS endpoint.
  */
-function isSyncDiagnosticsEnvelopeRejection(status: number): boolean {
-  return status === 400 || status === 413;
+function isSyncDiagnosticsPermanentRejection(verdict: SyncDiagnosticsPostVerdict): boolean {
+  // Literal statuses on purpose: they ARE the contract, and the tests assert the same literals, so
+  // mutating either side of this rule cannot leave the pair silently agreeing with each other.
+  if (verdict.status === 413) {
+    return true;
+  }
+
+  return verdict.status === 400 && verdict.refusalCode !== null;
 }
 
 /**
@@ -80,16 +102,26 @@ function isSyncDiagnosticsEnvelopeRejection(status: number): boolean {
  * - ROUTABLE refused with the ONE recoverable code (`kind_not_served`) stops the batch and destroys
  *   nothing: the bytes are not wrong, this build merely does not serve that kind, and forwarding
  *   them to a bridge that does recovers every one of them unchanged;
- * - ROUTABLE rejected by the bridge's permanence set (`400`/`413`) is `'discarded'`;
+ * - ROUTABLE rejected by the bridge's permanence rule -- a `413` with or without a code, or a `400`
+ *   that DECLARED a code -- is `'discarded'`;
+ * - ROUTABLE refused with a `400` that declared NO code stops the batch and destroys nothing: no
+ *   declaration was made about these bytes, so the answer names the bridge's own version rather
+ *   than the envelope, and a later bridge resolves it;
  * - every other verdict -- `401`, `404`, `408`, `422`, `429`, `5xx` -- stops the batch and destroys
  *   nothing, because the contract does not declare those bytes permanently unacceptable.
  *
- * The recoverable code is checked BEFORE the permanence set, and that order is the contract: it is
+ * The recoverable code is checked BEFORE the permanence rule, and that order is the contract: it is
  * not a status list per refusal class (which would have to be re-released every time the bridge
  * grows a vocabulary member) but ONE exception keyed on the refusal's own declared meaning. The
  * status still owns permanence for every other member, and a refusal that declares no code at all
  * -- `401` is written by the shared authentication layer, not the handler -- keeps the status
  * verdict, never this exception.
+ *
+ * The three stops above are ONE disposition because they ask one thing of the executor -- keep the
+ * row, stop the batch -- while remaining three different FACTS, which is why none of them is
+ * recorded as a destruction and why the two parks are not conflated with each other: a codeless
+ * `400` is a state of the BRIDGE, while the `'unclassified'` park above (never posted, never
+ * counted as attempted) is a gap in this build's kind registry.
  */
 export function resolveSyncDiagnosticsDisposition(
   classification: SyncDiagnosticsPayloadClass,
@@ -111,7 +143,7 @@ export function resolveSyncDiagnosticsDisposition(
     return 'stop';
   }
 
-  return isSyncDiagnosticsEnvelopeRejection(verdict.status) ? 'discarded' : 'stop';
+  return isSyncDiagnosticsPermanentRejection(verdict) ? 'discarded' : 'stop';
 }
 
 /**

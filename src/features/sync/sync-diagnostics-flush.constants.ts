@@ -2,11 +2,11 @@
  * Every diagnostic body `kind` the bridge currently accepts at `POST /api/sync/diagnostics`.
  *
  * The bridge strict-decodes that body with `DisallowUnknownFields()` and answers 400 for a key it
- * does not declare, and this app's flush reads a 400 as "this envelope is malformed forever" and
- * deletes the row client-side. A kind missing from this list is therefore not merely undelivered:
- * it is destroyed on its first attempt. This list is the ONE source of truth for "may this body be
- * posted at all", consulted by the chapter recorder before it enqueues and by the flush before it
- * POSTs.
+ * does not declare, and this app's flush reads a 400 that DECLARES a code as "this envelope is
+ * malformed forever" and deletes the row client-side. A kind missing from this list that reaches the
+ * wire is therefore not merely undelivered: it is destroyed on its first attempt. This list is the
+ * ONE source of truth for "may this body be posted at all", consulted by the chapter recorder before
+ * it enqueues and by the flush before it POSTs.
  *
  * The single `undefined` entry IS the legacy sync-cycle envelope. The bridge identifies a cycle
  * report by the ABSENCE of a `kind` key -- a frozen backward-compatibility rule, because deployed
@@ -59,7 +59,10 @@ export const SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS: readonly string[] = [];
  *
  * A refusal that declares NO code is NOT this value and NOT a recoverable refusal: `401` is written
  * by the shared authentication layer, not by the handler, so nothing was declared and the status
- * answers. Growing this vocabulary is a bridge contract change, never a local judgement call.
+ * answers. A `400` declaring no code is answered by its status too, but its status is no longer a
+ * destruction verdict: it is a VERSION state -- a bridge older than this vocabulary -- so the row is
+ * kept and the batch stops. Growing this vocabulary is a bridge contract change, never a local
+ * judgement call.
  */
 export const SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE = 'kind_not_served';
 

@@ -72,7 +72,9 @@ export type SyncDiagnosticsEnvelopeDisposition =
  * bridge said the refusal was, never on the bytes that carried it. `null` means the body declared
  * no readable code at all (absent, not a string, not JSON, not an object, or a non-string `code`),
  * which is a STATE OF ITS OWN: it is answered by the status, and it is never read as "unclassified"
- * or as a recoverable refusal.
+ * or as a recoverable refusal. On a `400` that absence is load-bearing in the other direction too:
+ * it means the bridge does not declare a refusal VOCABULARY, so its answer is about its own version
+ * rather than about these bytes, and the row is kept.
  */
 export interface SyncDiagnosticsPostVerdict {
   readonly ok: boolean;
@@ -98,15 +100,20 @@ export interface SyncDiagnosticsFlushResult {
    * Number of entries the bridge was actually asked about this pass. An entry whose `kind` the
    * bridge does not accept is left in place without a request, so it is NOT counted here even
    * though it spends one of the batch slots: no request was issued, and nothing was destroyed
-   * either, which is what keeps it out of `discarded`.
+   * either, which is what keeps it out of `discarded`. An entry the bridge refused with a `400` that
+   * declared no code IS counted here -- it was asked about -- and that park leaves no counter of its
+   * own, so such a pass reads as `attempted > 0` with nothing else moved.
    */
   readonly attempted: number;
   /** Number of entries confirmed delivered -- a 2xx response AND a confirmed outbox removal. */
   readonly delivered: number;
   /**
-   * Number of entries the bridge's own verdict permanently rejected (400/413) and that were
-   * discarded client-side -- a report destroyed by the BRIDGE's judgement, which is the only kind
-   * of destruction its contract authorizes.
+   * Number of entries the bridge's own verdict permanently rejected and that were discarded
+   * client-side -- a report destroyed by the BRIDGE's judgement, which is the only kind of
+   * destruction its contract authorizes. That verdict is a `413` with or without a code, or a `400`
+   * that DECLARED a code: size is permanent for the bytes themselves, and a declared code names a
+   * judgement about them. A `400` that declared no code is NOT one of these -- it is a version
+   * state, so the row is kept and this counter does not move.
    */
   readonly discarded: number;
   /**

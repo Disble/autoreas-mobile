@@ -300,6 +300,10 @@ async function tallyFlushCandidate(
     // one of the batch slots -- it keeps its place at the head of the outbox and is re-read by
     // every later pass -- which is exactly why the recorder's acceptance gate, not this
     // defensive one, is what keeps such rows from being written in the first place.
+    //
+    // This is NOT the codeless-`400` park below: that one WAS posted and its `kind` was routable,
+    // and its cause is the BRIDGE's version rather than a gap in this build's kind registry. The
+    // two parks are kept apart because they are different facts, and neither is a loss.
     tallies.unclassified += 1;
     return true;
   }
@@ -314,6 +318,16 @@ async function tallyFlushCandidate(
   tallies.attempted += 1;
 
   if (disposition === 'stop') {
+    // One tally, three different facts, all of them "posted, kept, nothing destroyed": a transport
+    // failure, the ONE recoverable refusal code, and a codeless `400` -- a bridge older than the
+    // refusal vocabulary. A request WAS issued, so `attempted` is exactly right and is the only
+    // tally any of the three can honestly use. The codeless `400` is deliberately NOT recorded as
+    // `unclassified`: that counter is documented as a body never posted whose `kind` this build does
+    // not know, and this one was posted and was routable -- a different fact, decided by a different
+    // input. Separating it from the other two stops would need a counter of its own and a persisted
+    // column beside the three in `sync_runtime_status`; until that exists, a pass that stops with
+    // `attempted > 0` and nothing else moved is the whole visible trace, shared with a transport
+    // failure.
     return false;
   }
 
@@ -345,9 +359,16 @@ async function tallyFlushCandidate(
  * - everything else (`kind` unknown, `kind` null, body not a JSON object): PARKED -- never posted,
  *   never deleted, counted as `unclassified`, and the batch CONTINUES, so one row this build does
  *   not understand cannot starve the deliverable envelopes behind it.
- * - 400/413 (the bridge's whole permanence declaration): remove, count as `discarded`, continue --
- *   UNLESS the refusal declared `kind_not_served`, the vocabulary's only recoverable member, which
- *   keeps the row and stops the batch exactly as an undeclared verdict does.
+ * - a `413` with or without a code, or a `400` that DECLARED a code (the bridge's whole permanence
+ *   rule): remove, count as `discarded`, continue -- UNLESS the refusal declared `kind_not_served`,
+ *   the vocabulary's only recoverable member, which keeps the row and stops the batch exactly as an
+ *   undeclared verdict does.
+ * - a `400` that declared NO code: KEEP the row and STOP the batch, destroying nothing. Reading it
+ *   as a verdict is the defect this rule closes: a bridge older than the refusal vocabulary (the
+ *   shipped 1.14.0 declares no `kind` at all, so it answers the generic `400 {"error":"invalid
+ *   request body"}` with no `field` and no `code`) says nothing about these bytes -- it names its own
+ *   version -- and reading that answer as permanence destroyed the whole episode backlog, whose only
+ *   copy is this outbox, on first contact with a bridge that was never upgraded.
  * - every other failure -- 401/404/408/422/429/5xx/throw -- leaves the row and STOPS the whole batch,
  *   since the link or the bridge is down and the next rows would fail identically. A usable
  *   `Retry-After`, or the bridge's declared wait for a `503` that lost its header, is persisted as
