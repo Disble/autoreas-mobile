@@ -187,6 +187,13 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   // defect class). They fold into the SAME write `recordBacklogReadCount` already performs, so
   // this table gains zero new write-door transactions.
   lastDiagnosticsDiscardedCount: integer('last_diagnostics_discarded_count'),
+  // The other two diagnostics counters the flush result carries beside `discarded`, persisted
+  // here for the same reason it is: a destruction by judgement (`undeliverable`) and a park
+  // (`unclassified`) must be observable, and NULL means "never measured" rather than zero. Driven
+  // by migration `0014` on a fresh install and by `SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS` on an
+  // already provisioned device -- both routes, pinned by the migration/repair parity test.
+  lastDiagnosticsUndeliverableCount: integer('last_diagnostics_undeliverable_count'),
+  lastDiagnosticsUnclassifiedCount: integer('last_diagnostics_unclassified_count'),
   lastDiagnosticsFailedRemovalCount: integer('last_diagnostics_failed_removal_count'),
   lastOutboxFailedWriteCount: integer('last_outbox_failed_write_count'),
   lastDeadLetterCount: integer('last_dead_letter_count'),

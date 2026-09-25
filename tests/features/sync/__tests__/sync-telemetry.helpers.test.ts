@@ -34,6 +34,8 @@ function buildSnapshot(
     lastCycleStageAt: null,
     lastFailedCheckpointCount: 0,
     lastDiagnosticsDiscardedCount: null,
+    lastDiagnosticsUndeliverableCount: null,
+    lastDiagnosticsUnclassifiedCount: null,
     lastDiagnosticsFailedRemovalCount: null,
     lastOutboxFailedWriteCount: null,
     lastDeadLetterCount: null,

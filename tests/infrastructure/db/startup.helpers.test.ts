@@ -315,7 +315,7 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(14);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(15);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });

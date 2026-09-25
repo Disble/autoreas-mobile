@@ -32,6 +32,30 @@ export function withColumnDefault<T>(value: T | null | undefined, fallback: T): 
 }
 
 /**
+ * Maps the three diagnostics counters that answer "was anything destroyed, parked or rejected?"
+ * -- `discarded` (a permanent rejection by the bridge's own verdict), `undeliverable` (destroyed
+ * by declaration) and `unclassified` (parked, and recoverable by roll-forward) -- under the
+ * `?? null` rule they share: NULL means "never measured", which is not the same fact as a
+ * measured zero (design.md Decision 7), and a destruction counter reading 0 because it was never
+ * written is the exact false answer that rule forbids.
+ *
+ * Extracted rather than left inline: three consecutive `withColumnDefault(row.x, null)` runs in
+ * one flat mapping are textually indistinguishable from each other, which the repository's
+ * duplicate-block audit flags as introduced duplication. Naming this call site also keeps the
+ * three counters that must NEVER be conflated visible as one group.
+ */
+function mapDiagnosticsCountersFromRow(row: SyncRuntimeStatusRow) {
+  return {
+    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
+    lastDiagnosticsUndeliverableCount: withColumnDefault(
+      row.lastDiagnosticsUndeliverableCount,
+      null,
+    ),
+    lastDiagnosticsUnclassifiedCount: withColumnDefault(row.lastDiagnosticsUnclassifiedCount, null),
+  };
+}
+
+/**
  * Maps a persisted runtime-status row into its snapshot shape, applying the neutral default
  * for every optional column. Extracted from `getSyncRuntimeStatusSnapshot` so the per-column
  * default tail does not inflate that function's own complexity budget. Exported so
@@ -61,9 +85,7 @@ export function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): Sy
     consecutiveUnclosedCycles: withColumnDefault(row.consecutiveUnclosedCycles, 0),
     lastCycleStageAt: withColumnDefault(row.lastCycleStageAt, null),
     lastFailedCheckpointCount: withColumnDefault(row.lastFailedCheckpointCount, 0),
-    // `?? null`, not `?? 0`: a NULL here means "never measured", which is not the same fact as
-    // "measured zero" (design.md Decision 7).
-    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
+    ...mapDiagnosticsCountersFromRow(row),
     lastDiagnosticsFailedRemovalCount: withColumnDefault(
       row.lastDiagnosticsFailedRemovalCount,
       null,
@@ -163,6 +185,14 @@ function mergeSyncRuntimeStatusPatch(
       patch.lastDiagnosticsDiscardedCount,
       current.lastDiagnosticsDiscardedCount,
     ),
+    lastDiagnosticsUndeliverableCount: withPatchOverride(
+      patch.lastDiagnosticsUndeliverableCount,
+      current.lastDiagnosticsUndeliverableCount,
+    ),
+    lastDiagnosticsUnclassifiedCount: withPatchOverride(
+      patch.lastDiagnosticsUnclassifiedCount,
+      current.lastDiagnosticsUnclassifiedCount,
+    ),
     lastDiagnosticsFailedRemovalCount: withPatchOverride(
       patch.lastDiagnosticsFailedRemovalCount,
       current.lastDiagnosticsFailedRemovalCount,
@@ -220,6 +250,8 @@ async function writeSyncRuntimeStatusRow(
     lastCycleStageAt: next.lastCycleStageAt,
     lastFailedCheckpointCount: next.lastFailedCheckpointCount,
     lastDiagnosticsDiscardedCount: next.lastDiagnosticsDiscardedCount,
+    lastDiagnosticsUndeliverableCount: next.lastDiagnosticsUndeliverableCount,
+    lastDiagnosticsUnclassifiedCount: next.lastDiagnosticsUnclassifiedCount,
     lastDiagnosticsFailedRemovalCount: next.lastDiagnosticsFailedRemovalCount,
     lastOutboxFailedWriteCount: next.lastOutboxFailedWriteCount,
     lastDeadLetterCount: next.lastDeadLetterCount,

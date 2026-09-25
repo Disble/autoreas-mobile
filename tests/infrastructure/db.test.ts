@@ -234,6 +234,8 @@ describe("db client tracer helpers", () => {
             { name: "last_cycle_stage_at" },
             { name: "last_failed_checkpoint_count" },
             { name: "last_diagnostics_discarded_count" },
+            { name: "last_diagnostics_undeliverable_count" },
+            { name: "last_diagnostics_unclassified_count" },
             { name: "last_diagnostics_failed_removal_count" },
             { name: "last_outbox_failed_write_count" },
             { name: "last_dead_letter_count" },

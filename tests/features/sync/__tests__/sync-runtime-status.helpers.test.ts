@@ -1,5 +1,6 @@
 import {
   getSyncRuntimeStatusSnapshot,
+  recordBacklogReadCount,
   recordCycleActive,
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -80,6 +81,8 @@ describe('sync runtime status helpers', () => {
       lastStuckProcessingCount: null,
       lastOldestPendingAgeMs: null,
       lastPendingRowCount: null,
+      lastDiagnosticsUndeliverableCount: null,
+      lastDiagnosticsUnclassifiedCount: null,
     });
   });
 
@@ -416,8 +419,9 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     delivered: 1,
     discarded: 2,
     failedRemovals: 1,
-    undeliverable: 0,
-    unclassified: 0,
+    // Distinct from `discarded` on purpose: 2 / 3 / 4, so a shared column cannot pass.
+    undeliverable: 3,
+    unclassified: 4,
   };
 
   const CONVERGENCE: OperationLogConvergence = {
@@ -430,9 +434,12 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
   };
 
   it('folds the backlog read count, the flush counters, the outbox write-failure count and the convergence projection into one patch', () => {
+    // CONTRACT UPDATE: the stored shape gains the two counters the flush result already carried.
     expect(buildCycleBookkeepingPatch(5, DIAGNOSTICS_FLUSH, 3, CONVERGENCE)).toEqual({
       lastBacklogReadCount: 5,
       lastDiagnosticsDiscardedCount: 2,
+      lastDiagnosticsUndeliverableCount: 3,
+      lastDiagnosticsUnclassifiedCount: 4,
       lastDiagnosticsFailedRemovalCount: 1,
       lastOutboxFailedWriteCount: 3,
       lastDeadLetterCount: 3,
@@ -464,5 +471,29 @@ describe('buildCycleBookkeepingPatch folds flush and convergence counters into t
     expect(
       buildCycleBookkeepingPatch(0, emptyFlush, 0, emptyQueueConvergence).lastOldestPendingAgeMs,
     ).toBeNull();
+  });
+
+  it('folds undeliverable into its own field without conflating it with discarded', () => {
+    const patch = buildCycleBookkeepingPatch(1, DIAGNOSTICS_FLUSH, 0, CONVERGENCE);
+    expect(patch.lastDiagnosticsUndeliverableCount).toBe(3);
+    expect(patch.lastDiagnosticsDiscardedCount).toBe(2);
+  });
+
+  it('folds unclassified into its own field without conflating it with discarded', () => {
+    const patch = buildCycleBookkeepingPatch(1, DIAGNOSTICS_FLUSH, 0, CONVERGENCE);
+    expect(patch.lastDiagnosticsUnclassifiedCount).toBe(4);
+    expect(patch.lastDiagnosticsDiscardedCount).toBe(2);
+  });
+
+  it('persists both counters into the singleton row through the migrated schema', async () => {
+    const adapter = createTestSqliteAdapter();
+    await applyMigrationFiles(adapter);
+    await runMigrations(adapter);
+    await recordBacklogReadCount(adapter, 5, DIAGNOSTICS_FLUSH, 0, CONVERGENCE);
+    const stored = await getSyncRuntimeStatusSnapshot(adapter);
+
+    expect(stored.lastDiagnosticsDiscardedCount).toBe(2);
+    expect(stored.lastDiagnosticsUndeliverableCount).toBe(3);
+    expect(stored.lastDiagnosticsUnclassifiedCount).toBe(4);
   });
 });

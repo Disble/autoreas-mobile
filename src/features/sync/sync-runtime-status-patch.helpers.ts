@@ -169,6 +169,15 @@ export function buildCycleBookkeepingPatch(
   return {
     lastBacklogReadCount: backlogReadCount,
     lastDiagnosticsDiscardedCount: diagnosticsFlush.discarded,
+    // The two counters the flush result has always carried beside `discarded`, carried here the
+    // same way it carries `discarded` -- same patch helper, same write, same call site, so there
+    // is one shape to reason about rather than two. They are NOT derived from `discarded` and
+    // never fold into it: `undeliverable` counts what THIS build ordered destroyed because the
+    // kind can never be accepted, `unclassified` counts what was parked because it belongs to a
+    // different build and rolling forward is what recovers it. `discarded` keeps its exact
+    // meaning: a permanent rejection by the bridge's own verdict.
+    lastDiagnosticsUndeliverableCount: diagnosticsFlush.undeliverable,
+    lastDiagnosticsUnclassifiedCount: diagnosticsFlush.unclassified,
     lastDiagnosticsFailedRemovalCount: diagnosticsFlush.failedRemovals,
     lastOutboxFailedWriteCount: outboxFailedWriteCount,
     lastDeadLetterCount: convergence.deadLetterCount,

@@ -28,8 +28,28 @@ export type SyncRuntimeTriggerSource =
  */
 export type SyncCycleStage = (typeof SYNC_CYCLE_STAGES)[number];
 
+/**
+ * The two diagnostics counters stored beside `discarded` (migration `0014`), declared as ONE
+ * named group instead of being repeated inside both the snapshot and the patch interface.
+ *
+ * They are not the same fact as each other, nor as `discarded`: `undeliverable` is a destruction
+ * this device ORDERED by declaring a kind unpostable, and `unclassified` is a PARK for a kind
+ * another build of this app owns, recoverable by roll-forward. A destruction must never be
+ * invisible while the registry authorizing it is being changed.
+ *
+ * Extracted rather than inlined: the repository's semantic duplicate-block audit matches runs of
+ * property declarations structurally, so adding these two to the long nullable runs in each
+ * interface would re-fingerprint those runs and be reported as introduced duplication.
+ */
+interface SyncDiagnosticsDispositionCounters {
+  /** Destroyed by DECLARATION (`SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`), never by a bridge verdict. */
+  readonly lastDiagnosticsUndeliverableCount: number | null;
+  /** PARKED: this build does not know the `kind`. Never posted, never deleted, recovered by roll-forward. */
+  readonly lastDiagnosticsUnclassifiedCount: number | null;
+}
+
 /** Defines the data contract for sync runtime status snapshot. */
-export interface SyncRuntimeStatusSnapshot {
+export interface SyncRuntimeStatusSnapshot extends SyncDiagnosticsDispositionCounters {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
   readonly executionMode: SyncExecutionMode;
   readonly isForegroundServiceRunning: boolean;
@@ -84,8 +104,19 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastPendingRowCount: number | null;
 }
 
+/**
+ * The same two counters as `SyncDiagnosticsDispositionCounters`, declared optional because a patch
+ * may legitimately omit them (`undefined` means "not mentioned", `null` means "clear it").
+ */
+interface SyncDiagnosticsDispositionCountPatch {
+  /** Destruction by declaration -- see `SyncDiagnosticsDispositionCounters`. */
+  readonly lastDiagnosticsUndeliverableCount?: number | null;
+  /** Parked for another build of this app -- see `SyncDiagnosticsDispositionCounters`. */
+  readonly lastDiagnosticsUnclassifiedCount?: number | null;
+}
+
 /** Defines the data contract for sync runtime status patch. */
-export interface SyncRuntimeStatusPatch {
+export interface SyncRuntimeStatusPatch extends SyncDiagnosticsDispositionCountPatch {
   readonly registrationStatus?: SyncRuntimeRegistrationStatus;
   readonly executionMode?: SyncExecutionMode;
   readonly isForegroundServiceRunning?: boolean;

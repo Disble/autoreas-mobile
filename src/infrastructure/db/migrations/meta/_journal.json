@@ -99,6 +99,13 @@
       "when": 1788975205349,
       "tag": "0013_add_convergence_instrumentation_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1789051200000,
+      "tag": "0014_add_diagnostics_disposition_counters",
+      "breakpoints": true
     }
   ]
 }
