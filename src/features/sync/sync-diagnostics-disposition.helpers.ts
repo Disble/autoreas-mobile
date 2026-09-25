@@ -1,9 +1,49 @@
-import { SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS } from './sync-diagnostics-flush.constants';
+import {
+  SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE,
+  SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS,
+} from './sync-diagnostics-flush.constants';
 import type {
   SyncDiagnosticsEnvelopeDisposition,
   SyncDiagnosticsPayloadClass,
   SyncDiagnosticsPostVerdict,
 } from './sync-diagnostics-flush.types';
+
+/**
+ * Reads the bridge's refusal `code` out of one raw response body, best effort -- `null` whenever the
+ * body declares no code this build can read.
+ *
+ * This is where the wire stops and the vocabulary starts: the transport answers with bytes, and the
+ * disposition ladder below is only allowed to branch on a MEANING, so the distillation from body to
+ * declared code happens here, once, instead of inside that decision (which cannot see `rawBody`).
+ *
+ * Every failure mode is a `null`, and none of them throws -- the fallback to the status verdict has
+ * to survive a body that is absent, not a string, not JSON, or not a JSON object, because `401` and
+ * any future refusal written outside the handler carry no code at all and must keep the verdict
+ * their status declares. `null` means "no code declared", which is deliberately NOT the same state
+ * as a code this build does not know: that one still names a vocabulary member, and neither is ever
+ * read as "unclassified" or as `kind_not_served`.
+ */
+export function readSyncDiagnosticsRefusalCode(body: unknown): string | null {
+  if (typeof body !== 'string') {
+    return null;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    return null;
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const code = (parsed as { readonly code?: unknown }).code;
+
+  return typeof code === 'string' ? code : null;
+}
 
 /**
  * The bridge's ENTIRE permanence declaration for `POST /api/sync/diagnostics` -- exactly `400` and
@@ -37,9 +77,19 @@ function isSyncDiagnosticsEnvelopeRejection(status: number): boolean {
  *   destroyed by this build's own declaration -- and no request is ever issued for it;
  * - ROUTABLE with no verdict is a transport failure, so the batch stops;
  * - ROUTABLE with an `ok` verdict is a delivery (the executor still has to confirm the removal);
+ * - ROUTABLE refused with the ONE recoverable code (`kind_not_served`) stops the batch and destroys
+ *   nothing: the bytes are not wrong, this build merely does not serve that kind, and forwarding
+ *   them to a bridge that does recovers every one of them unchanged;
  * - ROUTABLE rejected by the bridge's permanence set (`400`/`413`) is `'discarded'`;
  * - every other verdict -- `401`, `404`, `408`, `422`, `429`, `5xx` -- stops the batch and destroys
  *   nothing, because the contract does not declare those bytes permanently unacceptable.
+ *
+ * The recoverable code is checked BEFORE the permanence set, and that order is the contract: it is
+ * not a status list per refusal class (which would have to be re-released every time the bridge
+ * grows a vocabulary member) but ONE exception keyed on the refusal's own declared meaning. The
+ * status still owns permanence for every other member, and a refusal that declares no code at all
+ * -- `401` is written by the shared authentication layer, not the handler -- keeps the status
+ * verdict, never this exception.
  */
 export function resolveSyncDiagnosticsDisposition(
   classification: SyncDiagnosticsPayloadClass,
@@ -55,6 +105,10 @@ export function resolveSyncDiagnosticsDisposition(
 
   if (verdict.ok) {
     return 'delivered';
+  }
+
+  if (verdict.refusalCode === SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE) {
+    return 'stop';
   }
 
   return isSyncDiagnosticsEnvelopeRejection(verdict.status) ? 'discarded' : 'stop';

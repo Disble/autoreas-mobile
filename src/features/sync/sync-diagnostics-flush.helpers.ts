@@ -2,6 +2,7 @@ import { bridgeClient } from '../../infrastructure/api';
 import { syncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import { isSyncTelemetryEnabled } from './sync-telemetry-preference.helpers';
 import {
+  readSyncDiagnosticsRefusalCode,
   resolveSyncDiagnosticsDeferralMs,
   resolveSyncDiagnosticsDisposition,
 } from './sync-diagnostics-disposition.helpers';
@@ -142,15 +143,29 @@ function parseStoredPayload(payload: string): unknown {
  * reads it as `'stop'`. The swallow contract lives here now (was inline in the old ladder): a
  * delivery failure can never reach a caller as an exception, so it can never be mistaken for the
  * cycle's own failure.
+ *
+ * This is also the ONE place the wide transport result is distilled into the narrow verdict the
+ * ladder reads: `ok`, `status` and `retryAfterMs` are copied across, and the refusal's declared
+ * meaning is read out of the response body by `readSyncDiagnosticsRefusalCode`. Keeping the
+ * distillation here is what lets the ladder branch on a vocabulary member instead of on raw bytes
+ * -- it never sees `rawBody`, `data` or `url` -- and the read itself is safe inside the try because
+ * it answers `null` rather than throwing for every body it cannot read.
  */
 async function postStoredPayload(
   params: DisposeOfEnvelopeParams,
   payload: unknown,
 ): Promise<SyncDiagnosticsPostVerdict | null> {
   try {
-    return await params.client.postSyncDiagnostics(params.connection, payload, {
+    const result = await params.client.postSyncDiagnostics(params.connection, payload, {
       timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS,
     });
+
+    return {
+      ok: result.ok,
+      status: result.status,
+      retryAfterMs: result.retryAfterMs,
+      refusalCode: readSyncDiagnosticsRefusalCode(result.rawBody),
+    };
   } catch {
     return null;
   }
@@ -330,7 +345,9 @@ async function tallyFlushCandidate(
  * - everything else (`kind` unknown, `kind` null, body not a JSON object): PARKED -- never posted,
  *   never deleted, counted as `unclassified`, and the batch CONTINUES, so one row this build does
  *   not understand cannot starve the deliverable envelopes behind it.
- * - 400/413 (the bridge's whole permanence declaration): remove, count as `discarded`, continue.
+ * - 400/413 (the bridge's whole permanence declaration): remove, count as `discarded`, continue --
+ *   UNLESS the refusal declared `kind_not_served`, the vocabulary's only recoverable member, which
+ *   keeps the row and stops the batch exactly as an undeclared verdict does.
  * - every other failure -- 401/404/408/422/429/5xx/throw -- leaves the row and STOPS the whole batch,
  *   since the link or the bridge is down and the next rows would fail identically. A usable
  *   `Retry-After`, or the bridge's declared wait for a `503` that lost its header, is persisted as

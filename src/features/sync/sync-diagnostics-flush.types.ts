@@ -60,17 +60,25 @@ export type SyncDiagnosticsEnvelopeDisposition =
   | 'stop';
 
 /**
- * The three fields of one diagnostics POST verdict the disposition ladder reads -- nothing else.
+ * The four fields of one diagnostics POST verdict the disposition ladder reads -- nothing else.
  *
  * Deliberately narrower than the transport's own result type: the ladder must not be able to grow
  * a branch on `data`, `rawBody` or `url`, all of which describe the wire rather than the verdict.
  * `retryAfterMs` is `null` when the response declared no usable `Retry-After` at all, which is a
  * different state from a declared wait of `0`.
+ *
+ * `refusalCode` is the refusal's own declared meaning, DISTILLED from the response body at the
+ * transport boundary by `readSyncDiagnosticsRefusalCode` -- so the ladder branches on what the
+ * bridge said the refusal was, never on the bytes that carried it. `null` means the body declared
+ * no readable code at all (absent, not a string, not JSON, not an object, or a non-string `code`),
+ * which is a STATE OF ITS OWN: it is answered by the status, and it is never read as "unclassified"
+ * or as a recoverable refusal.
  */
 export interface SyncDiagnosticsPostVerdict {
   readonly ok: boolean;
   readonly status: number;
   readonly retryAfterMs: number | null;
+  readonly refusalCode: string | null;
 }
 
 /**

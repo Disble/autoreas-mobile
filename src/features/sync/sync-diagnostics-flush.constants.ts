@@ -41,6 +41,29 @@ export const SYNC_DIAGNOSTICS_ACCEPTED_KINDS = [undefined] as const;
 export const SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS: readonly string[] = [];
 
 /**
+ * The bridge's ONE recoverable refusal code: `kind_not_served`, a member of the `RefusalCode`
+ * vocabulary its handler rides on every refusal of `POST /api/sync/diagnostics`.
+ *
+ * It is recoverable because the bytes are NOT wrong: the build behind the bridge simply does not
+ * serve that kind. Forward-rolling to a bridge that does serve it accepts every one of these rows
+ * UNCHANGED, so the row is kept and the batch stops instead of being destroyed -- discarding them
+ * would destroy a backlog a later bridge would have taken as it stands.
+ *
+ * The branch it drives is the difference between a status list and a vocabulary. A client that kept
+ * a status list per refusal class would have to be re-released every time the bridge grew a member;
+ * this ONE member is read from the refusal's own declared field (`readSyncDiagnosticsRefusalCode`),
+ * which is the property that made the discriminated contract worth adopting. Every other member --
+ * `kind_malformed`, `body_unreadable`, `field_rejected`, `body_too_large`, `ingest_unavailable`,
+ * `write_budget_exceeded`, `internal_error`, `method_not_allowed` -- keeps the verdict its status
+ * already declared: those bytes are refused by every build there will ever be.
+ *
+ * A refusal that declares NO code is NOT this value and NOT a recoverable refusal: `401` is written
+ * by the shared authentication layer, not by the handler, so nothing was declared and the status
+ * answers. Growing this vocabulary is a bridge contract change, never a local judgement call.
+ */
+export const SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE = 'kind_not_served';
+
+/**
  * Number of oldest eligible diagnostics outbox entries attempted per sync cycle.
  *
  * Bounded by the timing chain (design.md): `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE *
