@@ -1,0 +1,27 @@
+-- Diagnostics age-bound (reap) counter column.
+--
+-- A parked row is kept until it exceeds `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS` and is then
+-- REAPED: removed, and counted here. The drainer's result has always carried `discarded`
+-- (the bridge's own permanence verdict), `undeliverable` (destroyed by this build's declaration)
+-- and `unclassified` (parked, unknown to this build); `reaped` is the fourth, and it exists because
+-- folding it into `discarded` would destroy that counter's meaning -- a non-zero `discarded` would
+-- stop separating "the bridge refused these bytes" from "we gave up waiting for a bridge that would
+-- have accepted them", two opposite conclusions about the client. So it is stored in its own
+-- nullable column, mapped by the same patch helper and written by the same two writes as the rest.
+--
+-- Hand-written, following 0011, 0012 and 0014: this repository's `meta/` snapshot chain is stale,
+-- so the generator re-emits ALTERs for columns that already exist on installed databases and would
+-- abort the migration with a duplicate-column error. This file carries exactly the one column this
+-- change introduces and nothing else.
+--
+-- BOTH routes are required and neither is redundant. This file is a freshly-installed device's
+-- route. An ALREADY provisioned device never runs it, because `reconcileMigrationLedger` pins the
+-- migrator's gate; its only route to this column is the idempotent repair twin in
+-- `SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS` (`ensureMissingColumns`). `tests/infrastructure/db/
+-- migration-repair-parity.test.ts` pins that pair, so a column can never ship with only one.
+--
+-- Nullable with no default: NULL means "never measured", never a plausible zero (design.md
+-- Decision 7). A reap counter that reads 0 because it was never written would be the exact false
+-- answer this column exists to prevent.
+
+ALTER TABLE `sync_runtime_status` ADD `last_diagnostics_reaped_count` integer;

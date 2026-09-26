@@ -143,4 +143,52 @@ describe('reconcile pending operation payload helpers', () => {
       ),
     ).toEqual([1]);
   });
+
+  it('confirms via the bridge snapshot when a field is absent from changed_fields but already matches there', () => {
+    expect(
+      getConfirmedOperationIds(
+        [
+          {
+            ...baseOperation,
+            payload: JSON.stringify({ episodesWatched: 5 }),
+          },
+        ],
+        undefined,
+        [
+          {
+            record_id: 'anime-1',
+            change_type: 'update',
+            // `episodesWatched` is missing from changed_fields, so confirmation can only come
+            // from the snapshot already carrying the same value the outbox row sent.
+            changed_fields: ['status'],
+            snapshot: { episodesWatched: 5 } as never,
+            timestamp: 1710000001000,
+          },
+        ],
+      ),
+    ).toEqual([1]);
+  });
+
+  it('does not confirm when the field is absent from changed_fields and the snapshot value differs', () => {
+    expect(
+      getConfirmedOperationIds(
+        [
+          {
+            ...baseOperation,
+            payload: JSON.stringify({ episodesWatched: 5 }),
+          },
+        ],
+        undefined,
+        [
+          {
+            record_id: 'anime-1',
+            change_type: 'update',
+            changed_fields: ['status'],
+            snapshot: { episodesWatched: 4 } as never,
+            timestamp: 1710000001000,
+          },
+        ],
+      ),
+    ).toEqual([]);
+  });
 });

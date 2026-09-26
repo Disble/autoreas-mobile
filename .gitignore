@@ -66,3 +66,7 @@ build-*/
 # in their `env` blocks (SONARQUBE_TOKEN and the like), and a tracked file is one
 # absent-minded `git add` away from publishing one to a public repo.
 .mcp.json
+
+# On-demand CORE mutation run (stryker.core.conf.js)
+reports/mutation/
+.stryker-core-tmp/

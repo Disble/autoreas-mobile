@@ -215,8 +215,8 @@ Decisions are recorded as ADRs in [`docs/adr/`](docs/adr/); the full ruleset liv
 - [Bun](https://bun.sh/) — the only supported package manager
 - Node.js 22+
 - An Android device or emulator
-- [EAS CLI](https://docs.expo.dev/eas/) for native builds — `bunx eas-cli --version`
-- A logged-in Expo account for remote builds — `bunx eas-cli login`
+- Docker Desktop for local Android APK builds
+- `.env.local` with `EXPO_TOKEN` for the Docker build (EAS fetches signing credentials from Expo)
 - A reachable Autoreas Bridge instance on the same Wi-Fi network
 
 > [!IMPORTANT]
@@ -236,14 +236,19 @@ bun install
 already-installed tree, repair them with `npx lefthook install` — see
 [Git hooks](docs/build-and-release.md#git-hooks).
 
-### Build a development client
+### Build a local Android APK
 
 ```bash
-bunx eas-cli build --platform android --profile development
+docker compose -f docker-compose.eas.yml run --rm eas-build lab
 ```
 
-Install the resulting APK on the device. To build locally with Docker instead, see
-[Local Android build with Docker](docs/local-android-build.md).
+The debuggable `lab` APK for device diagnosis lands in `dist/android/`; never distribute it.
+Install or upgrade it with `adb install -r <path-to-lab-apk>` to preserve app data. Do not
+uninstall after a signer mismatch without first backing up or accepting the loss of local data.
+For a development client that attaches to Metro, run the same Docker command with `development`
+as the final argument. The local build contacts Expo for signing credentials; see
+[Local Android build with Docker](docs/local-android-build.md) for prerequisites and profiles.
+Tagged releases are published through GitHub Actions; see [Deployment](docs/deployment.md).
 
 ### Run
 
@@ -254,7 +259,7 @@ bun run ios        # Metro + open iOS
 bun run web        # Metro + open Web
 ```
 
-Open the development build on the device and let it attach to Metro.
+If using the `development` build, open it on the device and let it attach to Metro.
 
 ### Pair with the Bridge
 

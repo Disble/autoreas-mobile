@@ -22,6 +22,9 @@
 export const NATIVE_GATE_WATCHED_GLOBS = [
   'modules/**/android/**',
   'modules/*/expo-module.config.json',
+  // Shared JS<->Kotlin wire-contract fixtures: `ReconcileWireContractTest.kt` reads them as test
+  // resources, so a fixture-only change must still run the Kotlin tests.
+  'tests/fixtures/sync-contract/**',
   'plugins/**',
   'app.json',
   'eas.json',

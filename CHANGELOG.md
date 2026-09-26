@@ -16,6 +16,35 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-09-26
+
+**Chapter actions can now send diagnostics to Bridge 1.15.0 or newer.** Older Bridges do not receive these new observations; catalogue sync remains available. This release also changes how Android schedules background sync. The new native WorkManager floor has been observed scheduled and skipping while the foreground service owns sync; its own FGS-off execution has not yet been observed on a device.
+
+### Added
+
+- Chapter increment and decrement actions now record durable, identifiable observations of the action and its sync outcome, which the app can deliver when the Bridge supports `episode_action` (Bridge 1.15.0+).
+- Settings now distinguishes diagnostics that the Bridge rejected, observations this build cannot classify, rows removed after the retention limit, and rows shed because the local outbox reached capacity. An unreadable measurement is omitted rather than shown as zero.
+
+### Changed
+
+- Android's periodic background fallback now uses a native WorkManager worker rather than a JavaScript background task. It leaves the native foreground service's ticker in place and skips an attempt when that ticker already owns background sync.
+- The app retires a previously scheduled Expo background job after confirming the native floor is enqueued. Foreground catalogue sync still applies changes through the app's existing path.
+- The outbox retains older diagnostic observations when it reaches capacity, shedding the newest overflow and recording the loss. Unclassified observations and version-mismatch responses without a code have a bounded retention window; a diagnostic kind that the Bridge does not serve remains queued for a compatible Bridge.
+
+### Fixed
+
+- Opening or returning to the app now refreshes the persisted background-sync registration and service state after a bounded settle window, including while registration remains pending; disabling sync cannot let a late registration revive the status. Device re-observation later showed registered status and an active foreground service, though an immediate post-install snapshot still showed an older mode while the service was up.
+- Diagnostics rejected solely because a Bridge does not yet serve their kind are retained for a compatible Bridge. Native and foreground delivery now agree on which responses permanently reject a record, and removal counters only advance after confirmed deletion.
+- Background delivery now attempts queued diagnostics from the native engine and respects the diagnostics switch; native `episode_action` observations are accepted without dropping native cycle telemetry.
+- Native sync rejects malformed genre arrays before storing incoming anime data, keeping the local catalogue schema valid.
+
+### Internal
+
+- Added nullable diagnostics disposition and reaping columns in migrations 0014 and 0015, with matching repair definitions for existing installations; older APKs leave these columns unread.
+- The release workflow pins Node 24-compatible actions and Ubuntu 24.04, caches Gradle work, and runs a conditional native test/lint job alongside the APK build. Local Docker builds use the dependency lockfile, track the latest EAS CLI, and write named APKs under `dist/android/`.
+- Per-file sync coverage gates, shared JS/Kotlin reconcile fixtures, native unit tests and an on-demand core mutation suite strengthen validation of the two sync engines.
+- Device evidence is partial: the native foreground service completed background attempts and the native floor was enqueued and observed skipping while that service was active. A new FGS-off worker attempt, disable-path status on device, failure/watchdog behavior and a new 24-hour observation remain unverified for this candidate.
+
 ## [1.6.0] — 2026-09-23
 
 **Background sync no longer depends on the app's JavaScript to keep going.** On the tablet, a routine Android System WebView update killed the app roughly once a day. Android brought the process back a minute later, but the part that was supposed to restart sync ran inside a JavaScript engine that stays frozen when the app has no screen, so sync stayed down, pending changes piled up, and a background wake lock was held until Android disabled it. The persistent sync service, its schedule and every sync attempt now run in native Android code that needs no screen and no JavaScript.

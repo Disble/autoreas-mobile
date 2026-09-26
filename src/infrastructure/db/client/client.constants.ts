@@ -100,6 +100,24 @@ export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefin
     columnName: 'last_diagnostics_discarded_count',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_discarded_count INTEGER',
   },
+  // The counters stored beside `discarded` by the same patch helper, write and call site
+  // (migration `0014`/`0015` on a fresh install, these repair twins on a device already in the
+  // field -- `reconcileMigrationLedger` pins the migrator's gate, so this list is that device's
+  // ONLY route). Nullable with no default: NULL means "never measured".
+  {
+    columnName: 'last_diagnostics_undeliverable_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_undeliverable_count INTEGER',
+  },
+  {
+    columnName: 'last_diagnostics_unclassified_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_unclassified_count INTEGER',
+  },
+  // The age bound's own counter (migration `0015`): a non-zero value is the operator signal that a
+  // park outlived the declared bound, which is the fact the counter exists to make readable.
+  {
+    columnName: 'last_diagnostics_reaped_count',
+    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count INTEGER',
+  },
   {
     columnName: 'last_diagnostics_failed_removal_count',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_failed_removal_count INTEGER',

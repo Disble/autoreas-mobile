@@ -9,6 +9,7 @@ import {
 } from '../../../src/features/sync/reconcile-conflict.helpers';
 import type { ReconcileAppliedOperation } from '../../../src/features/sync/reconcile.schema';
 import type { OperationLogRow } from '../../../src/infrastructure/db/schema';
+import { recordDiagnosticEvent } from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 
 jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
   recordDiagnosticEvent: jest.fn(),
@@ -221,6 +222,39 @@ describe('classifyUnconfirmedOperations', () => {
     expect(result.deadLetterIds).toEqual([]);
   });
 
+  it('records a diagnostic event when a progressing conflict crosses the stalled visibility threshold', () => {
+    (recordDiagnosticEvent as jest.Mock).mockClear();
+    const pendingOps = [
+      makeOperationLogRow({
+        id: 2,
+        animeId: 'anime-2',
+        conflictAttemptCount: 1,
+        createdAt: 0,
+      }),
+    ];
+    const now = STALLED_OPERATION_VISIBILITY_THRESHOLD_MS;
+
+    const result = classifyUnconfirmedOperations({
+      unconfirmedIds: [2],
+      pendingOps,
+      appliedOperations: [
+        { anime_id: 'anime-2', operation: 'update', applied: false, reason: 'conflict', modified_at: 999 },
+      ],
+      bridgeTokensByAnimeId: new Map([['anime-2', 100]]),
+      now,
+    });
+
+    expect(result.conflictOutcomes).toEqual([
+      { operationId: 2, animeId: 'anime-2', bridgeModifiedAt: 999, conflictAttemptCount: 0, status: 'pending' },
+    ]);
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      source: 'reconcile_conflict',
+      event: 'conflict_operation_stalled',
+      cause: null,
+      at: now,
+    });
+  });
+
   it('routes an exhausted conflict into conflictOutcomes with status conflict_exhausted', () => {
     const pendingOps = [
       makeOperationLogRow({ id: 3, animeId: 'anime-3', conflictAttemptCount: 2 }),
@@ -251,6 +285,40 @@ describe('classifyUnconfirmedOperations', () => {
     });
 
     expect(result.remainingUnconfirmedIds).toEqual([4]);
+    expect(result.deadLetterIds).toEqual([]);
+    expect(result.conflictOutcomes).toEqual([]);
+  });
+
+  it('ignores an applied:true entry when building the rejected-entry lookup, even when it is otherwise conflict-shaped', () => {
+    const pendingOps = [makeOperationLogRow({ id: 7, animeId: 'anime-7' })];
+    const result = classifyUnconfirmedOperations({
+      unconfirmedIds: [7],
+      pendingOps,
+      // Shaped exactly like a real conflict entry (reason/modified_at present) except for
+      // `applied: true`: if the `applied === false` filter were dropped, this would be picked up
+      // as a rejected entry and misrouted into conflictOutcomes instead of staying unconfirmed.
+      appliedOperations: [
+        { anime_id: 'anime-7', operation: 'update', applied: true, reason: 'conflict', modified_at: 999 },
+      ],
+      bridgeTokensByAnimeId: new Map([['anime-7', 100]]),
+      now: 0,
+    });
+
+    expect(result.remainingUnconfirmedIds).toEqual([7]);
+    expect(result.deadLetterIds).toEqual([]);
+    expect(result.conflictOutcomes).toEqual([]);
+  });
+
+  it('leaves an unconfirmed id with no matching pending op in remainingUnconfirmedIds', () => {
+    const result = classifyUnconfirmedOperations({
+      unconfirmedIds: [999],
+      pendingOps: [],
+      appliedOperations: [],
+      bridgeTokensByAnimeId: new Map(),
+      now: 0,
+    });
+
+    expect(result.remainingUnconfirmedIds).toEqual([999]);
     expect(result.deadLetterIds).toEqual([]);
     expect(result.conflictOutcomes).toEqual([]);
   });

@@ -15,6 +15,8 @@ import m0010 from './0010_add_sync_cycle_telemetry_columns.sql';
 import m0011 from './0011_add_animes_bridge_modified_at.sql';
 import m0012 from './0012_add_operation_log_conflict_attempt_count.sql';
 import m0013 from './0013_add_convergence_instrumentation_columns.sql';
+import m0014 from './0014_add_diagnostics_disposition_counters.sql';
+import m0015 from './0015_add_diagnostics_reaped_counter.sql';
 
   export default {
     journal,
@@ -32,7 +34,9 @@ m0009,
 m0010,
 m0011,
 m0012,
-m0013
+m0013,
+m0014,
+m0015
     }
   }
   

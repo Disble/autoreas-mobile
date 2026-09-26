@@ -312,4 +312,26 @@ describe('anime mutation connection truth', () => {
     expect(telemetryEvents).toEqual(['started', 'failed']);
     expect(getSyncConnectionSnapshot().kind).toBe('unreachable');
   });
+
+  it('falls back to a generic Sync failed error when the background rejection is not an Error', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    (syncPendingOperations as jest.Mock).mockRejectedValueOnce('network down');
+    configureMutationWrite();
+
+    await applyChapterIncrement();
+    await waitForCalls(recordSyncAttemptFailed as jest.Mock, 1);
+    await waitForConnectionKind('sync_error');
+
+    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
+      rawDb,
+      'local_mutation',
+      now,
+      'Sync failed',
+    );
+    expect(getSyncConnectionSnapshot()).toEqual({
+      kind: 'sync_error',
+      lastSyncAt: null,
+      message: 'Sync failed',
+    });
+  });
 });

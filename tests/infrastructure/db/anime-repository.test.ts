@@ -103,6 +103,41 @@ describe("upsertAnime", () => {
     }));
     expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ target: animes._id }));
   });
+
+  it("normaliza dias/generos ausentes (undefined) a null en vez de JSON.stringify(undefined)", async () => {
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const insert = jest.fn().mockReturnValue({ values });
+    const db = { insert } as never;
+    const anime = {
+      _id: "anime-2",
+      nombre: "Bleach",
+      estado: 0,
+      nrocapvisto: 0,
+      totalcap: null,
+      dias: undefined,
+      generos: undefined,
+      tipo: null,
+      activo: 1,
+      primeravez: 0,
+      fechaUltCapVisto: null,
+      fechaEstreno: null,
+      fechaCreacion: null,
+      fechaEliminacion: null,
+      portada: null,
+      pagina: null,
+      carpeta: null,
+      estudios: null,
+      origen: null,
+      duracion: null,
+    };
+
+    await upsertAnime(db, anime as never);
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ dias: null, generos: null }),
+    );
+  });
 });
 
 describe("applyAnimeBridgeToken", () => {

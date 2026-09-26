@@ -66,9 +66,13 @@ data class CycleOutcome(
  * semantics each step's TypeScript reference defines. Differences are deliberate and named:
  * - the no-config case returns `not_applicable` instead of throwing (a background attempt is a
  *   probe, not a user-facing failure);
- * - the conflict-exhaustion policy (attempt caps and the token re-base), the diagnostics flush
- *   (`POST /api/sync/diagnostics`) and the full `client_telemetry` envelope are DEFERRED, not
- *   silently skipped: conflicts fall back to the generic "reset to pending" retry;
+ * - the conflict-exhaustion policy (attempt caps and the token re-base) and the full
+ *   `client_telemetry` envelope are DEFERRED, not silently skipped: conflicts fall back to the
+ *   generic "reset to pending" retry;
+ * - the diagnostics flush (`POST /api/sync/diagnostics`) is NOT deferred any more: the attempt
+ *   delivers stored envelopes through [SyncEngineDiagnosticsCourier] once the lease is held and
+ *   before it reads the backlog, on both the claimed and the pull-only path. It is deliberately
+ *   outside the journal and outside the outcome -- a delivery failure is never a cycle failure;
  * - the empty-backlog attempt still reconciles: with nothing to claim or send, the reconcile
  *   request is still issued pull-only, exactly like the JS no-op attempt (the JS cycle's
  *   `syncPendingOperations` always runs, so remote changes arrive without anything to push).
@@ -80,6 +84,7 @@ data class CycleOutcome(
 class SyncEngineCycle(
   private val appDb: SQLiteDatabase,
   private val journal: SyncEngineJournal,
+  private val diagnostics: SyncEngineDiagnosticsCourier = SyncEngineDiagnosticsCourier.forAppDatabase(appDb),
 ) {
   private val lease = SyncCycleLease(appDb)
 
@@ -162,11 +167,14 @@ class SyncEngineCycle(
       transition("not_applicable", "bridge config missing or incomplete")
       return CycleOutcome("not_applicable", lastState, 0, 0, null)
     }
-    // Non-null by `hasCompleteBridgeConnection`; local aliases keep the smart-cast.
-    val deviceId = config.deviceId ?: ""
-    val ip = config.ip ?: ""
-    val port = config.port ?: ""
-    val token = config.token ?: ""
+    // `!!`, not `?: ""` (T3, sync-core-test-assurance): `hasCompleteBridgeConnection` above
+    // already guarantees all four fields non-null/non-blank, so `?: ""` was dead code the
+    // compiler just can't smart-cast across a function-call boundary; `!!` proves the same
+    // invariant and fails loudly instead of silently degrading to "" if it were ever violated.
+    val deviceId = config.deviceId!!
+    val ip = config.ip!!
+    val port = config.port!!
+    val token = config.token!!
 
     if (!lease.claim(cycleId)) {
       transition("not_applicable", "sync cycle lease held elsewhere")
@@ -188,6 +196,16 @@ class SyncEngineCycle(
       transition("abandoned", "cycle lease lost before the backlog read")
       return outcome("abandoned", lastState, 0, 0, "LeaseLost")
     }
+
+    // Diagnostics drain (C2): once the fence is held and before the backlog read, so BOTH the
+    // claimed path and the pull-only path deliver stored envelopes first. Deliberately placed here
+    // and not around the reconcile: it is not a journaled step (the attempt's states stay exactly
+    // as they were), it never throws (the courier swallows by contract), and its tally is not part
+    // of the outcome -- instrumentation delivery must never change whether a cycle succeeded.
+    diagnostics.drain(
+      isSyncTelemetryEnabled = config.isSyncTelemetryEnabled,
+      connection = SyncDiagnosticsConnection(ip = ip, port = port, token = token),
+    )
 
     val backlog = readBacklog()
     val backlogReadCount = backlog.size
@@ -245,7 +263,10 @@ class SyncEngineCycle(
     } catch (error: ReconcileParseException) {
       // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
       revertClaimedRows(deadLetter = false)
-      transition("failed", error.message ?: "invalid reconcile response")
+      // `error.message` bare, not `?: "..."` (T3, sync-core-test-assurance): ReconcileParseException
+      // requires a non-null constructor message, so `.message` is never actually null here --
+      // only its declared `String?` type is; `transition`'s `reason` already accepts that.
+      transition("failed", error.message)
       return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
     }
 
@@ -332,7 +353,9 @@ class SyncEngineCycle(
       ReconcileResponseParser.parse(response.body)
     } catch (error: ReconcileParseException) {
       // Parse failure is retryable, never dead-lettered (step 7).
-      transition("failed", error.message ?: "invalid reconcile response")
+      // `error.message` bare -- see the claimed path's identical catch above for why the
+      // `?: "invalid reconcile response"` fallback was dead code.
+      transition("failed", error.message)
       return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
     }
 
@@ -395,12 +418,6 @@ class SyncEngineCycle(
       Log.w(TAG, "failed to revert claimed rows", error)
     }
   }
-
-  /**
-   * Claims the singleton lease through [SyncCycleLease]; the conditional UPSERT there is the
-   * exact port of `claimSyncCycleLock`.
-   */
-  private fun claimLease(): Boolean = lease.claim(cycleId)
 
   /** Reads the deduped backlog verbatim from `buildDedupedBacklogQuery` (step 4). */
   private fun readBacklog(): List<BacklogRow> {

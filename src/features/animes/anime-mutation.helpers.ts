@@ -19,6 +19,11 @@ import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
 import { getAnimeMutationFailureMessage } from './anime-mutation-failure.helpers';
 import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { causeFromError } from '../sync/sync-telemetry.helpers';
+import {
+  recordChapterActionCommitted,
+  recordChapterActionSync,
+} from './chapter-action-diagnostics.helpers';
+import type { ChapterActionContext } from './chapter-action-diagnostics.types';
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
@@ -233,13 +238,19 @@ export async function recordAnimeMutationFailure(
  * Runs a patch-based mutation inside a queued deferred SQLite transaction and enqueues the sync operation.
  * Centralizing this orchestration keeps `useMutateAnime` focused on wiring React callbacks to
  * the builders, and removes duplication between cap+, cap-, and state-change flows.
+ *
+ * Returns whether a row was actually updated, because the two cases are indistinguishable from the
+ * outside otherwise: an absent row resolves normally and leaves the list untouched, which reads
+ * exactly like a committed write with no visible effect. `actionContext` is optional and additive --
+ * the season-rating and estado flows pass none, and instrumenting them is not this parameter's job.
  */
 export async function applyAnimeMutationPatch(
   rawDb: SQLiteDatabase,
   animeId: string,
   buildPatch: AnimeMutationPatchBuilder,
   label: string,
-): Promise<void> {
+  actionContext?: ChapterActionContext,
+): Promise<boolean> {
   const now = Date.now();
   let didMutate = false;
 
@@ -266,16 +277,31 @@ export async function applyAnimeMutationPatch(
     didMutate = true;
   });
 
-  if (!didMutate) return;
+  if (!didMutate) return false;
+
+  if (actionContext) {
+    recordChapterActionCommitted(actionContext);
+  }
 
   const syncAttempt = beginSyncConnectionAttempt();
 
   // Sincroniza en background — no bloquea la UI
   void syncPendingOperations(rawDb)
     .then(() => {
+      if (actionContext) {
+        recordChapterActionSync(actionContext, 'ok');
+      }
+
       markSyncConnectionPending(syncAttempt);
     })
     .catch(async (err: unknown) => {
+      // Recorded here, not at the promise's rejection site: this branch IS where the push's
+      // outcome becomes known, and the chapter feed must report it while the local write stays
+      // reported as committed.
+      if (actionContext) {
+        recordChapterActionSync(actionContext, 'failed');
+      }
+
       const failure = err instanceof Error ? err : new Error('Sync failed');
 
       // Distinct from `mutation_failed`: the local write LANDED and only the push to the bridge
@@ -306,6 +332,8 @@ export async function applyAnimeMutationPatch(
       });
       console.warn(`[${label}] Sync failed:`, err);
     });
+
+  return true;
 }
 
 /**

@@ -122,6 +122,24 @@ describe('initial-sync helpers', () => {
     ).rejects.toThrow('Invalid anime list from bridge');
   });
 
+  it('falla fuerte cuando el bridge responde un status HTTP no-ok', async () => {
+    (bridgeClient.listAnimes as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 503,
+      data: null,
+      rawBody: null,
+      url: 'https://192.168.1.10:9876/api/animes',
+    });
+
+    await expect(
+      fetchInitialSyncSnapshot({
+        ip: '192.168.1.10',
+        port: 9876,
+        token: 'auth-secret',
+      })
+    ).rejects.toThrow('GET /api/animes failed: 503');
+  });
+
   it('persists fetched anime rows through the deferred write so live queries can observe it', async () => {
     (withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       await task({}, {});
@@ -137,6 +155,13 @@ describe('initial-sync helpers', () => {
       undefined,
       0,
     );
+  });
+
+  it('returns 0 without opening a write when there is nothing to persist', async () => {
+    const count = await persistInitialSyncSnapshot(rawDb as never, []);
+
+    expect(count).toBe(0);
+    expect(withLocalWrite).not.toHaveBeenCalled();
   });
 
   it('commits bridge config and snapshot together in one deferred write so live queries can observe it', async () => {

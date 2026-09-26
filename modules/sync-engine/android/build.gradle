@@ -1,6 +1,13 @@
 plugins {
   id 'com.android.library'
   id 'expo-module-gradle-plugin'
+  // Pinned (T3, sync-core-test-assurance): per-class line+branch coverage gate. Kover chosen
+  // over JaCoCo because it auto-detects the Android Gradle Plugin + `kotlin-android` combo
+  // `expo-module-gradle-plugin` applies (see ProjectConfiguration.kt) and creates one report
+  // variant per build variant with no extra wiring; JaCoCo would need the
+  // `includeNoLocationClasses`/`excludes` dance by hand on `testDebugUnitTest` for the same
+  // Robolectric result Kover gets from variant auto-detection.
+  id 'org.jetbrains.kotlinx.kover' version '0.9.9'
 }
 
 group = 'expo.modules.syncengine'
@@ -33,15 +40,51 @@ android {
       returnDefaultValues = true
     }
   }
+
+  sourceSets {
+    test {
+      // T2 (JS<->Kotlin wire contract): ReconcileWireContractTest reads the SAME JSON fixture
+      // files the Jest suite reads (tests/fixtures/sync-contract/reconcile-*.json), wired in
+      // here as an extra test-resources dir -- never copied -- so a fixture edit is picked up
+      // by both suites with no sync step. Path is relative to this module
+      // (modules/sync-engine/android/), three levels up to the repo root.
+      resources.srcDirs += '../../../tests/fixtures/sync-contract'
+    }
+  }
 }
 
 dependencies {
+  // The native periodic background floor (ODD native-background-sync-cutover M2): WorkManager is
+  // the platform's own periodic scheduler, so the floor survives with no resident service. Version
+  // 2.9.1 is the exact version `expo-background-task` (the JS floor this replaces in M3) already
+  // resolves, so the app graph keeps ONE WorkManager version instead of two.
+  implementation 'androidx.work:work-runtime-ktx:2.9.1'
+  // Fixes a real conflict the line above CREATES: work-runtime's POM requests
+  // `androidx.core:core:1.9.0` at RUNTIME scope, and AGP's consistent resolution then pins this
+  // module's COMPILE classpath to that same 1.9.0 -- where
+  // `androidx.core.app.ServiceCompat.startForeground(...)`, already used by
+  // [SyncForegroundService], does not exist, so `:sync-engine:compileDebugKotlin` fails with
+  // "Unresolved reference 'startForeground'" (observed, not predicted). This module compiles
+  // against androidx.core 1.17.0 through expo-modules-core already, so raising the RUNTIME floor
+  // to that same version keeps both classpaths consistent and declares nothing the app does not
+  // already ship. It is a floor: a future expo bump to a higher version still wins.
+  implementation 'androidx.core:core:1.17.0'
+  // Ticker-owned ownership check for the floor (SyncTickerOwnership). Direction matters: this
+  // module may depend on `foreground-sync-ticker`; every doc in both modules forbids the reverse
+  // (the ticker starts SyncForegroundService by class-name string precisely so it never needs a
+  // dependency on this module), and this dependency does not create that reverse edge.
+  implementation project(':foreground-sync-ticker')
   testImplementation 'junit:junit:4.13.2'
   // Robolectric 4.14.1: first line supporting API 35 (this module's targetSdk; compileSdk is 36
   // per android/gradle.properties, but Robolectric shadows the RUNTIME sdk named by
   // src/test/resources/robolectric.properties, not compileSdk).
   testImplementation 'org.robolectric:robolectric:4.14.1'
   testImplementation 'androidx.test:core:1.6.1'
+  // WorkManagerTestInitHelper / TestListenableWorkerBuilder: the worker tests drive the worker's
+  // own public `doWork()` seam, and the scheduler tests need a test-initialized WorkManager whose
+  // executors are synchronous so `enqueueUniquePeriodicWork` / `getWorkInfosForUniqueWork` are
+  // observable without a real scheduler or wall-clock waiting.
+  testImplementation 'androidx.work:work-testing:2.9.1'
 }
 
 // The presence-probe tests (T2) stand in for the bridge with the JDK's own
@@ -65,5 +108,190 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { 
   if (task.name.contains('UnitTest')) {
     task.compilerOptions.freeCompilerArgs.add('-Xadd-modules=jdk.httpserver')
     task.compilerOptions.noJdk.set(false)
+  }
+}
+
+// Per-class coverage gate (T3, sync-core-test-assurance), mirroring the maintainer's 100/80/0
+// tiers -- the same tier list `jest.coverage-tiers.js` holds for the JS side (T1). The tier list
+// is the source of truth and lives HERE, in config, not in prose: a class that is not named below
+// gets no gate (INFRA). Every entry names the exact class Kover's report emits for the file (as
+// measured against modules/sync-engine/android/build/reports/kover/report.xml), plus a `$*`
+// wildcard for any Kotlin-generated inner/lambda/companion class of the same file (see
+// `KoverVerifyRule`/`KoverReportFiltersConfig` in kotlinx-kover 0.9.9: filters take a fully
+// qualified class name with `*`/`?` wildcards, and there is no per-rule package/file grouping --
+// only per-class -- so two DIFFERENT bound tiers require two separate report variants, `core` and
+// `important` below, both sourced from the SAME `debug` build variant/test run).
+def CORE_CLASSES = [
+  // ReconcileRequestBody.kt
+  'ReconcileRequestBody', 'ReconcileRequestBody$*', 'BacklogRow', 'BacklogRow$*',
+  // ReconcileResponseParser.kt (+ WireAnimeMapper, grouped with it in the tier list)
+  'ReconcileResponseParser', 'ReconcileResponseParser$*', 'ReconcileResponseParserKt',
+  'ReconcileResponseParserKt$*', 'ReconcileParseException', 'ReconcileParseException$*',
+  'AppliedOperationEntry', 'AppliedOperationEntry$*', 'BridgeChangeEntry', 'BridgeChangeEntry$*',
+  'ParsedReconcileResponse', 'ParsedReconcileResponse$*', 'NormalizedBridgeChange',
+  'NormalizedBridgeChange$*', 'WireAnimeMapper', 'WireAnimeMapper$*',
+  // ReconcileConfirmation.kt
+  'ReconcileConfirmation', 'ReconcileConfirmation$*',
+  // SyncEngineResponseApplier.kt
+  'SyncEngineResponseApplier', 'SyncEngineResponseApplier$*',
+  // SyncCycleLease.kt
+  'SyncCycleLease', 'SyncCycleLease$*', 'LeaseLostException', 'LeaseLostException$*',
+  'LeaseFence', 'LeaseFence$*',
+  // SyncEngineDatabases.kt (no object/class wrapper -> file facade class)
+  'SyncEngineDatabasesKt', 'SyncEngineDatabasesKt$*', 'BridgeConfigRow', 'BridgeConfigRow$*',
+  // SyncEngineRecovery.kt
+  'SyncEngineRecovery', 'SyncEngineRecovery$*', 'SyncEngineRecoveryKt', 'SyncEngineRecoveryKt$*',
+  'RecoveryResult', 'RecoveryResult$*',
+  // OperationLogPruner.kt
+  'OperationLogPruner', 'OperationLogPruner$*',
+  // SyncEngineCycle.kt (CycleOutcome only; SyncEngineCycle itself is in CORE_FLOOR_CLASSES)
+  'CycleOutcome', 'CycleOutcome$*',
+  // SyncEngineHttp.kt
+  'SyncEngineHttp', 'SyncEngineHttp$*', 'SyncEngineHttpResponse', 'SyncEngineHttpResponse$*',
+].collect { "expo.modules.syncengine.$it" }
+
+// CORE classes whose remaining gaps are defensive code no test can reach without a new seam
+// (SyncEngineCycle: lease-loss interleaving inside one synchronous call, `?:` on catch-all
+// messages; SyncEngineRunner: the unarmable-watchdog refusal and a re-arm the author documents as
+// unreachable). Kover 0.9.9 has no per-line exclusion, so instead of dropping them from the gate
+// they carry a ratchet floor at the value measured on 2026-09-24: coverage can only go up.
+// Raising them to 100 needs injectable test seams -- see odd/tasks/sync-core-test-assurance.md.
+def CORE_FLOOR_CYCLE_CLASSES = ['SyncEngineCycle', 'SyncEngineCycle$*'].collect { "expo.modules.syncengine.$it" }
+def CORE_FLOOR_RUNNER_CLASSES = ['SyncEngineRunner', 'SyncEngineRunner$*'].collect { "expo.modules.syncengine.$it" }
+
+def IMPORTANT_CLASSES = [
+  // SyncEngineJournal.kt
+  'SyncEngineJournal', 'SyncEngineJournal$*', 'JournalTransition', 'JournalTransition$*',
+  // SyncEngineBridgePresence.kt
+  'SyncEngineBridgePresence', 'SyncEngineBridgePresence$*', 'PresenceProbeResult',
+  'PresenceProbeResult$*',
+  // SyncEngineRuntimeStatus.kt
+  'SyncEngineRuntimeStatus', 'SyncEngineRuntimeStatus$*',
+  // SyncForegroundService.kt
+  'SyncForegroundService', 'SyncForegroundService$*',
+  // SyncFloorScheduler.kt (M2 native floor: registration/idempotency/status)
+  'SyncFloorScheduler', 'SyncFloorScheduler$*', 'SyncFloorSchedulerKt', 'SyncFloorSchedulerKt$*',
+  'SyncFloorStatus', 'SyncFloorStatus$*',
+  // SyncFloorWorker.kt (M2 native floor: the attempt itself, its ownership gate and its
+  // background_task projection)
+  'SyncFloorWorker', 'SyncFloorWorker$*', 'SyncFloorWorkerKt', 'SyncFloorWorkerKt$*',
+].collect { "expo.modules.syncengine.$it" }
+
+kover {
+  currentProject {
+    // Two custom report variants sourced from the SAME `debug` build variant/test run (see the
+    // class-list comment above for why two variants, not one rule): creating them only changes
+    // which classes each variant's reports/verify see, it does not re-run `testDebugUnitTest`.
+    // `add`'s vararg is followed by a non-vararg Kotlin-default `optional` parameter, which
+    // Groovy cannot resolve through normal vararg auto-boxing (no `@JvmOverloads` on the
+    // interface) -- calling it needs the explicit array + boolean form.
+    createVariant('core') { add(['debug'] as String[], false) }
+    createVariant('important') { add(['debug'] as String[], false) }
+    createVariant('coreFloor') { add(['debug'] as String[], false) }
+    createVariant('coreFloorRunner') { add(['debug'] as String[], false) }
+  }
+
+  reports {
+    filters {
+      // Generated, self-validating; never part of any tier (INFRA, 0%).
+      excludes { classes('expo.modules.syncengine.BuildConfig', 'expo.modules.syncengine.BuildConfig$*') }
+    }
+
+    variant('core') {
+      filters {
+        includes { classes(CORE_CLASSES) }
+      }
+      verify {
+        rule('CORE classes: 100% line coverage') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 100
+          }
+        }
+        rule('CORE classes: 100% branch coverage') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.BRANCH
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 100
+          }
+        }
+      }
+    }
+
+    variant('important') {
+      filters {
+        includes { classes(IMPORTANT_CLASSES) }
+      }
+      verify {
+        rule('IMPORTANT tier: 80% line coverage (tier aggregate)') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.APPLICATION
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 80
+          }
+        }
+        rule('IMPORTANT tier: 80% branch coverage (tier aggregate)') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.APPLICATION
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.BRANCH
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 80
+          }
+        }
+      }
+    }
+
+    // Ratchet floors, per class, for SyncEngineCycle, measured 98.9 % line / 87.5 % branch.
+    variant('coreFloor') {
+      filters {
+        includes { classes(CORE_FLOOR_CYCLE_CLASSES) }
+      }
+      verify {
+        rule('CORE floor: line coverage never below the 2026-09-24 measurement') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 98
+          }
+        }
+        rule('CORE floor: branch coverage never below the 2026-09-24 measurement') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.BRANCH
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 87
+          }
+        }
+      }
+    }
+    // Ratchet floors, per class, for SyncEngineRunner (+ its watchdog class), measured 80.3 % line / 50 % branch on the watchdog.
+    variant('coreFloorRunner') {
+      filters {
+        includes { classes(CORE_FLOOR_RUNNER_CLASSES) }
+      }
+      verify {
+        rule('CORE floor: line coverage never below the 2026-09-24 measurement') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 80
+          }
+        }
+        rule('CORE floor: branch coverage never below the 2026-09-24 measurement') {
+          groupBy = kotlinx.kover.gradle.plugin.dsl.GroupingEntityType.CLASS
+          bound {
+            coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.BRANCH
+            aggregationForGroup = kotlinx.kover.gradle.plugin.dsl.AggregationType.COVERED_PERCENTAGE
+            minValue = 50
+          }
+        }
+      }
+    }
   }
 }

@@ -1,0 +1,244 @@
+[
+  {
+    "name": "update-with-base-token",
+    "description": "An update operation whose anime has a known nonzero bridge_modified_at emits base with that exact value.",
+    "input": {
+      "deviceId": "device-1",
+      "lastChangelogId": 2259,
+      "cycleId": "cycle-1",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 1, "animeId": "anime-1", "operation": "update", "payload": "{\"episodesWatched\":5}", "createdAt": 1710000000000 }
+      ],
+      "bridgeTokensByAnimeId": { "anime-1": 1788540735366 }
+    },
+    "expected": {
+      "device_id": "device-1",
+      "last_changelog_id": 2259,
+      "pending_operations": [
+        { "anime_id": "anime-1", "operation": "update", "payload": { "episodesWatched": 5 }, "created_at": 1710000000000, "base": 1788540735366 }
+      ]
+    }
+  },
+  {
+    "name": "update-base-omitted-null-token",
+    "description": "A NULL stored token OMITS the base key entirely -- never emitted as null (the bridge would treat null as a real zero token).",
+    "input": {
+      "deviceId": "device-1",
+      "lastChangelogId": 2259,
+      "cycleId": "cycle-1",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 1, "animeId": "anime-1", "operation": "update", "payload": "{\"episodesWatched\":5}", "createdAt": 1710000000000 }
+      ],
+      "bridgeTokensByAnimeId": { "anime-1": null }
+    },
+    "expected": {
+      "device_id": "device-1",
+      "last_changelog_id": 2259,
+      "pending_operations": [
+        { "anime_id": "anime-1", "operation": "update", "payload": { "episodesWatched": 5 }, "created_at": 1710000000000 }
+      ]
+    }
+  },
+  {
+    "name": "update-base-zero-token",
+    "description": "A stored token of exactly 0 is a real, legitimate token: base:0 is emitted, never collapsed into the omitted case.",
+    "input": {
+      "deviceId": "device-1",
+      "lastChangelogId": 2259,
+      "cycleId": "cycle-1",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 1, "animeId": "anime-1", "operation": "update", "payload": "{\"episodesWatched\":5}", "createdAt": 1710000000000 }
+      ],
+      "bridgeTokensByAnimeId": { "anime-1": 0 }
+    },
+    "expected": {
+      "device_id": "device-1",
+      "last_changelog_id": 2259,
+      "pending_operations": [
+        { "anime_id": "anime-1", "operation": "update", "payload": { "episodesWatched": 5 }, "created_at": 1710000000000, "base": 0 }
+      ]
+    }
+  },
+  {
+    "name": "create-operation-no-token-map",
+    "description": "A create operation with no token map supplied at all: base omitted for every operation, byte-identical to the pre-OCC-token contract. Alias normalization never applies to create.",
+    "input": {
+      "deviceId": "device-2",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-2",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 2, "animeId": "anime-2", "operation": "create", "payload": "{\"estado\":2}", "createdAt": 1710000001000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-2",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-2", "operation": "create", "payload": { "estado": 2 }, "created_at": 1710000001000 }
+      ]
+    }
+  },
+  {
+    "name": "delete-operation-empty-payload",
+    "description": "A delete operation carries an empty payload object through unchanged.",
+    "input": {
+      "deviceId": "device-2",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-2",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 3, "animeId": "anime-3", "operation": "delete", "payload": "{}", "createdAt": 1710000002000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-2",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-3", "operation": "delete", "payload": {}, "created_at": 1710000002000 }
+      ]
+    }
+  },
+  {
+    "name": "legacy-alias-normalization-english-wins",
+    "description": "An update payload carrying both a legacy Spanish alias and its English counterpart keeps the English value; the alias key is always deleted, even though it lost.",
+    "input": {
+      "deviceId": "device-3",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-3",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 4, "animeId": "anime-4", "operation": "update", "payload": "{\"estado\":2,\"status\":5,\"nrocapvisto\":7,\"dias\":[\"Tue\"]}", "createdAt": 1710000003000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-3",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-4", "operation": "update", "payload": { "status": 5, "episodesWatched": 7, "days": ["Tue"] }, "created_at": 1710000003000 }
+      ]
+    }
+  },
+  {
+    "name": "legacy-alias-normalization-full-translation",
+    "description": "An update payload carrying only legacy Spanish aliases is fully translated to English keys.",
+    "input": {
+      "deviceId": "device-3",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-3",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 5, "animeId": "anime-5", "operation": "update", "payload": "{\"estado\":3,\"nrocapvisto\":10,\"fechaUltCapVisto\":1700,\"dias\":[\"Mon\",\"Wed\"]}", "createdAt": 1710000004000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-3",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-5", "operation": "update", "payload": { "status": 3, "episodesWatched": 10, "lastWatchedAt": 1700, "days": ["Mon", "Wed"] }, "created_at": 1710000004000 }
+      ]
+    }
+  },
+  {
+    "name": "malformed-payload-json-falls-back-to-empty-object",
+    "description": "A payload column that is not valid JSON degrades to {} instead of throwing, so one bad row cannot abort the whole batch.",
+    "input": {
+      "deviceId": "device-4",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-4",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 6, "animeId": "anime-6", "operation": "update", "payload": "{not-json", "createdAt": 1710000005000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-4",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-6", "operation": "update", "payload": {}, "created_at": 1710000005000 }
+      ]
+    }
+  },
+  {
+    "name": "non-object-payload-array-falls-back-to-empty-object",
+    "description": "A payload column that parses as valid JSON but is not an object (a bare array) also degrades to {}.",
+    "input": {
+      "deviceId": "device-4",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-4",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 7, "animeId": "anime-7", "operation": "update", "payload": "[1,2,3]", "createdAt": 1710000006000 }
+      ]
+    },
+    "expected": {
+      "device_id": "device-4",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-7", "operation": "update", "payload": {}, "created_at": 1710000006000 }
+      ]
+    }
+  },
+  {
+    "name": "multiple-operations-mixed-tokens-and-dedup",
+    "description": "A batch of three operations, one with a known nonzero token, one with a known zero token, and one absent from the token map entirely: base is present only for the first two, and the zero token is never confused with omission.",
+    "input": {
+      "deviceId": "device-5",
+      "lastChangelogId": 100,
+      "cycleId": "cycle-5",
+      "triggerSource": "manual",
+      "pendingOperations": [
+        { "id": 8, "animeId": "anime-known", "operation": "update", "payload": "{}", "createdAt": 1710000007000 },
+        { "id": 9, "animeId": "anime-zero", "operation": "update", "payload": "{}", "createdAt": 1710000007001 },
+        { "id": 10, "animeId": "anime-unknown", "operation": "update", "payload": "{}", "createdAt": 1710000007002 }
+      ],
+      "bridgeTokensByAnimeId": { "anime-known": 500, "anime-zero": 0 }
+    },
+    "expected": {
+      "device_id": "device-5",
+      "last_changelog_id": 100,
+      "pending_operations": [
+        { "anime_id": "anime-known", "operation": "update", "payload": {}, "created_at": 1710000007000, "base": 500 },
+        { "anime_id": "anime-zero", "operation": "update", "payload": {}, "created_at": 1710000007001, "base": 0 },
+        { "anime_id": "anime-unknown", "operation": "update", "payload": {}, "created_at": 1710000007002 }
+      ]
+    }
+  },
+  {
+    "name": "client-telemetry-presence-projected-fields-match",
+    "description": "Both engines attach a client_telemetry envelope carrying the same cycle_id, trigger_source and pending_ops_count, even though the JS envelope is richer (WireSyncCycleTelemetry) and the Kotlin envelope is a deliberately minimal, deferred subset (see ReconcileRequestBody.kt's own header comment; unifying them is T5, not T2). Only the SHARED projection is asserted here, not full-shape equality across languages.",
+    "input": {
+      "deviceId": "device-9",
+      "lastChangelogId": 2400,
+      "cycleId": "cycle-telemetry-1",
+      "triggerSource": "native_fgs_tick",
+      "pendingOperations": [
+        { "id": 11, "animeId": "anime-11", "operation": "update", "payload": "{}", "createdAt": 1710000008000 }
+      ],
+      "clientTelemetry": {
+        "cycle_id": "cycle-telemetry-1",
+        "degraded": null,
+        "trigger_source": "native_fgs_tick",
+        "app_state": "background",
+        "previous_cycle": null,
+        "counters": { "consecutive_unclosed_cycles": 0, "pending_ops_count": 1, "cursor": 2400 },
+        "recent_events": []
+      }
+    },
+    "expected": {
+      "device_id": "device-9",
+      "last_changelog_id": 2400,
+      "pending_operations": [
+        { "anime_id": "anime-11", "operation": "update", "payload": {}, "created_at": 1710000008000 }
+      ]
+    },
+    "expectedTelemetryProjection": {
+      "cycle_id": "cycle-telemetry-1",
+      "trigger_source": "native_fgs_tick",
+      "counters": { "pending_ops_count": 1 }
+    }
+  }
+]

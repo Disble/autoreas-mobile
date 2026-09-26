@@ -12,7 +12,18 @@ historical evidence, not execution contracts.
   `npm run generate:feature <name>`.
 - Preserve ADRs, postmortems, changelog entries, learning logs, and historical
   OpenSpec artifacts unless the user explicitly requests otherwise.
-- Commits require explicit user confirmation after validation and diff review.
+
+## Local Android builds
+
+- For device diagnosis, build a debuggable lab APK with
+  `docker compose -f docker-compose.eas.yml run --rm eas-build lab`. Find the
+  output under `dist/android/`; never distribute a lab APK.
+- Upgrade an installed app with `adb install -r <path-to-lab-apk>` to preserve
+  app data. If Android reports a signer mismatch, do not uninstall: uninstalling
+  deletes local data. See [Local Android build](docs/local-android-build.md).
+- This local build contacts Expo for EAS-managed signing credentials using
+  `EXPO_TOKEN` from `.env.local`. Obtain explicit authorization for that remote
+  operation before running it.
 
 ## Architecture Boundaries
 

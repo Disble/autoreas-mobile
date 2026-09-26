@@ -154,6 +154,111 @@ class SyncEngineResponseApplierTest {
     assertEquals("processing", operationStatus(11))
   }
 
+  @Test
+  fun anAppliedOperationWithoutAModifiedAtWritesNoToken() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // applied=true but modified_at is ABSENT: the `entry.applied && entry.modifiedAt != null`
+    // guard's second operand must short-circuit to false, never crash on the null token.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+    }
+
+    // The stored token (from setUp's own INSERT) is untouched -- no UPDATE was ever issued.
+    assertEquals(4L, animeToken("anime-a"))
+  }
+
+  @Test
+  fun aRejectedOperationWithAnUnrecognizedReasonResetsToPendingNotDeadLetter() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // Only "unsupported_operation" dead-letters; every other rejection reason (even a known,
+    // non-null one) resets to pending -- the deferred conflict-exhaustion policy.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false,"reason":"conflict"}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+    }
+
+    assertEquals("pending", operationStatus(12))
+  }
+
+  @Test
+  fun aRejectedOperationWithNoReasonAtAllResetsToPendingNotDeadLetter() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // rejected is non-null but its `reason` field itself is null (never set), not merely a
+    // different string -- a distinct path through the `rejected?.reason == ...` comparison.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+    }
+
+    assertEquals("pending", operationStatus(12))
+  }
+
+  @Test
+  fun aRejectedEntryForTheSameAnimeButADifferentOperationNeverMatchesResetsToPending() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // anime_id matches row 13 ("anime-c"), but the operation does not ("delete" vs the row's
+    // "update"): the rejected-entry lookup's `it.operation == row.operation` conjunct must be
+    // what excludes it, not the anime_id check alone.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-c","operation":"delete","applied":false,"reason":"unsupported_operation"}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+    }
+
+    assertEquals("pending", operationStatus(13))
+  }
+
+  @Test
+  fun aNonStringGenresElementRejectsTheResponseWithoutLeavingPartialWrites() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // The wire→legacy mapping runs BEFORE the first staging insert, so a rejected genres element
+    // aborts step 8's transaction with nothing written yet: no staged row, no OCC token move,
+    // no cursor advance. Together with the cycle's own claimed-batch revert (`run()`'s catch),
+    // this is why the response is retryable instead of losing the cursor or dead-lettering rows.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["genres"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"genres":["Action",42]}}],"last_changelog_id":16}""",
+    )
+
+    assertThrows(ReconcileParseException::class.java) {
+      inImmediateTransaction(database) {
+        applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      }
+    }
+
+    assertEquals(0, stagedChanges().size)
+    assertEquals(4L, animeToken("anime-a"))
+    assertEquals(10L, changelogCursor())
+    assertEquals("processing", operationStatus(11))
+  }
+
+  @Test
+  fun aBridgeChangeWithNoSnapshotStagesANullSnapshotColumn() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val parsed = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"remote-c","change_type":"delete","changed_fields":[],"timestamp":5}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, emptyList(), lastChangelogId = 10)
+    }
+
+    val staged = stagedChanges().single()
+    assertEquals("remote-c", staged.recordId)
+    assertEquals(null, staged.snapshot)
+  }
+
   private fun updateOperationStatus(ids: List<Long>, status: String) {
     statusUpdates.add(ids.toList() to status)
     val placeholders = ids.joinToString(",") { "?" }

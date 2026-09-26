@@ -11,6 +11,7 @@ jest.mock("drizzle-orm", () => ({
   inArray: jest.fn((column, values) => ({ column, values })),
 }));
 
+/** Builds a fixture `RemoteAnimeChange`, extended per test via spread overrides. */
 function makeChange(overrides: Partial<RemoteAnimeChange> = {}): RemoteAnimeChange {
   return {
     recordId: "anime-1",
@@ -57,6 +58,22 @@ describe("stagePendingRemoteChanges", () => {
 
     const inserted = values.mock.calls[0][0];
     expect(inserted[0].snapshot).toBeNull();
+  });
+
+  it("usa Date.now() como reloj por defecto cuando el caller omite now", async () => {
+    jest.useFakeTimers().setSystemTime(99_999);
+    try {
+      const values = jest.fn().mockResolvedValue(undefined);
+      const insert = jest.fn().mockReturnValue({ values });
+      const db = { insert } as never;
+
+      await stagePendingRemoteChanges(db, [makeChange()]);
+
+      const inserted = values.mock.calls[0][0];
+      expect(inserted[0].createdAt).toBe(99_999);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("batch vacío no llama a insert", async () => {

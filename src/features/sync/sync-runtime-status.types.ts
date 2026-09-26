@@ -28,8 +28,86 @@ export type SyncRuntimeTriggerSource =
  */
 export type SyncCycleStage = (typeof SYNC_CYCLE_STAGES)[number];
 
-/** Defines the data contract for sync runtime status snapshot. */
-export interface SyncRuntimeStatusSnapshot {
+/**
+ * The counters the status row ALWAYS stores as a plain number. Neither of them has a "never
+ * measured" state, so a reader never has to tell a measured zero apart from a read that never
+ * happened.
+ *
+ * The counter keys are declared ONCE for the whole file: as this union and `SyncNullableCountKey`,
+ * which reach both views through `Readonly<Record<...>>` (the snapshot, where every counter is
+ * required) and `Partial<Readonly<Record<...>>>` (the patch, where every counter may be omitted).
+ * One list is what keeps the required and the optional view of a counter from drifting apart, and
+ * it is why a counter that may legitimately be absent belongs in `SyncNullableCountKey` and never
+ * here: widening THIS union would let a row that was never measured report a zero nobody counted.
+ *
+ * `consecutiveUnclosedCycles` is the bookkeeping streak -- consecutive cycles that never released
+ * the active flag, which separates a one-off from a quota bleed. `lastFailedCheckpointCount`
+ * counts the checkpoints that failed to persist; non-zero marks the `lastCycleStage` beside it as
+ * degraded, not wrong.
+ */
+type SyncCountKey = 'consecutiveUnclosedCycles' | 'lastFailedCheckpointCount';
+
+/**
+ * The counters whose value is `number | null`, where `null` means THE READ NEVER HAPPENED -- never
+ * a plausible zero, which would misreport "no lost edits" (design.md
+ * `2026-09-09-convergence-instrumentation` Decision 7). Every one of them stays `null` until the
+ * first cycle folds it into the bookkeeping write, and for any cycle that never reaches it
+ * (Decision 6). Same single-list rule, and the same two views, as `SyncCountKey` above.
+ *
+ * Each key, and the fact it answers:
+ * - `lastCycleStageAt`: instant of the last checkpoint, so a killed cycle's duration is measured
+ *   rather than inferred.
+ * - `lastDiagnosticsDiscardedCount`: envelopes the bridge permanently rejected as malformed and
+ *   this device destroyed. It is the BRIDGE's verdict.
+ * - `lastDiagnosticsUndeliverableCount`: a destruction this device ORDERED by DECLARING a
+ *   `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS` kind unpostable (migration `0014`), never a bridge
+ *   verdict, and not the same fact as `discarded`: a destruction must never be invisible while the
+ *   registry authorizing it is being changed.
+ * - `lastDiagnosticsUnclassifiedCount`: a PARK -- this build does not know the `kind`, so the
+ *   envelope is never posted and never deleted, and a roll-forward recovers it. A third fact, and
+ *   for the same reason as the previous one: another build of this app owns that kind.
+ * - `lastDiagnosticsReapedCount`: RETIRED by `SYNC_DIAGNOSTICS_PARKED_ROW_MAX_AGE_MS` (migration
+ *   `0015`) -- a park that outlived the declared wait. A fourth fact, and it must never be folded
+ *   into `discarded`: that counter says the bridge refused these bytes, while this one says the
+ *   drain gave up waiting for a bridge that would have accepted them.
+ * - `lastDiagnosticsFailedRemovalCount`: envelopes that got a 2xx but whose outbox removal failed;
+ *   they re-send next cycle.
+ * - `lastOutboxFailedWriteCount`: cumulative outbox writes that could not be persisted, as of this
+ *   cycle's bookkeeping write. Written by the same folded bookkeeping write as the keys above.
+ * - `lastDeadLetterCount` / `lastConflictExhaustedCount`: `operation_log` rows in that status,
+ *   counted before retention deletes them.
+ * - `lastStuckProcessingCount`: rows still `processing` when the projection ran -- orphaned, not in
+ *   flight.
+ * - `lastOldestPendingAgeMs`: age of the oldest `pending`-or-`processing` row; `null` also when the
+ *   queue was empty.
+ * - `lastPendingRowCount`: TRUE backlog row depth, never the bounded per-cycle batch size; the
+ *   `hasMore` flag is derived from it.
+ */
+type SyncNullableCountKey =
+  | 'lastCycleStageAt'
+  | 'lastDiagnosticsDiscardedCount'
+  | 'lastDiagnosticsUndeliverableCount'
+  | 'lastDiagnosticsUnclassifiedCount'
+  | 'lastDiagnosticsReapedCount'
+  | 'lastDiagnosticsFailedRemovalCount'
+  | 'lastOutboxFailedWriteCount'
+  | 'lastDeadLetterCount'
+  | 'lastConflictExhaustedCount'
+  | 'lastStuckProcessingCount'
+  | 'lastOldestPendingAgeMs'
+  | 'lastPendingRowCount';
+
+/**
+ * Defines the data contract for sync runtime status snapshot.
+ *
+ * Every counter is required here, and each one is declared exactly once, as a member of the key
+ * unions above: the `Record` views are what stop the snapshot and the patch from each restating
+ * the counter list (a restatement the semantic duplicate-block audit reports as a clone, and one
+ * that silently lets the two views disagree).
+ */
+export interface SyncRuntimeStatusSnapshot
+  extends Readonly<Record<SyncCountKey, number>>,
+    Readonly<Record<SyncNullableCountKey, number | null>> {
   readonly registrationStatus: SyncRuntimeRegistrationStatus;
   readonly executionMode: SyncExecutionMode;
   readonly isForegroundServiceRunning: boolean;
@@ -56,36 +134,19 @@ export interface SyncRuntimeStatusSnapshot {
   readonly lastNativeErrcodeByte: number | null;
   /** Transaction phase the error surfaced in, e.g. `begin`. */
   readonly lastErrorStage: string | null;
-  /** Consecutive cycles that never released the active flag. Separates a one-off from a quota bleed. */
-  readonly consecutiveUnclosedCycles: number;
-  /** Instant of the last checkpoint, so a killed cycle's duration is measured, not inferred. */
-  readonly lastCycleStageAt: number | null;
-  /** Checkpoints that failed to persist. Non-zero marks `lastCycleStage` as degraded, not wrong. */
-  readonly lastFailedCheckpointCount: number;
-  // Convergence-instrumentation fields (design.md `2026-09-09-convergence-instrumentation`
-  // Decision 6). All eight are `null` until the first cycle folds them into the bookkeeping
-  // write, and stay `null` for any cycle that never reaches it -- never a plausible zero, which
-  // would misreport "no lost edits" (Decision 7).
-  /** Diagnostics envelopes the bridge permanently rejected as malformed and this device destroyed. */
-  readonly lastDiagnosticsDiscardedCount: number | null;
-  /** Diagnostics envelopes that got a 2xx but whose outbox removal failed; they re-send next cycle. */
-  readonly lastDiagnosticsFailedRemovalCount: number | null;
-  /** Cumulative outbox writes that could not be persisted, as of this cycle's bookkeeping write. */
-  readonly lastOutboxFailedWriteCount: number | null;
-  /** `operation_log` rows in `dead_letter` status, counted before retention deletes them. */
-  readonly lastDeadLetterCount: number | null;
-  /** `operation_log` rows in `conflict_exhausted` status, counted before retention deletes them. */
-  readonly lastConflictExhaustedCount: number | null;
-  /** `operation_log` rows still `processing` when the projection ran -- orphaned, not in flight. */
-  readonly lastStuckProcessingCount: number | null;
-  /** Age of the oldest `pending`-or-`processing` row. `null` also when the queue was empty. */
-  readonly lastOldestPendingAgeMs: number | null;
-  /** TRUE backlog row depth, never the bounded per-cycle batch size. `hasMore` is derived from it. */
-  readonly lastPendingRowCount: number | null;
 }
 
-/** Defines the data contract for sync runtime status patch. */
-export interface SyncRuntimeStatusPatch {
+/**
+ * Defines the data contract for sync runtime status patch.
+ *
+ * The same counter keys as the snapshot, seen through `Partial`: a counter may be omitted
+ * (`undefined` means "this patch does not mention it") or cleared with an explicit `null`. Deriving
+ * the optional view from the required one is what keeps the two from disagreeing -- a counter is
+ * added, removed, or retyped in ONE place, the key unions above.
+ */
+export interface SyncRuntimeStatusPatch
+  extends Partial<Readonly<Record<SyncCountKey, number>>>,
+    Partial<Readonly<Record<SyncNullableCountKey, number | null>>> {
   readonly registrationStatus?: SyncRuntimeRegistrationStatus;
   readonly executionMode?: SyncExecutionMode;
   readonly isForegroundServiceRunning?: boolean;
@@ -108,17 +169,6 @@ export interface SyncRuntimeStatusPatch {
   readonly lastErrorName?: SyncCycleErrorName | null;
   readonly lastNativeErrcodeByte?: number | null;
   readonly lastErrorStage?: SyncCycleErrorStage | null;
-  readonly consecutiveUnclosedCycles?: number;
-  readonly lastCycleStageAt?: number | null;
-  readonly lastFailedCheckpointCount?: number;
-  readonly lastDiagnosticsDiscardedCount?: number | null;
-  readonly lastDiagnosticsFailedRemovalCount?: number | null;
-  readonly lastOutboxFailedWriteCount?: number | null;
-  readonly lastDeadLetterCount?: number | null;
-  readonly lastConflictExhaustedCount?: number | null;
-  readonly lastStuckProcessingCount?: number | null;
-  readonly lastOldestPendingAgeMs?: number | null;
-  readonly lastPendingRowCount?: number | null;
 }
 
 /**

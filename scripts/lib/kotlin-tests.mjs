@@ -23,6 +23,22 @@ const MODULE_INPUT_BASENAMES = ['expo-module.config.json', 'android/build.gradle
  *  Not exported: only `buildGradleTestArgs` below needs it. */
 const GRADLE_TEST_TASKS = [':sync-engine:testDebugUnitTest', ':foreground-sync-ticker:testDebugUnitTest'];
 
+/** Per-class coverage verification tasks (T3, sync-core-test-assurance): the CORE (100%) and
+ *  IMPORTANT (80%) Kover rules configured in each module's `build.gradle`. `sync-engine` splits
+ *  its two tiers into the custom `core`/`important` report variants (see that module's
+ *  `build.gradle`); `foreground-sync-ticker` carries only an IMPORTANT tier, verified on its
+ *  existing `debug` variant. Each verify task already depends on its module's
+ *  `testDebugUnitTest`, so this list runs no test twice -- it only adds the coverage check after
+ *  tests already listed in [GRADLE_TEST_TASKS] run.
+ *  Not exported: only `buildGradleTestArgs` below needs it. */
+const GRADLE_COVERAGE_VERIFY_TASKS = [
+  ':sync-engine:koverVerifyCore',
+  ':sync-engine:koverVerifyImportant',
+  ':sync-engine:koverVerifyCoreFloor',
+  ':sync-engine:koverVerifyCoreFloorRunner',
+  ':foreground-sync-ticker:koverVerifyDebug',
+];
+
 /** Android lint task targets for the same two modules (C3), in `./gradlew` task-path form.
  *  Not exported: only `buildGradleTestArgs` below needs it. `lintDebug`, not `lintVital`: the
  *  release build already runs `lintVitalAnalyzeRelease` for every module, so this only needs the
@@ -46,7 +62,9 @@ const GRADLE_LINT_TASKS = [':sync-engine:lintDebug', ':foreground-sync-ticker:li
  * risk, unlike the release build's own Gradle invocation, which never receives this flag.
  */
 export function buildGradleTestArgs({ withLint = false } = {}) {
-  const tasks = withLint ? [...GRADLE_TEST_TASKS, ...GRADLE_LINT_TASKS] : [...GRADLE_TEST_TASKS];
+  const tasks = withLint
+    ? [...GRADLE_TEST_TASKS, ...GRADLE_COVERAGE_VERIFY_TASKS, ...GRADLE_LINT_TASKS]
+    : [...GRADLE_TEST_TASKS, ...GRADLE_COVERAGE_VERIFY_TASKS];
   return [...tasks, '--build-cache', '--console=plain'];
 }
 

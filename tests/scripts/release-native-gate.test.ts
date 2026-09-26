@@ -189,6 +189,12 @@ describe('isWatchedPath', () => {
     expect(NATIVE_GATE_WATCHED_GLOBS.length).toBeGreaterThan(0);
     expect(isWatchedPath('app.json', NATIVE_GATE_WATCHED_GLOBS)).toBe(true);
   });
+
+  it('watches the shared JS<->Kotlin wire-contract fixtures, which the Kotlin tests read', () => {
+    expect(
+      isWatchedPath('tests/fixtures/sync-contract/reconcile-response-cases.json', NATIVE_GATE_WATCHED_GLOBS),
+    ).toBe(true);
+  });
 });
 
 describe('parseReleaseTag', () => {

@@ -7,6 +7,11 @@ export interface SyncDiagnosticsOutboxRow {
   readonly created_at: number;
 }
 
+/** Row shape of the singleton shed counter, exactly as SQLite returns it. */
+export interface SyncDiagnosticsOutboxShedCountRow {
+  readonly shed_rows: number;
+}
+
 /** Options the diagnostics outbox store passes to its own opener; mirrors the checkpoint's shape. */
 export interface OpenSyncDiagnosticsOutboxDatabaseParams {
   readonly databaseName: string;
@@ -65,4 +70,25 @@ export interface SyncDiagnosticsOutboxStore {
   readonly deferUntil: (notBefore: number) => void;
   /** Counts writes that could not be persisted, so a caller never trusts a silent failure. */
   readonly getFailedWriteCount: () => number;
+  /**
+   * The cumulative number of rows the cap trigger has shed for capacity -- the bounded loss the
+   * policy accepts, reported as its own fact instead of remaining an unrecorded absence.
+   *
+   * A STORE fact, not a flush outcome: the shed is caused by an INSERT hitting the cap, which can
+   * happen outside any flush pass, so folding it into a flush result would report it late, or not
+   * at all. Counted in the same transaction that drops the rows, persisted in the outbox's own
+   * file, so it survives a restart and every store instance on that file agrees on it. Never
+   * throws: an unreadable counter reads as `0`, since instrumentation must never fail a cycle.
+   */
+  readonly getShedCount: () => number;
+  /**
+   * The same cumulative total as `getShedCount`, but HONEST about a failed read: `null` when the
+   * counter could not be read, `0` only when it was read and no row has ever been shed.
+   *
+   * Exists BESIDE `getShedCount` rather than replacing it: that method's never-throws/reads-as-0
+   * contract has callers that legitimately want "no evidence of a shed" and must keep working
+   * unchanged. A status surface is the opposite caller -- it must render an unreadable counter as
+   * ABSENT, and a fabricated `0` there would state a measurement that was never taken.
+   */
+  readonly readShedCount: () => number | null;
 }
