@@ -51,6 +51,9 @@ def IMPORTANT_CLASSES = [
   'TickAlarmReceiver', 'TickAlarmReceiver$*',
   // TickAlarmScheduler.kt (no object/class wrapper -> file facade class, + the TickingState enum)
   'TickAlarmSchedulerKt', 'TickAlarmSchedulerKt$*', 'TickingState', 'TickingState$*',
+  // TickAlarmScheduler.kt: SyncTickerOwnership (M2), public because sync-engine's native floor
+  // reads it across the Gradle module boundary.
+  'SyncTickerOwnership', 'SyncTickerOwnership$*',
   // SyncForegroundServiceBridge.kt -- "SyncForegroundServiceBridge (sync-engine)" in the tier
   // list: conceptually part of the sync-engine service boundary, physically in this module.
   'SyncForegroundServiceBridgeKt', 'SyncForegroundServiceBridgeKt$*',

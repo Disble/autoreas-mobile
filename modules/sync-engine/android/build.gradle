@@ -54,12 +54,37 @@ android {
 }
 
 dependencies {
+  // The native periodic background floor (ODD native-background-sync-cutover M2): WorkManager is
+  // the platform's own periodic scheduler, so the floor survives with no resident service. Version
+  // 2.9.1 is the exact version `expo-background-task` (the JS floor this replaces in M3) already
+  // resolves, so the app graph keeps ONE WorkManager version instead of two.
+  implementation 'androidx.work:work-runtime-ktx:2.9.1'
+  // Fixes a real conflict the line above CREATES: work-runtime's POM requests
+  // `androidx.core:core:1.9.0` at RUNTIME scope, and AGP's consistent resolution then pins this
+  // module's COMPILE classpath to that same 1.9.0 -- where
+  // `androidx.core.app.ServiceCompat.startForeground(...)`, already used by
+  // [SyncForegroundService], does not exist, so `:sync-engine:compileDebugKotlin` fails with
+  // "Unresolved reference 'startForeground'" (observed, not predicted). This module compiles
+  // against androidx.core 1.17.0 through expo-modules-core already, so raising the RUNTIME floor
+  // to that same version keeps both classpaths consistent and declares nothing the app does not
+  // already ship. It is a floor: a future expo bump to a higher version still wins.
+  implementation 'androidx.core:core:1.17.0'
+  // Ticker-owned ownership check for the floor (SyncTickerOwnership). Direction matters: this
+  // module may depend on `foreground-sync-ticker`; every doc in both modules forbids the reverse
+  // (the ticker starts SyncForegroundService by class-name string precisely so it never needs a
+  // dependency on this module), and this dependency does not create that reverse edge.
+  implementation project(':foreground-sync-ticker')
   testImplementation 'junit:junit:4.13.2'
   // Robolectric 4.14.1: first line supporting API 35 (this module's targetSdk; compileSdk is 36
   // per android/gradle.properties, but Robolectric shadows the RUNTIME sdk named by
   // src/test/resources/robolectric.properties, not compileSdk).
   testImplementation 'org.robolectric:robolectric:4.14.1'
   testImplementation 'androidx.test:core:1.6.1'
+  // WorkManagerTestInitHelper / TestListenableWorkerBuilder: the worker tests drive the worker's
+  // own public `doWork()` seam, and the scheduler tests need a test-initialized WorkManager whose
+  // executors are synchronous so `enqueueUniquePeriodicWork` / `getWorkInfosForUniqueWork` are
+  // observable without a real scheduler or wall-clock waiting.
+  testImplementation 'androidx.work:work-testing:2.9.1'
 }
 
 // The presence-probe tests (T2) stand in for the bridge with the JDK's own
@@ -144,6 +169,12 @@ def IMPORTANT_CLASSES = [
   'SyncEngineRuntimeStatus', 'SyncEngineRuntimeStatus$*',
   // SyncForegroundService.kt
   'SyncForegroundService', 'SyncForegroundService$*',
+  // SyncFloorScheduler.kt (M2 native floor: registration/idempotency/status)
+  'SyncFloorScheduler', 'SyncFloorScheduler$*', 'SyncFloorSchedulerKt', 'SyncFloorSchedulerKt$*',
+  'SyncFloorStatus', 'SyncFloorStatus$*',
+  // SyncFloorWorker.kt (M2 native floor: the attempt itself, its ownership gate and its
+  // background_task projection)
+  'SyncFloorWorker', 'SyncFloorWorker$*', 'SyncFloorWorkerKt', 'SyncFloorWorkerKt$*',
 ].collect { "expo.modules.syncengine.$it" }
 
 kover {

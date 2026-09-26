@@ -21,16 +21,35 @@ start-to-finish.
 - [ ] `.env.local` at the repo root with `EXPO_TOKEN` set (see `docs/build-and-release.md` for the
   full list of secrets this file can carry)
 
-**Build**
+The build runs locally but contacts Expo to fetch the EAS-managed signing keystore with
+`EXPO_TOKEN`. Obtain authorization for that remote operation before running it.
+
+**Build for device diagnosis (`lab`; debuggable, never distribute)**
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build lab
+```
+
+The APK lands in `dist/android/`. Install or upgrade the lab build while preserving app data:
+
+```bash
+adb install -r "$(ls -t dist/android/*-lab-*.apk | head -1)"
+```
+
+If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, stop before uninstalling: a signer
+mismatch requires a deliberate backup or acceptance of local data loss (see
+[Troubleshooting](#troubleshooting)).
+
+**Build the default `preview` profile**
 
 ```bash
 docker compose -f docker-compose.eas.yml run --rm eas-build
 ```
 
-**Install**
+**Install the default `preview` build**
 
 ```bash
-adb install -r "$(ls -t dist/android/*.apk | head -1)"
+adb install -r "$(ls -t dist/android/*-preview-*.apk | head -1)"
 ```
 
 **Expect:** the last log line names the APK, for example

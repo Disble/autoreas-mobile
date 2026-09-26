@@ -1,0 +1,80 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mobile Release Workflow",
+    "output": "docs/diagrams/mobile-release-workflow.html",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "views": [
+      { "id": "prepare", "label": "Prepare on dev", "focus": ["review", "prepare", "validate", "commit"], "note": "Choose the SemVer bump, synchronize release facts, then validate the candidate locally." },
+      { "id": "promote", "label": "Promote and tag main", "focus": ["merge", "main-push-auth", "tag-main", "tag-push-auth"], "note": "The exact main commit receives the tag; each outward push needs explicit user authorization." },
+      { "id": "ci-release", "label": "CI delivery", "focus": ["ci-guard", "native-gate", "production-build", "publish"], "note": "GitHub verifies release invariants, validates the production APK, then publishes the release." },
+      { "id": "exceptions", "label": "Failure boundaries", "focus": ["validate", "no-device", "stop-release"], "note": "Local validation returns to preparation. No device leaves behavior unverified. CI failure ends the release." }
+    ]
+  },
+  "lanes": [
+    { "id": "release-owner", "label": "Release Owner / dev" },
+    { "id": "authorization", "label": "Explicit User Authorization" },
+    { "id": "github", "label": "GitHub Actions" },
+    { "id": "exceptions", "label": "Exceptions and Evidence Gaps", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "Prepare release", "fromCol": 0, "toCol": 2 },
+    { "id": "promote", "label": "Promote main and tag", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "deliver", "label": "CI build and publish", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "groups": [
+    { "id": "ci-gates", "label": "Blocking CI gates", "lane": "github", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["review", "prepare", "validate", "commit", "merge", "main-push-auth", "tag-main", "tag-push-auth", "ci-guard", "native-gate", "production-build", "publish"],
+  "semanticChecks": {
+    "allowedRoots": ["review"],
+    "allowedTerminals": ["publish", "stop-release", "no-device"],
+    "requiredPaths": [
+      { "from": "review", "to": "publish" },
+      { "from": "validate", "to": "prepare" },
+      { "from": "ci-guard", "to": "stop-release" }
+    ]
+  },
+  "nodes": [
+    { "id": "review", "lane": "release-owner", "col": 0, "width": 112, "type": "frontend", "label": "Choose SemVer", "sublabel": "changes since tag" },
+    { "id": "prepare", "lane": "release-owner", "col": 1, "width": 112, "type": "backend", "label": "Prepare release", "sublabel": "versions, notes, log" },
+    { "id": "validate", "lane": "release-owner", "col": 2, "width": 112, "type": "security", "label": "Validate locally", "sublabel": "typecheck + test" },
+    { "id": "commit", "lane": "release-owner", "col": 3, "width": 112, "type": "frontend", "label": "Commit on dev", "sublabel": "release commit" },
+    { "id": "merge", "lane": "release-owner", "col": 4, "width": 112, "type": "frontend", "label": "Merge to main", "sublabel": "deployment branch" },
+    { "id": "main-push-auth", "lane": "authorization", "col": 4, "width": 112, "type": "security", "label": "Main push", "sublabel": "explicit approval" },
+    { "id": "tag-main", "lane": "release-owner", "col": 5, "width": 112, "type": "frontend", "label": "Tag vX.Y.Z", "sublabel": "exact main commit" },
+    { "id": "tag-push-auth", "lane": "authorization", "col": 5, "width": 112, "type": "security", "label": "Tag push", "sublabel": "explicit approval" },
+    { "id": "ci-guard", "lane": "github", "col": 5, "width": 112, "type": "security", "label": "CI guard", "sublabel": "release invariants" },
+    { "id": "native-gate", "lane": "github", "col": 5, "width": 112, "type": "backend", "label": "Native gate", "sublabel": "Kotlin + lint", "yOffset": 84 },
+    { "id": "production-build", "lane": "github", "col": 5, "width": 112, "type": "cloud", "label": "Build APK", "sublabel": "APK validation", "yOffset": 168 },
+    { "id": "publish", "lane": "github", "col": 5, "width": 112, "type": "external", "label": "Publish release", "sublabel": "APK + SHA256", "yOffset": 252 },
+    { "id": "no-device", "lane": "release-owner", "col": 2, "width": 112, "type": "messagebus", "label": "No device", "sublabel": "CI still proceeds", "yOffset": 84 },
+    { "id": "stop-release", "lane": "exceptions", "col": 5, "width": 112, "type": "security", "label": "Stop release", "sublabel": "no publication" }
+  ],
+  "edges": [
+    { "from": "review", "to": "prepare", "label": "selected version", "role": "main" },
+    { "from": "prepare", "to": "validate", "label": "candidate ready", "role": "main" },
+    { "from": "validate", "to": "commit", "label": "green", "variant": "emphasis", "role": "main" },
+    { "from": "validate", "to": "prepare", "label": "failure: repair preparation", "variant": "security", "role": "return" },
+    { "from": "validate", "to": "no-device", "label": "no device", "variant": "dashed", "role": "branch" },
+    { "from": "commit", "to": "merge", "label": "release commit", "role": "main" },
+    { "from": "merge", "to": "main-push-auth", "label": "request authorization", "variant": "security", "role": "main" },
+    { "from": "main-push-auth", "to": "tag-main", "label": "push main, then tag", "variant": "security", "role": "main" },
+    { "from": "tag-main", "to": "tag-push-auth", "label": "request authorization", "variant": "security", "role": "main" },
+    { "from": "tag-push-auth", "to": "ci-guard", "label": "push tag starts workflow", "variant": "security", "role": "main" },
+    { "from": "ci-guard", "to": "native-gate", "label": "native decision", "role": "main" },
+    { "from": "native-gate", "to": "production-build", "label": "passed or safely skipped", "role": "main" },
+    { "from": "production-build", "to": "publish", "label": "verified APK", "variant": "emphasis", "role": "main" },
+    { "from": "ci-guard", "to": "stop-release", "label": "guard failed", "variant": "security", "role": "error" },
+    { "from": "native-gate", "to": "stop-release", "label": "native failed", "variant": "security", "role": "error" },
+    { "from": "production-build", "to": "stop-release", "label": "build failed", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Release facts", "items": ["expo.version in app.json is the source; package.json mirrors it", "CHANGELOG section is user-facing and must be non-empty", "Use scripts/log-lesson.mjs to append the learning log"] },
+    { "dot": "amber", "title": "Authorization boundary", "items": ["A local release build alone never publishes", "Pushing main requires explicit user authorization", "Pushing the tag requires explicit user authorization"] },
+    { "dot": "rose", "title": "Evidence boundary", "items": ["No attached device leaves startup, pairing, SQLite, sync, and background behavior unverified", "No device does not prevent the CI pipeline", "CI failures stop before GitHub publishes the APK and SHA256"] }
+  ]
+}

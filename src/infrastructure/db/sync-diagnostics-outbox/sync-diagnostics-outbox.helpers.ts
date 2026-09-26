@@ -1,8 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { openTelemetryDatabaseSync } from '../client/client.helpers';
-import { SYNC_CYCLE_CHECKPOINT_DATABASE_NAME } from '../sync-cycle-checkpoint/sync-cycle-checkpoint.constants';
 import {
   SYNC_DIAGNOSTICS_OUTBOX_BUSY_TIMEOUT_MS,
+  SYNC_DIAGNOSTICS_OUTBOX_DATABASE_NAME,
   SYNC_DIAGNOSTICS_OUTBOX_EVICT_TRIGGER_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_INSERT_SQL,
   SYNC_DIAGNOSTICS_OUTBOX_REMOVE_SQL,
@@ -33,9 +33,9 @@ function toRecord(row: SyncDiagnosticsOutboxRow): SyncDiagnosticsOutboxRecord {
 }
 
 /**
- * Creates the diagnostics outbox store. Shares its SQLite FILE with the cycle checkpoint
- * (`autoreas-telemetry.db`) but opens its OWN private connection, exactly like the checkpoint
- * store, so a caller here can never accidentally reuse a handle another instrument owns.
+ * Creates the diagnostics outbox store. Owns its SQLite FILE (`autoreas-telemetry.db`, see the
+ * constant) and opens a PRIVATE connection to it, so a caller here can never accidentally reuse a
+ * handle another instrument owns.
  *
  * Every read and write is SYNCHRONOUS (`runSync`/`getAllSync`), deviating from the checkpoint's
  * `getFirstAsync` on the same argument its own constants file makes: `busy_timeout`, enforced
@@ -59,7 +59,7 @@ export function createSyncDiagnosticsOutboxStore(
     }
 
     const opened = openDatabase({
-      databaseName: SYNC_CYCLE_CHECKPOINT_DATABASE_NAME,
+      databaseName: SYNC_DIAGNOSTICS_OUTBOX_DATABASE_NAME,
       useNewConnection: true,
       enableChangeListener: false,
       busyTimeoutMs: SYNC_DIAGNOSTICS_OUTBOX_BUSY_TIMEOUT_MS,

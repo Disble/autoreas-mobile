@@ -6,7 +6,6 @@ import { SYNC_RUNTIME_STATUS_SINGLETON_ID } from './sync-runtime-status.constant
 import {
   buildCycleActivePatch,
   buildCycleBookkeepingPatch,
-  buildPrunedOperationsCountPatch,
   buildSyncAttemptFailedPatch,
   buildSyncAttemptStartedPatch,
   buildSyncAttemptSucceededPatch,
@@ -402,12 +401,4 @@ export async function recordBacklogReadCount(
     rawDb,
     buildCycleBookkeepingPatch(backlogReadCount, diagnosticsFlush, outboxFailedWriteCount, convergence),
   );
-}
-
-/**
- * Persists the number of terminal operation-log rows pruned in the latest cycle.
- * This lets Settings show how much history was reclaimed by retention rules.
- */
-export async function recordPrunedOperationsCount(rawDb: SQLiteDatabase, count: number) {
-  await persistSyncRuntimeStatusPatch(rawDb, buildPrunedOperationsCountPatch(count));
 }

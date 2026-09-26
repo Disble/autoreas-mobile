@@ -132,7 +132,7 @@ export async function prepareHeadlessDatabase(rawDb: SQLiteDatabase): Promise<vo
     //
     // Headless deliberately does NOT repair -- migrations are foreground-owned, and two writers
     // racing the schema is the contention this whole boundary exists to prevent. It refuses
-    // instead, and `SchemaNotReadyError` is the refusal `runBackgroundSyncCycle` already absorbs
+    // instead, and `SchemaNotReadyError` is the refusal the caller absorbs
     // as a clean no-op. The next foreground start performs the repair.
     try {
       await validateRequiredColumns(rawDb);

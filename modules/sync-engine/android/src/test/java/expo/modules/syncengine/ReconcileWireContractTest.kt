@@ -25,12 +25,11 @@ import org.robolectric.RobolectricTestRunner
  * minimal, deferred subset (see `ReconcileRequestBody.kt`'s header comment), so full-shape
  * equality across languages is never asserted for that field.
  *
- * Four fixture cases in `reconcile-response-divergence-cases.json` are documented, NOT fixed,
- * disagreements between the two engines (see the T2 report in
- * `odd/tasks/sync-core-test-assurance.md`'s Divergences section). This suite asserts Kotlin's
- * OWN half of each disagreement (`expectedDivergence.kotlin`); the JS suite asserts its own half.
- * A future fix to either side must edit the fixture and remove the marker, which is what makes it
- * fail loudly instead of going stale silently.
+ * Five fixture cases in `reconcile-response-divergence-cases.json` remain documented, unfixed
+ * disagreements between the two engines; the non-string `genres[]` case is resolved. This suite
+ * asserts Kotlin's OWN half (`expectedDivergence.kotlin`); the JS suite asserts its own half.
+ * A fix to either side changes the fixture's expectation and removes that case's defect marker,
+ * so a remaining disagreement cannot silently disappear.
  */
 @RunWith(RobolectricTestRunner::class)
 class ReconcileWireContractTest {

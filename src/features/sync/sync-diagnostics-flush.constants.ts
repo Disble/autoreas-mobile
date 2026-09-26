@@ -71,7 +71,8 @@ export const SYNC_DIAGNOSTICS_RECOVERABLE_REFUSAL_CODE = 'kind_not_served';
  *
  * Bounded by the timing chain (design.md): `SYNC_DIAGNOSTICS_FLUSH_BATCH_SIZE *
  * SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS + BRIDGE_REQUEST_TIMEOUT_MS` must stay comfortably under
- * `BACKGROUND_SYNC_CYCLE_DEADLINE_MS`, or instrumentation kills the cycle it instruments. Every
+ * the sync engine's own attempt budget (30 s, `ENGINE_BUDGET_MS` in the native
+ * `SyncEngineDatabases.kt`), or instrumentation kills the cycle it instruments. Every
  * sync trigger is a flush opportunity, so throughput comes from cadence, not batch size: the
  * foreground ticker alone drains a full 100-row backlog in about 8 minutes.
  */

@@ -223,6 +223,28 @@ class ReconcileResponseParserTest {
     WireAnimeMapper.normalize(change)
   }
 
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsGenresWithANonStringElement() {
+    // The local domain contract is `genres: z.array(z.string())`: a mixed array like
+    // `["Action", 42]` must be rejected here (retryable), never staged and later committed.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",42]}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsAGenresElementThatIsJsonNull() {
+    // A JSON `null` MEMBER is not the legacy empty-string sentinel: it is still a non-string
+    // element, and `JSONArray.opt` hands it back as `JSONObject.NULL`, not Kotlin `null`.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",null]}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
   @Test
   fun dateLikeIsNullWhenTheDollarDollarDateWrapperItselfCarriesNoValue() {
     // `has("$$date")` is true, but `opt("$$date")` itself returns null -- the `?:` fallback,

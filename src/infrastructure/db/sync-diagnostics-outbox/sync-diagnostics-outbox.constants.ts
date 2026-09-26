@@ -1,4 +1,17 @@
 /**
+ * Names the SQLite file the diagnostics outbox lives in.
+ *
+ * A SEPARATE file from the app database, deliberately. The app database's write door is keyed by
+ * file path -- `client.helpers.ts:288` reads `rawDb.databasePath ?? DATABASE_NAME` -- so every
+ * connection opened against `autoreas.db` queues behind the same door. A diagnostics row written
+ * through that door would queue behind the very hang the outbox exists to survive and would never
+ * land. A dedicated CONNECTION is not enough; only a dedicated FILE breaks both the JS queue and
+ * SQLite's own file-level write lock. The cycle-checkpoint store that used to share this file was
+ * retired with the JS background cycle, so this outbox is now its only user.
+ */
+export const SYNC_DIAGNOSTICS_OUTBOX_DATABASE_NAME = 'autoreas-telemetry.db';
+
+/**
  * Caps the diagnostics outbox at 100 undelivered entries. Bounded so a device that never
  * reconnects cannot grow the outbox without limit; the `AFTER INSERT` trigger enforces this in
  * SQL, atomic with the insert, so the bound is never transiently exceeded.
@@ -6,10 +19,9 @@
 export const SYNC_DIAGNOSTICS_OUTBOX_MAX_ROWS = 100;
 
 /**
- * Lock-wait budget for a diagnostics outbox write, mirroring the cycle checkpoint's own bound
- * (`SYNC_CYCLE_CHECKPOINT_BUSY_TIMEOUT_MS`). Only this process writes this file, so contention is
- * near zero; `busy_timeout` is the one bound that fires natively when JS timers are paused in the
- * headless runtime.
+ * Lock-wait budget for a diagnostics outbox write. Only this process writes this file, so
+ * contention is near zero; `busy_timeout` is the one bound that fires natively when JS timers are
+ * paused in the headless runtime.
  */
 export const SYNC_DIAGNOSTICS_OUTBOX_BUSY_TIMEOUT_MS = 250;
 

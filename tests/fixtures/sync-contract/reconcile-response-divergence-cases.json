@@ -78,7 +78,7 @@
   },
   {
     "name": "bridge-change-snapshot-genres-non-string-element-divergence",
-    "description": "DEFECT (recorded, not fixed): wireStringArrayOrEmpty is z.array(z.string()) in JS, so a non-string element anywhere in genres fails the WHOLE response parse. WireAnimeMapper.mapStringArrayOrEmpty (Kotlin) only checks that the value is a JSONArray and passes its elements through UNCHECKED, so a non-string element reaches the legacy generos array verbatim. If Kotlin is ever changed to validate each element, expectedDivergence.kotlin.rejected must become true and this marker must be removed.",
+    "description": "RESOLVED (Kotlin half flipped from accepted to rejected, marker removed): wireStringArrayOrEmpty is z.array(z.string()) in JS, so a non-string element anywhere in genres fails the WHOLE response parse. WireAnimeMapper.mapStringArrayOrEmpty (Kotlin) now validates every element the same way and throws ReconcileParseException, so both engines reject this case and neither can stage a genres array the local AnimeSchema would refuse. This case is retained as the shared regression guard for that agreement; the JS half still asserts rejection.",
     "input": {
       "backlog": [],
       "responseBody": {
@@ -98,22 +98,7 @@
     },
     "expectedDivergence": {
       "js": { "rejected": true },
-      "kotlin": {
-        "rejected": false,
-        "last_changelog_id": 3003,
-        "confirmedOperationIds": [],
-        "bridgeChanges": [
-          {
-            "recordId": "anime-22", "changeType": "update", "changedFields": ["generos"], "timestamp": 502,
-            "snapshot": {
-              "_id": "anime-22", "nombre": "GenreGap", "estado": 1, "nrocapvisto": 0, "totalcap": null,
-              "dias": [], "generos": ["Action", 42], "tipo": null, "activo": 1, "primeravez": 0,
-              "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
-            }
-          }
-        ]
-      }
+      "kotlin": { "rejected": true }
     }
   },
   {

@@ -11,7 +11,7 @@ export const SYNC_RUNTIME_STATUS_SINGLETON_ID = 1;
  * allowlist re-exports it, so the vocabulary cannot drift between the state machine, the
  * persisted column, and the wire without the typecheck saying so.
  *
- * Each member mirrors one step of the real cycle, read off `runHeadlessSyncCycle` and
+ * Each member mirrors one step of the real foreground reconcile cycle, read off
  * `performSyncPendingOperations` rather than invented:
  * - `open`            -> `runtime.open()`
  * - `config`          -> `getBridgeConfigSnapshot` (a READ)

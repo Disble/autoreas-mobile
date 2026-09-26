@@ -183,16 +183,6 @@ export function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch
 }
 
 /**
- * Builds the snapshot patch for the latest operation-log prune result.
- * This exposes how much terminal history was reclaimed by TTL or max-count rules.
- */
-export function buildPrunedOperationsCountPatch(count: number): SyncRuntimeStatusPatch {
-  return {
-    lastPrunedOperationsCount: count,
-  };
-}
-
-/**
  * Folds one cycle's bounded backlog read size, its diagnostics-outbox flush and write-failure
  * counters, and its operation-log convergence projection into a single patch (design.md
  * `2026-09-09-convergence-instrumentation` Decision 6). This is the SAME write

@@ -221,6 +221,29 @@ class SyncEngineResponseApplierTest {
   }
 
   @Test
+  fun aNonStringGenresElementRejectsTheResponseWithoutLeavingPartialWrites() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // The wire→legacy mapping runs BEFORE the first staging insert, so a rejected genres element
+    // aborts step 8's transaction with nothing written yet: no staged row, no OCC token move,
+    // no cursor advance. Together with the cycle's own claimed-batch revert (`run()`'s catch),
+    // this is why the response is retryable instead of losing the cursor or dead-lettering rows.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["genres"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"genres":["Action",42]}}],"last_changelog_id":16}""",
+    )
+
+    assertThrows(ReconcileParseException::class.java) {
+      inImmediateTransaction(database) {
+        applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      }
+    }
+
+    assertEquals(0, stagedChanges().size)
+    assertEquals(4L, animeToken("anime-a"))
+    assertEquals(10L, changelogCursor())
+    assertEquals("processing", operationStatus(11))
+  }
+
+  @Test
   fun aBridgeChangeWithNoSnapshotStagesANullSnapshotColumn() {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
     val parsed = ReconcileResponseParser.parse(
