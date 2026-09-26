@@ -86,12 +86,34 @@ Runner: GitHub-hosted, 4 vCPU. The repository is public, so standard runner minu
 | C2 | 2026-09-22 | v1.4.1 | `35690580176` | 23m | 85 s | 21m 53s | — | |
 | C3 | 2026-09-22 | v1.5.0 | `35781239094` | 33m | 70 s | 31m 31s | — | |
 | C4 | 2026-09-24 | v1.6.0 | `35944890032` | 37m 53s | 9m 19s | 28m 08s | 26m 47s, 1108 executed | `guard` gained the native gate: Kotlin tests 283 s + Android lint 208 s, cold, serial before the build |
+| C5 | 2026-09-26 | v1.7.0 | `36261199520` | 32m 38s | 1m 35s | 30m 01s | 28m 35s, 1108 executed | `build` job 30m 43s; `native` 10m 58s **in parallel** (its Gradle invocation 10m 5s, `263 actionable tasks: 239 executed, 24 from cache`); C1: `setup-gradle` restored **0** entries in **both** jobs and still uploaded tag-scoped caches of **2.32 GB** (`native`) and **1.98 GB** (`build`) |
 
 **Reading C4** (from its Gradle log): the Gradle distribution is downloaded on every run and every
 Maven dependency is resolved from scratch, separately in `guard` and in the build; the first task
 starts 54 s in; summed task time is 1240 s against 1607 s of wall time, so a 4-vCPU runner barely
 parallelises; the last ~6 minutes are the app's CMake builds for `armeabi-v7a`, `x86` and `x86_64`,
 one after the other; `lintVital` accounts for 244 s of task time.
+
+### Reading C5 (v1.7.0): C1 caching did not pay, and could not
+
+`native` and `build` each started with an empty Gradle download cache — `setup-gradle` logged
+`Basic caching did not find an entry to restore. Will start with empty state.` in both jobs — and
+then each wrote a tag-scoped cache entry back: 2,320,138,140 bytes (2.32 GB) from `native` and
+1,980,865,988 bytes (1.98 GB) from `build`. GitHub scopes a cache entry to the ref that created it
+and a tag cannot read another tag's entry, so neither upload has a reader in any future release;
+no run on the default branch writes one either. Read-only on both jobs (`cache-read-only: true`)
+removes the upload and keeps the restore path — it does **not** make the release cache warm, which
+would need a default-branch writer the maintainer declined on 2026-09-26.
+
+The rest of the run: `native`'s single Gradle invocation (C3 — tests and lint together) finished in
+10m 5s against C4's serial 283 s + 208 s baseline; its `24 from cache` is the **local** Gradle
+build cache, not the `setup-gradle` entry, which was not restored at all. The release
+`gradlew :app:assembleRelease` inside `build` ran 28m 35s with `1108 actionable tasks: 1108
+executed`, exactly C4's zero-reuse shape — the Gradle **build** cache stays off for the shipped
+artifact by design. `guard` fell to 1m 35s because the native gate moved out of it (C7), and
+`native` (10m 58s) fully overlapped `build`, so `build` is the critical path. C2 decided
+`reason=native_paths_changed decision=run` against `previous=v1.6.0`; `.github/workflows/release.yml`
+is itself on the watched-path list, so a release that edits this workflow always runs the gate.
 
 ### Pending measurement — C1 + C2 + C3 + C7, next real release (v1.6.1)
 
@@ -129,3 +151,12 @@ invocation each (C3): the lint tasks (`:sync-engine:lintDebug`, `:foreground-syn
 ran alongside `testDebugUnitTest` for both modules in the same `BUILD SUCCESSFUL`, never a second
 invocation. These numbers are local-machine, warm-cache signal only — not a substitute for the
 CI row above, which needs a real cold runner and the shared GitHub Actions cache.
+
+**Correction — 2026-09-26.** That pending measurement landed on **v1.7.0** (run `36261199520`), not
+v1.6.1; the C5 row and "Reading C5" above are its results. The v1.6.1 list is left as written
+because it records what was awaited at the time. Two of its asks are now settled: the C1 question
+("whether `cache-provider: basic` actually persisted a GitHub Actions cache entry across this run
+and the next one") is answered — it persisted entries no later run can read, which is why both jobs
+are now `cache-read-only: true`; and the C2/C7/C3 observations it asked for are the ones recorded
+under C5 (decision `run` against v1.6.0, `guard` at 1m 35s, `native` parallel at 10m 58s, single
+Gradle invocation at 10m 5s).

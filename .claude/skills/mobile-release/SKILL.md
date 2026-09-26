@@ -342,14 +342,25 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
   remove it to "fix" an install; if an install needs a script, that is the thing to
   question.
 
-- **`gradle/actions/setup-gradle` defaults the wrong way for this workflow, twice.**
-  `cache-provider` defaults to `enhanced`, a **commercial** caching service this repo
-  has no account for — always pass `cache-provider: basic` (the open-source GitHub
-  Actions cache). `cache-read-only` defaults to `true` for any ref that is not the
-  default branch; a release only ever runs on a pushed **tag**, which is never the
-  default branch, so the default would silently write nothing back on every single
-  run — always pass `cache-read-only: false`. Both are set in the `native` and
-  `build` jobs. Verify both defaults against the exact pinned SHA's own
+- **`gradle/actions/setup-gradle` needs both of its cache settings passed explicitly.**
+  `cache-provider` defaults to `enhanced`, Gradle's **proprietary** (closed-source) caching
+  implementation. Enhanced is free for **public** repositories, so price or an account is **not**
+  the reason this repo passes `cache-provider: basic` — it passes it because `basic` is the
+  **MIT-licensed, fully open-source** provider built on plain `actions/cache`, with stable,
+  predictable semantics and no separate license to accept (`gradle/actions` `DISTRIBUTION.md` at
+  the pinned SHA: Enhanced is proprietary, Basic is MIT). `cache-read-only` is passed as
+  **`true`, on purpose**: a release only ever runs on a pushed **tag**, GitHub scopes every cache
+  entry to the ref that wrote it, and a tag cannot read another tag's entry — while nothing on the
+  default branch writes one either, so a release has no writer it could restore from. Writing the
+  entry is pure upload and storage cost. Measured on **v1.7.0** (run `36261199520`): both
+  `native` and `build` restored **0** entries and still uploaded tag-scoped caches of
+  **2.32 GB** and **1.98 GB** that no later tag can read
+  (`docs/logbooks/build-performance.md`, C5). Read-only still restores whenever an entry
+  exists. Both settings are set in the `native` and `build` jobs, and `native` keeps its
+  `setup-gradle` step **after** `Install dependencies` so wrapper validation sees the
+  `node_modules` wrapper jars (the v1.7.0 log shows it validating exactly those). Do not
+  "fix" `cache-read-only: true` back to `false` without a writer a release can actually
+  read. Verify both defaults against the exact pinned SHA's own
   `setup-gradle/action.yml` (`gh api repos/gradle/actions/contents/setup-gradle/action.yml?ref=<sha>`)
   before trusting either one from memory or an older version's docs.
 
