@@ -57,6 +57,38 @@ describe('operation log retention helpers', () => {
     );
   });
 
+  it('counts as 0 when the COUNT query returns no row', async () => {
+    const rawDb = buildRawDb({ getFirstAsync: jest.fn().mockResolvedValue(null) });
+
+    await expect(countPendingOperationLog(rawDb)).resolves.toBe(0);
+  });
+
+  it('returns an empty backlog without querying when status is empty', async () => {
+    const rawDb = buildRawDb({ getAllAsync: jest.fn().mockResolvedValue([{ id: 1 }]) });
+
+    const result = await readOperationLogBacklog(rawDb, {
+      status: [],
+      limit: 200,
+      orderBy: 'oldest_first',
+    });
+
+    expect(result).toEqual([]);
+    expect(rawDb.getAllAsync).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty backlog without querying when limit is not positive', async () => {
+    const rawDb = buildRawDb({ getAllAsync: jest.fn().mockResolvedValue([{ id: 1 }]) });
+
+    const result = await readOperationLogBacklog(rawDb, {
+      status: ['pending'],
+      limit: 0,
+      orderBy: 'oldest_first',
+    });
+
+    expect(result).toEqual([]);
+    expect(rawDb.getAllAsync).not.toHaveBeenCalled();
+  });
+
   it('counts pending operation-log rows without materializing the queue', async () => {
     const rawDb = buildRawDb({
       getFirstAsync: jest.fn().mockResolvedValue({ count: 27 }),
@@ -154,6 +186,57 @@ describe('operation log retention helpers', () => {
       expect.stringMatching(/ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
       'conflict_exhausted',
       2,
+    );
+  });
+
+  it('skips the max-count delete for a status still under its cap after ttl pruning', async () => {
+    const now = 1_000_000;
+    const rawDb = buildRawDb({
+      // Every status is under maxCount after the TTL pass -- `overflowCount` is 0 for all three,
+      // so `pruneRowsByMaxCount` must return early without a second DELETE per status.
+      getFirstAsync: jest
+        .fn()
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 1 }),
+      runAsync: jest
+        .fn()
+        .mockResolvedValueOnce({ changes: 0 })
+        .mockResolvedValueOnce({ changes: 0 })
+        .mockResolvedValueOnce({ changes: 0 }),
+    });
+
+    const result = await pruneOperationLog(rawDb, {
+      ...DEFAULT_OPERATION_LOG_RETENTION_POLICY,
+      now: () => now,
+    });
+
+    expect(result).toEqual({
+      prunedCount: 0,
+      deletedSyncedCount: 0,
+      deletedDeadLetterCount: 0,
+      deletedConflictExhaustedCount: 0,
+    });
+    // Only the 3 TTL deletes ran; no max-count delete fired for any status.
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(3);
+  });
+
+  it('defaults to DEFAULT_OPERATION_LOG_RETENTION_POLICY when the caller omits one', async () => {
+    const rawDb = buildRawDb();
+
+    const result = await pruneOperationLog(rawDb);
+
+    expect(result).toEqual({
+      prunedCount: 0,
+      deletedSyncedCount: 0,
+      deletedDeadLetterCount: 0,
+      deletedConflictExhaustedCount: 0,
+    });
+    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE status = ? AND created_at < ?'),
+      DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.status,
+      expect.any(Number),
     );
   });
 });

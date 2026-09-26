@@ -398,7 +398,8 @@ async function performSyncPendingOperations(
   // from the `catch` below: that `catch` calls `revertPendingOperationsOnFailure`, which would
   // otherwise dead-letter or requeue the user's own pending mutations over a diagnostics POST.
   captureSyncDiagnosticsEnvelope(clientTelemetry);
-  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection });
+  // The SAME `config` row this cycle already read, so ONE read gates capture AND drain.
+  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection, config });
 
   try {
     publishCheckpoint(checkpointRecorder, 'http');
@@ -488,8 +489,7 @@ async function performSyncPendingOperations(
     return {
       syncedCount: confirmedIds.length,
       backlogReadCount: pendingOps.length,
-      hasMorePending:
-        unconfirmedIds.length > 0 || totalBacklogRowCount > pendingOps.length,
+      hasMorePending: unconfirmedIds.length > 0 || totalBacklogRowCount > pendingOps.length,
       diagnosticsFlush,
     };
   } catch (error) {

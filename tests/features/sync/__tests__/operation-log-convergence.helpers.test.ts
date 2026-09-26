@@ -79,6 +79,21 @@ describe('readOperationLogConvergence', () => {
     expect(result.oldestPendingAgeMs).toBe(750);
   });
 
+  it('defaults now to Date.now() when the caller omits it', async () => {
+    jest.useFakeTimers().setSystemTime(5_000);
+    try {
+      const adapter = createTestSqliteAdapter();
+      await applyMigrationFiles(adapter);
+      await insertOperationLogRow(adapter, 'pending', 1_000);
+
+      const result = await readOperationLogConvergence(adapter);
+
+      expect(result.oldestPendingAgeMs).toBe(4_000);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('reports hasMore as false when the true backlog is at the batch limit', async () => {
     const adapter = createTestSqliteAdapter();
     await applyMigrationFiles(adapter);

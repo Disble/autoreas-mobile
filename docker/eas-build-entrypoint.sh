@@ -107,6 +107,18 @@ fi
 # android/gradle.properties, so this is what actually narrows the CMake/NDK build.
 export ORG_GRADLE_PROJECT_reactNativeArchitectures="$resolved_abis"
 
+# Fail loudly when Gradle would not see the Docker-only configuration. A base image that moves
+# GRADLE_USER_HOME away from the mounted /root/.gradle turns every build cold and re-enables
+# lintVital without any error: that is how a 4.5 min build became 14.5 min on 2026-09-23.
+gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+if ! grep -qs '^org.gradle.caching=true' "$gradle_home/gradle.properties" \
+  || [ ! -f "$gradle_home/init.d/skip-lint-vital.init.gradle" ]; then
+  echo "--- Gradle user home '$gradle_home' does not carry docker/gradle/ (build cache, lintVital skip). ---"
+  echo "--- Check GRADLE_USER_HOME and the /root/.gradle mounts in docker-compose.eas.yml. ---"
+  exit 1
+fi
+echo "--- Gradle user home: $gradle_home (build cache on, lintVital skipped) ---"
+
 # Dry run: print the resolution above and stop, without installing dependencies or building.
 # Used to verify precedence cheaply (see docs/local-android-build.md, "Configuration reference").
 if [ "${AUTOREAS_DRY_RUN:-0}" = "1" ]; then
@@ -118,11 +130,34 @@ profile="${1:-preview}"
 echo '--- Installing dependencies ---'
 bun install --frozen-lockfile
 
+# Name the artifact after what it is, in dist/android/ (gitignored, excluded by .easignore so old
+# APKs are never uploaded into the next build). Mirrors the CI release name
+# (autoreas-mobile-<version>-android.apk) plus what tells local builds apart:
+#   autoreas-mobile-<version>-<profile>-<abis>-<UTC timestamp>[-g<commit>].apk
+# <abis> is `universal` when all four ABIs are built, otherwise the list joined with `+`. The commit
+# is omitted when Git cannot read the repository (a Git worktree, see EAS_NO_VCS).
+app_version="$(node -p "require('./app.json').expo.version")"
+abi_count=0
+for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+  case ",$resolved_abis," in *",$abi,"*) abi_count=$((abi_count + 1)) ;; esac
+done
+if [ "$abi_count" -eq 4 ]; then
+  abis_label="universal"
+else
+  abis_label="${resolved_abis//,/+}"
+fi
+commit_label=""
+if commit="$(git -c safe.directory=/app -C /app rev-parse --short HEAD 2>/dev/null)"; then
+  commit_label="-g${commit}"
+fi
+artifact="dist/android/autoreas-mobile-${app_version}-${profile}-${abis_label}-$(date -u +%Y%m%dT%H%MZ)${commit_label}.apk"
+mkdir -p dist/android
+
 echo '--- Starting EAS local build ---'
 ok=0
 attempt=1
 while [ "$attempt" -le 3 ]; do
-  if bunx eas-cli@latest build --local --platform android --profile "$profile" --non-interactive; then
+  if bunx eas-cli@latest build --local --platform android --profile "$profile" --non-interactive --output "$artifact"; then
     ok=1
     break
   fi
@@ -138,4 +173,4 @@ if [ "$ok" -ne 1 ]; then
   exit 1
 fi
 
-echo '--- Build complete. APK is in your project folder. ---'
+echo "--- Build complete: $artifact ---"

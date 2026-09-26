@@ -6,6 +6,27 @@ import {
 } from '../../../../src/features/sync/season-rating-queue.helpers';
 
 describe('season rating queue entry helpers', () => {
+  it('defaults to the real clock (Date.now) when the caller omits one', () => {
+    // `DEFAULT_SEASON_RATING_QUEUE_CLOCK.now` captures the real `Date.now` reference at module
+    // load time, before any test could install fake timers, so this brackets the call with real
+    // `Date.now()` readings instead of trying to fake the clock out from under it.
+    const before = Date.now();
+    const entry = createSeasonRatingQueueEntry({
+      seasonId: 'season-2026-q3',
+      animeId: 'anime-3',
+      nota: 7,
+      ratedAt: 1_752_100_000_000,
+    });
+    const syncingEntry = markSeasonRatingQueueEntrySyncing(entry);
+    const after = Date.now();
+
+    expect(entry.createdAt).toBeGreaterThanOrEqual(before);
+    expect(entry.createdAt).toBeLessThanOrEqual(after);
+    expect(entry.updatedAt).toBe(entry.createdAt);
+    expect(syncingEntry.lastAttemptAt).toBeGreaterThanOrEqual(before);
+    expect(syncingEntry.lastAttemptAt).toBeLessThanOrEqual(after);
+  });
+
   it('creates a pending entry while preserving the original ratedAt timestamp', () => {
     const entry = createSeasonRatingQueueEntry(
       {
@@ -101,5 +122,25 @@ describe('season rating queue entry helpers', () => {
       shouldRetry: false,
       failureKind: 'auth_repair',
     });
+  });
+
+  it('falls back to a null failureKind for an unrecognized, falsy status (no error, no HTTP status)', () => {
+    // Neither an unreachable error nor any recognized HTTP status: the catch-all still keeps the
+    // entry queued for retry, but with nothing to name as the failure reason.
+    const resolution = resolveSeasonRatingDelivery({ status: undefined });
+
+    expect(resolution).toEqual({
+      state: 'pending',
+      nextQueueStatus: 'pending',
+      shouldKeepEntry: true,
+      shouldRetry: true,
+      failureKind: null,
+    });
+  });
+
+  it('reports unexpected_response for a truthy but unrecognized status', () => {
+    const resolution = resolveSeasonRatingDelivery({ status: 500 });
+
+    expect(resolution.failureKind).toBe('unexpected_response');
   });
 });

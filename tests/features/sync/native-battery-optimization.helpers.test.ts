@@ -12,6 +12,15 @@ describe('native-battery-optimization', () => {
     };
   }
 
+  it('defaults params and the module loader when the caller supplies neither, still degrading safely', () => {
+    const exemption = createNativeBatteryOptimizationExemption();
+
+    expect(() => exemption.isExempt()).not.toThrow();
+    expect(exemption.isExempt()).toBe(false);
+    expect(() => exemption.requestExemption()).not.toThrow();
+    expect(exemption.requestExemption()).toBe(false);
+  });
+
   it('degrades to false for both operations when the native module is unavailable', () => {
     const exemption = createNativeBatteryOptimizationExemption({
       requireOptionalNativeModule: () => null,

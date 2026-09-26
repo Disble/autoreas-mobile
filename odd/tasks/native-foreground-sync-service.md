@@ -4,7 +4,11 @@ Feature: move the Android background-sync loop out of JS entirely. A Kotlin-owne
 restarted by the tick alarm, runs the native sync engine on each tick behind a native bridge-presence
 gate. JS keeps the UI only.
 
-Status: planning. Branch `fix/native-foreground-sync-service`, cut from `dev` at `ac18acb`.
+Status: **closed 2026-09-24** by the maintainer, because the service works on device: it survived the
+first overnight on 1.6.0, delivered its pending operations, and a PC update reached the UI with the app
+closed. It shipped in release `1.6.0`. The 24 h reading (T7 step 5) is waived, not passed; it stays
+available as a follow-up and would be due 2026-09-25 09:40. Branch `fix/native-foreground-sync-service`,
+cut from `dev` at `ac18acb`.
 
 Delivery strategy: `single-pr` (same reasoning as `background-service-multiday-survival.md`: no PR
 process, local merge to `main`; the work-unit commits carry the review burden). The maintainer authorized
@@ -153,8 +157,8 @@ Checklist:
 - [x] T4
 - [x] T5
 - [x] T6
-- [ ] T7 (steps 1–4 pass; 24 h pending)
-- [ ] T8
+- [x] T7 (steps 1–4 pass; step 5 partial: one overnight passed, the 24 h reading waived at closure)
+- [x] T8 (released as `1.6.0`, tag `v1.6.0`)
 
 ## Acceptance (T7, on device)
 
@@ -396,3 +400,25 @@ Follow-up (minor): every refused tick logs the full `SocketTimeoutException` sta
 the PC off overnight that is ~500 traces. Log one line instead.
 
 Next: T7 step 5 (24 h) in a later session, then T8 (release, maintainer confirms any push).
+
+### T7 step 5 — first overnight on the 1.6.0 release (2026-09-24, partial)
+
+Read-only at 09:36 without opening the app. The service stayed foreground on one process since the
+install, with ~105 s ticks and no gap. Refused ticks with the PC off never claimed. The two operations
+made overnight were pushed on the first tick after the bridge came up (09:05). A PC-side update
+(changelog 2383) reached the tablet 19 s later, and the cursor was persisted. The maintainer then
+stopped the bridge and opened the app: the UI showed the new value (22), and both syncs triggered by
+the open failed, so the path is verified end to end. Not yet 24 h: that open restarted the window,
+now due 2026-09-25 09:40. Full evidence:
+`docs/mobile-background-sync-investigation-log.md`, entry of 2026-09-24.
+
+### Closure (2026-09-24)
+
+The maintainer closed the feature on device evidence (see T7 step 5 above). Open follow-ups, none of
+them blocking:
+
+- The 24 h reading was waived. It is a follow-up, not a pass.
+- One-line WARN for refused presence ticks, instead of a full stack trace per tick.
+- The duplicate `useForegroundResync` call when the app opens.
+- The unidentified permission dialog shown at app open.
+- The `expo-background-task` job still runs in FGS mode; its role was not re-analysed.

@@ -1,0 +1,111 @@
+[
+  {
+    "name": "malformed-top-level-shape-array-not-object",
+    "description": "A response body whose root is a JSON array (not an object) is rejected outright.",
+    "input": { "backlog": [], "responseBody": [] }
+  },
+  {
+    "name": "bridge-change-missing-record-id",
+    "description": "A bridge_changes entry with no record_id is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "bridge_changes": [{ "change_type": "create", "timestamp": 1 }] }
+    }
+  },
+  {
+    "name": "bridge-change-non-string-record-id",
+    "description": "A bridge_changes entry whose record_id is a number, not a string, is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "bridge_changes": [{ "record_id": 7, "change_type": "create", "timestamp": 1 }] }
+    }
+  },
+  {
+    "name": "bridge-change-invalid-change-type",
+    "description": "A change_type outside the closed { create, update, delete } vocabulary is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "bridge_changes": [{ "record_id": "a", "change_type": "restore", "timestamp": 1 }] }
+    }
+  },
+  {
+    "name": "bridge-change-missing-timestamp",
+    "description": "A bridge_changes entry with no timestamp is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "bridge_changes": [{ "record_id": "a", "change_type": "create" }] }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-non-string-id",
+    "description": "A snapshot whose id is a number, not a string, is rejected -- WireAnimeSchema requires a string id.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "bridge_changes": [
+          {
+            "record_id": "a-1", "change_type": "update", "timestamp": 1,
+            "snapshot": { "id": 7, "name": "A", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0, "modified_at": 0 }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-non-string-name",
+    "description": "A snapshot whose name is a number, not a string, is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "bridge_changes": [
+          {
+            "record_id": "a-1", "change_type": "update", "timestamp": 1,
+            "snapshot": { "id": "a-1", "name": 7, "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0, "modified_at": 0 }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-missing-required-scalar",
+    "description": "A snapshot missing a required scalar (firstCycle) is rejected, even with modified_at present.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "bridge_changes": [
+          {
+            "record_id": "a-1", "change_type": "update", "timestamp": 1,
+            "snapshot": { "id": "a-1", "name": "A", "status": 1, "episodesWatched": 0, "active": 1, "modified_at": 0 }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-not-an-object",
+    "description": "A present-but-non-object snapshot (a bare array) is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "bridge_changes": [{ "record_id": "a-1", "change_type": "update", "timestamp": 1, "snapshot": [] }] }
+    }
+  },
+  {
+    "name": "applied-operation-missing-anime-id",
+    "description": "An applied_operations entry with no anime_id is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "applied_operations": [{ "operation": "update" }] }
+    }
+  },
+  {
+    "name": "applied-operation-missing-operation",
+    "description": "An applied_operations entry with no operation is rejected.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "applied_operations": [{ "anime_id": "a-1" }] }
+    }
+  }
+]

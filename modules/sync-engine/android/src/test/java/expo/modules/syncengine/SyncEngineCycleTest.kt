@@ -13,6 +13,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.SQLiteMode
 
+/**
+ * Core happy/failure-path tests for [SyncEngineCycle], plus [CycleOutcome.toMap]. Pull-only
+ * (empty backlog), lease-fence edge cases, and `getLastChangelogId` bounds live in
+ * [SyncEngineCyclePullOnlyAndFenceTest] (T3, sync-core-test-assurance) to keep both files at or
+ * under the project's 500-line limit.
+ */
 @RunWith(RobolectricTestRunner::class)
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class SyncEngineCycleTest {
@@ -185,6 +191,49 @@ class SyncEngineCycleTest {
         assertTrue(journalReasons(fixture.journalDirectory, cycleId).last().orEmpty().contains("lease lost"))
       }
     }
+  }
+
+  @Test
+  fun cycleOutcomeToMapCarriesEveryFieldTheBridgeReturnsToTheJsSeam() {
+    // Dedicated (T3, sync-core-test-assurance): every other test here asserts equality on the
+    // CycleOutcome data class itself, never on toMap() -- the JS-visible payload SyncEngineModule
+    // actually hands the bridge.
+    val outcome = CycleOutcome(
+      outcome = "closed",
+      stage = "closed",
+      syncedCount = 3,
+      backlogReadCount = 5,
+      errorName = null,
+      recoveredProcessingCount = 2,
+      recoveredAbandonedCycleId = "cycle-recovered",
+    )
+
+    val map = outcome.toMap("cycle-k6")
+
+    assertEquals(
+      mapOf(
+        "outcome" to "closed",
+        "cycleId" to "cycle-k6",
+        "syncedCount" to 3,
+        "backlogReadCount" to 5,
+        "stage" to "closed",
+        "errorName" to null,
+        "recoveredProcessingCount" to 2,
+        "recoveredAbandonedCycleId" to "cycle-recovered",
+      ),
+      map,
+    )
+  }
+
+  @Test
+  fun cycleOutcomeToMapDefaultsRecoveryFieldsToZeroAndNull() {
+    val outcome = CycleOutcome("failed", "sent", 0, 0, "ReconcileHttpError")
+
+    val map = outcome.toMap("cycle-defaults")
+
+    assertEquals(0, map["recoveredProcessingCount"])
+    assertEquals(null, map["recoveredAbandonedCycleId"])
+    assertEquals("ReconcileHttpError", map["errorName"])
   }
 
   private fun assertCycleFailure(

@@ -68,6 +68,39 @@ internal fun readTickingState(context: Context): TickingState {
 }
 
 /**
+ * Stable, ticker-owned answer to "does the native ticker own the background right now?".
+ *
+ * **Why this exists (ODD native-background-sync-cutover M2).** `modules/sync-engine` adds a native
+ * `WorkManager` floor that must skip its own attempt while this ticker owns the background -- the
+ * exact gate the JS floor already applies through `createNativeForegroundSyncTicker().isRunning()`
+ * (`src/features/sync/background-sync.helpers.ts`). A native worker has no JS module registry to
+ * ask, so the check has to be reachable from Kotlin.
+ *
+ * **Ownership direction.** `sync-engine` may depend on this module (`implementation
+ * project(':foreground-sync-ticker')` in its `build.gradle`); the reverse is what every doc in
+ * both modules forbids, and this object does not create it: it is a plain read of this module's
+ * own persisted state, with no reference to `sync-engine` at all.
+ *
+ * **Why not reflection and not a duplicated `SharedPreferences` name.**
+ * - Reflection over this module's private state would break silently on a rename, with no compile
+ *   error and no test failure in the calling module.
+ * - Reading [PREF_IS_TICKING] from the caller side would hardcode a private storage detail into a
+ *   second module; a rename here would keep compiling there and silently answer `false` forever,
+ *   which is a *delivery* bug (the floor would run alongside the ticker, not skip).
+ * Exposing the read through this one function keeps the storage private here and makes a rename a
+ * compile error at the call site instead.
+ *
+ * **Semantics are exactly the JS gate's**: the persisted ticking flag, i.e. "the ticker was armed
+ * and was never stopped", not "a foreground service happens to be alive this instant". Ticking is
+ * what makes the alarm re-arm and the receiver restore `SyncForegroundService`, so an armed ticker
+ * is the signal the shipped JS floor already treats as ownership. Never throws: it is a plain
+ * `SharedPreferences` read that defaults to `false` when nothing was ever persisted.
+ */
+object SyncTickerOwnership {
+  fun ownsBackground(context: Context): Boolean = readTickingState(context).isTicking
+}
+
+/**
  * Builds the stable [PendingIntent] the tick alarm fires. Built in exactly this one place so the
  * module and the receiver never construct it separately -- a second construction site is how the
  * two would drift (different extras, different flags) and the alarm would stop being the one

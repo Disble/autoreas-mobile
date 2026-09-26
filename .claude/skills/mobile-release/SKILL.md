@@ -40,7 +40,7 @@ Only the last step differs: who runs the build, and where the artifact lands.
 | Path | Runs the build | Artifact lands in | Use it for |
 |---|---|---|---|
 | **CI** (default) | GitHub Actions, on a pushed tag | a published GitHub Release | anything anyone installs |
-| **Local** | Docker Desktop on your machine | the project root as `build-*.apk` | smoke-testing before tagging |
+| **Local** | Docker Desktop on your machine | `dist/android/autoreas-mobile-<version>-<profile>-<abis>-<timestamp>[-g<commit>].apk` | smoke-testing before tagging |
 
 A local build is a rehearsal, not a release. It ships nothing and is never the
 answer to "cut a release" on its own.
@@ -126,9 +126,8 @@ release to exist.
   token or publishes whatever it likes. The trailing `# vX.Y.Z` comment names the
   version each SHA was; update both together, deliberately. Do not "tidy" these
   back into tags.
-- **`contents: write` lives on the `release` job only.** The workflow default is
-  `contents: read`; `guard` never needs more than that to check out, test and
-  upload an artifact.
+- **`contents: write` lives on the `publish` job only.** The workflow default is
+  `contents: read`; `guard`, `native` and `build` never need more than that.
 
 ## Decision Gates
 
@@ -180,24 +179,59 @@ Android only. There is no iOS profile in `eas.json` and no Apple account wired t
 this project.
 
 Budget about **30 minutes** from pushed tag to published release, nearly all of it
-Gradle. `guard` fails inside three minutes when it is going to fail, which is the
-whole reason it is a separate job.
+Gradle. The workflow is four jobs: `guard` (fails inside about a minute or two when
+it is going to fail — version/changelog/ancestor checks, typecheck, test, and the
+C2 decision below; this is the whole reason it is a separate job) → `native`
+(Kotlin unit tests + Android lint) and `build` (the EAS release build and every
+artifact guard) **in parallel**, both gated only on `guard` → `publish` (the only
+job with `contents: write`; downloads what `build` and `guard` produced and
+publishes). `native` and `build` running in parallel, instead of serialized as they
+used to be, is what keeps the native gate's ~8 minutes off the release's critical
+path (`odd/tasks/build-resource-optimization.md`, C7).
+
+**The native gate can be skipped.** `guard` decides, before either downstream job
+starts, whether `native` needs to run at all: it diffs this tag's commit against
+the previous release tag and skips `native` outright (visibly, as a skipped job,
+never a green empty one) when nothing under a fixed watched-path list changed —
+see `scripts/lib/release-native-gate.mjs` for the exact list and
+`scripts/release-native-gate.mjs` for the git plumbing. It fails safe by
+construction: any git failure, missing previous tag, or doubt at all makes it run
+the gate, never skip it. `native`'s own `if:` is `!= 'skip'`, not `== 'run'` — an
+unexpected decision output runs the gate rather than silently skipping it.
+
+`app.json` and `package.json` are both on the watched list, and every release
+hand-edits their version fields (see Hard Rules below) — every earlier design that
+watched those two files at whole-file granularity would have made `skip` nearly
+unreachable. Fixed with a version-aware exemption scoped to exactly those two
+files: a change to either one still counts as native-relevant UNLESS every changed
+line in its diff (`git diff -U0` against the previous tag) is a `"version": "…"`
+line — a plugin entry, an Android config block, a permission, or a dependency
+bump still triggers the gate. Proven on this repo's own history: `v1.1.0`,
+`v1.2.2`, and `v1.4.1` are real releases whose watched-path diff is nothing but
+that version bump, and the decision now reports `skip` for all three.
 
 ### The guards CI runs, and what each one catches
 
 Every one of these exists because its failure mode is **silent** — a green build
 that ships something broken. Do not remove one to make a run pass.
 
-| Guard | Catches |
-|---|---|
-| tag vs `app.json` `expo.version` | a tag that disagrees with the version the app reports |
-| `package.json` vs `app.json` | the second version field drifting away from the source |
-| CHANGELOG section exists and is non-empty | a release published with empty notes |
-| tagged commit is an ancestor of `main` | a release cut from unmerged `dev` |
-| `typecheck` + `test` on the runner | a tag cut from a commit whose pre-commit hook **failed open** |
-| no `BundleConfig.pb` in the artifact | `android.buildType` lost ⇒ an AAB nobody can sideload |
-| `aapt2 dump badging` versionName == tag | a stale prebuild shipping the previous version name |
-| manifest still declares `app.notifee.core.ForegroundService` + `foregroundServiceType`, and all four permissions | `withAndroidForegroundSync` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
+| Guard | Job | Catches |
+|---|---|---|
+| tag vs `app.json` `expo.version` | `guard` | a tag that disagrees with the version the app reports |
+| `package.json` vs `app.json` | `guard` | the second version field drifting away from the source |
+| CHANGELOG section exists and is non-empty | `guard` | a release published with empty notes |
+| tagged commit is an ancestor of `main` | `guard` | a release cut from unmerged `dev` |
+| `typecheck` + `test` on the runner | `guard` | a tag cut from a commit whose pre-commit hook **failed open** |
+| Kotlin unit tests + Android lint (`sync-engine`, `foreground-sync-ticker`) | `native` (skippable by C2 — see above) | the native module tests or lint regressing silently |
+| no `BundleConfig.pb` in the artifact | `build` | `android.buildType` lost ⇒ an AAB nobody can sideload |
+| `aapt2 dump badging` versionName == tag | `build` | a stale prebuild shipping the previous version name |
+| manifest still declares `app.notifee.core.ForegroundService` + `foregroundServiceType`, and all six permissions | `build` | `withAndroidForegroundSync` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
+| APK reports itself non-debuggable | `build` | a lab-profile debuggable build leaking into a release |
+
+`publish` runs only when `build` succeeded and `native` either succeeded or was
+skipped by the C2 decision — never when `native` actually failed, and never when
+`build` failed. See `odd/tasks/build-resource-optimization.md` T3 for the exact
+condition and every case it was traced through.
 
 `lint` is deliberately **absent** from the runner. It is enforced per staged file
 by the pre-commit hook; `eslint .` repo-wide still carries standing `dharness`
@@ -234,8 +268,9 @@ one.
 8. Confirm the artifact is an APK and reports the version you expect. Do not trust
    the filename:
    ```bash
-   unzip -l build-*.apk | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
-   aapt2 dump badging build-*.apk | head -1
+   apk="$(ls -t dist/android/*.apk | head -1)"
+   unzip -l "$apk" | grep -q BundleConfig.pb && echo "THIS IS AN AAB"
+   aapt2 dump badging "$apk" | head -1
    ```
 9. Install it and exercise what neither tests nor those checks can reach — startup,
    pairing, SQLite, sync against a running Bridge, background sync with the screen
@@ -267,16 +302,21 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
 
 ## Landmines
 
-- **The pinned actions target Node 20, which GitHub is retiring.** Both v1.0.0 and
-  v1.0.1 raised the annotation *"Node.js 20 is deprecated. The following actions
-  target Node.js 20 but are being forced to run on Node.js 24:
-  `actions/checkout`, `actions/upload-artifact`"*. It is a warning today and the
-  runner substitutes Node 24 for you, but the substitution is a courtesy that ends.
-  This is the standing cost of pinning: a SHA freezes the runtime an action targets
-  as well as its code, so it is now on you to move it. When `actions/checkout` and
-  `actions/upload-artifact` publish releases built for Node 24, bump both the SHA
-  and its trailing version comment. Do not answer this warning by going back to
-  floating tags.
+- **Pinned actions freeze their runtime, and the runner image floats unless pinned.**
+  v1.0.0 through v1.6.0 raised *"Node.js 20 is deprecated … being forced to run on
+  Node.js 24"* for `actions/checkout`, `actions/setup-java` and the artifact
+  actions, plus *"setup-java v4 is deprecated"*. Resolved after v1.6.0
+  (2026-09-23) by moving each to the **first** major that runs on Node 24 —
+  `checkout` v5.1.0, `setup-java` v5.7.0, `upload-artifact` v6.0.0,
+  `download-artifact` v7.0.0 — not the latest, to keep the jump minimal. Their
+  release notes change only the runtime (runner ≥ 2.327.1), except
+  `download-artifact` v5's path change for downloads **by ID**; this workflow
+  downloads by name, which is unchanged. Both jobs also moved from
+  `ubuntu-latest` to `ubuntu-24.04`, because `ubuntu-latest` becomes Ubuntu 26 on
+  2026-10-19 without this repo changing. When the next deprecation notice
+  appears, repeat the same move: bump the SHA and its trailing version comment
+  together, or the runner image deliberately. Do not answer it by going back to
+  floating tags or `ubuntu-latest`.
 
 - **`Remote versions are not configured.`** With `appVersionSource: "remote"`,
   eas-cli resolves `versionCode` from its servers; when no remote version exists
@@ -301,6 +341,17 @@ from rewriting the host's Git hooks; GitHub Actions exports it for free.
   stops the runner rewriting hooks even if `CI=true` ever goes missing. Do not
   remove it to "fix" an install; if an install needs a script, that is the thing to
   question.
+
+- **`gradle/actions/setup-gradle` defaults the wrong way for this workflow, twice.**
+  `cache-provider` defaults to `enhanced`, a **commercial** caching service this repo
+  has no account for — always pass `cache-provider: basic` (the open-source GitHub
+  Actions cache). `cache-read-only` defaults to `true` for any ref that is not the
+  default branch; a release only ever runs on a pushed **tag**, which is never the
+  default branch, so the default would silently write nothing back on every single
+  run — always pass `cache-read-only: false`. Both are set in the `native` and
+  `build` jobs. Verify both defaults against the exact pinned SHA's own
+  `setup-gradle/action.yml` (`gh api repos/gradle/actions/contents/setup-gradle/action.yml?ref=<sha>`)
+  before trusting either one from memory or an older version's docs.
 
 ## Agent Notes
 
@@ -327,7 +378,9 @@ naming which behaviour therefore remains unverified.
 - `app.json` — `expo.version`, the single source of the version.
 - `package.json` — the copy the guard keeps equal to it.
 - `eas.json` — `appVersionSource: remote`, and `production.android.buildType: apk`.
-- `.github/workflows/release.yml` — tag trigger, the guard job, build and publish.
+- `.github/workflows/release.yml` — tag trigger; `guard`, `native`, `build`, `publish`.
+- `scripts/lib/release-native-gate.mjs`, `scripts/release-native-gate.mjs` — the C2
+  decision that can skip the `native` job, and why.
 - `docker-compose.eas.yml` — the local rehearsal path and why `CI=true` is there.
 - `plugins/withAndroidForegroundSync.js` — the only source of the foreground
   service type the manifest guard checks for.

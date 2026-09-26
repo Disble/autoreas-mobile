@@ -196,6 +196,17 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
 
     expect(rawDb.runAsync.mock.calls.map(([statement]) => statement)).toEqual([
       expect.stringMatching(/^UPDATE bridge_config/),
+      // The newest diagnostics counters, repaired in the sync_runtime_status step that runs
+      // immediately after the bridge_config one and before the operation_log index.
+      expect.stringMatching(
+        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_undeliverable_count/,
+      ),
+      expect.stringMatching(
+        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_unclassified_count/,
+      ),
+      expect.stringMatching(
+        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count/,
+      ),
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS operation_log/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN bridge_modified_at/),
       expect.stringMatching(/^ALTER TABLE operation_log ADD COLUMN conflict_attempt_count/),

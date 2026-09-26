@@ -1,0 +1,276 @@
+[
+  {
+    "name": "confirms-by-explicit-applied-operations-ack",
+    "description": "An applied_operations entry matching anime_id and operation always confirms the backlog row, regardless of bridge_changes.",
+    "input": {
+      "backlog": [
+        { "id": 1, "animeId": "anime-1", "operation": "update", "payload": "{\"episodesWatched\":5}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [
+          { "anime_id": "anime-1", "operation": "update", "applied": true, "modified_at": 1788540735366 }
+        ],
+        "bridge_changes": [],
+        "last_changelog_id": 2383
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2383,
+      "confirmedOperationIds": [1],
+      "bridgeChanges": []
+    }
+  },
+  {
+    "name": "confirms-by-bridge-changes-inference-changed-fields-match",
+    "description": "With no applied_operations entry, a bridge_changes row whose changed_fields cover every key the pending payload sent confirms the row by inference.",
+    "input": {
+      "backlog": [
+        { "id": 2, "animeId": "anime-2", "operation": "update", "payload": "{\"episodesWatched\":6,\"status\":2}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          { "record_id": "anime-2", "change_type": "update", "changed_fields": ["episodesWatched", "status"], "timestamp": 1710000002000 }
+        ],
+        "last_changelog_id": 2384
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2384,
+      "confirmedOperationIds": [2],
+      "bridgeChanges": [
+        { "recordId": "anime-2", "changeType": "update", "changedFields": ["nrocapvisto", "estado"], "snapshot": null, "timestamp": 1710000002000 }
+      ]
+    }
+  },
+  {
+    "name": "confirms-by-bridge-changes-inference-snapshot-value-match",
+    "description": "A payload field absent from changed_fields can still confirm by inference when the change's own snapshot already carries the matching value.",
+    "input": {
+      "backlog": [
+        { "id": 3, "animeId": "anime-3", "operation": "update", "payload": "{\"episodesWatched\":9}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-3",
+            "change_type": "update",
+            "changed_fields": ["status"],
+            "snapshot": {
+              "id": "anime-3", "name": "North Star", "status": 2, "episodesWatched": 9, "totalEpisodes": 12,
+              "days": [{ "day": "Tue", "order": 2 }], "genres": ["Mystery"], "kind": 1, "active": 1, "firstCycle": 0,
+              "lastWatchedAt": 1700, "premieredAt": 1800, "createdAt": 1900, "deletedAt": 2000,
+              "cover": "cover.png", "sourceUrl": "https://example.invalid/anime/7", "folder": "North",
+              "studios": "Studio X", "origin": "Manga", "durationMinutes": 24, "modified_at": 0
+            },
+            "timestamp": 700
+          }
+        ],
+        "last_changelog_id": 2386
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2386,
+      "confirmedOperationIds": [3],
+      "bridgeChanges": [
+        {
+          "recordId": "anime-3", "changeType": "update", "changedFields": ["estado"], "timestamp": 700,
+          "snapshot": {
+            "_id": "anime-3", "nombre": "North Star", "estado": 2, "nrocapvisto": 9, "totalcap": 12,
+            "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
+            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "payload-with-no-fields-never-confirmed-by-inference",
+    "description": "A backlog row whose own payload parsed to {} carries no fields to evidence, so it can never be confirmed by bridge_changes inference even when a matching record and changed_fields exist.",
+    "input": {
+      "backlog": [
+        { "id": 4, "animeId": "anime-4", "operation": "update", "payload": "{}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          { "record_id": "anime-4", "change_type": "update", "changed_fields": ["status"], "timestamp": 1710000003000 }
+        ],
+        "last_changelog_id": 2400
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2400,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        { "recordId": "anime-4", "changeType": "update", "changedFields": ["estado"], "snapshot": null, "timestamp": 1710000003000 }
+      ]
+    }
+  },
+  {
+    "name": "full-snapshot-mapping-to-legacy-shape",
+    "description": "A bridge_changes entry with a complete wire snapshot maps every field into the stable Spanish legacy shape, and an unknown changed_fields entry is dropped from the normalized local vocabulary.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-7",
+            "change_type": "update",
+            "changed_fields": ["name", "episodesWatched", "genres", "unknownField"],
+            "snapshot": {
+              "id": "anime-7", "name": "North Star", "status": 2, "episodesWatched": 4, "totalEpisodes": 12,
+              "days": [{ "day": "Tue", "order": 2 }], "genres": ["Mystery"], "kind": 1, "active": 1, "firstCycle": 0,
+              "lastWatchedAt": 1700, "premieredAt": 1800, "createdAt": 1900, "deletedAt": 2000,
+              "cover": "cover.png", "sourceUrl": "https://example.invalid/anime/7", "folder": "North",
+              "studios": "Studio X", "origin": "Manga", "durationMinutes": 24, "modified_at": 0
+            },
+            "timestamp": 12
+          }
+        ],
+        "last_changelog_id": 2385
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2385,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        {
+          "recordId": "anime-7", "changeType": "update", "changedFields": ["nombre", "nrocapvisto", "generos"], "timestamp": 12,
+          "snapshot": {
+            "_id": "anime-7", "nombre": "North Star", "estado": 2, "nrocapvisto": 4, "totalcap": 12,
+            "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
+            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "empty-applied-and-bridge-changes-arrays",
+    "description": "Explicit empty arrays on both collections: nothing is confirmed, nothing is mapped.",
+    "input": {
+      "backlog": [
+        { "id": 5, "animeId": "anime-5", "operation": "update", "payload": "{\"episodesWatched\":1}" }
+      ],
+      "responseBody": { "status": "accepted", "applied_operations": [], "bridge_changes": [], "last_changelog_id": 2401 }
+    },
+    "expected": { "last_changelog_id": 2401, "confirmedOperationIds": [], "bridgeChanges": [] }
+  },
+  {
+    "name": "null-array-fields-fallback-to-empty",
+    "description": "applied_operations and bridge_changes sent as JSON null fall back to empty arrays, mirroring the bridge's tolerant top-level collection contract.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "applied_operations": null, "bridge_changes": null }
+    },
+    "expected": { "confirmedOperationIds": [], "bridgeChanges": [] }
+  },
+  {
+    "name": "absent-array-fields-fallback-to-empty",
+    "description": "applied_operations and bridge_changes missing entirely also fall back to empty arrays.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted" }
+    },
+    "expected": { "confirmedOperationIds": [], "bridgeChanges": [] }
+  },
+  {
+    "name": "conflicts-field-present-but-ignored",
+    "description": "A bridge response that still sends a conflicts array is tolerated: the field is never typed or surfaced (dead scaffolding removed, see reconcile.schema.ts's Conflict Honesty note).",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [],
+        "conflicts": [{ "anime_id": "anime-1", "local": {}, "remote": {} }],
+        "last_changelog_id": 10
+      }
+    },
+    "expected": { "last_changelog_id": 10, "confirmedOperationIds": [], "bridgeChanges": [] }
+  },
+  {
+    "name": "cursor-zero-preserved-not-treated-as-absent",
+    "description": "last_changelog_id: 0 is a real, legitimate cursor value: presence, not truthiness, decides whether a token exists.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "applied_operations": [], "bridge_changes": [], "last_changelog_id": 0 }
+    },
+    "expected": { "last_changelog_id": 0, "confirmedOperationIds": [], "bridgeChanges": [] }
+  },
+  {
+    "name": "cursor-absent-key-with-other-confirmations-present",
+    "description": "last_changelog_id can be absent even while applied_operations confirms a row: the two are independent, and an absent cursor never blocks confirmation.",
+    "input": {
+      "backlog": [
+        { "id": 13, "animeId": "anime-13", "operation": "update", "payload": "{\"episodesWatched\":2}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [{ "anime_id": "anime-13", "operation": "update", "applied": true, "modified_at": 5 }],
+        "bridge_changes": []
+      }
+    },
+    "expected": { "confirmedOperationIds": [13], "bridgeChanges": [] }
+  },
+  {
+    "name": "unmapped-changed-field-name-dropped",
+    "description": "A changed_fields entry with no local-vocabulary mapping is dropped, never surfaced as an unknown local field.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          { "record_id": "anime-14", "change_type": "update", "changed_fields": ["status", "totallyUnknownField"], "timestamp": 1000 }
+        ],
+        "last_changelog_id": 2389
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2389,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        { "recordId": "anime-14", "changeType": "update", "changedFields": ["estado"], "snapshot": null, "timestamp": 1000 }
+      ]
+    }
+  },
+  {
+    "name": "explicit-applied-false-overrides-bridge-changes-inference",
+    "description": "An explicit applied_operations ack always wins, even a false one: a bridge_changes row that would otherwise confirm by inference is overridden.",
+    "input": {
+      "backlog": [
+        { "id": 31, "animeId": "anime-31", "operation": "update", "payload": "{\"episodesWatched\":3}" }
+      ],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [
+          { "anime_id": "anime-31", "operation": "update", "applied": false, "reason": "conflict", "modified_at": 900 }
+        ],
+        "bridge_changes": [
+          { "record_id": "anime-31", "change_type": "update", "changed_fields": ["episodesWatched"], "timestamp": 600 }
+        ],
+        "last_changelog_id": 2390
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2390,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        { "recordId": "anime-31", "changeType": "update", "changedFields": ["nrocapvisto"], "snapshot": null, "timestamp": 600 }
+      ]
+    }
+  }
+]

@@ -133,4 +133,69 @@ describe('sync-visible-status.helpers', () => {
     expect(status.title).toBe('2 cambios esperando sync');
     expect(status.description).toContain('Hace 6 días');
   });
+
+  it('reports the online state without a "last synced" phrase when there is no prior sync yet', () => {
+    const status = deriveVisibleSyncStatus(
+      {
+        connectionStatus: 'online',
+        isBridgeConfigured: true,
+        isDeviceOnline: true,
+        lastSyncAt: null,
+        pendingOpsCount: 0,
+        syncError: null,
+      },
+      new Date('2026-04-09T10:00:00.000Z'),
+    );
+
+    expect(status.description).toBe('La copia local está al día con el bridge.');
+  });
+
+  it('uses the singular pending-change label for exactly one pending operation', () => {
+    const status = deriveVisibleSyncStatus(
+      {
+        connectionStatus: 'unreachable',
+        isBridgeConfigured: true,
+        isDeviceOnline: false,
+        lastSyncAt: null,
+        pendingOpsCount: 1,
+        syncError: 'offline',
+      },
+      new Date('2026-04-09T10:00:00.000Z'),
+    );
+
+    expect(status.title).toBe('1 cambio esperando sync');
+  });
+
+  it('does not escalate a fresh, still-pending backlog that has not gone stale yet', () => {
+    const status = deriveVisibleSyncStatus(
+      {
+        connectionStatus: 'unreachable',
+        isBridgeConfigured: true,
+        isDeviceOnline: true,
+        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
+        pendingOpsCount: 2,
+        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
+      },
+      new Date('2026-04-09T10:00:00.000Z'),
+    );
+
+    expect(status.tone).toBe('warning');
+    expect(status.description).toContain('se van a reintentar cuando el bridge vuelva');
+  });
+
+  it('reports the local-mode description including the last sync error when one exists', () => {
+    const status = deriveVisibleSyncStatus(
+      {
+        connectionStatus: 'idle',
+        isBridgeConfigured: true,
+        isDeviceOnline: true,
+        lastSyncAt: null,
+        pendingOpsCount: 0,
+        syncError: 'Reconcile failed: 500',
+      },
+      new Date('2026-04-09T10:00:00.000Z'),
+    );
+
+    expect(status.description).toContain('último intento con el bridge falló');
+  });
 });

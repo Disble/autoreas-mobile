@@ -79,27 +79,29 @@ class SyncEngineRecovery(
    * Appends the `abandoned` transition for the previous attempt when its last journaled state
    * is non-terminal and older than the lease; answers its cycle id, or `null` when there was
    * nothing to abandon (or the journal could not be read).
+   *
+   * No `try`/`catch` here (T3, sync-core-test-assurance; removed, not `Kover`-excluded): both
+   * [SyncEngineJournal.readLatestTransition] and [SyncEngineJournal.append] are documented as
+   * "never throws" and already catch `Throwable` internally, degrading to `null`/`false` on any
+   * failure -- proven unreachable by forcing an append failure (a `BEFORE INSERT` trigger on a
+   * second connection to the same journal file, in `SyncEngineRecoveryTest`) and confirming it
+   * surfaces as `appended == false` here, never as a caught exception.
    */
   private fun abandonStaleAttempt(currentCycleId: String): String? {
-    return try {
-      val latest = journal.readLatestTransition(currentCycleId) ?: return null
-      val staleBefore = System.currentTimeMillis() - ENGINE_LEASE_MS
-      val isStale = latest.atMs < staleBefore
-      if (latest.toState !in NON_TERMINAL_STATES || !isStale) {
-        return null
-      }
-      val appended = journal.append(
-        latest.cycleId,
-        latest.toState,
-        "abandoned",
-        "recovered by later attempt $currentCycleId",
-        System.currentTimeMillis(),
-      )
-      if (appended) latest.cycleId else null
-    } catch (error: Throwable) {
-      Log.w(RECOVERY_LOG_TAG, "recovery sweep: stale-attempt abandon failed", error)
-      null
+    val latest = journal.readLatestTransition(currentCycleId) ?: return null
+    val staleBefore = System.currentTimeMillis() - ENGINE_LEASE_MS
+    val isStale = latest.atMs < staleBefore
+    if (latest.toState !in NON_TERMINAL_STATES || !isStale) {
+      return null
     }
+    val appended = journal.append(
+      latest.cycleId,
+      latest.toState,
+      "abandoned",
+      "recovered by later attempt $currentCycleId",
+      System.currentTimeMillis(),
+    )
+    return if (appended) latest.cycleId else null
   }
 
   /**

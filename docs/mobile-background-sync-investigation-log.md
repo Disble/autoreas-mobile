@@ -370,6 +370,49 @@ Each has its instrument. Anything without one is in the hypotheses or refuted se
 
 Newest first.
 
+### 2026-09-24 (release 1.6.0 installed) — first overnight on the native service: the bridge update reached the tablet 19 s later, with the app never opened
+
+**Context.** Installed build `1.6.0` (`versionCode=13`, `lastUpdateTime=2026-09-23 23:11:29`). The maintainer made an update on the PC and asked whether it reached the tablet. **The app was deliberately not opened**: opening it starts a sync, which would have made its own result unreadable. Everything below was read at 09:36 on tablet `R52T30686RV` with read-only instruments (`dumpsys`, `logcat -d -b all`) and the bridge request MCP. The process was not touched.
+
+**Verified — the maintainer's PC update reached the tablet in the background.**
+
+- The bridge wrote changelog `2383` at `09:31:29.641` (`Honzuki no Gekokujou … Ryoushu no Youjo`, `episodesWatched` → 22, `lastWatchedAt`).
+- The next tick, `09:31:48` (cycle `07c7489e`, `trigger_source=native_fgs_tick`), sent `last_changelog_id: 2382` and got back that one `bridge_change`. The journal reads `idle→checked→sent→applied→closed`, closed in 113 ms. **Delay: 19 s from the bridge write to the tablet.**
+- **The cursor was persisted.** The tick after that (`09:33:34`, cycle `4d336468`) sent `2383`, and so did every later tick. Before 1.6.0 this was the known failure: the tablet kept sending a frozen cursor (see 2026-09-10, stuck at 2287).
+- Zero `ActivityTaskManager`/`START`/`Displayed` lines for the package across the buffer: no activity was launched. The launcher lines at 09:34 (`SuggestedItemsFacade`) are app-drawer suggestions, not a launch.
+
+**Verified — pending tablet operations were delivered when the PC came up.**
+
+- Two operations were created on the tablet while the PC was off: `One Pace - Wano` (`created_at` 00:42:55) and `Super no Ura de Yani Suu Futari` (01:07:04).
+- Every tick from the start of the buffer until 09:03:45 was refused by the presence probe (`SocketTimeoutException`, 1507–1517 ms), with no claim and no journal lines. That is criterion 4 holding all night.
+- The first tick after the bridge answered, `09:05:29` (cycle `8c59b881`), went `checked→claimed→sent`. The bridge returned both as `applied: true` (changelog 2379, 2380; cursor 2378 → 2380). Bridge-side handling took 3183 ms; the attempt closed in 3577 ms.
+- Bridge window 08:30–09:40: 19 × `/api/status` 200 and 19 × `/api/sync/reconcile` 202, with no errors.
+
+**Verified — the service stayed up all night on one process.**
+
+- `SyncForegroundService` `isForeground=true types=0x40000000`, notification on `autoreas-sync-foreground-native`, `startRequested=true stopIfKilled=false`, `lastStartId=326`. The process state is `oom adj 200` with capability `---NFUAT` (it has `F`), where the dead state of 2026-09-22 read 250 / `-------T`.
+- The same pid (`19399`) runs across the whole buffer. `startElapsedTime=-10h25m` puts the process start at the 23:11:29 install. The service's `createTime` (00:07, `createdFromFg=true`) matches the last app open: the TICK_ALARM was cancelled and re-armed at 00:07:01.
+- Cadence: 204 ticks from 03:38 to 09:36 and **no gap over 130 s**, so one tick every ~105 s as designed. The `TICK_ALARM` stays pending on `ELAPSED_WAKEUP`.
+- The app is on the Doze allowlist (`user` scope) and in stand-by bucket `5` (EXEMPTED), not `45`. There are zero `Client timed out` lines, and the retired `ForegroundSyncTicker:ticking` wake lock no longer exists. The only wake lock is the per-attempt `SyncEngine:nativeForegroundServiceAttempt`, released after ~1.5 s when the probe is refused.
+
+**Not proven — and the limits of this reading.**
+
+- **This is not the 24 h criterion (T7 step 5).** The process has run for 10 h 25 min since the install, the app was opened at 00:07, and the logcat buffers reach back only to 01:11 (`events`), 01:17 (`system`) and 03:38 (`main`). The 23:11–03:38 stretch is inferred from the unchanged pid and `startId` continuity, not read tick by tick. The 24 h window can be counted from 00:07 (the last open) and read after 2026-09-25 00:07.
+- The WARN stack trace per refused tick is still there (known follow-up): 5580 `SyncEngineBridgePresence` lines in ~6 h of PC-off.
+- `expo-background-task` still runs its WorkManager job (`BackgroundTaskScheduler`, 115 lines). This was not analysed here.
+
+**Closed afterwards, 09:40 — confirmed in the UI with the bridge stopped first.** The maintainer stopped the bridge, then opened the app, and the UI shows Honzuki at 22. Neither sync that the open triggers could have delivered that value:
+
+- 09:40:20.817: the native service restarted from the foreground (`startId=1`, `uidState: TOP`), and its first attempt was `presence refused (SocketTimeoutException, 1518 ms)`, `not_applicable`/`idle`.
+- 09:40:30.277 and 09:40:30.813: `[useForegroundResync] Resync failed`, `BridgeTimeoutError` on `/api/animes` after 10000 ms, **twice** (a duplicate foreground resync, not analysed).
+
+So the value on screen is the one the background cycle wrote at 09:31:48. The PC → tablet path is now **verified end to end**, from the bridge write to the UI, with the app closed.
+
+Side effects of this open:
+
+- **The 24 h window restarts at 09:40:20**, so its reading is due **2026-09-25 09:40**.
+- A `permissioncontroller` `GrantPermissionsActivity` was on screen during the open. It was not identified.
+
 ### 2026-09-23 (release 1.5.0 installed) — the service died again, the trigger is now known, and the recovery path is behind the hang it was meant to survive
 
 **Context.** Installed build `1.5.0` (`versionCode=12`, `lastUpdateTime=2026-09-22 20:07:04`, not debuggable, not profileable). The maintainer reported four pending operations in the app and no sync attempt toward the bridge, and suspected the background service was down again. Everything below was read on tablet `R52T30686RV` at 09:46 with **read-only** instruments (`dumpsys`, `logcat -d`, `/proc`); the process was not killed, restarted or touched. Raw captures: `logcat -b all -d`, `dumpsys activity services|processes|exit-info`, `alarm`, `deviceidle`, `jobscheduler`, `power`, `notification`, `appops`.

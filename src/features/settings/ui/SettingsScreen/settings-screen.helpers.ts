@@ -1,6 +1,7 @@
 import type {
   BackgroundSyncSection,
   BuildBackgroundSyncSectionInput,
+  CountTileConfig,
   MetricTile,
   MetricTileIconName,
   BackgroundSyncSectionTone,
@@ -12,6 +13,7 @@ import {
   BACKGROUND_SYNC_EXECUTION_MODE_LABELS,
   BACKGROUND_SYNC_REGISTRATION_LABELS,
   BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS,
+  CONVERGENCE_COUNT_TILE_DESCRIPTORS,
 } from './settings-screen.constants';
 
 /**
@@ -82,20 +84,10 @@ function formatOldestPendingAge(ms: number | null): string {
   return `${Math.round(ms / 3_600_000)} h`;
 }
 
-/** Static shape shared by every count-only convergence tile: id, label, icon, and the tone it escalates to once the count is non-zero. */
-interface CountTileConfig {
-  readonly id: string;
-  readonly label: string;
-  readonly iconName: MetricTileIconName;
-  readonly nonZeroTone: BackgroundSyncSectionTone;
-}
-
 /**
  * Pushes one count-based convergence tile, ONLY when `count` is not `null`: a `null` counter
  * means "never measured" (Decision 7), not zero, so omitting the tile is the honest choice --
- * exactly how `appendOptionalRuntimeTiles` already treats `lastAttempt`/`lastSuccess`. Factored
- * out so `appendConvergenceMetricTiles` reads as a flat list of calls instead of six near-
- * identical `if` blocks inflating its own complexity budget.
+ * exactly how `appendOptionalRuntimeTiles` already treats `lastAttempt`/`lastSuccess`.
  */
 function pushCountTile(tiles: MetricTile[], count: number | null, config: CountTileConfig): void {
   if (count === null) {
@@ -129,54 +121,43 @@ function appendPendingRowCountTile(tiles: MetricTile[], count: number | null): v
 }
 
 /**
- * Appends the eight convergence-instrumentation tiles (design.md
- * `2026-09-09-convergence-instrumentation` Decision 6), one per counter, beside
- * `backlogReadCount`. Each renders ONLY when its counter is not `null` (Decision 7).
+ * Appends the eleven convergence-instrumentation tiles (design.md
+ * `2026-09-09-convergence-instrumentation` Decision 6, extended with the three persisted
+ * diagnostics-loss counters), one per counter, beside `backlogReadCount`. Each renders ONLY
+ * when its counter is not `null` (Decision 7).
+ *
+ * The nine count-only tiles come from ONE descriptor table, in table order: id, Spanish label,
+ * icon and escalation tone are data, so they cannot drift apart across nine near-identical calls.
+ * The age and backlog-depth tiles below stay bespoke -- their values are formatted and suffixed,
+ * not raw counts.
  */
 function appendConvergenceMetricTiles(
   tiles: MetricTile[],
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
 ): void {
-  pushCountTile(tiles, snapshot.lastDiagnosticsDiscardedCount, {
-    id: 'diagnosticsDiscardedCount',
-    label: 'Diagnósticos descartados',
-    iconName: 'close-circle-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastDiagnosticsFailedRemovalCount, {
-    id: 'diagnosticsFailedRemovalCount',
-    label: 'Diagnósticos a reintentar',
-    iconName: 'repeat-outline',
-    nonZeroTone: 'warning',
-  });
-  pushCountTile(tiles, snapshot.lastOutboxFailedWriteCount, {
-    id: 'outboxFailedWriteCount',
-    label: 'Escrituras de outbox fallidas',
-    iconName: 'warning-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastDeadLetterCount, {
-    id: 'deadLetterCount',
-    label: 'Operaciones bloqueadas',
-    iconName: 'ban-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastConflictExhaustedCount, {
-    id: 'conflictExhaustedCount',
-    label: 'Conflictos sin resolver',
-    iconName: 'alert-outline',
-    nonZeroTone: 'danger',
-  });
-  pushCountTile(tiles, snapshot.lastStuckProcessingCount, {
-    id: 'stuckProcessingCount',
-    label: 'Operaciones atascadas',
-    iconName: 'hourglass-outline',
-    nonZeroTone: 'warning',
-  });
+  for (const descriptor of CONVERGENCE_COUNT_TILE_DESCRIPTORS) {
+    pushCountTile(tiles, snapshot[descriptor.snapshotField], descriptor);
+  }
   if (snapshot.lastOldestPendingAgeMs !== null) {
     tiles.push({ id: 'oldestPendingAgeMs', label: 'Antigüedad máxima pendiente', value: formatOldestPendingAge(snapshot.lastOldestPendingAgeMs), tone: 'default', iconName: 'time-outline' });
   }
   appendPendingRowCountTile(tiles, snapshot.lastPendingRowCount);
+}
+
+/**
+ * Appends the cumulative CAPACITY-SHED tile. Distinct from every snapshot counter above: it is
+ * not written by a cycle at all, but read live from the outbox store's own persisted counter (the
+ * cap trigger's own record of the rows it dropped). `null` means the counter could not be read --
+ * an absent tile, never a fabricated zero -- while a measured `0` (the trigger has shed nothing)
+ * renders as a neutral tile carrying the same "this was measured" meaning as its siblings.
+ */
+function appendCapacityShedTile(tiles: MetricTile[], shedCount: number | null): void {
+  pushCountTile(tiles, shedCount, {
+    id: 'diagnosticsCapacityShedCount',
+    label: 'Diagnósticos perdidos por capacidad',
+    iconName: 'funnel-outline',
+    nonZeroTone: 'danger',
+  });
 }
 
 /**
@@ -217,6 +198,7 @@ function buildRegistrationPathTiles(
 /** Builds the full ordered tile list the Settings background-sync card renders. */
 function buildRuntimeMetricTiles(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+  shedCount: number | null,
 ): MetricTile[] {
   const registrationShape = resolveRegistrationTile(snapshot.registrationStatus);
   const tiles: MetricTile[] = [
@@ -250,6 +232,7 @@ function buildRuntimeMetricTiles(
   );
 
   appendConvergenceMetricTiles(tiles, snapshot);
+  appendCapacityShedTile(tiles, shedCount);
 
   if (snapshot.lastFailureMessage) {
     tiles.push({ id: 'lastFailure', label: 'Último fallo', value: snapshot.lastFailureMessage, tone: 'danger', iconName: 'alert-circle-outline', span: 'full' });
@@ -260,8 +243,9 @@ function buildRuntimeMetricTiles(
 /** Builds the section copy and status tone for a bridge that IS configured (paired). */
 function buildConfiguredBackgroundSyncSection(
   snapshot: BuildBackgroundSyncSectionInput['snapshot'],
+  shedCount: number | null,
 ): BackgroundSyncSection {
-  const tiles = buildRuntimeMetricTiles(snapshot);
+  const tiles = buildRuntimeMetricTiles(snapshot, shedCount);
   if (snapshot.lastFailureMessage) {
     return {
       title: 'Último sync con error',
@@ -315,6 +299,7 @@ function buildConfiguredBackgroundSyncSection(
 export function buildBackgroundSyncSection({
   isConfigured,
   snapshot,
+  shedCount = null,
 }: BuildBackgroundSyncSectionInput): BackgroundSyncSection {
   if (!isConfigured) {
     return {
@@ -336,7 +321,7 @@ export function buildBackgroundSyncSection({
     };
   }
 
-  return buildConfiguredBackgroundSyncSection(snapshot);
+  return buildConfiguredBackgroundSyncSection(snapshot, shedCount);
 }
 
 /**

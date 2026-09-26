@@ -70,12 +70,23 @@ object OperationLogPruner {
     }
   }
 
-  /** Deletes the oldest rows of one terminal status once its count exceeds [maxCount]. */
+  /**
+   * Deletes the oldest rows of one terminal status once its count exceeds [maxCount].
+   *
+   * `moveToFirst()`'s result is intentionally unchecked (T3, sync-core-test-assurance): a bare
+   * `SELECT COUNT(*)` always returns exactly one row, even over zero matches, so the "no row"
+   * branch a defensive `if (cursor.moveToFirst()) ... else 0L` would guard is unreachable for
+   * this exact, unconditioned query shape -- proven, not assumed, and removed rather than
+   * `Kover`-excluded, per this feature's unreachable-code decision.
+   */
   private fun pruneByMaxCount(appDb: SQLiteDatabase, status: String, maxCount: Int) {
     val currentCount = appDb.rawQuery(
       "SELECT COUNT(*) FROM operation_log WHERE status = ?",
       arrayOf(status),
-    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+    ).use { cursor ->
+      cursor.moveToFirst()
+      cursor.getLong(0)
+    }
     val overflowCount = maxOf(0L, currentCount - maxCount)
     if (overflowCount == 0L) return
 

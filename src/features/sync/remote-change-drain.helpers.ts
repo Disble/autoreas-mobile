@@ -12,8 +12,8 @@ import type { DrainPendingRemoteChangesResult } from './remote-change-drain.type
  * Applies every currently staged `pending_remote_changes` row to `animes` via the shared
  * merge boundary, on the shared REACTIVE connection (`withLocalWrite`), so foreground
  * `useLiveQuery` consumers observe the result immediately. This is the only place background
- * sync's writes ever reach `animes` -- the headless cycle itself never writes `animes`
- * directly (see `headless-sync-cycle.helpers.ts` / `syncPendingOperations` staged mode).
+ * sync's writes ever reach `animes` -- the native engine stages remote changes and never writes
+ * `animes` directly (see `syncPendingOperations` staged mode).
  *
  * Drained rows are deleted in the SAME deferred transaction as the apply, so a crash between
  * apply and delete cannot silently lose a change: the next drain pass re-reads and re-applies,

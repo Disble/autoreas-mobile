@@ -3,18 +3,25 @@ import { useNetworkState } from "expo-network";
 import { useToast } from "heroui-native";
 import type { AnimeDayFilter } from "../../../../src/features/animes/anime.types";
 import { useAnimeListScreen } from "../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-screen";
-import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
+import {
+  allActiveAnimes,
+  animeByFilter,
+  mockCapMinus,
+  mockCapMinusHalf,
+  mockCapPlus,
+  mockCapPlusHalf,
+  mockManualSync,
+  mockPush,
+  mockSetEstado,
+  mockToastShow,
+  mockUseAnimeList,
+  mockUseResponsiveLayout,
+} from "./use-anime-list-screen.harness";
 
-const mockPush = jest.fn();
-const mockUseAnimeList = jest.fn();
-const mockUseResponsiveLayout = jest.fn();
-const mockCapPlus = jest.fn();
-const mockCapMinus = jest.fn();
-const mockCapPlusHalf = jest.fn();
-const mockCapMinusHalf = jest.fn();
-const mockSetEstado = jest.fn();
-const mockManualSync = jest.fn();
-const mockToastShow = jest.fn();
+// The mutation and state-sheet the screen consumes are mocked here rather than shared with the
+// sibling `*.mutation-handlers.test.ts` file: a `jest.mock` registration lives in the registry of
+// the file that declares it, so each file states its own. The doubles themselves come from the
+// harness, which is where the `mock` prefix they need to survive babel-plugin-jest-hoist lives.
 
 jest.mock("expo-network", () => ({
   useNetworkState: jest.fn(),
@@ -71,63 +78,6 @@ jest.mock("../../../../src/features/sync/use-sync-facade", () => ({
 jest.mock("../../../../src/hooks/use-responsive-layout", () => ({
   useResponsiveLayout: (...args: unknown[]) => mockUseResponsiveLayout(...args),
 }));
-
-function buildAnime(
-  id: string,
-  nombre: string,
-  dias: Anime["dias"] = [],
-  overrides: Partial<Anime> = {},
-): Anime {
-  return {
-    _id: id,
-    nombre,
-    estado: 0,
-    nrocapvisto: 0,
-    totalcap: null,
-    dias,
-    generos: [],
-    tipo: null,
-    activo: 1,
-    primeravez: 0,
-    fechaUltCapVisto: null,
-    fechaEstreno: null,
-    fechaCreacion: null,
-    fechaEliminacion: null,
-    portada: null,
-    pagina: null,
-    carpeta: null,
-    estudios: null,
-    origen: null,
-    duracion: null,
-    ...overrides,
-  };
-}
-
-const animeByFilter: Record<AnimeDayFilter, Anime[]> = {
-  Lunes: [],
-  Martes: [],
-  Miércoles: [],
-  Jueves: [
-    buildAnime("thu-1", "Thursday Anime", [{ dia: "Jueves", orden: 0 }]),
-  ],
-  Viernes: [
-    buildAnime("fri-1", "Friday Anime", [{ dia: "Viernes", orden: 0 }]),
-  ],
-  Sábado: [],
-  Domingo: [],
-  "Sin ver": [],
-  "Ver hoy": [],
-  Visto: [buildAnime("seen-1", "Seen Anime", [{ dia: "Visto", orden: 0 }])],
-};
-
-const allActiveAnimes: Anime[] = [
-  buildAnime("a", "Anime A", [
-    { dia: "Lunes", orden: 0 },
-    { dia: "Jueves", orden: 0 },
-  ]),
-  buildAnime("b", "Anime B", [{ dia: "Jueves", orden: 1 }]),
-  buildAnime("c", "Anime C", [{ dia: "Visto", orden: 0 }], { estado: 1 }),
-];
 
 describe("useAnimeListScreen", () => {
   let consoleWarnSpy: jest.SpyInstance;
@@ -412,202 +362,5 @@ describe("useAnimeListScreen", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     expect(result.current.layoutMode).toBe("tablet-landscape");
-  });
-
-  it("handleOpenStateSheet setea la solicitud activa", () => {
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    act(() => {
-      result.current.handleOpenStateSheet("thu-1", 0);
-    });
-
-    expect(result.current.stateSheetRequest).toEqual({
-      animeId: "thu-1",
-      currentEstado: 0,
-    });
-  });
-
-  it("handleCloseStateSheet limpia la solicitud activa", () => {
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    act(() => {
-      result.current.handleOpenStateSheet("thu-1", 0);
-    });
-
-    act(() => {
-      result.current.handleCloseStateSheet();
-    });
-
-    expect(result.current.stateSheetRequest).toBeNull();
-  });
-
-  it("handleStateSheetSelect invoca setEstado y cierra el sheet", async () => {
-    mockSetEstado.mockResolvedValueOnce(undefined);
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    act(() => {
-      result.current.handleOpenStateSheet("thu-1", 0);
-    });
-
-    await act(async () => {
-      await result.current.handleStateSheetSelect(1);
-    });
-
-    expect(mockSetEstado).toHaveBeenCalledWith("thu-1", 1);
-    expect(result.current.stateSheetRequest).toBeNull();
-  });
-
-  it("handleCapPlusHalf delega al mutate con el id del anime", async () => {
-    mockCapPlusHalf.mockResolvedValueOnce(undefined);
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapPlusHalf("thu-1");
-    });
-
-    expect(mockCapPlusHalf).toHaveBeenCalledWith("thu-1");
-  });
-
-  it("ignora taps repetidos mientras la primera mutación sigue en vuelo", async () => {
-    let resolveCapPlus: (() => void) | null = null;
-    mockCapPlus.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveCapPlus = resolve;
-        }),
-    );
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    let firstCall: Promise<void>;
-    let ignoredSecondCall: Promise<void>;
-    await act(async () => {
-      firstCall = result.current.handleCapPlus("thu-1");
-      ignoredSecondCall = result.current.handleCapPlus("thu-1");
-    });
-
-    expect(mockCapPlus).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      resolveCapPlus?.();
-      await Promise.all([firstCall, ignoredSecondCall]);
-    });
-  });
-
-  it("permite un nuevo tap cuando la mutación anterior ya terminó", async () => {
-    mockCapPlus.mockResolvedValue(undefined);
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    expect(mockCapPlus).toHaveBeenCalledTimes(2);
-  });
-
-  it("mantiene el orden correcto de mutaciones al alternar +, -, +", async () => {
-    mockCapPlus.mockResolvedValue(undefined);
-    mockCapMinus.mockResolvedValue(undefined);
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-      await result.current.handleCapMinus("thu-1");
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    expect(mockCapPlus).toHaveBeenCalledTimes(2);
-    expect(mockCapMinus).toHaveBeenCalledTimes(1);
-    expect(mockCapPlus.mock.invocationCallOrder[0]).toBeLessThan(
-      mockCapMinus.mock.invocationCallOrder[0],
-    );
-    expect(mockCapMinus.mock.invocationCallOrder[0]).toBeLessThan(
-      mockCapPlus.mock.invocationCallOrder[1],
-    );
-  });
-
-  it("handleCapMinusHalf delega al mutate con el id del anime", async () => {
-    mockCapMinusHalf.mockResolvedValueOnce(undefined);
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapMinusHalf("thu-1");
-    });
-
-    expect(mockCapMinusHalf).toHaveBeenCalledWith("thu-1");
-  });
-
-  it("shows a toast when the mutation fails instead of swallowing the error", async () => {
-    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    expect(mockToastShow).toHaveBeenCalledWith(
-      expect.objectContaining({
-        variant: "danger",
-        label: "No se pudo guardar el capitulo",
-        description: "database is locked",
-      }),
-    );
-  });
-
-  // Callers invoke this through `void handleCapPlus(id)`, so anything escaping runMutation
-  // becomes an unhandled rejection -- the exact failure this whole path exists to remove.
-  // A throwing toast must not reintroduce it.
-  it("stays resolved and releases the lock when the toast itself throws", async () => {
-    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
-    mockToastShow.mockImplementationOnce(() => {
-      throw new Error("toast renderer exploded");
-    });
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await expect(result.current.handleCapPlus("thu-1")).resolves.toBeUndefined();
-    });
-
-    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
-  });
-
-  it("releases the mutation lock after a failure so the card is not left dead", async () => {
-    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
-
-    mockCapPlus.mockResolvedValueOnce(undefined);
-    await act(async () => {
-      await result.current.handleCapPlus("thu-1");
-    });
-
-    expect(mockCapPlus).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not surface the failed mutation as a rejection to the list caller", async () => {
-    mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
-
-    const { result } = renderHook(() => useAnimeListScreen({}));
-
-    await act(async () => {
-      await expect(result.current.handleCapPlus("thu-1")).resolves.toBeUndefined();
-    });
   });
 });

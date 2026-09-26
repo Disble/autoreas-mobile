@@ -226,8 +226,9 @@ object WireAnimeMapper {
   /**
    * Maps one English wire anime snapshot into the stable Spanish local shape, reproducing
    * `mapWireAnimeToLegacyAnime` field by field, including the `dateLike` coercion (number,
-   * numeric string, or `{ "$$date": n }` object, else `null`) and the legacy empty-string
-   * sentinel → empty array for `days`/`genres`.
+   * numeric string, or `{ "$$date": n }` object, else `null`), the legacy empty-string sentinel →
+   * empty array for `days`/`genres`, and the local `genres` element type invariant (every member
+   * must be a string, see [mapStringArrayOrEmpty]).
    */
   fun mapToLegacy(wire: JSONObject): JSONObject {
     val legacy = JSONObject()
@@ -292,11 +293,22 @@ object WireAnimeMapper {
     return mapped
   }
 
-  /** Maps genres, coercing the legacy empty-string sentinel to `[]`. */
+  /**
+   * Maps genres, coercing the legacy empty-string sentinel to `[]` and enforcing the LOCAL domain
+   * contract on every element (`genres: z.array(z.string())` in `AnimeSchema`): a member that is
+   * not a string throws (retryable), so a snapshot the foreground drain would refuse can never be
+   * staged and then committed as an anime. `opt` returns `JSONObject.NULL` for a JSON `null`
+   * member, so a null element is rejected here exactly like a number or a nested array.
+   */
   private fun mapStringArrayOrEmpty(value: Any?): Any {
     if (value == null || value == JSONObject.NULL) return JSONArray()
     if (value is String && value.isEmpty()) return JSONArray()
     if (value !is JSONArray) throw ReconcileParseException("snapshot.genres must be an array")
+    for (index in 0 until value.length()) {
+      if (value.opt(index) !is String) {
+        throw ReconcileParseException("snapshot.genres[$index] must be a string")
+      }
+    }
     return value
   }
 
@@ -311,7 +323,13 @@ object WireAnimeMapper {
     return when (value) {
       is Number -> value
       is String -> value.trim().toDoubleOrNull() ?: JSONObject.NULL
-      is JSONObject -> if (value.has("\$\$date")) value.opt("\$\$date") ?: JSONObject.NULL else JSONObject.NULL
+      // `.opt("\$\$date")` (not `?: JSONObject.NULL`, T3 sync-core-test-assurance; proven
+      // unreachable, removed): org.json never stores a raw Java `null` for a key -- a JSON
+      // `null` value is stored as the `JSONObject.NULL` sentinel -- so once `has("\$\$date")`
+      // is true, `.opt("\$\$date")` can only return that sentinel or the real value, never
+      // Kotlin `null`. The elvis's right side could only run for a caller this function does
+      // not have (its guarding `has()` check already forces the left side non-null).
+      is JSONObject -> if (value.has("\$\$date")) value.opt("\$\$date") else JSONObject.NULL
       else -> JSONObject.NULL
     }
   }

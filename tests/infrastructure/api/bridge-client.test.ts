@@ -71,6 +71,50 @@ describe('bridge-client', () => {
     expect(result.data).toEqual({ status: 'accepted' });
   });
 
+  it('reads the active season with a bearer token and no content-type on a bodyless GET', async () => {
+    const fetchFn = jest.fn(async () =>
+      buildResponse({
+        body: JSON.stringify({ season_id: '2026-q3', candidates: [] }),
+      }) as unknown as Response,
+    );
+    const client = createBridgeClient({ fetchFn });
+
+    const result = await client.getActiveSeason(connection);
+
+    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/seasons/active', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer token123' },
+      signal: expect.any(AbortSignal),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual({ season_id: '2026-q3', candidates: [] });
+  });
+
+  it('posts an active season rating with content-type, bearer auth and the serialized grade body', async () => {
+    const fetchFn = jest.fn(async () =>
+      buildResponse({ status: 204, body: '' }) as unknown as Response,
+    );
+    const client = createBridgeClient({ fetchFn });
+
+    const result = await client.postActiveSeasonRating(connection, {
+      animeId: 'anime-9',
+      nota: 4,
+      ratedAt: 1_752_300_000_000,
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/seasons/active/ratings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer token123',
+      },
+      body: JSON.stringify({ anime_id: 'anime-9', grade: 4, rated_at: 1_752_300_000_000 }),
+      signal: expect.any(AbortSignal),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(204);
+  });
+
   it('pairs a device without an auth header and with the pairing contract body', async () => {
     const fetchFn = jest.fn(async () =>
       buildResponse({ status: 201, body: '{"device_id":"d1","auth_token":"a1"}' }) as unknown as Response,
@@ -104,6 +148,19 @@ describe('bridge-client', () => {
     expect(result.data).toBeNull();
   });
 
+  it('falls back to a null rawBody/data when the response double carries no text() method', async () => {
+    // Decision 8: several test doubles across this codebase omit members a real fetch `Response`
+    // always has. `text` missing entirely (not just returning something odd) is the shape this
+    // guard exists for; an unguarded call would throw `response.text is not a function`.
+    const fetchFn = jest.fn(async () => ({ ok: true, status: 200 }) as unknown as Response);
+    const client = createBridgeClient({ fetchFn });
+
+    const result = await client.listAnimes(connection);
+
+    expect(result.rawBody).toBeNull();
+    expect(result.data).toBeNull();
+  });
+
   it('throws a BridgeUnreachableError when the network request rejects', async () => {
     const fetchFn = jest.fn(async () => {
       throw new TypeError('Network request failed');
@@ -122,6 +179,40 @@ describe('bridge-client', () => {
 
     expect(createWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:9876/ws', 'token123');
     expect(result).toBe(socket);
+  });
+
+  describe('the default WebSocket factory (no createWebSocket override)', () => {
+    let originalWebSocket: typeof WebSocket;
+
+    beforeEach(() => {
+      originalWebSocket = global.WebSocket;
+    });
+
+    afterEach(() => {
+      global.WebSocket = originalWebSocket;
+    });
+
+    it('carries a Bearer auth header via the RN 3-arg constructor form when the connection has a token', () => {
+      const MockWebSocket = jest.fn();
+      global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+      const client = createBridgeClient({});
+
+      client.openWebSocket(connection);
+
+      expect(MockWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:9876/ws', null, {
+        headers: { Authorization: 'Bearer token123' },
+      });
+    });
+
+    it('omits the options argument entirely when the connection has no token', () => {
+      const MockWebSocket = jest.fn();
+      global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+      const client = createBridgeClient({});
+
+      client.openWebSocket({ ip: '192.168.1.10', port: 9876 });
+
+      expect(MockWebSocket).toHaveBeenCalledWith('ws://192.168.1.10:9876/ws', null, undefined);
+    });
   });
 
   describe('getStatus (T6 presence probe)', () => {

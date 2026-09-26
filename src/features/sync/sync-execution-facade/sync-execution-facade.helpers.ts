@@ -27,6 +27,16 @@ function createFallbackStatus(): SyncExecutionStatus {
  * structurally invisible while the other is active (per "Honest operational
  * visibility"); `executionMode` stays honest by preferring the FGS label only
  * when it is actually running.
+ *
+ * **`unsupported` survives the merge.** It answers a different question than `unregistered` does
+ * ("this host cannot register a floor" vs "the floor is switched off"), so collapsing every
+ * unsupported strategy into `unregistered` would destroy the only honest answer a host without any
+ * native floor can give -- exactly what a device without the local native module reports. It is
+ * preserved only when EVERY registered strategy says `unsupported`: a single real lifecycle answer
+ * (`registered`/`unregistered`) wins over it, and a working path wins above all. An empty list is
+ * unreachable through this facade (the merge only runs with at least one concurrent strategy) and
+ * degrades to `unsupported` -- the same answer [createFallbackStatus] gives when nothing registered
+ * at all.
  */
 function mergeConcurrentSyncExecutionStatus(
   statuses: readonly SyncExecutionStatus[],
@@ -46,10 +56,20 @@ function mergeConcurrentSyncExecutionStatus(
   const isBatteryOptimizationExempt = statuses.some(
     (status) => status.isBatteryOptimizationExempt,
   );
+  // Read from the strategies' own `registrationStatus` (not from the flags) on purpose: the
+  // verdict above already prefers a real flag, and this second read is the one that must notice
+  // that no path can register anything.
+  const isEveryPathUnsupported = statuses.every(
+    (status) => status.registrationStatus === 'unsupported',
+  );
   const isAnyPathRegistered = isForegroundServiceRunning || isBackgroundTaskRegistered;
 
   return {
-    registrationStatus: isAnyPathRegistered ? 'registered' : 'unregistered',
+    registrationStatus: isAnyPathRegistered
+      ? 'registered'
+      : isEveryPathUnsupported
+        ? 'unsupported'
+        : 'unregistered',
     executionMode: isForegroundServiceRunning
       ? 'android_foreground_service'
       : 'best_effort_background_task',
@@ -69,6 +89,8 @@ export function createSyncExecutionFacade(
 ): SyncExecutionFacade {
   let currentStrategy: SyncExecutionStrategy | null = null;
   let concurrentStrategies: readonly SyncExecutionStrategy[] = [];
+  let concurrentRegistration: Promise<void> | null = null;
+  let registrationGeneration = 0;
 
   return {
     async registerPreferredStrategy() {
@@ -91,16 +113,34 @@ export function createSyncExecutionFacade(
 
     async registerConcurrentStrategies() {
       if (concurrentStrategies.length > 0) {
-        return;
+        return concurrentRegistration ?? undefined;
       }
 
-      // Each strategy registers independently (opportunistic FGS, mandatory
-      // WorkManager floor); a failure on one path must not block the other.
-      await Promise.all(
-        params.strategies.map((strategy) => strategy.register().catch(() => undefined)),
-      );
-
+      const generation = ++registrationGeneration;
+      // Publish the status seams before initiating either asynchronous registration. A status
+      // probe remains readable even if one register call never settles.
       concurrentStrategies = params.strategies;
+      concurrentRegistration = Promise.all(
+        params.strategies.map(async (strategy) => {
+          try {
+            await strategy.register();
+          } catch {
+            // One failed path must not block the other path's live status.
+          } finally {
+            // Disable can race a native enqueue. Cancel again after a late completion so it
+            // cannot recreate work after unregisterCurrentStrategy has already returned.
+            // The facade always registers this same strategy list. A newer enabled generation
+            // owns it when the list is nonempty, so an older completion must leave it alone.
+            if (
+              generation !== registrationGeneration &&
+              concurrentStrategies.length === 0
+            ) {
+              await strategy.unregister().catch(() => undefined);
+            }
+          }
+        }),
+      ).then(() => undefined);
+      return concurrentRegistration;
     },
 
     hasCurrentStrategy() {
@@ -110,7 +150,9 @@ export function createSyncExecutionFacade(
     async unregisterCurrentStrategy() {
       if (concurrentStrategies.length > 0) {
         const strategiesToUnregister = concurrentStrategies;
+        registrationGeneration += 1;
         concurrentStrategies = [];
+        concurrentRegistration = null;
 
         await Promise.all(
           strategiesToUnregister.map((strategy) => strategy.unregister().catch(() => undefined)),

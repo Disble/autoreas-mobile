@@ -36,6 +36,25 @@ describe('extractActiveSeasonSnapshot', () => {
 
     expect(snapshot?.candidates).toHaveLength(0);
   });
+
+  it('drops a candidate entry that is not an object (e.g. a bare string or null) instead of throwing', () => {
+    const snapshot = extractActiveSeasonSnapshot({
+      season_id: '2026-q3',
+      candidates: ['not-an-object', null, { anime_id: 'a1', grade: 5, grade_source: 'bridge' }],
+    });
+
+    expect(snapshot?.candidates).toEqual([
+      { animeId: 'a1', bridgeRating: 5, bridgeRatingSource: 'bridge' },
+    ]);
+  });
+
+  it.each([
+    ['null', null],
+    ['a bare string', 'not-an-object'],
+    ['a number', 42],
+  ])('returns null for top-level data that is not an object (%s)', (_label, data) => {
+    expect(extractActiveSeasonSnapshot(data)).toBeNull();
+  });
 });
 
 describe('buildPostActiveSeasonRatingBody', () => {

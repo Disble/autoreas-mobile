@@ -21,19 +21,40 @@ start-to-finish.
 - [ ] `.env.local` at the repo root with `EXPO_TOKEN` set (see `docs/build-and-release.md` for the
   full list of secrets this file can carry)
 
-**Build**
+The build runs locally but contacts Expo to fetch the EAS-managed signing keystore with
+`EXPO_TOKEN`. Obtain authorization for that remote operation before running it.
+
+**Build for device diagnosis (`lab`; debuggable, never distribute)**
+
+```bash
+docker compose -f docker-compose.eas.yml run --rm eas-build lab
+```
+
+The APK lands in `dist/android/`. Install or upgrade the lab build while preserving app data:
+
+```bash
+adb install -r "$(ls -t dist/android/*-lab-*.apk | head -1)"
+```
+
+If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, stop before uninstalling: a signer
+mismatch requires a deliberate backup or acceptance of local data loss (see
+[Troubleshooting](#troubleshooting)).
+
+**Build the default `preview` profile**
 
 ```bash
 docker compose -f docker-compose.eas.yml run --rm eas-build
 ```
 
-**Install**
+**Install the default `preview` build**
 
 ```bash
-adb install -r build-*.apk
+adb install -r "$(ls -t dist/android/*-preview-*.apk | head -1)"
 ```
 
-**Expect:** an APK named `build-<timestamp>.apk` appears in the repo root, built for `arm64-v8a`
+**Expect:** the last log line names the APK, for example
+`--- Build complete: dist/android/autoreas-mobile-1.6.0-preview-arm64-v8a-20260924T0306Z-g1ce9bf0.apk ---`
+(see [Output](#output) for the naming). It is built for `arm64-v8a`
 only (the default — see [Which ABI do I need?](#which-abi-do-i-need) if your device or emulator
 is not `arm64-v8a`), and installs and opens like any other Android app. This is a managed (CNG)
 project: EAS runs its own prebuild, no `android/` project is tracked in Git, and the prebuild
@@ -62,11 +83,34 @@ docker compose -f docker-compose.eas.yml run --rm eas-build <profile>
 > Without that key EAS falls back to `:app:bundleRelease`, which produces an **AAB** — a file that
 > cannot be sideloaded. Never trust the file extension alone:
 > ```bash
-> unzip -l build-*.apk | grep -q BundleConfig.pb && echo "this is an AAB"
+> unzip -l "$(ls -t dist/android/*.apk | head -1)" | grep -q BundleConfig.pb && echo "this is an AAB"
 > ```
 
 For the `development` profile: install the APK, start Metro with `bun run start`, then open the app
 so it attaches to the local bundler.
+
+---
+
+## Output
+
+Every build writes one APK to `dist/android/` (gitignored, and excluded from the EAS upload by
+`.easignore`, so old APKs never ride along into the next build). The name says what the file is:
+
+```text
+autoreas-mobile-<version>-<profile>-<abis>-<UTC timestamp>[-g<commit>].apk
+```
+
+| Part | Source | Example |
+| --- | --- | --- |
+| `<version>` | `expo.version` in `app.json` | `1.6.0` |
+| `<profile>` | the profile argument | `lab` |
+| `<abis>` | the resolved ABIs joined with `+`, or `universal` when all four are built | `arm64-v8a`, `x86_64`, `universal` |
+| `<UTC timestamp>` | build start, `YYYYMMDDTHHMMZ` | `20260924T0306Z` |
+| `-g<commit>` | short commit of `HEAD`; omitted when Git cannot read the repo (a Git worktree) | `-g1ce9bf0` |
+
+The prefix matches the CI release asset (`autoreas-mobile-<version>-android.apk`), so a local file is
+never mistaken for a published one. Nothing deletes old builds; clear them with
+`rm dist/android/*.apk` when you no longer need them.
 
 ---
 
@@ -93,9 +137,16 @@ do not change them:
 | `CI=true` | Stops `bun install` inside the container from regenerating the **host's** Git hooks with Linux paths (the container bind-mounts `.git`). See [Git hooks](build-and-release.md#git-hooks) and the [postmortem](postmortems/2026-08-08-eas-container-rewrote-host-git-hooks.md). |
 | `EAS_NO_VCS=1` | Lets the build run from a Git worktree, where `.git` is a file pointing at a path the container cannot resolve. File selection then comes entirely from `.easignore`. |
 | `EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1` | `expo-doctor` exits 1 on this project and EAS ignores the result anyway; skipping it saves a few seconds. |
+| `GRADLE_USER_HOME=/root/.gradle` | The base image points Gradle at `/opt/gradle-home`; without this every item below it is silently ignored and every build runs cold. The entrypoint refuses to build when Gradle would not see `docker/gradle/`. |
 | `docker/gradle/gradle.properties`, `docker/gradle/init.d/skip-lint-vital.init.gradle` (mounted read-only over `/root/.gradle`) | Turn on the Gradle build cache and turn off `lintVital*` — Docker-build-only, never applied to a CI release build. |
 | `_JAVA_OPTIONS=-Djava.net.preferIPv4Stack=true ...` | Works around a Docker Desktop on Windows IPv6/DNS issue that otherwise breaks every Gradle dependency download. |
 | `network_mode: host` | The container shares the Windows/WSL2 network stack directly, avoiding a second layer of DNS issues. |
+
+**Pinned toolchain.** `Dockerfile.eas` pins the base image by digest and Bun by version
+(`ARG BUN_VERSION`). Both used to float: a routine rebuild on 2026-09-23 pulled a new `:latest`
+(91 s of download, Bun 1.3.14 → 1.4.2, a different `GRADLE_USER_HOME`) and turned a warm build into
+a 14.5-minute cold one with no repository change. Update them deliberately — see
+[Recipes](#recipes).
 
 ### Which ABI do I need?
 
@@ -166,7 +217,9 @@ Do not mistake a local APK for a release artifact. They differ on purpose:
 | Native ABIs | `arm64-v8a` only, by default (configurable) | All four — CI never sets `AUTOREAS_ANDROID_ABIS`, so nothing narrows the build |
 | `lintVitalAnalyzeRelease` | Disabled (`skip-lint-vital.init.gradle`) | Runs, fatal issues only |
 | `expo-doctor` | Disabled | Not disabled (also ignored by EAS either way) |
-| Kotlin unit tests + lint | Pre-commit hook only (`native` job, when `modules/*/android/**` is staged) | CI `guard` job, every push of a release tag |
+| EAS eager JS bundle | Runs (measured: skipping it saves nothing, see the logbook) | Runs |
+| Output | `dist/android/autoreas-mobile-<version>-<profile>-<abis>-<timestamp>[-g<commit>].apk` | `autoreas-mobile-<version>-android.apk` on the GitHub Release |
+| Kotlin unit tests + lint | Pre-commit hook only (`native` job, when `modules/*/android/**` is staged; tests only, no lint) | CI's own `native` job (tests + lint, one Gradle invocation), in parallel with the release build, skipped outright when nothing native changed since the previous release tag |
 | JS lint / typecheck / tests | Pre-commit hook | CI `guard` job |
 | eas-cli version | Floats on `@latest` | Pinned (`eas-cli@23.2.0` at the time of writing) |
 | Signing | EAS-managed remote keystore (same as CI) | EAS-managed remote keystore |
@@ -213,6 +266,18 @@ docker volume rm eas_gradle_cache
 docker compose -f docker-compose.eas.yml build eas-build
 ```
 
+**Move to a newer base image** (deliberately, never by accident)
+
+```bash
+docker buildx imagetools inspect reactnativecommunity/react-native-android:latest   # read the new digest
+# put it in the FROM line of Dockerfile.eas, then:
+docker compose -f docker-compose.eas.yml build eas-build
+AUTOREAS_DRY_RUN=1 docker compose -f docker-compose.eas.yml run --rm eas-build       # guard must pass
+```
+
+Then run one full build and compare its time and `from cache` count with the previous one: a new
+image can change the JDK, NDK or Gradle home, which changes cache keys.
+
 ---
 
 ## Troubleshooting
@@ -225,6 +290,8 @@ docker compose -f docker-compose.eas.yml build eas-build
 | `Failed to get Git root path` warning | Building from a worktree, where `.git` is a file the container cannot resolve as a repo | Harmless — `EAS_NO_VCS=1` already routes file selection through `.easignore` instead |
 | `expo-doctor` exits 1 / is mentioned in logs | `expo-doctor` flags something on this project | Expected and intentionally skipped locally (`EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP=1`); EAS ignores its result on every build regardless |
 | Host Git hooks rewritten with Linux paths (e.g. `.../lefthook-linux-x64/bin/lefthook`) | `CI=true` was removed, or `trustedDependencies`/no-`prepare` invariant was broken | Repair with `npx lefthook install`; see [Git hooks](build-and-release.md#git-hooks) and the [postmortem](postmortems/2026-08-08-eas-container-rewrote-host-git-hooks.md) |
+| `--- Gradle user home '...' does not carry docker/gradle/ ... ---` | Gradle would read its settings from somewhere other than the mounted `/root/.gradle` (a new base image, or `GRADLE_USER_HOME` changed) | Restore `GRADLE_USER_HOME=/root/.gradle` and the two `/root/.gradle` mounts in `docker-compose.eas.yml`. The guard stops the build on purpose: without it, every build would run cold and with lintVital, silently |
+| A warm build suddenly takes ~3× longer and the log shows `0 from cache` or `lintVitalAnalyzeRelease` running | The Gradle cache is being bypassed | Same as the row above; also check the base image digest did not change |
 | Build killed partway, or extremely slow | Docker Desktop's memory/CPU allocation is too low for a Gradle build | Raise the resource limits in Docker Desktop settings (or `.wslconfig` for WSL2); Gradle needs headroom on top of the emulator/IDE you may also have open |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | The installed app was signed with a different key than the new APK (e.g. switching between a local build and a CI-signed release) | **Do not uninstall without warning yourself first** — uninstalling deletes the app's local data (SQLite catalogue, pairing). Back up or accept the loss deliberately, then uninstall and reinstall. |
 
@@ -233,7 +300,8 @@ docker compose -f docker-compose.eas.yml build eas-build
 ## References
 
 - `docker-compose.eas.yml` — the service definition: volumes, fixed environment, `env_file`.
-- `docker/eas-build-entrypoint.sh` — ABI resolution, validation, dependency install, the retry loop.
+- `docker/eas-build-entrypoint.sh` — ABI resolution, validation, the Gradle-home guard, the output
+  name, dependency install, the retry loop.
 - `Dockerfile.eas` — the build image (Java/Android SDK/NDK/CMake/Gradle, Bun).
 - `docker/gradle/gradle.properties`, `docker/gradle/init.d/skip-lint-vital.init.gradle` — the two
   Docker-only Gradle speed-ups.

@@ -33,12 +33,15 @@ private const val RUNTIME_STATUS_TRIGGER_SOURCE = "foreground_service"
  * showing stale `last_attempt_at` / `last_success_at` / `last_trigger_source` now that the
  * retired JS FGS path (T5) no longer writes them at all.
  *
- * **Scope: the service caller only.** [record] is called from [SyncForegroundService]'s own
- * result callback (through its injectable [SyncForegroundService.runtimeStatusWriter] seam),
- * never from [SyncEngineRunner] or [SyncEngineModule]. The JS-driven `runOnce` path (background
- * task, manual sync) keeps writing whatever it already does today -- nothing, as this task found
- * -- untouched; widening this projection to every caller is a separate decision this task does
- * not make.
+ * **Scope: the native callers.** [record] is called from [SyncForegroundService]'s own result
+ * callback (through its injectable [SyncForegroundService.runtimeStatusWriter] seam) and from
+ * [SyncFloorWorker] (ODD native-background-sync-cutover M2); each caller names its OWN
+ * [triggerSource], so `last_trigger_source` always reports the trigger that actually ran. The
+ * default is the service's `foreground_service`, which keeps the service caller's own bytes
+ * unchanged, and the floor passes `background_task` (the closed-vocabulary member for that path,
+ * and the value the JS floor's engine attempts already journal). The JS-driven `runOnce` path
+ * (manual sync) keeps writing whatever it already does today -- nothing, as this task found --
+ * untouched.
  *
  * **Mirrors the retired JS FGS path's own column shape**
  * (`src/features/sync/sync-runtime-status-patch.helpers.ts`'s `buildSyncAttemptSucceededPatch` /
@@ -82,11 +85,19 @@ object SyncEngineRuntimeStatus {
 
   /**
    * Records [outcome] for [cycleId] (started at [attemptedAtMs]) into `sync_runtime_status`.
-   * Opens and closes its own connection to `autoreas.db` -- called at most once per attempt (the
-   * service's own coalescing already keeps attempts from overlapping), so the extra open/close
-   * over a long-lived connection is a small, once-per-tick cost, not a hot path.
+   * [triggerSource] defaults to the foreground service's own value so its call site is unchanged;
+   * the native floor passes the trigger source it actually ran under. Opens and closes its own
+   * connection to `autoreas.db` -- called at most once per attempt (each caller's own coalescing
+   * already keeps attempts from overlapping), so the extra open/close over a long-lived connection
+   * is a small, once-per-tick cost, not a hot path.
    */
-  fun record(context: Context, cycleId: String, attemptedAtMs: Long, outcome: CycleOutcome) {
+  fun record(
+    context: Context,
+    cycleId: String,
+    attemptedAtMs: Long,
+    outcome: CycleOutcome,
+    triggerSource: String = RUNTIME_STATUS_TRIGGER_SOURCE,
+  ) {
     if (outcome.outcome == "not_applicable") {
       // Mirrors the retired JS attempt-policy gate and the JS cycle's own no-config short
       // circuit: neither ever wrote to sync_runtime_status for a refused/no-op attempt, so this
@@ -98,7 +109,7 @@ object SyncEngineRuntimeStatus {
       val db = openAppDatabase(context)
       try {
         inImmediateTransaction(db) {
-          writeRow(db, cycleId, attemptedAtMs, outcome)
+          writeRow(db, cycleId, attemptedAtMs, outcome, triggerSource)
         }
       } finally {
         db.close()
@@ -118,12 +129,13 @@ object SyncEngineRuntimeStatus {
     cycleId: String,
     attemptedAtMs: Long,
     outcome: CycleOutcome,
+    triggerSource: String,
   ) {
     val isSuccess = outcome.outcome == "closed"
     val values = ContentValues().apply {
       put("last_attempt_at", attemptedAtMs)
       putStringOrNull("last_failure_message", if (isSuccess) null else buildFailureMessage(outcome))
-      put("last_trigger_source", RUNTIME_STATUS_TRIGGER_SOURCE)
+      put("last_trigger_source", triggerSource)
       put("last_cycle_id", cycleId)
       put("last_cycle_stage", outcome.stage)
       put("last_cycle_stage_at", attemptedAtMs)

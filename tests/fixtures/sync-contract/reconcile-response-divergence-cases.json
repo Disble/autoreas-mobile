@@ -1,0 +1,224 @@
+[
+  {
+    "name": "bridge-change-snapshot-missing-modified-at-divergence",
+    "description": "DEFECT (recorded, not fixed): WireAnimeSchema.modified_at is required in JS (z.number().int(), no .optional()), so a snapshot missing it fails the WHOLE response parse. WireAnimeMapper.mapToLegacy (Kotlin) never reads or requires modified_at at all (the legacy shape never carries it), so the same snapshot maps successfully. If Kotlin is ever changed to also require modified_at, expectedDivergence.kotlin.rejected must become true and this marker must be removed -- that is the point of this case.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-20", "change_type": "update", "changed_fields": ["status"], "timestamp": 500,
+            "snapshot": { "id": "anime-20", "name": "Divergent", "status": 1, "episodesWatched": 2, "active": 1, "firstCycle": 0 }
+          }
+        ],
+        "last_changelog_id": 3001
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": {
+        "rejected": false,
+        "last_changelog_id": 3001,
+        "confirmedOperationIds": [],
+        "bridgeChanges": [
+          {
+            "recordId": "anime-20", "changeType": "update", "changedFields": ["estado"], "timestamp": 500,
+            "snapshot": {
+              "_id": "anime-20", "nombre": "Divergent", "estado": 1, "nrocapvisto": 2, "totalcap": null,
+              "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+              "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-day-missing-fields-divergence",
+    "description": "DEFECT (recorded, not fixed): WireAnimeDaySchema requires both day (string) and order (int) in JS, so a day entry missing either fails the WHOLE response parse. WireAnimeMapper.mapDays (Kotlin) uses optString(\"day\", \"\") and optDouble(\"order\", 0.0), silently defaulting instead of rejecting. If Kotlin is ever changed to require both fields, expectedDivergence.kotlin.rejected must become true and this marker must be removed.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-21", "change_type": "update", "changed_fields": ["days"], "timestamp": 501,
+            "snapshot": {
+              "id": "anime-21", "name": "DayGap", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0, "days": [{ "order": 3 }]
+            }
+          }
+        ],
+        "last_changelog_id": 3002
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": {
+        "rejected": false,
+        "last_changelog_id": 3002,
+        "confirmedOperationIds": [],
+        "bridgeChanges": [
+          {
+            "recordId": "anime-21", "changeType": "update", "changedFields": ["dias"], "timestamp": 501,
+            "snapshot": {
+              "_id": "anime-21", "nombre": "DayGap", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+              "dias": [{ "dia": "", "orden": 3 }], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+              "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-genres-non-string-element-divergence",
+    "description": "RESOLVED (Kotlin half flipped from accepted to rejected, marker removed): wireStringArrayOrEmpty is z.array(z.string()) in JS, so a non-string element anywhere in genres fails the WHOLE response parse. WireAnimeMapper.mapStringArrayOrEmpty (Kotlin) now validates every element the same way and throws ReconcileParseException, so both engines reject this case and neither can stage a genres array the local AnimeSchema would refuse. This case is retained as the shared regression guard for that agreement; the JS half still asserts rejection.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-22", "change_type": "update", "changed_fields": ["genres"], "timestamp": 502,
+            "snapshot": {
+              "id": "anime-22", "name": "GenreGap", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0, "genres": ["Action", 42]
+            }
+          }
+        ],
+        "last_changelog_id": 3003
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": { "rejected": true }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-unparseable-date-string-divergence",
+    "description": "DEFECT (recorded, not fixed): WireAnimeSchema's date fields (lastWatchedAt et al.) are `numericDate = z.number().nullable().optional()` -- a PLAIN schema with no string/object coercion at all (the $$date/numeric-string-coercing `dateLike` preprocessor in anime.schema.ts is used only by the legacy AnimeSchema, never by WireAnimeSchema). Any non-number/non-null/non-undefined date value therefore fails the WHOLE response parse in JS -- garbage text included. WireAnimeMapper.dateLike (Kotlin) silently coerces the same string to JSONObject.NULL instead of throwing. If Kotlin is ever changed to reject an unparseable date string, expectedDivergence.kotlin.rejected must become true and this marker must be removed.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-23", "change_type": "update", "changed_fields": ["lastWatchedAt"], "timestamp": 503,
+            "snapshot": {
+              "id": "anime-23", "name": "DateGap", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0, "lastWatchedAt": "not-a-date"
+            }
+          }
+        ],
+        "last_changelog_id": 3004
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": {
+        "rejected": false,
+        "last_changelog_id": 3004,
+        "confirmedOperationIds": [],
+        "bridgeChanges": [
+          {
+            "recordId": "anime-23", "changeType": "update", "changedFields": ["fechaUltCapVisto"], "timestamp": 503,
+            "snapshot": {
+              "_id": "anime-23", "nombre": "DateGap", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+              "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+              "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-date-dollar-object-form-divergence",
+    "description": "DEFECT (recorded, not fixed): WireAnimeSchema's numericDate accepts only number/null/undefined, so a { \"$$date\": n } object on a wire date field fails the WHOLE response parse in JS (confirmed against the running schema: 'expected number, received object'). WireAnimeMapper.dateLike (Kotlin) explicitly unwraps a $$date object to its number. If Kotlin is ever changed to reject this form, expectedDivergence.kotlin.rejected must become true and this marker must be removed.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-24", "change_type": "update", "changed_fields": ["lastWatchedAt"], "timestamp": 504,
+            "snapshot": {
+              "id": "anime-24", "name": "DollarDate", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0, "lastWatchedAt": { "$$date": 1750 }
+            }
+          }
+        ],
+        "last_changelog_id": 3005
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": {
+        "rejected": false,
+        "last_changelog_id": 3005,
+        "confirmedOperationIds": [],
+        "bridgeChanges": [
+          {
+            "recordId": "anime-24", "changeType": "update", "changedFields": ["fechaUltCapVisto"], "timestamp": 504,
+            "snapshot": {
+              "_id": "anime-24", "nombre": "DollarDate", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+              "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+              "fechaUltCapVisto": 1750, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "bridge-change-snapshot-date-numeric-string-form-divergence",
+    "description": "DEFECT (recorded, not fixed): WireAnimeSchema's numericDate accepts only number/null/undefined, so a numeric-LOOKING string (e.g. \"1760\") on a wire date field still fails the WHOLE response parse in JS -- there is no string coercion on the wire schema at all. WireAnimeMapper.dateLike (Kotlin) parses any numeric string via toDoubleOrNull(). If Kotlin is ever changed to reject this form, expectedDivergence.kotlin.rejected must become true and this marker must be removed.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-25", "change_type": "update", "changed_fields": ["lastWatchedAt"], "timestamp": 505,
+            "snapshot": {
+              "id": "anime-25", "name": "StringDate", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0, "lastWatchedAt": "1760"
+            }
+          }
+        ],
+        "last_changelog_id": 3006
+      }
+    },
+    "expectedDivergence": {
+      "js": { "rejected": true },
+      "kotlin": {
+        "rejected": false,
+        "last_changelog_id": 3006,
+        "confirmedOperationIds": [],
+        "bridgeChanges": [
+          {
+            "recordId": "anime-25", "changeType": "update", "changedFields": ["fechaUltCapVisto"], "timestamp": 505,
+            "snapshot": {
+              "_id": "anime-25", "nombre": "StringDate", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+              "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+              "fechaUltCapVisto": 1760, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null
+            }
+          }
+        ]
+      }
+    }
+  }
+]

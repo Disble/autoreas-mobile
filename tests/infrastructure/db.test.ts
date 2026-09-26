@@ -234,6 +234,9 @@ describe("db client tracer helpers", () => {
             { name: "last_cycle_stage_at" },
             { name: "last_failed_checkpoint_count" },
             { name: "last_diagnostics_discarded_count" },
+            { name: "last_diagnostics_undeliverable_count" },
+            { name: "last_diagnostics_unclassified_count" },
+            { name: "last_diagnostics_reaped_count" },
             { name: "last_diagnostics_failed_removal_count" },
             { name: "last_outbox_failed_write_count" },
             { name: "last_dead_letter_count" },
@@ -397,6 +400,12 @@ describe("db client tracer helpers", () => {
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL'
+    );
+    // The age bound's counter, added by migration `0015` on a fresh install. This is the OTHER
+    // route -- the idempotent repair twin an already-provisioned device receives it through, since
+    // `reconcileMigrationLedger` pins the migrator's gate and the migration never runs there.
+    expect(rawDb.runAsync).toHaveBeenCalledWith(
+      'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count INTEGER'
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'

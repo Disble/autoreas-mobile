@@ -1,3 +1,6 @@
+/** Builds the per-file `coverageThreshold` map from the CORE/IMPORTANT tier lists. */
+const { buildCoverageThreshold } = require('./jest.coverage-tiers');
+
 module.exports = {
   preset: 'jest-expo',
   roots: ['<rootDir>/tests'],
@@ -9,4 +12,8 @@ module.exports = {
   cacheDirectory: '<rootDir>/.jest/cache',
   coverageDirectory: '<rootDir>/coverage',
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts'],
+  // Per-file coverage tiers (maintainer's 100/80/0 policy). No `global` key: an unlisted file
+  // is INFRA and gets no gate. See jest.coverage-tiers.js and
+  // odd/tasks/sync-core-test-assurance.md for the tier list and the rationale.
+  coverageThreshold: buildCoverageThreshold(),
 };

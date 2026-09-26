@@ -171,6 +171,118 @@ class ReconcileResponseParserTest {
   }
 
   @Test(expected = ReconcileParseException::class)
+  fun rejectsADaysEntryThatIsNotAnObject() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":["not-an-object"]}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
+  @Test
+  fun mapsTheLegacyEmptyStringSentinelForDaysAndGenresToAnEmptyArray() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"","genres":""}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertEquals(0, legacy.getJSONArray("dias").length())
+    assertEquals(0, legacy.getJSONArray("generos").length())
+  }
+
+  @Test
+  fun dateLikeUnwrapsTheDollarDollarDateWrapper() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":12345}}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertEquals(12345L, legacy.getLong("fechaUltCapVisto"))
+  }
+
+  @Test
+  fun mapsAnExplicitJsonNullDaysAndGenresToAnEmptyArrayJustLikeAnAbsentKey() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":null,"genres":null}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertEquals(0, legacy.getJSONArray("dias").length())
+    assertEquals(0, legacy.getJSONArray("generos").length())
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsANonArrayNonEmptyStringGenresValue() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":"Action"}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsGenresWithANonStringElement() {
+    // The local domain contract is `genres: z.array(z.string())`: a mixed array like
+    // `["Action", 42]` must be rejected here (retryable), never staged and later committed.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",42]}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsAGenresElementThatIsJsonNull() {
+    // A JSON `null` MEMBER is not the legacy empty-string sentinel: it is still a non-string
+    // element, and `JSONArray.opt` hands it back as `JSONObject.NULL`, not Kotlin `null`.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",null]}}]}""",
+    ).bridgeChanges.single()
+
+    WireAnimeMapper.normalize(change)
+  }
+
+  @Test
+  fun dateLikeIsNullWhenTheDollarDollarDateWrapperItselfCarriesNoValue() {
+    // `has("$$date")` is true, but `opt("$$date")` itself returns null -- the `?:` fallback,
+    // distinct from the outer `else` (no "$$date" key at all) covered by the next test.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":null}}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertTrue(legacy.isNull("fechaUltCapVisto"))
+  }
+
+  @Test
+  fun dateLikeIsNullForAJsonObjectWithoutTheDollarDollarDateKey() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"other":1}}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertTrue(legacy.isNull("fechaUltCapVisto"))
+  }
+
+  @Test
+  fun dateLikeIsNullForAnUnsupportedValueType() {
+    // Neither a Number, a String, nor a `{ "$$date": n }` object: `dateLike`'s `when` must fall
+    // to its `else -> JSONObject.NULL`.
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":[1,2,3]}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertTrue(legacy.isNull("fechaUltCapVisto"))
+  }
+
+  @Test(expected = ReconcileParseException::class)
   fun rejectsSnapshotWithMalformedDaysShape() {
     val change = ReconcileResponseParser.parse(
       """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"Tuesday"}}]}""",
@@ -183,6 +295,92 @@ class ReconcileResponseParserTest {
   fun rejectsNonObjectSnapshot() {
     ReconcileResponseParser.parse(
       """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":[]}]}""",
+    )
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsANullBody() {
+    ReconcileResponseParser.parse(null)
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsABlankBody() {
+    ReconcileResponseParser.parse("   ")
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsAnAppliedOperationsElementThatIsNotAnObject() {
+    ReconcileResponseParser.parse("""{"applied_operations":["not-an-object"]}""")
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsABridgeChangesElementThatIsNotAnObject() {
+    ReconcileResponseParser.parse("""{"bridge_changes":[42]}""")
+  }
+
+  @Test(expected = ReconcileParseException::class)
+  fun rejectsBridgeChangeWithoutChangeType() {
+    ReconcileResponseParser.parse("""{"bridge_changes":[{"record_id":"a-1","timestamp":1}]}""")
+  }
+
+  @Test
+  fun anExplicitJsonNullSnapshotIsTreatedAsAbsent() {
+    // Distinct from an OMITTED "snapshot" key: `entry.has("snapshot")` is true here, but
+    // `entry.isNull("snapshot")` must short-circuit the "not an object" rejection.
+    val parsed = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":null}]}""",
+    )
+
+    assertEquals(null, parsed.bridgeChanges.single().snapshot)
+  }
+
+  @Test
+  fun anExplicitJsonNullLastChangelogIdIsNullDistinctFromAnAbsentKey() {
+    val parsed = ReconcileResponseParser.parse("""{"last_changelog_id":null}""")
+
+    assertEquals(null, parsed.lastChangelogId)
+  }
+
+  @Test
+  fun aNumericStringOptionalTokenParsesSuccessfully() {
+    val parsed = ReconcileResponseParser.parse("""{"last_changelog_id":"42"}""")
+
+    assertEquals(42L, parsed.lastChangelogId)
+  }
+
+  @Test
+  fun anOptionalTokenOfAnUnsupportedTypeIsNull() {
+    // Neither Number nor String: the `parseOptionalLong` `when` must fall to its `else -> null`.
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"a","operation":"update","modified_at":true}]}""",
+    )
+
+    assertEquals(null, parsed.appliedOperations.single().modifiedAt)
+  }
+
+  @Test
+  fun anExplicitJsonNullAnimeIdIsRejectedJustLikeAnAbsentOne() {
+    try {
+      ReconcileResponseParser.parse(
+        """{"applied_operations":[{"anime_id":null,"operation":"update"}]}""",
+      )
+      org.junit.Assert.fail("expected ReconcileParseException")
+    } catch (expected: ReconcileParseException) {
+      // expected: optStringOrNull's `isNull(key)` branch, not only its `!has(key)` branch.
+    }
+  }
+
+  @Test
+  fun nonStringChangedFieldsElementsAreDroppedNotThrown() {
+    val parsed = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"changed_fields":["name",7,null,"genres"]}]}""",
+    )
+
+    assertEquals(
+      listOf("nombre", "generos"),
+      WireAnimeMapper.normalize(parsed.bridgeChanges.single()).changedFieldsJson
+        .let { org.json.JSONArray(it) }
+        .let { array -> (0 until array.length()).map { array.getString(it) } },
     )
   }
 }

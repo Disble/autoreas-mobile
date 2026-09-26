@@ -25,6 +25,40 @@ export type MetricTileIconName = ComponentProps<typeof Ionicons>['name'];
 /** Defines the metric tile span value shape. */
 export type MetricTileSpan = 'half' | 'full';
 
+/**
+ * The snapshot counter fields that drive the count-only convergence tiles. Closed on purpose: a
+ * tile descriptor can only read a counter this device actually persists and folds each cycle.
+ */
+export type ConvergenceCountTileField =
+  | 'lastDiagnosticsDiscardedCount'
+  | 'lastDiagnosticsFailedRemovalCount'
+  | 'lastDiagnosticsUndeliverableCount'
+  | 'lastDiagnosticsUnclassifiedCount'
+  | 'lastDiagnosticsReapedCount'
+  | 'lastOutboxFailedWriteCount'
+  | 'lastDeadLetterCount'
+  | 'lastConflictExhaustedCount'
+  | 'lastStuckProcessingCount';
+
+/**
+ * Static shape shared by every count-only convergence tile: its stable `id`, its Spanish `label`,
+ * its icon, and the tone it escalates to once its count is non-zero.
+ */
+export interface CountTileConfig {
+  readonly id: string;
+  readonly label: string;
+  readonly iconName: MetricTileIconName;
+  readonly nonZeroTone: BackgroundSyncSectionTone;
+}
+
+/**
+ * One count-only convergence tile plus the snapshot counter that decides whether it renders at
+ * all: a `null` counter means "never measured", so the tile is omitted rather than zero-filled.
+ */
+export interface ConvergenceCountTileDescriptor extends CountTileConfig {
+  readonly snapshotField: ConvergenceCountTileField;
+}
+
 /** Defines the data contract for metric tile. */
 export interface MetricTile {
   readonly id: string;
@@ -57,6 +91,13 @@ export interface BackgroundSyncSection {
 export interface BuildBackgroundSyncSectionInput {
   readonly isConfigured: boolean;
   readonly snapshot: SyncRuntimeStatusSnapshot;
+  /**
+   * The outbox's CUMULATIVE capacity-shed count, read live from the store's own counter table --
+   * deliberately NOT a `SyncRuntimeStatusSnapshot` field, because surfacing it must not require a
+   * schema migration or a new status write. `null` (or an omitted field) means the counter could
+   * not be read, and the tile is omitted rather than rendered as a fabricated zero.
+   */
+  readonly shedCount?: number | null;
 }
 
 /** Defines the settings sync summary action kind value shape. */

@@ -105,5 +105,19 @@ export const NATIVE_ERRCODE_BYTE_MAX = 65535;
  * reconcile still answers 202. Crossing it would make this telemetry vanish without a trace AND
  * take the reconcile payload capture -- which the team already relies on -- down with it. 4 KiB
  * keeps a wide margin even with a large pending backlog sharing the same body.
+ *
+ * COUPLED ACROSS REPOSITORIES -- the bridge's source NAMES this number.
+ * `internal/observability/syncdiag/types.go:21-22` reads "MaxBodyBytes bounds the request body: 2x
+ * the mobile client's own SYNC_CYCLE_TELEMETRY_MAX_BYTES cap (4096)" with `MaxBodyBytes = 8 << 10`,
+ * so a `413` from that endpoint is reachable only after this constant first grows past half their
+ * bound: at 4 KiB it cannot be reached, which is why that branch is latent rather than defensive.
+ * The two numbers move together; changing this one silently moves a bound on the other side of the
+ * wire. (Read directly from the bridge's source by the parent; not inferred from our side.)
+ *
+ * Secondary fact from the same file: `internal/observability/syncdiag/validate.go:10` reads
+ * "maxRecentEvents bounds recent_events: the client's own ring caps at 20" with
+ * `maxRecentEvents = 32`. So `SYNC_DIAGNOSTIC_EVENT_RING_SIZE` (20) sits below their acceptance
+ * bound today, and raising it toward 32 is what would turn that latent `413` into a live one. Keep
+ * the ring constant and this comment in view of each other.
  */
 export const SYNC_CYCLE_TELEMETRY_MAX_BYTES = 4096;

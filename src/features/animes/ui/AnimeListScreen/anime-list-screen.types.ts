@@ -1,5 +1,7 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Href } from 'expo-router';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
+import type { ChapterActionContext } from '../../chapter-action-diagnostics.types';
 import type {
   SyncVisibleStatus,
   SyncVisibleStatusFacts,
@@ -76,6 +78,39 @@ export interface AnimeListScreenVisibleSyncStatus extends SyncVisibleStatus {
 export interface AnimeListScreenRefreshFeedback {
   readonly description: string;
   readonly label: string;
+}
+
+/** Defines the options the anime list screen's failure toasts are shown with. */
+export interface AnimeListScreenFailureToastOptions {
+  readonly variant: 'danger' | 'warning';
+  readonly label: string;
+  readonly description: string;
+  readonly duration: number;
+}
+
+/**
+ * The minimal toast surface the anime list screen's failure paths call.
+ *
+ * Structural rather than imported from the UI library: the callback helpers stay unit-testable
+ * with a plain spy, and this narrow options type keeps the toast's full option surface out of the
+ * screen's contract.
+ */
+export interface AnimeListScreenFailureToast {
+  readonly show: (options: AnimeListScreenFailureToastOptions) => unknown;
+}
+
+/** The chapter command the list screen hands to the shared same-anime lock runner. */
+export type AnimeListScreenChapterActionRunner = (
+  animeId: string,
+  actionContext: ChapterActionContext,
+) => Promise<void>;
+
+/** Defines the collaborators the chapter mutation runner resolves per call. */
+export interface AnimeListScreenChapterMutationDeps {
+  readonly isTelemetryEnabled: boolean;
+  readonly mutatingAnimeByIdRef: MutableRefObject<Record<string, boolean>>;
+  readonly setIsMutatingAnimeById: Dispatch<SetStateAction<Record<string, boolean>>>;
+  readonly toast: AnimeListScreenFailureToast;
 }
 
 /** Defines the data contract produced by the anime list screen behavior hook. */
