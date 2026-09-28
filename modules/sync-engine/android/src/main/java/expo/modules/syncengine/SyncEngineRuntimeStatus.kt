@@ -90,6 +90,11 @@ object SyncEngineRuntimeStatus {
    * connection to `autoreas.db` -- called at most once per attempt (each caller's own coalescing
    * already keeps attempts from overlapping), so the extra open/close over a long-lived connection
    * is a small, once-per-tick cost, not a hot path.
+   *
+   * **Readiness gate (ODD mobile-database-recovery T3 tail).** The connection is opened only when
+   * [probeAppDatabaseReadiness] reports [AppDatabaseReadiness.Ready], so this writer never creates
+   * the file and never writes status into a database the foreground has not durably prepared. A
+   * not-ready database is a quiet skip, consistent with the never-throws contract below.
    */
   fun record(
     context: Context,
@@ -102,6 +107,20 @@ object SyncEngineRuntimeStatus {
       // Mirrors the retired JS attempt-policy gate and the JS cycle's own no-config short
       // circuit: neither ever wrote to sync_runtime_status for a refused/no-op attempt, so this
       // writer does not either (see the class doc).
+      return
+    }
+
+    // Readiness gate (ODD mobile-database-recovery T3 tail): never create `autoreas.db` and
+    // never write to one the foreground has not durably stamped ready. The check runs BEFORE
+    // [openAppDatabase], whose `openOrCreateDatabase` would otherwise create the file (and, on a
+    // stamp older than the expected one, write status into a schema the foreground is still
+    // preparing). A not-ready database is a quiet skip, not an error: this writer's contract is
+    // that it never throws.
+    if (probeAppDatabaseReadiness(context) != AppDatabaseReadiness.Ready) {
+      Log.w(
+        LOG_TAG,
+        "status projection skipped for cycle $cycleId: app database not ready",
+      )
       return
     }
 

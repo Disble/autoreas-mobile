@@ -1,6 +1,7 @@
 package expo.modules.syncengine
 
 import android.content.Context
+import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.util.Log
@@ -226,12 +227,139 @@ const val PENDING_REMOTE_CHANGES_TABLE_SQL =
     "created_at INTEGER NOT NULL)"
 
 /**
+ * The app database readiness stamp the foreground writes as its FINAL schema-preparation step:
+ * `prepareForegroundDatabase` runs `PRAGMA user_version = EXPECTED_SCHEMA_READINESS_VERSION` only
+ * after migrations and full schema validation have succeeded, so a matching `user_version` is
+ * durable proof that the schema is whole.
+ *
+ * This is the Kotlin TWIN of `EXPECTED_SCHEMA_READINESS_VERSION` in
+ * `src/infrastructure/db/startup/startup.constants.ts`, which is itself
+ * `migrationJournal.entries.length`. The value is a literal here because the native module cannot
+ * import TypeScript; `tests/infrastructure/db/native-schema-readiness-twin.test.ts` reads this
+ * file as text and fails when the literal drifts from the journal length, so a new migration
+ * cannot silently block the native owner forever. Bump this value only with that test's help.
+ */
+const val EXPECTED_SCHEMA_READINESS_VERSION = 16
+
+/**
+ * Explicit verdict of the app database readiness probe. The decision itself ([resolveAppDatabaseReadiness])
+ * does NO I/O, so every state is unit-testable without a device.
+ *
+ * - [NotProvisioned]: the database file does not exist yet. The native side must not create it;
+ *   creation is the foreground's job (`prepareForegroundDatabase`).
+ * - [SchemaNotReady]: the file exists but `PRAGMA user_version` is not the expected stamp, so the
+ *   foreground has not durably finished preparing the schema (or is mid-migration right now).
+ * - [Ready]: `PRAGMA user_version` equals the expected stamp. The foreground proved the schema is
+ *   whole before writing it.
+ */
+enum class AppDatabaseReadiness {
+  NotProvisioned,
+  SchemaNotReady,
+  Ready,
+}
+
+/**
+ * Pure readiness decision from a file-existence flag and an already-read `PRAGMA user_version`.
+ * Deliberately does NO I/O: [probeAppDatabaseReadiness] gathers the inputs and this function only
+ * classifies them.
+ *
+ * The rule is EXACT equality: only the expected stamp is [AppDatabaseReadiness.Ready]. A `null`
+ * version (the pragma could not be read) and any other number -- a behind-the-journal schema, or
+ * an absurd/future version from a newer install -- are [AppDatabaseReadiness.SchemaNotReady],
+ * never a guess.
+ */
+fun resolveAppDatabaseReadiness(
+  fileExists: Boolean,
+  userVersion: Int?,
+  expectedVersion: Int,
+): AppDatabaseReadiness {
+  if (!fileExists) {
+    return AppDatabaseReadiness.NotProvisioned
+  }
+  return if (userVersion == expectedVersion) {
+    AppDatabaseReadiness.Ready
+  } else {
+    AppDatabaseReadiness.SchemaNotReady
+  }
+}
+
+/**
+ * Reads `PRAGMA user_version` from an EXISTING app database file through a READ-ONLY connection,
+ * so it never creates the file and never takes a write lock. Returns `null` when the file cannot
+ * be opened as a database (missing, not yet a valid SQLite file, or otherwise unreadable), which
+ * [resolveAppDatabaseReadiness] treats as [AppDatabaseReadiness.SchemaNotReady].
+ */
+fun readAppDatabaseUserVersion(file: File): Int? {
+  return try {
+    SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+      DatabaseUtils.longForQuery(db, "PRAGMA user_version", null).toInt()
+    }
+  } catch (error: SQLiteException) {
+    Log.w(TAG_DATABASE_READS, "app database user_version unreadable at $file", error)
+    null
+  }
+}
+
+/**
+ * Probes the app database's readiness at the exact file expo-sqlite uses. A missing file returns
+ * [AppDatabaseReadiness.NotProvisioned] WITHOUT opening anything; a present file is read through
+ * the read-only [readAppDatabaseUserVersion]. This function never writes and never creates.
+ */
+fun probeAppDatabaseReadiness(context: Context): AppDatabaseReadiness {
+  val file = resolveAppDatabaseFile(context)
+  if (!file.exists()) {
+    return resolveAppDatabaseReadiness(
+      fileExists = false,
+      userVersion = null,
+      expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+    )
+  }
+  return resolveAppDatabaseReadiness(
+    fileExists = true,
+    userVersion = readAppDatabaseUserVersion(file),
+    expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+  )
+}
+
+/**
  * Resolves the app database file at the exact location expo-sqlite uses (`filesDir/SQLite/`),
  * so the engine's connection sees the same file, WAL mode included, the app already wrote.
  */
 fun resolveAppDatabaseFile(context: Context): File {
   val sqliteDirectory = File(context.filesDir, SQLITE_SUBDIRECTORY)
   return File(sqliteDirectory, APP_DATABASE_NAME)
+}
+
+/**
+ * Deletes the application database TOGETHER WITH every SQLite sidecar file, through Android's own
+ * SQLite deletion API -- the one call that removes `autoreas.db`, `-journal`, `-shm`, `-wal`, the
+ * wipe-check file and every `-mj*` master journal as one unit.
+ *
+ * **Why expo-sqlite's own delete is not enough.** Expo SDK 55's JS `deleteDatabaseAsync` ends in
+ * `SQLiteModule.deleteDatabase`, which is literally `File(dbFile).delete()`: it unlinks ONLY
+ * `autoreas.db` and leaves the sidecars behind. A stale `-wal` beside a freshly created database
+ * is exactly the corruption class this recovery feature exists to remove -- its frames can be
+ * applied to the NEW file. Unlinking the sidecars by hand instead is not an option either: a WAL
+ * must never be removed while it is open, and the API is what guarantees the files were not
+ * recreated between the calls.
+ *
+ * **Why this is safe beside Expo's SQLite core in the same process.** [SQLiteDatabase.deleteDatabase]
+ * is a PURE UNLINK: it opens NO connection, so this function cannot put a second independently
+ * linked SQLite core in touch with `autoreas.db`, which is the hazard T3 removed by moving the
+ * native owner into `:sync`. It is also why [SyncEngineModule] exposes this as the one destructive
+ * entry point NOT covered by the `runOnce` main-process refusal: that refusal protects a call that
+ * opens a framework connection, and this one opens nothing. Ordering still belongs to the caller --
+ * every owner must be closed first -- and this function never expresses that as an assumption.
+ *
+ * Idempotent for a missing database: the API deletes what it finds, throws nothing when the files
+ * are already gone, and reports `false`.
+ *
+ * @return `true` when the API removed at least one of the target files, `false` when there was
+ * nothing left to remove. The `false` answer is NOT proof of damage: a `false` beside a surviving
+ * file on disk is, which is why the reset adapter verifies the filesystem instead of trusting it.
+ */
+fun deleteAppDatabaseAndSidecars(context: Context): Boolean {
+  return SQLiteDatabase.deleteDatabase(resolveAppDatabaseFile(context))
 }
 
 /**

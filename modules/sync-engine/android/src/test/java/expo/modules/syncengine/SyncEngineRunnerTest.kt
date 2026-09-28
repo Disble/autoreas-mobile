@@ -69,7 +69,10 @@ private fun watchdogLooperForTest(): Looper = SyncEngineRunner.watchdogLooperFor
  * `filesDir/SQLite/autoreas.db` [openAppDatabase] resolves, mirroring the production schema
  * (`src/infrastructure/db/migrations/0000_moaning_maximus.sql` for `bridge_config`/
  * `operation_log`, `src/infrastructure/db/startup/startup.constants.ts`'s
- * `SYNC_CYCLE_LOCK_TABLE_SQL` for `sync_cycle_lock`).
+ * `SYNC_CYCLE_LOCK_TABLE_SQL` for `sync_cycle_lock`). [seedAppSchema] also stamps
+ * `PRAGMA user_version = EXPECTED_SCHEMA_READINESS_VERSION`, because the T3-tail readiness gate
+ * refuses every attempt until the foreground has durably proven the schema; a test that wants
+ * the not-ready path seeds (or omits) the stamp explicitly.
  *
  * **Known Robolectric limitation on this host:** [SyncCycleLease.claim]'s `INSERT ... ON
  * CONFLICT DO UPDATE` (SQLite UPSERT) throws `near "ON": syntax error` under Robolectric
@@ -159,6 +162,9 @@ class SyncEngineRunnerTest {
           arrayOf<Any?>(ip, port, token, deviceId),
         )
       }
+      // T3 tail: the foreground's durable readiness stamp. Seeded by default so every existing
+      // exercise reaches the cycle; the refusal tests deliberately rewind or omit it.
+      db.execSQL("PRAGMA user_version = $EXPECTED_SCHEMA_READINESS_VERSION")
     } finally {
       db.close()
     }
@@ -166,6 +172,28 @@ class SyncEngineRunnerTest {
 
   private fun lockRowCount(): Int {
     val db = openAppDatabase(context)
+    try {
+      db.rawQuery("SELECT COUNT(*) FROM sync_cycle_lock", null).use { cursor ->
+        cursor.moveToFirst()
+        return cursor.getInt(0)
+      }
+    } finally {
+      db.close()
+    }
+  }
+
+  /**
+   * Reads the lease table's row count through a READ-ONLY connection. The T3-tail refusal tests
+   * must not use [openAppDatabase] (which opens read-write and creates a missing file) to verify
+   * that the runner itself never opened the database -- doing so would silently create the very
+   * file the refusal is supposed to leave untouched.
+   */
+  private fun readOnlyLockRowCount(): Int {
+    val db = SQLiteDatabase.openDatabase(
+      resolveAppDatabaseFile(context).absolutePath,
+      null,
+      SQLiteDatabase.OPEN_READONLY,
+    )
     try {
       db.rawQuery("SELECT COUNT(*) FROM sync_cycle_lock", null).use { cursor ->
         cursor.moveToFirst()
@@ -428,6 +456,104 @@ class SyncEngineRunnerTest {
       "the two cycles' row blocks must not overlap",
       transitions[0] != transitions[2],
     )
+  }
+
+  // --- T3 tail: foreground schema-readiness gate ---------------------------------------------
+  // The native owner may open `autoreas.db` ONLY once the foreground has durably stamped
+  // `PRAGMA user_version = EXPECTED_SCHEMA_READINESS_VERSION`. Both refusal tests assert the
+  // refusal is real (no file, no lease row, no journal), and the ready test asserts the gate does
+  // not block a legitimately prepared database.
+
+  @Test
+  fun `refuses without creating the database when it is not provisioned`() {
+    // No seed at all: neither the file nor the SQLite directory exists yet.
+    val results = mutableListOf<CycleOutcome>()
+    val latch = CountDownLatch(1)
+
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-not-provisioned",
+      startMs = System.currentTimeMillis(),
+      requirePresence = false,
+    ) { outcome ->
+      results.add(outcome)
+      latch.countDown()
+    }
+
+    assertTrue("onResult must fire synchronously on the refusal", latch.await(2, TimeUnit.SECONDS))
+    val outcome = results.single()
+    assertEquals("not_applicable", outcome.outcome)
+    assertEquals("idle", outcome.stage)
+    assertEquals("SchemaNotReady", outcome.errorName)
+    assertFalse(
+      "the refusal must not create autoreas.db",
+      resolveAppDatabaseFile(context).exists(),
+    )
+    assertFalse("the refusal must not create the journal", journalFile().exists())
+  }
+
+  @Test
+  fun `refuses when the schema is not ready without a lease write or a journal row`() {
+    seedAppSchema(withOperationLog = true)
+    // Rewind the readiness stamp below the expected one: the file and its tables exist, but the
+    // foreground has not durably proven the schema, so the native side must stand down before
+    // arming anything.
+    val seedDb = openAppDatabase(context)
+    try {
+      seedDb.execSQL("PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION - 1}")
+    } finally {
+      seedDb.close()
+    }
+
+    val results = mutableListOf<CycleOutcome>()
+    val latch = CountDownLatch(1)
+
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-schema-not-ready",
+      startMs = System.currentTimeMillis(),
+      requirePresence = false,
+    ) { outcome ->
+      results.add(outcome)
+      latch.countDown()
+    }
+
+    assertTrue(latch.await(2, TimeUnit.SECONDS))
+    val outcome = results.single()
+    assertEquals("not_applicable", outcome.outcome)
+    assertEquals("SchemaNotReady", outcome.errorName)
+    assertEquals("no lease row may be written on a not-ready refusal", 0, readOnlyLockRowCount())
+    assertFalse("no journal row may be appended on a not-ready refusal", journalFile().exists())
+  }
+
+  @Test
+  fun `proceeds on the ready path and reaches the cycle`() {
+    // A ready stamp is the ONLY state that proceeds: the cycle runs and its journal rows are
+    // written, unlike the two refusals above.
+    seedAppSchema(withOperationLog = true)
+
+    val results = mutableListOf<CycleOutcome>()
+    val latch = CountDownLatch(1)
+
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-ready",
+      startMs = System.currentTimeMillis(),
+      requirePresence = false,
+    ) { outcome ->
+      results.add(outcome)
+      latch.countDown()
+    }
+
+    assertTrue(latch.await(5, TimeUnit.SECONDS))
+    // Empty bridge_config -> the cycle's own not_applicable fast path, with the journal proving
+    // the attempt actually reached SyncEngineCycle.
+    assertEquals("not_applicable", results.single().outcome)
+    assertNull(results.single().errorName)
+    assertTrue(journalFile().exists())
   }
 
   // --- ODD native-foreground-sync-service T3 -------------------------------------------------

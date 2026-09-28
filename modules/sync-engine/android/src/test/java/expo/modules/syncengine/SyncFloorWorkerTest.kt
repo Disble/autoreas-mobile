@@ -3,8 +3,8 @@ package expo.modules.syncengine
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
+import androidx.work.multiprocess.RemoteCoroutineWorker
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -17,33 +17,35 @@ import java.util.concurrent.atomic.AtomicInteger
 /** The success fixture: a closed cycle that synced three operations and read five backlog rows. */
 private val OUTCOME_CLOSED = CycleOutcome("closed", "closed", 3, 5, null)
 
-/** The failure fixture: a non-terminal outcome whose error class must reach the status row. */
-private val OUTCOME_FAILED = CycleOutcome("failed", "sending", 0, 0, "SocketTimeoutException")
-
-/** One recorded call to the worker's status-projection seam. */
-private data class StatusWrite(val triggerSource: String, val outcome: CycleOutcome)
-
 /**
- * Robolectric tests for [SyncFloorWorker] (ODD native-background-sync-cutover M2): the native
- * `WorkManager` floor that runs one native attempt when the ticker does NOT own the background.
+ * Robolectric tests for the thin ADAPTER that [SyncFloorWorker] became: its injectable seams must
+ * still reach [SyncFloorAttempt], and its result type must map to exactly the
+ * `ListenableWorker.Result` the floor reported before the extraction.
  *
- * Every test drives the worker's own public seam -- `doWork()` -- through
- * [TestListenableWorkerBuilder], with the runner and the status projection replaced by recording
- * fakes (the same seam shape [SyncForegroundServiceTest] uses for [SyncForegroundService]): no
- * test here reaches [SyncEngineRunner]'s real SQLite-backed path or the wire. The one exception
- * is [a completed attempt persists the background_task trigger source], which deliberately uses
- * the REAL [SyncEngineRuntimeStatus] projection against a seeded `sync_runtime_status` table,
- * because "honest `background_task` status" is exactly the claim that a fake could not prove.
+ * The attempt's own behavior -- ownership gate, exactly-once settlement, bounded wait,
+ * `CancellationException` propagation, crash safety, the `background_task` projection -- is
+ * asserted in [SyncFloorAttemptTest], driven directly on the collaborator with the same
+ * assertions the pre-extraction worker tests used. The base class is now the remote
+ * `androidx.work.multiprocess.RemoteCoroutineWorker`, so its local entry point is the suspend
+ * `doRemoteWork()` (the base class owns `startRemoteWork()` and declares `startWork()` final);
+ * [TestListenableWorkerBuilder] still constructs the adapter because the remote worker keeps the
+ * ordinary `(Context, WorkerParameters)` constructor.
  *
- * The ownership gate is injected rather than armed through the ticker: arming it (`startSyncTicking`)
- * is `internal` to `foreground-sync-ticker` and therefore not reachable from this module. The real
- * check is covered where it lives -- [expo.modules.foregroundsyncticker.TickAlarmSchedulerTest] --
- * and this file covers what the worker does with its answer.
+ * The integration tests below still go through the worker's own `doRemoteWork()` entry point
+ * (the remote base class's local suspend seam) precisely to prove the wiring: the real
+ * `SyncFloorWorker` builds a [SyncFloorAttempt] from ITS seams, so a regression there -- a seam
+ * silently dropped, or a context other than `applicationContext` handed over -- is a defect the
+ * collaborator suite could not see. Result mapping itself is covered WITHOUT a worker instance by
+ * [every attempt result maps to the worker result the floor reported before the extraction], so
+ * that coverage survives any future base-class change.
  */
 @RunWith(RobolectricTestRunner::class)
 class SyncFloorWorkerTest {
 
   private lateinit var context: Context
+
+  /** One recorded call to the worker's status-projection seam. */
+  private data class StatusWrite(val triggerSource: String, val outcome: CycleOutcome)
 
   @Before
   fun setUp() {
@@ -52,8 +54,8 @@ class SyncFloorWorkerTest {
 
   /**
    * Fake [SyncAttemptRunner] recording the invocation's arguments and running [settle] so a test
-   * can script "settles once", "settles twice" or "never settles" without any thread or timing
-   * assumption. [failure] makes the runner itself throw before settling.
+   * can script "settles once" or "throws before settling" without any thread or timing
+   * assumption.
    */
   private class RecordingRunner(
     private val failure: Throwable? = null,
@@ -97,30 +99,63 @@ class SyncFloorWorkerTest {
   }
 
   @Test
-  fun `the floor runs one gated native attempt and projects it as a background_task outcome`() = runBlocking {
-    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
-    val (worker, writes) = newWorker(runner)
+  fun `the worker is a remote coroutine worker so the floor runs outside the calling process`() {
+    // The base-class identity IS the process split: only a RemoteCoroutineWorker is driven by the
+    // process hosting the bound RemoteWorkerService named in the request's input data. A plain
+    // CoroutineWorker here would run the attempt -- and open autoreas.db -- in the calling process.
+    val worker = TestListenableWorkerBuilder<SyncFloorWorker>(context).build()
 
-    val result = worker.doWork()
-
-    assertEquals(ListenableWorker.Result.success(), result)
-    assertEquals(1, runner.invocationCount.get())
-    assertEquals(SYNC_FLOOR_TRIGGER_SOURCE, runner.lastTriggerSource)
-    assertEquals(
-      "the floor has no JS attempt policy in front of it, so it must probe presence itself",
-      true,
-      runner.lastRequirePresence,
+    assertTrue(
+      "SyncFloorWorker must be an androidx.work.multiprocess.RemoteCoroutineWorker",
+      RemoteCoroutineWorker::class.java.isAssignableFrom(worker.javaClass),
     )
-    assertEquals(listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)), writes)
   }
 
   @Test
-  fun `the floor skips the attempt entirely while the ticker owns the background`() = runBlocking {
+  fun `the worker adapter runs the attempt through its own seams and reports the completed tick as success`() = runBlocking {
+    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
+    val (worker, writes) = newWorker(runner)
+
+    val result = worker.doRemoteWork()
+
+    assertEquals(
+      "a settled attempt is a completed tick: the mapping must report success, as it did before the extraction",
+      ListenableWorker.Result.success(),
+      result,
+    )
+    assertEquals("the worker's own attemptRunner seam must reach the collaborator", 1, runner.invocationCount.get())
+    assertEquals(SYNC_FLOOR_TRIGGER_SOURCE, runner.lastTriggerSource)
+    assertEquals(true, runner.lastRequirePresence)
+    assertEquals(
+      "the worker's own runtimeStatusWriter seam must reach the collaborator",
+      listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)),
+      writes,
+    )
+  }
+
+  @Test
+  fun `the worker adapter maps an unsettled attempt to retry`() = runBlocking {
+    val runner = RecordingRunner()
+    val (worker, writes) = newWorker(runner)
+    worker.attemptTimeoutMsForTest = 20L
+
+    val result = worker.doRemoteWork()
+
+    assertEquals(
+      "an unseen outcome must not be reported as success, and must not kill the periodic floor",
+      ListenableWorker.Result.retry(),
+      result,
+    )
+    assertTrue("no outcome was observed, so nothing may be projected", writes.isEmpty())
+  }
+
+  @Test
+  fun `the worker adapter maps a skipped tick to success without running the attempt`() = runBlocking {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     val (worker, writes) = newWorker(runner)
     worker.ownsBackgroundCheck = { true }
 
-    val result = worker.doWork()
+    val result = worker.doRemoteWork()
 
     assertEquals(
       "a skipped tick is a completed tick, never a failed one: the period owns the next attempt",
@@ -132,134 +167,33 @@ class SyncFloorWorkerTest {
   }
 
   @Test
-  fun `a duplicated runner settlement is projected exactly once`() = runBlocking {
-    val runner = RecordingRunner { onResult ->
-      onResult(OUTCOME_CLOSED)
-      onResult(OUTCOME_FAILED)
-    }
-    val (worker, writes) = newWorker(runner)
-
-    val result = worker.doWork()
-
-    assertEquals(ListenableWorker.Result.success(), result)
-    assertEquals("the first settlement is the attempt's outcome", listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)), writes)
-  }
-
-  @Test
-  fun `an attempt that never settles returns retry and projects nothing`() = runBlocking {
-    val runner = RecordingRunner()
-    val (worker, writes) = newWorker(runner)
-    worker.attemptTimeoutMsForTest = 20L
-
-    val result = worker.doWork()
-
-    assertEquals(
-      "an unseen outcome must not be reported as success, and must not kill the periodic floor",
-      ListenableWorker.Result.retry(),
-      result,
-    )
-    assertTrue("no outcome was observed, so nothing may be projected", writes.isEmpty())
-  }
-
-  @Test
-  fun `an attempt runner that throws returns retry and projects nothing`() = runBlocking {
+  fun `the worker adapter maps a runner that throws to retry`() = runBlocking {
     val runner = RecordingRunner(failure = IllegalStateException("runner exploded"))
     val (worker, writes) = newWorker(runner)
 
-    val result = worker.doWork()
+    val result = worker.doRemoteWork()
 
     assertEquals(ListenableWorker.Result.retry(), result)
     assertTrue(writes.isEmpty())
   }
 
+  /**
+   * The extraction's own behavior: the mapping from the collaborator's result type to the exact
+   * `ListenableWorker.Result` the floor reported before the extraction. Driven directly on the
+   * mapping, with no worker instance and no `WorkManager` in the way, so this coverage is
+   * independent of the worker's base class.
+   */
   @Test
-  fun `a cancelled attempt propagates instead of being reported or projected`() {
-    val runner = RecordingRunner(failure = CancellationException("work stopped"))
-    val (worker, writes) = newWorker(runner)
-
-    val thrown = runCatching { runBlocking { worker.doWork() } }.exceptionOrNull()
-
-    assertTrue(
-      "WorkManager must see a cancelled worker, not a fabricated outcome: expected a " +
-        "CancellationException but got $thrown",
-      thrown is CancellationException,
+  fun `every attempt result maps to the worker result the floor reported before the extraction`() {
+    val mapped = listOf(
+      SyncFloorAttemptResult.SkippedOwnedByTicker to ListenableWorker.Result.success(),
+      SyncFloorAttemptResult.AttemptCompleted to ListenableWorker.Result.success(),
+      SyncFloorAttemptResult.AttemptUnsettled to ListenableWorker.Result.retry(),
+      SyncFloorAttemptResult.AttemptCrashed to ListenableWorker.Result.retry(),
     )
-    assertTrue("a cancelled attempt must not project an outcome", writes.isEmpty())
-  }
 
-  @Test
-  fun `a status projection that throws still completes the attempt`() = runBlocking {
-    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
-    val worker = TestListenableWorkerBuilder<SyncFloorWorker>(context).build().apply {
-      attemptRunner = runner
-      runtimeStatusWriter = { _, _, _, _, _ -> error("status write exploded") }
-    }
-
-    val result = worker.doWork()
-
-    assertEquals(
-      "a status-write failure must never turn a completed attempt into a retried one",
-      ListenableWorker.Result.success(),
-      result,
-    )
-  }
-
-  @Test
-  fun `a completed attempt persists the background_task trigger source`() = runBlocking {
-    seedRuntimeStatusSchema()
-    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
-    // The REAL projection, so this test proves the persisted row, not a fake's arguments.
-    val worker = TestListenableWorkerBuilder<SyncFloorWorker>(context).build().apply { attemptRunner = runner }
-
-    val result = worker.doWork()
-
-    assertEquals(ListenableWorker.Result.success(), result)
-    assertEquals(
-      "the floor must never claim the foreground service's trigger source",
-      "background_task",
-      readRuntimeStatusColumn("last_trigger_source"),
-    )
-    assertEquals("3", readRuntimeStatusColumn("last_synced_count"))
-    assertTrue("the attempt instant must be persisted", readRuntimeStatusColumn("last_attempt_at") != null)
-  }
-
-  /** Mirrors only the `sync_runtime_status` columns [SyncEngineRuntimeStatus] actually names. */
-  private fun seedRuntimeStatusSchema() {
-    val db = openAppDatabase(context)
-    try {
-      db.execSQL(
-        "CREATE TABLE sync_runtime_status (" +
-          "id INTEGER PRIMARY KEY DEFAULT 1 NOT NULL," +
-          "last_attempt_at INTEGER," +
-          "last_success_at INTEGER," +
-          "last_failure_message TEXT," +
-          "last_trigger_source TEXT," +
-          "last_synced_count INTEGER DEFAULT 0 NOT NULL," +
-          "is_cycle_active INTEGER DEFAULT 0 NOT NULL," +
-          "last_backlog_read_count INTEGER DEFAULT 0 NOT NULL," +
-          "last_cycle_id TEXT," +
-          "last_cycle_stage TEXT," +
-          "last_error_name TEXT," +
-          "last_native_errcode_byte INTEGER," +
-          "last_error_stage TEXT," +
-          "consecutive_unclosed_cycles INTEGER DEFAULT 0 NOT NULL," +
-          "last_cycle_stage_at INTEGER" +
-          ")",
-      )
-    } finally {
-      db.close()
-    }
-  }
-
-  /** Reads one column of the singleton row, as a string, or `null` when the row does not exist. */
-  private fun readRuntimeStatusColumn(column: String): String? {
-    val db = openAppDatabase(context)
-    try {
-      db.rawQuery("SELECT $column FROM sync_runtime_status WHERE id = 1", null).use { cursor ->
-        return if (cursor.moveToFirst()) cursor.getString(0) else null
-      }
-    } finally {
-      db.close()
+    mapped.forEach { (result, expected) ->
+      assertEquals("$result must map to $expected", expected, result.toListenableWorkerResult())
     }
   }
 }

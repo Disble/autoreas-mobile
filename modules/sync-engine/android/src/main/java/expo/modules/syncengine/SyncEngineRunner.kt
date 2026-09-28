@@ -180,6 +180,17 @@ object SyncEngineRunner {
     requirePresence: Boolean = false,
     onResult: (CycleOutcome) -> Unit,
   ) {
+    // Readiness gate (ODD mobile-database-recovery T3 tail): the app database is opened ONLY
+    // once the foreground has durably stamped `PRAGMA user_version = EXPECTED_SCHEMA_READINESS_VERSION`
+    // as its FINAL schema-preparation step. Before that stamp, a background tick must not open
+    // (let alone create) `autoreas.db`: the native side never migrates, and a second connection
+    // writing during the foreground's schema window is exactly the dual-writer hazard this gate
+    // removes. The probe is a read-only, local check -- it neither creates the file nor writes to
+    // it -- and the refusal below happens BEFORE the watchdog is armed and before anything is
+    // queued, so no lease claim, no transaction and no journal row can follow from it. A refusal
+    // is reported with the existing `not_applicable` vocabulary (see the presence gate): the tick
+    // simply had nothing safe to do.
+    var readinessRefusal: AppDatabaseReadiness? = null
     // Opened once and kept for the process's lifetime (see the class doc): a steady-state
     // presence-refused tick below never repeats this open, it only reuses the already-live
     // connection. Synchronized so two near-simultaneous first callers cannot both race to open
@@ -187,12 +198,26 @@ object SyncEngineRunner {
     // file I/O, never network, so it is safe on a main-thread caller (SyncForegroundService).
     synchronized(this) {
       if (appDb == null) {
-        appDb = openAppDatabase(context)
+        val readiness = probeAppDatabaseReadiness(context)
+        if (readiness == AppDatabaseReadiness.Ready) {
+          appDb = openAppDatabase(context)
+        } else {
+          readinessRefusal = readiness
+        }
       }
-      if (journal == null) {
+      // The journal is opened only on the ready path: a not-ready refusal stays journal-free
+      // (it must not even create `sync-journal.db`), exactly like the presence refusal.
+      if (appDb != null && journal == null) {
         journal = SyncEngineJournal(context)
       }
     }
+
+    if (readinessRefusal != null) {
+      Log.w(LOG_TAG, "attempt $cycleId refused: app database not ready ($readinessRefusal)")
+      onResult(CycleOutcome("not_applicable", "idle", 0, 0, "SchemaNotReady"))
+      return
+    }
+
     val db = appDb!!
     val activeJournal = journal!!
 

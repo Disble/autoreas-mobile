@@ -12,6 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.SQLiteMode
+import java.io.File
 
 /**
  * Dedicated tests for `SyncEngineDatabases.kt`'s file-level functions (T3,
@@ -245,6 +246,199 @@ class SyncEngineDatabasesTest {
     }
   }
 
+  // ---- resolveAppDatabaseReadiness / readAppDatabaseUserVersion / probeAppDatabaseReadiness ----
+
+  @Test
+  fun resolveAppDatabaseReadinessReportsNotProvisionedWhenTheFileDoesNotExist() {
+    assertEquals(
+      AppDatabaseReadiness.NotProvisioned,
+      resolveAppDatabaseReadiness(
+        fileExists = false,
+        userVersion = null,
+        expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+      ),
+    )
+  }
+
+  @Test
+  fun resolveAppDatabaseReadinessReportsReadyOnTheExpectedVersion() {
+    assertEquals(
+      AppDatabaseReadiness.Ready,
+      resolveAppDatabaseReadiness(
+        fileExists = true,
+        userVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+        expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+      ),
+    )
+  }
+
+  @Test
+  fun resolveAppDatabaseReadinessReportsSchemaNotReadyWhenTheVersionIsUnreadable() {
+    assertEquals(
+      AppDatabaseReadiness.SchemaNotReady,
+      resolveAppDatabaseReadiness(
+        fileExists = true,
+        userVersion = null,
+        expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+      ),
+    )
+  }
+
+  @Test
+  fun resolveAppDatabaseReadinessReportsSchemaNotReadyWhenTheVersionIsBehind() {
+    assertEquals(
+      AppDatabaseReadiness.SchemaNotReady,
+      resolveAppDatabaseReadiness(
+        fileExists = true,
+        userVersion = EXPECTED_SCHEMA_READINESS_VERSION - 1,
+        expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+      ),
+    )
+  }
+
+  @Test
+  fun resolveAppDatabaseReadinessReportsSchemaNotReadyOnAnAbsurdFutureVersion() {
+    // A file stamped by a NEWER install than this build understands is not ready either: exact
+    // equality is the only proof this build can trust.
+    assertEquals(
+      AppDatabaseReadiness.SchemaNotReady,
+      resolveAppDatabaseReadiness(
+        fileExists = true,
+        userVersion = Int.MAX_VALUE,
+        expectedVersion = EXPECTED_SCHEMA_READINESS_VERSION,
+      ),
+    )
+  }
+
+  @Test
+  fun readAppDatabaseUserVersionReadsTheStampedValue() {
+    val context = RuntimeEnvironment.getApplication()
+    val db = openAppDatabase(context)
+    try {
+      db.execSQL("PRAGMA user_version = 42")
+    } finally {
+      db.close()
+    }
+
+    assertEquals(42, readAppDatabaseUserVersion(resolveAppDatabaseFile(context)))
+  }
+
+  @Test
+  fun readAppDatabaseUserVersionReturnsNullInsteadOfThrowingWhenTheFileIsMissing() {
+    val context = RuntimeEnvironment.getApplication()
+    assertNull(readAppDatabaseUserVersion(resolveAppDatabaseFile(context)))
+  }
+
+  @Test
+  fun readAppDatabaseUserVersionReturnsNullInsteadOfThrowingWhenTheFileIsNotADatabase() {
+    val context = RuntimeEnvironment.getApplication()
+    val file = File(context.filesDir, "not-a-database.db")
+    file.writeText("this file is not an SQLite database")
+
+    assertNull(readAppDatabaseUserVersion(file))
+  }
+
+  @Test
+  fun probeAppDatabaseReadinessReportsNotProvisionedWithoutCreatingTheFile() {
+    val context = RuntimeEnvironment.getApplication()
+
+    assertEquals(AppDatabaseReadiness.NotProvisioned, probeAppDatabaseReadiness(context))
+    assertFalse(
+      "the probe must never create the database file",
+      resolveAppDatabaseFile(context).exists(),
+    )
+  }
+
+  @Test
+  fun probeAppDatabaseReadinessReportsReadyOnAStampedFile() {
+    val context = RuntimeEnvironment.getApplication()
+    val db = openAppDatabase(context)
+    try {
+      db.execSQL("PRAGMA user_version = $EXPECTED_SCHEMA_READINESS_VERSION")
+    } finally {
+      db.close()
+    }
+
+    assertEquals(AppDatabaseReadiness.Ready, probeAppDatabaseReadiness(context))
+  }
+
+  @Test
+  fun probeAppDatabaseReadinessReportsSchemaNotReadyOnAStaleStamp() {
+    val context = RuntimeEnvironment.getApplication()
+    val db = openAppDatabase(context)
+    try {
+      db.execSQL("PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION - 1}")
+    } finally {
+      db.close()
+    }
+
+    assertEquals(AppDatabaseReadiness.SchemaNotReady, probeAppDatabaseReadiness(context))
+  }
+
+  // ---- deleteAppDatabaseAndSidecars ----
+
+  /**
+   * Seeds a real database plus every sidecar `SQLiteDatabase.deleteDatabase` owns, so the test
+   * pins the WHOLE deletion unit and not just the main file -- the exact defect (`deleteDatabaseAsync`
+   * unlinks `autoreas.db` only) leaves all of them behind.
+   */
+  @Test
+  fun deleteAppDatabaseAndSidecarsRemovesTheDatabaseAndEverySidecar() {
+    val context = RuntimeEnvironment.getApplication()
+    val databaseFile = resolveAppDatabaseFile(context)
+    // A real framework-created database, not a hand-written text file, so the fixture matches
+    // what production actually leaves on disk.
+    openAppDatabase(context).close()
+    val sidecars = sidecarSuffixes.map { suffix -> File(databaseFile.path + suffix) }
+    sidecars.forEach { sidecar -> sidecar.writeText("seeded sidecar") }
+
+    assertTrue("the database fixture must exist before deleting", databaseFile.exists())
+    sidecars.forEach { sidecar -> assertTrue(sidecar.name, sidecar.exists()) }
+
+    assertTrue(deleteAppDatabaseAndSidecars(context))
+
+    assertFalse("the main database file must be gone", databaseFile.exists())
+    sidecars.forEach { sidecar -> assertFalse(sidecar.name, sidecar.exists()) }
+  }
+
+  /**
+   * The "already deleted" case: nothing to remove at all, so the API must answer `false` and throw
+   * nothing. This is what makes a resumed reset safe -- the JS adapter tolerates this answer
+   * instead of treating it as a failure.
+   */
+  @Test
+  fun deleteAppDatabaseAndSidecarsAnswersFalseWhenNothingIsLeftToDelete() {
+    val context = RuntimeEnvironment.getApplication()
+
+    assertFalse("the database fixture must be absent", resolveAppDatabaseFile(context).exists())
+    assertFalse(deleteAppDatabaseAndSidecars(context))
+    // A repeat call on a fully clean directory is equally harmless rather than an error.
+    assertFalse(deleteAppDatabaseAndSidecars(context))
+  }
+
+  /**
+   * The orphan case a main-file-only delete produces: no `autoreas.db`, but a `-wal`/`-shm` pair
+   * left beside it. Those orphans are the corruption class this unit removes -- the stale WAL can
+   * be applied to the freshly created database -- so the deletion must still take them.
+   */
+  @Test
+  fun deleteAppDatabaseAndSidecarsRemovesOrphanedSidecarsWhenTheMainFileIsGone() {
+    val context = RuntimeEnvironment.getApplication()
+    val databaseFile = resolveAppDatabaseFile(context)
+    // `openAppDatabase` is what creates `filesDir/SQLite/`; this test skips it, so the directory
+    // the sidecars must live in is created explicitly.
+    databaseFile.parentFile!!.mkdirs()
+    val orphanedSidecars = listOf(File(databaseFile.path + "-wal"), File(databaseFile.path + "-shm"))
+    orphanedSidecars.forEach { sidecar -> sidecar.writeText("orphaned sidecar") }
+
+    assertFalse("the database fixture must be absent", databaseFile.exists())
+
+    assertTrue(deleteAppDatabaseAndSidecars(context))
+
+    assertFalse("the main database file must stay absent", databaseFile.exists())
+    orphanedSidecars.forEach { sidecar -> assertFalse(sidecar.name, sidecar.exists()) }
+  }
+
   // ---- inImmediateTransaction ----
 
   @Test
@@ -303,6 +497,13 @@ class SyncEngineDatabasesTest {
       assertEquals("original failure", expected.message)
     }
   }
+
+  /**
+   * The sidecar suffixes Android's SQLite deletion API owns and expo-sqlite's `deleteDatabaseAsync`
+   * leaves behind: the rollback journal, the WAL mode's `-shm`/`-wal` pair, and one `-mj*` master
+   * journal (`-mj` is a PREFIX match in the API, so any suffix works).
+   */
+  private val sidecarSuffixes = listOf("-journal", "-shm", "-wal", "-mj0")
 
   /** A minimal `sync_cycle_lock` table with a NULLABLE `fence`, matching production exactly. */
   private fun ownershipDb(): SQLiteDatabase {
