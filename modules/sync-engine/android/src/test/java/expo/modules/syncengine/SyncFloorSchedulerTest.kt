@@ -8,6 +8,8 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import androidx.work.multiprocess.RemoteListenableWorker
+import androidx.work.multiprocess.RemoteWorkerService
 import androidx.work.testing.WorkManagerTestInitHelper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -109,6 +111,26 @@ class SyncFloorSchedulerTest {
       infos.single().periodicityInfo?.repeatIntervalMillis,
     )
     assertEquals("registered", SyncFloorScheduler.status(context).registrationStatus)
+  }
+
+  /**
+   * The process split (ODD mobile-database-recovery T3 slice B2a) is carried entirely by the
+   * request's input data: WorkManager reads BOTH keys to resolve the bound `RemoteWorkerService`
+   * and hand `doRemoteWork()` to the process hosting it. Asserted on the exact builder [register]
+   * enqueues, because `WorkInfo` does not project a request's input data.
+   */
+  @Test
+  fun `the floor request names the app package and the RemoteWorkerService so the tick runs off-process`() {
+    val request = SyncFloorScheduler.buildFloorWorkRequest(context)
+
+    assertEquals(
+      context.packageName,
+      request.workSpec.input.getString(RemoteListenableWorker.ARGUMENT_PACKAGE_NAME),
+    )
+    assertEquals(
+      RemoteWorkerService::class.java.name,
+      request.workSpec.input.getString(RemoteListenableWorker.ARGUMENT_CLASS_NAME),
+    )
   }
 
   @Test

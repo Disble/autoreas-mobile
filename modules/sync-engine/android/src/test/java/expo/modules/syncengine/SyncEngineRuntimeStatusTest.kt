@@ -3,6 +3,7 @@ package expo.modules.syncengine
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -105,6 +106,9 @@ class SyncEngineRuntimeStatusTest {
           "last_pending_row_count INTEGER" +
           ")",
       )
+      // T3 tail: the foreground's durable readiness stamp. Without it the writer now refuses,
+      // which is exactly what the dedicated not-ready test below exercises deliberately.
+      db.execSQL("PRAGMA user_version = $EXPECTED_SCHEMA_READINESS_VERSION")
     } finally {
       db.close()
     }
@@ -320,8 +324,14 @@ class SyncEngineRuntimeStatusTest {
   @Test
   fun `a status-write failure never throws`() {
     setUpContext()
-    // Schema deliberately NOT seeded: sync_runtime_status does not exist, so the UPDATE inside
-    // writeRow throws "no such table" -- record() must swallow it, not propagate it.
+    // The file exists and is stamped ready, but sync_runtime_status does not exist: the write
+    // itself throws "no such table" and record() must swallow it, not propagate it.
+    val seedDb = openAppDatabase(context)
+    try {
+      seedDb.execSQL("PRAGMA user_version = $EXPECTED_SCHEMA_READINESS_VERSION")
+    } finally {
+      seedDb.close()
+    }
 
     SyncEngineRuntimeStatus.record(
       context,
@@ -331,5 +341,53 @@ class SyncEngineRuntimeStatusTest {
     )
 
     assertTrue("record() must return normally even when the write itself fails", true)
+  }
+
+  // --- T3 tail: foreground schema-readiness gate ---------------------------------------------
+  // The status writer must never create `autoreas.db` and never write into one the foreground has
+  // not durably stamped ready. Both cases below assert the database is genuinely untouched.
+
+  @Test
+  fun `does not create the app database when the file is absent`() {
+    setUpContext()
+
+    SyncEngineRuntimeStatus.record(
+      context,
+      "cycle-not-provisioned",
+      7_000L,
+      CycleOutcome("closed", "closed", 1, 1, null),
+    )
+
+    assertFalse(
+      "a missing database must never be created by the status writer",
+      resolveAppDatabaseFile(context).exists(),
+    )
+  }
+
+  @Test
+  fun `does not write when the schema is not ready`() {
+    setUpContext()
+    seedRuntimeStatusSchema()
+    // Rewind readiness below the expected stamp: the singleton table exists, so a writer that
+    // ignored readiness WOULD persist a row here and this test would see it.
+    val seedDb = openAppDatabase(context)
+    try {
+      seedDb.execSQL("PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION - 1}")
+    } finally {
+      seedDb.close()
+    }
+
+    SyncEngineRuntimeStatus.record(
+      context,
+      "cycle-schema-not-ready",
+      8_000L,
+      CycleOutcome("closed", "closed", 3, 4, null),
+    )
+
+    assertEquals(
+      "a not-ready database must not receive a status row",
+      0,
+      rowCount(),
+    )
   }
 }

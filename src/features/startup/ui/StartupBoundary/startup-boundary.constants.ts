@@ -11,7 +11,7 @@ export const STARTUP_BOUNDARY_LOADING_DESCRIPTION =
  * is slower than usual and names closing and reopening as the escape if it does not advance.
  */
 export const STARTUP_BOUNDARY_SLOW_DESCRIPTION =
-  'El inicio está tardando más de lo usual. La app sigue funcionando; si no avanza, cerrá y volvé a abrir la app.';
+  'El inicio está tardando más de lo usual. La app sigue funcionando; si no avanza, cierra y vuelve a abrir la app.';
 
 /** Provides the startup failure fallback title. */
 export const STARTUP_BOUNDARY_FAILURE_TITLE = 'No pudimos iniciar la app';
@@ -25,3 +25,6 @@ export const STARTUP_BOUNDARY_FAILURE_DIAGNOSTIC_TITLE = 'Diagnóstico seguro';
 
 /** Provides the recovery section title. */
 export const STARTUP_BOUNDARY_FAILURE_RECOVERY_TITLE = 'Qué hacer ahora';
+
+/** Provides the title of the last-resort section shown after a reset that could not finish. */
+export const STARTUP_BOUNDARY_RECOVERY_LAST_RESORT_TITLE = 'Última opción';

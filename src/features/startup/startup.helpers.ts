@@ -1,5 +1,7 @@
 import {
   STARTUP_CONFIG_FAILURE_MESSAGE,
+  STARTUP_ERROR_CODE_CLASSIFICATIONS,
+  STARTUP_ERROR_NAME_CLASSIFICATIONS,
   STARTUP_DATABASE_FAILURE_MESSAGE,
   STARTUP_DATABASE_PREPARATION_MAX_ATTEMPTS,
   STARTUP_FAILURE_LOG_PREFIX,
@@ -14,43 +16,67 @@ import type {
   CreateStartupDatabaseInitializerParams,
   StartupDiagnostic,
   StartupDiagnosticStage,
-  StartupFailureClassification,
   UseStartupResult,
 } from './startup.types';
+
+
+
+
+
+/**
+ * Reads a raw `code` property off an arbitrary failure without trusting its shape or value.
+ * Only property presence is checked; membership filtering happens against the whitelist.
+ */
+function readNativeErrorCode(error: unknown): unknown {
+  return error && typeof error === 'object' && 'code' in error
+    ? Reflect.get(error, 'code')
+    : undefined;
+}
+
+/**
+ * Extracts the first whitelisted SQLite result code carried by a failure, from its raw `code`
+ * property or its message, or `null` when the failure carries none. Raw messages, SQL, values,
+ * connection details, causes, and stack traces never cross this boundary.
+ */
+function readWhitelistedSqliteCode(error: unknown): string | null {
+  const nativeCode = readNativeErrorCode(error);
+  const message = error instanceof Error ? error.message : '';
+
+  return (
+    STARTUP_SQLITE_CODES.find(
+      (candidate) => nativeCode === candidate || message.includes(candidate),
+    ) ?? null
+  );
+}
 
 /**
  * Reduces an arbitrary native failure to a fixed startup stage and whitelisted SQLite result code.
  * Raw messages, SQL, values, connection details, causes, and stack traces never cross this boundary.
+ *
+ * Classification walks two ordered rule tables in one pass: the error-name rules first, then the
+ * error-code rules, defaulting to `unknown` (no code) or `sqlite` (an unclassified whitelisted
+ * code). The name rules stay ahead of the code rules on purpose: `SchemaIntegrityError` means
+ * SQLite's own integrity check rejected the file, which is reported as `corruption` and is the
+ * only condition that may authorize a reset; `SchemaValidationError` means a table or column is
+ * missing, which is a repairable logical mismatch and must never be reported as damage.
  */
 export function createStartupDiagnostic(
   stage: StartupDiagnosticStage,
   error: unknown,
 ): StartupDiagnostic {
-  const nativeCode =
-    error && typeof error === 'object' && 'code' in error
-      ? Reflect.get(error, 'code')
+  const code = readWhitelistedSqliteCode(error);
+  const errorName = error instanceof Error ? error.name : null;
+  const nameRule = STARTUP_ERROR_NAME_CLASSIFICATIONS.find(([name]) => name === errorName);
+  const codeRule =
+    code !== null
+      ? STARTUP_ERROR_CODE_CLASSIFICATIONS.find(([codes]) => codes.includes(code))
       : undefined;
-  const message = error instanceof Error ? error.message : '';
-  const code = STARTUP_SQLITE_CODES.find(
-    (candidate) => nativeCode === candidate || message.includes(candidate),
-  ) ?? null;
-  let classification: StartupFailureClassification = 'unknown';
 
-  if (error instanceof Error && error.name === 'SchemaValidationError') {
-    classification = 'schema_validation';
-  } else if (error instanceof Error && error.name === 'SchemaIncompatibleError') {
-    classification = 'incompatible_schema';
-  } else if (code === 'SQLITE_BUSY' || code === 'SQLITE_LOCKED') {
-    classification = 'busy';
-  } else if (code === 'SQLITE_CORRUPT' || code === 'SQLITE_NOTADB') {
-    classification = 'corruption';
-  } else if (code === 'SQLITE_SCHEMA') {
-    classification = 'incompatible_schema';
-  } else if (code) {
-    classification = 'sqlite';
-  }
-
-  return { stage, code, classification };
+  return {
+    stage,
+    code,
+    classification: nameRule?.[1] ?? codeRule?.[1] ?? (code === null ? 'unknown' : 'sqlite'),
+  };
 }
 
 /**
@@ -95,6 +121,12 @@ export function createStartupDatabaseInitializer(
   let latestInitRequestId = 0;
 
   return async function handleDatabaseInit(rawDb) {
+    // Capture the provider's live connection before anything else. A reset needs a handle to close
+    // whether or not preparation succeeds, and this callback is the only moment the composition
+    // ever sees it -- the recovery card renders outside the provider, so the optional context is
+    // null exactly when the reset runs.
+    params.onDatabaseOpened?.(rawDb);
+
     const requestId = latestInitRequestId + 1;
     latestInitRequestId = requestId;
     const isLatestRequest = () => latestInitRequestId === requestId;

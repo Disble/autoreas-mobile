@@ -16,10 +16,13 @@ jest.mock('heroui-native', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactNative = require('react-native');
 
-  const wrap =
-    (Component: typeof ReactNative.View | typeof ReactNative.Text) =>
-    ({ children, ...props }: { children: React.ReactNode }) =>
+  const wrap = (Component: typeof ReactNative.View | typeof ReactNative.Text) => {
+    const Wrapped = ({ children, ...props }: { children: React.ReactNode }) =>
       createElement(Component, props, children);
+    Wrapped.displayName = 'HeroUINativeMock';
+
+    return Wrapped;
+  };
 
   const Card = Object.assign(wrap(ReactNative.View), {
     Body: wrap(ReactNative.View),
@@ -118,7 +121,7 @@ describe('StartupBoundary', () => {
         failure: {
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
           recoveryHint:
-            'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+            'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
         },
         initialized: false,
         target: null,
@@ -133,7 +136,7 @@ describe('StartupBoundary', () => {
           <Text>No pudimos iniciar la app</Text>
           <Text>Error al preparar la base local durante el inicio.</Text>
           <Text>
-            Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.
+            Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.
           </Text>
         </React.Fragment>
       ),
@@ -142,7 +145,7 @@ describe('StartupBoundary', () => {
           <Text>No pudimos iniciar la app</Text>
           <Text>Error al preparar la base local durante el inicio.</Text>
           <Text>
-            Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.
+            Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.
           </Text>
         </React.Fragment>
       ),
@@ -154,7 +157,7 @@ describe('StartupBoundary', () => {
       startupFailure: {
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       contentWrapper: jest.fn(),
     });
@@ -165,7 +168,7 @@ describe('StartupBoundary', () => {
     expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
     expect(
       view.getByText(
-        'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+        'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       ),
     ).toBeOnTheScreen();
     expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();

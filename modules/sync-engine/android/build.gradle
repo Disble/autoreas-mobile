@@ -59,6 +59,15 @@ dependencies {
   // 2.9.1 is the exact version `expo-background-task` (the JS floor this replaces in M3) already
   // resolves, so the app graph keeps ONE WorkManager version instead of two.
   implementation 'androidx.work:work-runtime-ktx:2.9.1'
+  // Remote-process floor (ODD mobile-database-recovery T3 slice B2a): `RemoteCoroutineWorker`
+  // runs the floor attempt (`doRemoteWork()`) in the process hosting the bound
+  // `RemoteWorkerService`, so Expo's vendored SQLite core and the framework SQLite core never
+  // open `autoreas.db` from the same Android process. Pinned to 2.11.1 to match the
+  // `androidx.work:work-runtime:2.11.1` this app already resolves through
+  // `react-native-notify-kit` (which declares `api 'androidx.work:work-runtime:2.11.1'`), so the
+  // app graph keeps ONE WorkManager version instead of two. The work-runtime version is
+  // deliberately NOT changed here; the multiprocess artifact pulls the matching 2.11.1 itself.
+  implementation 'androidx.work:work-multiprocess:2.11.1'
   // Fixes a real conflict the line above CREATES: work-runtime's POM requests
   // `androidx.core:core:1.9.0` at RUNTIME scope, and AGP's consistent resolution then pins this
   // module's COMPILE classpath to that same 1.9.0 -- where
@@ -172,9 +181,18 @@ def IMPORTANT_CLASSES = [
   // SyncFloorScheduler.kt (M2 native floor: registration/idempotency/status)
   'SyncFloorScheduler', 'SyncFloorScheduler$*', 'SyncFloorSchedulerKt', 'SyncFloorSchedulerKt$*',
   'SyncFloorStatus', 'SyncFloorStatus$*',
-  // SyncFloorWorker.kt (M2 native floor: the attempt itself, its ownership gate and its
-  // background_task projection)
+  // SyncFloorWorker.kt (M2 native floor: the thin adapter -- the result-type mapping -- and the
+  // constants it shares with the attempt below)
   'SyncFloorWorker', 'SyncFloorWorker$*', 'SyncFloorWorkerKt', 'SyncFloorWorkerKt$*',
+  // SyncFloorAttempt.kt (M2 native floor: the attempt itself -- ownership gate, exactly-once
+  // settlement, bounded wait, background_task projection -- extracted VERBATIM out of
+  // SyncFloorWorker.kt so it stays unit-testable once the worker becomes an
+  // `androidx.work:work-multiprocess` remote worker, which `TestListenableWorkerBuilder` cannot
+  // drive. It replaces IMPORTANT-tier behavior, so it stays in this tier instead of escaping the
+  // gate; `SyncFloorAttemptResult` and its four end states are the same behavior's public outcome,
+  // covered by the mapping and collaborator tests.)
+  'SyncFloorAttempt', 'SyncFloorAttempt$*', 'SyncFloorAttemptKt', 'SyncFloorAttemptKt$*',
+  'SyncFloorAttemptResult', 'SyncFloorAttemptResult$*',
 ].collect { "expo.modules.syncengine.$it" }
 
 kover {

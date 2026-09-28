@@ -78,41 +78,80 @@ internal fun readTickingState(context: Context): TickingState {
  *
  * **Ownership direction.** `sync-engine` may depend on this module (`implementation
  * project(':foreground-sync-ticker')` in its `build.gradle`); the reverse is what every doc in
- * both modules forbids, and this object does not create it: it is a plain read of this module's
- * own persisted state, with no reference to `sync-engine` at all.
+ * both modules forbids, and this object does not create it: it is a plain read of the OS-level
+ * alarm token this module owns, with no reference to `sync-engine` at all.
  *
- * **Why not reflection and not a duplicated `SharedPreferences` name.**
- * - Reflection over this module's private state would break silently on a rename, with no compile
- *   error and no test failure in the calling module.
- * - Reading [PREF_IS_TICKING] from the caller side would hardcode a private storage detail into a
- *   second module; a rename here would keep compiling there and silently answer `false` forever,
- *   which is a *delivery* bug (the floor would run alongside the ticker, not skip).
- * Exposing the read through this one function keeps the storage private here and makes a rename a
+ * **Source of truth: the armed alarm's own `PendingIntent` token, not the persisted flag (T3 slice
+ * A).** The floor is moving into its own `:sync` process, and [readTickingState] cannot answer
+ * across a process boundary: `SharedPreferences` is cached in memory per process and
+ * [persistTickingState] writes with `apply()`, so a second process would read a stale value -- it
+ * would keep running alongside the armed ticker, or keep skipping every tick after a stop until
+ * that process died. The alarm token, by contrast, lives in the system's `ActivityManager`, keyed
+ * by action, request code, package and mutability, so "is the tick alarm armed?" is the same
+ * answer from every process of this app: true while [scheduleNextTick] has armed it, false once
+ * [cancelTickAlarm] has cancelled it. The persisted flag keeps both of its existing jobs --
+ * [TickAlarmReceiver]'s re-arm decision and the interval read -- and is simply no longer what this
+ * query answers with.
+ *
+ * **Reads the token, never creates it.** The lookup passes [PendingIntent.FLAG_NO_CREATE], so
+ * asking never creates the token it is asking about: a process that never armed the ticker keeps
+ * answering `false` however many times it asks. `FLAG_IMMUTABLE` mirrors the flag the single
+ * builder arms with, because the system matches a looked-up token against the flags of the
+ * original record. Never throws: a missing token resolves to `null`, i.e. "not armed".
+ *
+ * **Why not reflection, and not a duplicated construction.** Reflection over this module's private
+ * state would break silently on a rename, with no compile error and no test failure in the calling
+ * module; rebuilding the `PendingIntent` from the caller side would hardcode this module's action,
+ * request code and flags into a second module, where a rename would keep compiling and silently
+ * answer `false` forever -- a *delivery* bug (the floor would run alongside the ticker, not skip).
+ * Exposing the read through this one function keeps both details private here and makes a rename a
  * compile error at the call site instead.
- *
- * **Semantics are exactly the JS gate's**: the persisted ticking flag, i.e. "the ticker was armed
- * and was never stopped", not "a foreground service happens to be alive this instant". Ticking is
- * what makes the alarm re-arm and the receiver restore `SyncForegroundService`, so an armed ticker
- * is the signal the shipped JS floor already treats as ownership. Never throws: it is a plain
- * `SharedPreferences` read that defaults to `false` when nothing was ever persisted.
  */
 object SyncTickerOwnership {
-  fun ownsBackground(context: Context): Boolean = readTickingState(context).isTicking
+  fun ownsBackground(context: Context): Boolean = findTickPendingIntent(context) != null
 }
 
 /**
- * Builds the stable [PendingIntent] the tick alarm fires. Built in exactly this one place so the
- * module and the receiver never construct it separately -- a second construction site is how the
- * two would drift (different extras, different flags) and the alarm would stop being the one
- * `cancel()` or a later `set...WhileIdle()` call thinks it is addressing.
+ * Builds the [Intent] the tick alarm's [PendingIntent] wraps. Extracted so the arming path, the
+ * cancellation path and the ownership query all address the exact same token: `PendingIntent`
+ * identity is (type, request code, intent `filterEquals`, relevant flags), so a second construction
+ * site with a different action or package is how the query would silently stop finding the alarm
+ * it is asking about.
+ */
+private fun buildTickIntent(context: Context): Intent =
+  Intent(TICK_ALARM_ACTION).setPackage(context.packageName)
+
+/**
+ * Builds (or updates) the stable [PendingIntent] the tick alarm fires, via
+ * `PendingIntent.FLAG_UPDATE_CURRENT`.
+ * The module and the receiver both arm through this one function -- a second *arming* site is how
+ * the two would drift (different extras, different flags) and the alarm would stop being the one
+ * `cancel()` or a later `set...WhileIdle()` call thinks it is addressing. [findTickPendingIntent]
+ * deliberately shares only [buildTickIntent] with this, never these flags: a lookup must not create.
  */
 private fun buildTickPendingIntent(context: Context): PendingIntent {
-  val intent = Intent(TICK_ALARM_ACTION).setPackage(context.packageName)
   return PendingIntent.getBroadcast(
     context,
     TICK_ALARM_REQUEST_CODE,
-    intent,
+    buildTickIntent(context),
     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+  )
+}
+
+/**
+ * Looks up the tick alarm's already-armed [PendingIntent] token, or `null` when nothing is armed.
+ *
+ * [PendingIntent.FLAG_NO_CREATE] is the whole point: this is a query, and it must never arm the
+ * alarm it is asked about. It is what makes [SyncTickerOwnership.ownsBackground] side-effect free
+ * for a process that never armed the ticker, and it is also why [cancelTickAlarm] uses it rather
+ * than the arming builder -- cancelling must not create the token it is cancelling.
+ */
+private fun findTickPendingIntent(context: Context): PendingIntent? {
+  return PendingIntent.getBroadcast(
+    context,
+    TICK_ALARM_REQUEST_CODE,
+    buildTickIntent(context),
+    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
   )
 }
 
@@ -143,10 +182,22 @@ internal fun scheduleNextTick(context: Context, delayMs: Long) {
   )
 }
 
-/** Cancels the pending tick alarm, if any. Safe to call even when none is currently armed. */
+/**
+ * Cancels the pending tick alarm, if any, and the [PendingIntent] token it was armed with. Safe to
+ * call even when none is currently armed.
+ *
+ * Both halves are required for [SyncTickerOwnership.ownsBackground] to answer correctly from every
+ * process: the token is what the ownership query looks up, so an armed alarm whose token outlived
+ * it would report "the ticker owns the background" forever, long past `stop()`.
+ * [AlarmManager.cancel] still comes first, exactly as before -- cancelling the token alone does not
+ * remove the already-scheduled alarm. The lookup is [PendingIntent.FLAG_NO_CREATE] so cancelling
+ * never creates the token it is cancelling.
+ */
 internal fun cancelTickAlarm(context: Context) {
   val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-  alarmManager.cancel(buildTickPendingIntent(context))
+  val pendingIntent = findTickPendingIntent(context) ?: return
+  alarmManager.cancel(pendingIntent)
+  pendingIntent.cancel()
 }
 
 /**

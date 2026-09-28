@@ -4,6 +4,7 @@ export {
 } from './startup.constants';
 export {
   SchemaIncompatibleError,
+  SchemaIntegrityError,
   SchemaNotReadyError,
   SchemaValidationError,
 } from './startup.errors';

@@ -10,7 +10,7 @@ describe('useAnimeEmptyState', () => {
     );
 
     expect(result.current.message).toBe('No hay estrenos para ver hoy.');
-    expect(result.current.hint).toBe('Probá con otro día o refrescá la sincronización manual.');
+    expect(result.current.hint).toBe('Prueba con otro día o actualiza la sincronización manual.');
   });
 
   it('devuelve copy específico para días de la semana', () => {

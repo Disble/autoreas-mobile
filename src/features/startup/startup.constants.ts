@@ -1,3 +1,8 @@
+import type {
+  StartupErrorCodeRule,
+  StartupErrorNameRule,
+} from './startup.types';
+
 /** SQLite result codes safe to include in structured startup diagnostics. */
 export const STARTUP_SQLITE_CODES = [
   'SQLITE_BUSY',
@@ -22,7 +27,7 @@ export const STARTUP_CONFIG_FAILURE_MESSAGE =
 
 /** Recovery guidance retained from the existing controlled startup failure. */
 export const STARTUP_FAILURE_RECOVERY_HINT =
-  'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.';
+  'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.';
 
 /** Safe log prefix for structured startup diagnostics. */
 export const STARTUP_FAILURE_LOG_PREFIX = '[startup] Local readiness failed';
@@ -89,3 +94,22 @@ export const STARTUP_FONT_FAILURE_MESSAGE =
 /** Safe Spanish diagnostic shown when SQLiteProvider never reaches its local initialization callback. */
 export const STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE =
   'No se pudo preparar la base local durante el inicio.';
+
+/**
+ * Error-name rules in precedence order. `SchemaIntegrityError` stays first on purpose: it is the
+ * only condition that may report `corruption`, which is the classification that authorizes a
+ * user-confirmed reset, so no code-derived branch may ever shadow it. `SchemaValidationError`
+ * follows immediately so a repairable logical mismatch can never be reported as damage.
+ */
+export const STARTUP_ERROR_NAME_CLASSIFICATIONS: readonly StartupErrorNameRule[] = [
+  ['SchemaIntegrityError', 'corruption'],
+  ['SchemaValidationError', 'schema_validation'],
+  ['SchemaIncompatibleError', 'incompatible_schema'],
+];
+
+/** Error-code rules in precedence order; the whitelisted codes never overlap between entries. */
+export const STARTUP_ERROR_CODE_CLASSIFICATIONS: readonly StartupErrorCodeRule[] = [
+  [['SQLITE_BUSY', 'SQLITE_LOCKED'], 'busy'],
+  [['SQLITE_CORRUPT', 'SQLITE_NOTADB'], 'corruption'],
+  [['SQLITE_SCHEMA'], 'incompatible_schema'],
+];

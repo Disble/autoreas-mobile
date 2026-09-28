@@ -134,14 +134,14 @@ describe('usePairDevice', () => {
 
     expect(pairResult).toEqual({
       success: false,
-      error: 'No pudimos emparejar el dispositivo. Revisá la IP, el puerto y el token del Bridge.',
+      error: 'No pudimos emparejar el dispositivo. Revisa la IP, el puerto y el token del Bridge.',
     });
 
     expect(initialSyncHelpers.fetchInitialSyncSnapshot).not.toHaveBeenCalled();
     expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBe(
-      'No pudimos emparejar el dispositivo. Revisá la IP, el puerto y el token del Bridge.',
+      'No pudimos emparejar el dispositivo. Revisa la IP, el puerto y el token del Bridge.',
     );
   });
 
@@ -159,7 +159,7 @@ describe('usePairDevice', () => {
 
     expect(pairResult).toEqual({
       success: false,
-      error: 'El Bridge respondió con datos incompletos. Volvé a generar el token e intentá de nuevo.',
+      error: 'El Bridge respondió con datos incompletos. Vuelve a generar el token e intenta de nuevo.',
     });
 
     expect(pairDeviceMock).toHaveBeenCalledWith(
@@ -220,7 +220,7 @@ describe('usePairDevice', () => {
     expect(pairResult).toEqual({
       success: false,
       error:
-        'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Volvé a generar el token e intentá de nuevo.',
+        'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Vuelve a generar el token e intenta de nuevo.',
     });
     expect(initialSyncHelpers.persistPairedBridgeConfiguration).not.toHaveBeenCalled();
   });

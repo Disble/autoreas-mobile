@@ -8,6 +8,9 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.multiprocess.RemoteListenableWorker
+import androidx.work.multiprocess.RemoteWorkerService
+import androidx.work.workDataOf
 import expo.modules.foregroundsyncticker.SyncTickerOwnership
 import java.util.concurrent.TimeUnit
 
@@ -121,7 +124,9 @@ object SyncFloorScheduler {
    */
   fun register(
     context: Context,
-    enqueue: (WorkManager) -> Boolean = ::enqueueConfirmedFloorRequest,
+    enqueue: (WorkManager) -> Boolean = { workManager ->
+      enqueueConfirmedFloorRequest(context, workManager)
+    },
   ): SyncFloorStatus {
     val workManager = WorkManager.getInstance(context)
 
@@ -152,13 +157,17 @@ object SyncFloorScheduler {
     return status(context)
   }
 
-  /** Performs the real unique-periodic enqueue and reports whether WorkManager confirmed it. */
-  private fun enqueueConfirmedFloorRequest(workManager: WorkManager): Boolean =
+  /**
+   * Performs the real unique-periodic enqueue and reports whether WorkManager confirmed it. Takes
+   * [context] because the request must name the app package (`context.packageName`) so the remote
+   * worker service -- which lives in the SAME app, in its own process -- can be resolved.
+   */
+  private fun enqueueConfirmedFloorRequest(context: Context, workManager: WorkManager): Boolean =
     confirmOperation(
       workManager.enqueueUniquePeriodicWork(
         SYNC_FLOOR_UNIQUE_WORK_NAME,
         ExistingPeriodicWorkPolicy.UPDATE,
-        buildFloorWorkRequest(),
+        buildFloorWorkRequest(context),
       ),
       "native floor enqueue",
     )
@@ -226,9 +235,25 @@ object SyncFloorScheduler {
    * own to decide; nothing here schedules an initial tick either way. The foreground runtime
    * already syncs on mount and on app-resume, so the early first attempt is an extra run, never a
    * gap in coverage.
+   *
+   * **The remote-worker arguments are what move the tick out of this process.** The request carries
+   * [RemoteListenableWorker.ARGUMENT_PACKAGE_NAME] (this app's package, so WorkManager can resolve
+   * the bound service inside the same app) and [RemoteListenableWorker.ARGUMENT_CLASS_NAME] (the
+   * `androidx.work.multiprocess.RemoteWorkerService` the companion manifest slice declares with
+   * `android:process=":sync"`). WorkManager hands those to the process hosting that service and
+   * drives [SyncFloorWorker.doRemoteWork] there, so the floor's framework SQLite connection never
+   * shares a process with Expo's SQLite core. Without both keys the remote worker cannot bind and
+   * the tick would not run where the split requires it.
    */
-  internal fun buildFloorWorkRequest(): PeriodicWorkRequest =
-    PeriodicWorkRequestBuilder<SyncFloorWorker>(SYNC_FLOOR_INTERVAL_MINUTES, TimeUnit.MINUTES).build()
+  internal fun buildFloorWorkRequest(context: Context): PeriodicWorkRequest =
+    PeriodicWorkRequestBuilder<SyncFloorWorker>(SYNC_FLOOR_INTERVAL_MINUTES, TimeUnit.MINUTES)
+      .setInputData(
+        workDataOf(
+          RemoteListenableWorker.ARGUMENT_PACKAGE_NAME to context.packageName,
+          RemoteListenableWorker.ARGUMENT_CLASS_NAME to RemoteWorkerService::class.java.name,
+        ),
+      )
+      .build()
 
   private fun scheduledWorkInfos(context: Context): List<WorkInfo> =
     WorkManager.getInstance(context)

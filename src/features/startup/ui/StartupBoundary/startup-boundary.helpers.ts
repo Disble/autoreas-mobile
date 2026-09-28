@@ -17,7 +17,9 @@ import {
   STARTUP_PROVIDER_READINESS_FAILURE_MESSAGE,
 } from '../../startup.constants';
 import { createStartupDiagnostic } from '../../startup.helpers';
+import type { StartupFailure, StartupFailureClassification } from '../../startup.types';
 import type {
+  StartupBoundaryRecovery,
   StartupBoundaryScreen,
   CreateFontStartupFailureParams,
   CreateProviderReadinessStartupFailureParams,
@@ -27,9 +29,12 @@ import type {
   ResolveStartupFailureStateParams,
   ResolvedStartupBoundaryContent,
   ResolvedStartupFailureState,
+  ShouldArmProviderReadinessDeadlineParams,
+  ShouldNavigateAfterStartupParams,
+  ShouldRenderStartupRouteSlotParams,
   StartupRouteRouter,
 } from './startup-boundary.types';
-import type { StartupFailure } from '../../startup.types';
+import type { StartupRecoveryCause, UseStartupRecoveryResult } from '../../recovery';
 import type { Href } from 'expo-router';
 
 /**
@@ -151,14 +156,97 @@ export function resolveStartupFailureState(
 }
 
 /**
+ * Decides whether the font-load deadline effect should arm its timeout.
+ * The deadline only matters while fonts may still arrive: once loading settles, either with the
+ * family set or with an error, the outcome is already terminal and a timer would be pure waste.
+ */
+export function shouldArmFontLoadDeadline(
+  fontsLoaded: boolean,
+  fontLoadError: Error | null,
+): boolean {
+  // Falsy, NOT `=== null`: the original effect guard was `if (fontsLoaded || fontLoadError)`, and
+  // `useFonts` reports "no error yet" as `undefined`. Requiring `null` exactly would refuse to arm
+  // the deadline on that value and leave a never-settling font load stuck on the splash forever.
+  return !fontsLoaded && !fontLoadError;
+}
+
+/**
+ * Decides whether the provider-readiness deadline effect should arm its timeout.
+ * Normal startup stays uninterrupted: the deadline only arms while fonts are settled, the provider
+ * is mounted, readiness has not arrived yet, and no terminal failure already explains the wait.
+ */
+export function shouldArmProviderReadinessDeadline(
+  params: Readonly<ShouldArmProviderReadinessDeadlineParams>,
+): boolean {
+  return (
+    params.fontsLoaded &&
+    params.hasSQLiteProvider &&
+    !params.isReady &&
+    params.existingStartupFailure === null
+  );
+}
+
+/**
+ * Decides whether the font-driven splash release should run on a boundary without a provider.
+ * A mounted provider releases the splash through its own readiness and navigation effects; without
+ * one, settled fonts are the last chance to release the splash before the failure card shows.
+ */
+export function shouldReleaseSplashScreenWithoutProvider(
+  fontsLoaded: boolean,
+  hasSQLiteProvider: boolean,
+): boolean {
+  return fontsLoaded && !hasSQLiteProvider;
+}
+
+/** Reports whether an effective startup failure reached its terminal presentation. */
+export function hasTerminalStartupFailure(startupFailure: StartupFailure | null): boolean {
+  return startupFailure !== null;
+}
+
+/**
+ * Decides whether startup may navigate to its resolved route target and release the splash.
+ * Every input must agree: fonts settled, runtime ready, a target resolved, and no terminal
+ * failure overriding the route with a failure card.
+ */
+export function shouldNavigateAfterStartup(
+  params: Readonly<ShouldNavigateAfterStartupParams>,
+): boolean {
+  return (
+    params.fontsLoaded &&
+    params.isReady &&
+    params.target !== null &&
+    params.startupFailure === null
+  );
+}
+
+/**
+ * Builds the recovery cause from the startup-state failure's own classification.
+ * The recovery layer consumes only the classification of the startup state failure, never of the
+ * effective failure: the boundary also invents font-loading and provider-readiness failures, and
+ * those are not database situations, so they must never present database recovery copy.
+ */
+export function createStartupRecoveryCause(
+  classification: StartupFailureClassification | null,
+): StartupRecoveryCause | null {
+  if (classification === null) {
+    return null;
+  }
+
+  return { classification, kind: 'startup_failure' };
+}
+
+/**
  * Resolves which root-layout screen should render from the current startup state.
  * Centralizing this decision keeps the `.tsx` file focused on view rendering while the hook owns startup state selection.
+ * The recovery screen only replaces the generic failure screen when the recovery layer has a
+ * terminal presentation for the failure, so a font-loading or provider-readiness failure never
+ * presents database recovery copy.
  */
 export function resolveStartupBoundaryScreen(
   params: Readonly<ResolveStartupBoundaryScreenParams>,
 ): StartupBoundaryScreen {
   if (params.startupFailure) {
-    return 'startup-failure';
+    return params.hasRenderableRecovery === true ? 'startup-recovery' : 'startup-failure';
   }
 
   if (!params.fontsLoaded) {
@@ -174,6 +262,26 @@ export function resolveStartupBoundaryScreen(
   }
 
   return 'empty';
+}
+
+/**
+ * Groups a recovery result with the terminal presentation this boundary is able to render.
+ *
+ * `none` and `setup` are deliberately not terminal cards: `none` means no failure exists at all,
+ * and `setup` describes the ordinary first-run path that keeps routing to the setup screen.
+ * Rendering either as a failure card would describe a state the user is not in, so both fall back
+ * to the generic explanation the boundary already owns for a failure it cannot explain further.
+ */
+export function resolveStartupBoundaryRecovery(
+  recovery: UseStartupRecoveryResult,
+): StartupBoundaryRecovery | null {
+  const { recoveryState } = recovery;
+
+  if (recoveryState.kind === 'none' || recoveryState.kind === 'setup') {
+    return null;
+  }
+
+  return { actions: recovery, state: recoveryState };
 }
 
 /**
@@ -197,10 +305,14 @@ export function resolveStartupBoundaryContent(
     };
   }
 
-  if (params.screen === 'startup-failure' && params.startupFailure) {
+  if (params.startupFailure && (params.screen === 'startup-failure' || params.screen === 'startup-recovery')) {
+    // Both screens present the same terminal card. The recovery presentation is attached when the
+    // recovery layer has a renderable one, and its absence falls back to the generic explanation
+    // instead of rendering nothing at all.
     return {
       preProviderContent: createElement(StartupBoundaryFallback, {
         failure: params.startupFailure,
+        recovery: params.recovery ?? null,
       }),
       providerContent: null,
     };
@@ -316,4 +428,22 @@ export function resolveStartupBoundaryRootContent(
       ),
     ),
   );
+}
+
+/**
+ * Reads the recovery classification from the startup state's OWN failure, never from the effective
+ * failure: the boundary also invents font-loading and provider-readiness failures, and those are
+ * not database situations, so they must never present database recovery copy.
+ */
+export function resolveStartupFailureClassification(
+  startupFailure: StartupFailure | null,
+): StartupFailureClassification | null {
+  return startupFailure === null ? null : startupFailure.diagnostic.classification;
+}
+
+/** Decides whether the route slot may render: the runtime is ready and no terminal failure exists. */
+export function shouldRenderStartupRouteSlot(
+  params: Readonly<ShouldRenderStartupRouteSlotParams>,
+): boolean {
+  return params.isReady && params.startupFailure === null;
 }

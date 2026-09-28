@@ -1,3 +1,9 @@
+import { render } from '@testing-library/react-native';
+import {
+  resolveStartupBoundaryContent,
+  resolveStartupBoundaryScreen,
+} from '../../../../src/features/startup/ui/StartupBoundary/startup-boundary.helpers';
+
 jest.mock('react-native-keyboard-controller', () => ({
   KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -46,12 +52,7 @@ jest.mock(
   }),
 );
 
-import { render } from '@testing-library/react-native';
-import {
-  resolveStartupBoundaryContent,
-  resolveStartupBoundaryScreen,
-} from '../../../../src/features/startup/ui/StartupBoundary/startup-boundary.helpers';
-
+/** Asserts that a resolved boundary node actually rendered and returns it narrowed to a non-null element. */
 function expectElement<T>(value: T | null): T {
   expect(value).not.toBeNull();
 
@@ -77,7 +78,7 @@ describe('resolveStartupBoundaryScreen', () => {
           },
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
           recoveryHint:
-            'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+            'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
         },
       }),
     ).toBe('startup-failure');
@@ -120,7 +121,7 @@ describe('resolveStartupBoundaryContent', () => {
         },
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
     });
 
@@ -130,7 +131,7 @@ describe('resolveStartupBoundaryContent', () => {
 
     expect(
       view.getByText(
-        'Error al preparar la base local durante el inicio. / Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+        'Error al preparar la base local durante el inicio. / Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       ),
     ).toBeOnTheScreen();
   });

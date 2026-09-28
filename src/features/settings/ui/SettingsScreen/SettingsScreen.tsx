@@ -100,7 +100,7 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
             Panel
           </AppText>
           <AppText className="text-sm leading-snug text-muted">
-            Revisá el bridge actual y reiniciá el emparejamiento cuando lo necesites.
+            Revisa el bridge actual y reinicia el emparejamiento cuando lo necesites.
           </AppText>
         </View>
 

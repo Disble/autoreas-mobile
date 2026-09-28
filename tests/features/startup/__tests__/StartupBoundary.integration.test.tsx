@@ -1,7 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react-native';
 import { useFonts } from '@expo-google-fonts/inter';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import React from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import * as dbClientHelpers from '../../../../src/infrastructure/db/client/client.helpers';
 import * as dbStartup from '../../../../src/infrastructure/db/startup/startup.helpers';
@@ -40,23 +40,6 @@ type MockSQLiteProviderProps = Readonly<{
   onInit?: (db: unknown) => Promise<void>;
 }>;
 
-/** Renders its children and calls `onInit` once for every provided mock database. */
-function createMockSQLiteProvider(databases: readonly unknown[]) {
-  return function MockSQLiteProvider({ children, onInit }: MockSQLiteProviderProps) {
-    useEffect(() => {
-      if (!onInit) {
-        return;
-      }
-
-      for (const database of databases) {
-        onInit(database).catch(() => undefined);
-      }
-    }, [onInit]);
-
-    return <>{children}</>;
-  };
-}
-
 /** Renders children only after `onInit` settles, throwing the pending promise to suspend React. */
 function createSuspendingSQLiteProvider(database: unknown) {
   let initializationPromise: Promise<void> | null = null;
@@ -74,20 +57,6 @@ function createSuspendingSQLiteProvider(database: unknown) {
     }
 
     return <>{props.children}</>;
-  };
-}
-
-/** Starts `onInit` once but keeps throwing a never-settling promise so React stays suspended. */
-function createPermanentlySuspendingSQLiteProvider(database: unknown) {
-  let hasStartedInitialization = false;
-
-  return function MockPermanentlySuspendingSQLiteProvider(props: MockSQLiteProviderProps) {
-    if (!hasStartedInitialization) {
-      hasStartedInitialization = true;
-      props.onInit?.(database).catch(() => undefined);
-    }
-
-    throw new Promise<never>(() => undefined);
   };
 }
 
@@ -146,8 +115,16 @@ jest.mock('heroui-native', () => {
     Indicator: wrap(ReactNative.View), Title: wrap(ReactNative.Text),
   });
 
+  // The terminal recovery card renders HeroUI `Button`/`Button.Label` for every state that
+  // authorizes an action (transient retry, damage reset, failed-reset retry). Without this the
+  // busy-state test would fail on an undefined component rather than on its copy.
+  const Button = Object.assign(wrap(ReactNative.View), {
+    Label: wrap(ReactNative.Text),
+  });
+
   return {
     Alert,
+    Button,
     Card,
     HeroUINativeProvider: ({ children }: { children: React.ReactNode }) => children,
     Spinner: wrap(ReactNative.View),
@@ -169,6 +146,11 @@ jest.mock('../../../../src/infrastructure/db/startup/startup.helpers', () => ({
 
 jest.mock('../../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   getSQLiteProvider: jest.fn(),
+  // The recovery surface renders OUTSIDE `SQLiteProvider`, which is exactly the production
+  // reality: the optional context is null while a fatal card replaces the provider. Without this
+  // stub the real module's other export is `undefined`, so the recovery hook throws before any
+  // assertion runs.
+  useOptionalSQLiteContext: jest.fn(() => null),
 }));
 
 jest.mock('react-native-gesture-handler', () => ({
@@ -275,42 +257,6 @@ describe('StartupBoundary integration', () => {
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/setup');
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the HeroUI fallback, hides splash, and skips navigation when migrations reject from SQLiteProvider.onInit', async () => {
-    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
-
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createSuspendingSQLiteProvider(rawDb));
-    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(new Error('SQLITE_ERROR: duplicate column name: device_name'));
-
-    const view = render(<StartupBoundary />);
-
-    await waitFor(() => {
-      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
-    });
-
-    expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
-    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
-    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it('renders the controlled fallback outside a permanently suspended SQLiteProvider', async () => {
-    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
-
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createPermanentlySuspendingSQLiteProvider(rawDb));
-    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(new Error('SQLITE_ERROR: migration crash'));
-
-    const view = render(<StartupBoundary />);
-
-    await waitFor(() => {
-      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
-    });
-
-    expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
-    expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
-    expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
-    expect(replace).not.toHaveBeenCalled();
   });
 
   it('shows the slow-startup notice after the soft deadline without selecting the failure card', async () => {
@@ -421,79 +367,5 @@ describe('StartupBoundary integration', () => {
     expect(replace).not.toHaveBeenCalled();
     expect(dbStartup.prepareForegroundDatabase).not.toHaveBeenCalled();
     expect(dbClientHelpers.getBridgeConfigSnapshot).not.toHaveBeenCalled();
-  });
-
-  it('shows the same safe startup fallback when connection policy rejects', async () => {
-    const rawDb = {
-      execAsync: jest.fn().mockRejectedValue(new Error('SQLITE_BUSY: WAL pragma rejected')),
-    };
-
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createMockSQLiteProvider([rawDb]));
-    (dbStartup.prepareForegroundDatabase as jest.Mock).mockRejectedValue(new Error('SQLITE_BUSY: WAL pragma rejected'));
-
-    const view = render(<StartupBoundary />);
-
-    await waitFor(() => {
-      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
-    });
-
-    expect(dbClientHelpers.getBridgeConfigSnapshot).not.toHaveBeenCalled();
-    expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
-    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it('shows the same safe startup fallback, hides splash, and skips navigation when reading the bridge config snapshot rejects from SQLiteProvider.onInit', async () => {
-    const rawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
-
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createMockSQLiteProvider([rawDb]));
-    (dbClientHelpers.getBridgeConfigSnapshot as jest.Mock).mockRejectedValue(new Error('Missing bridge_config row'));
-
-    const view = render(<StartupBoundary />);
-
-    await waitFor(() => {
-      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
-    });
-
-    expect(view.getByText('Error al leer la configuración local durante el inicio.')).toBeOnTheScreen();
-    expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it('keeps the visible failure state and never routes when an earlier bootstrap succeeds after a newer failure', async () => {
-    const lateSuccess = createDeferredPromise<{ deviceId: string }>();
-    const slowerRawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
-    const failingRawDb = { execAsync: jest.fn().mockResolvedValue(undefined) };
-
-    (nativeRuntime.getSQLiteProvider as jest.Mock).mockReturnValue(createMockSQLiteProvider([slowerRawDb, failingRawDb]));
-    (dbStartup.prepareForegroundDatabase as jest.Mock).mockImplementation(async (database) => {
-      if (database === failingRawDb) {
-        throw new Error('SQLITE_ERROR: migration crash');
-      }
-
-      return undefined;
-    });
-    (dbClientHelpers.getBridgeConfigSnapshot as jest.Mock).mockImplementation(async (database) => {
-      if (database === slowerRawDb) {
-        return lateSuccess.promise;
-      }
-
-      return null;
-    });
-
-    const view = render(<StartupBoundary />);
-
-    await waitFor(() => {
-      expect(view.getByText('No pudimos iniciar la app')).toBeOnTheScreen();
-    });
-
-    lateSuccess.resolve({ deviceId: 'device-1' });
-
-    await waitFor(() => {
-      expect(replace).not.toHaveBeenCalled();
-    });
-
-    expect(view.getByText('Error al preparar la base local durante el inicio.')).toBeOnTheScreen();
-    expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
   });
 });

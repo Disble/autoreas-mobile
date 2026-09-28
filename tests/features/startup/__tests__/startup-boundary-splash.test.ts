@@ -88,7 +88,7 @@ describe('useStartupBoundary splash lifecycle', () => {
           },
           diagnosticMessage: 'Error al preparar la base local durante el inicio.',
           recoveryHint:
-            'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+            'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
         },
         phase: 'fatal',
         target: null,

@@ -23,8 +23,12 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 jest.mock('../../../src/features/setup/ui/SetupQrScanner', () => {
+  const { useCallback } = jest.requireActual<typeof import('react')>('react');
   const { Pressable, Text, View } =
     jest.requireActual<typeof import('react-native')>('react-native');
+
+  const MOCK_VALID_SCAN_URL = 'autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc';
+  const MOCK_INVALID_SCAN_URL = 'autoreas://pair?ip=192.168.1.10&port=9876&token=abc';
 
   return {
     SetupQrScanner: ({
@@ -34,6 +38,9 @@ jest.mock('../../../src/features/setup/ui/SetupQrScanner', () => {
       readonly isOpen: boolean;
       readonly onScan: (rawValue: string) => void;
     }) => {
+      const handleValidScan = useCallback(() => onScan(MOCK_VALID_SCAN_URL), [onScan]);
+      const handleInvalidScan = useCallback(() => onScan(MOCK_INVALID_SCAN_URL), [onScan]);
+
       if (!isOpen) {
         return null;
       }
@@ -41,16 +48,8 @@ jest.mock('../../../src/features/setup/ui/SetupQrScanner', () => {
       return (
         <View>
           <Text>Mock QR Scanner</Text>
-          <Pressable
-            onPress={() =>
-              onScan('autoreas-mobile://pair?v=1&ip=192.168.1.10&port=9876&token=abc')
-            }
-            testID="mock-scan-valid"
-          />
-          <Pressable
-            onPress={() => onScan('autoreas://pair?ip=192.168.1.10&port=9876&token=abc')}
-            testID="mock-scan-invalid"
-          />
+          <Pressable onPress={handleValidScan} testID="mock-scan-valid" />
+          <Pressable onPress={handleInvalidScan} testID="mock-scan-invalid" />
         </View>
       );
     },
@@ -173,7 +172,7 @@ describe('SetupScreen', () => {
 
   it('preserves scanned values for manual correction when pairing fails after QR autofill', async () => {
     const diagnosticMessage =
-      'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Volvé a generar el token e intentá de nuevo.';
+      'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Vuelve a generar el token e intenta de nuevo.';
 
     mockPair.mockResolvedValueOnce({ success: false, error: diagnosticMessage });
 

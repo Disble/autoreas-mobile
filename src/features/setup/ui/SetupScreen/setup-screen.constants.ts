@@ -14,7 +14,7 @@ export const SETUP_PAIR_BUTTON_LABEL = 'Emparejar Bridge';
 export const SETUP_INVALID_PAYLOAD_LABEL = 'QR o deep link inválido';
 /** Provides the shared setup invalid payload description value. */
 export const SETUP_INVALID_PAYLOAD_DESCRIPTION =
-  'Usá un código autoreas-mobile://pair?v=1 con ip, port y token.';
+  'Usa un código autoreas-mobile://pair?v=1 con ip, port y token.';
 /** Provides the shared setup deep link detected label value. */
 export const SETUP_DEEP_LINK_DETECTED_LABEL = 'Deep link detectado';
 /** Provides the shared setup qr detected label value. */

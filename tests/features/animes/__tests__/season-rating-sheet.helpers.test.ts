@@ -43,7 +43,7 @@ describe('season rating sheet helpers', () => {
       kind: 'failed',
       label: 'Requiere reparación',
       description:
-        'La nota quedó guardada. Revisá el bridge para reintentar sin perder la intención.',
+        'La nota quedó guardada. Revisa el bridge para reintentar sin perder la intención.',
     });
   });
 });

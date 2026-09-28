@@ -31,9 +31,12 @@ private val UNSUPPORTED_FLOOR_STATUS = SyncFloorStatus(
  * the per-call `cycleId`, and mapping the runner's [CycleOutcome] onto the promise payload JS
  * already expects.
  *
- * The JS-visible contract is unchanged by this extraction: the same payload keys/values, the
- * same `runOnce invoked (...)` and completion log lines, and the same `MissingReactContext`
- * refusal when no context can be resolved at all.
+ * The JS-visible contract for a successful main-process call is unchanged by this extraction: the
+ * same payload keys/values, the same `runOnce invoked (...)` and completion log lines, and the same
+ * `MissingReactContext` resolution when no context can be resolved at all. The one addition is the
+ * fail-closed process guard (ODD mobile-database-recovery T3 slice B2a): a call that is NOT running
+ * in the app's main process is rejected with [SYNC_ENGINE_WRONG_PROCESS_ERROR_CODE] before the
+ * runner or the database is touched (see [runAttempt] and [SyncEngineProcess]).
  *
  * This module no longer owns a worker executor, a watchdog thread, or database/journal
  * connections -- [SyncEngineRunner] holds all of those as a process-wide singleton so the JS
@@ -47,9 +50,9 @@ private val UNSUPPORTED_FLOOR_STATUS = SyncFloorStatus(
  * `registerBackgroundSyncFloor()`, `unregisterBackgroundSyncFloor()` and
  * `getBackgroundSyncFloorStatus()` expose [SyncFloorScheduler] to JS, which M3 wires the
  * foreground runtime to, replacing the `expo-background-task` registration. All three resolve a
- * payload and NEVER reject -- the same "resolve, never reject or throw" contract `runOnce`
- * follows -- because a registration surface that can reject would force every M3 caller to wrap
- * it, and there is always an honest answer to give (`unsupported`).
+ * payload and NEVER reject -- unlike `runOnce`, whose only rejection is the fail-closed
+ * wrong-process guard above -- because a registration surface that can reject would force every
+ * M3 caller to wrap it, and there is always an honest answer to give (`unsupported`).
  *
  * **M3 semantics.** `registerBackgroundSyncFloor()` resolves the status the registration LEFT
  * BEHIND, so a failed enqueue reports what is actually scheduled instead of a success; the Kotlin
@@ -57,6 +60,12 @@ private val UNSUPPORTED_FLOOR_STATUS = SyncFloorStatus(
  * the new enqueue. `unregisterBackgroundSyncFloor()` cancels BOTH requests. The retired JS floor
  * (`expo-background-task`) is no longer registered from JS, so the JS floor is no longer the live
  * path; its files are removed in the next M3 work unit.
+ *
+ * **The reset's own surface (ODD mobile-database-recovery T5a).** `deleteAppDatabase()` exposes
+ * [deleteAppDatabaseAndSidecars] to JS so the database reset deletes the app database TOGETHER
+ * with its `-wal`/`-shm`/`-journal` sidecars through Android's SQLite API instead of expo-sqlite's
+ * main-file-only delete. It is the one entry point here that is intentionally NOT gated by
+ * [SyncEngineProcess]: it opens no SQLite connection (see [runAppDatabaseDeletion]).
  */
 class SyncEngineModule : Module() {
   override fun definition() = ModuleDefinition {
@@ -77,6 +86,36 @@ class SyncEngineModule : Module() {
     AsyncFunction("getBackgroundSyncFloorStatus") { promise: Promise ->
       runFloorOperation(promise, action = null)
     }
+
+    AsyncFunction("deleteAppDatabase") { promise: Promise ->
+      runAppDatabaseDeletion(promise)
+    }
+  }
+
+  /**
+   * Deletes the app database and its SQLite sidecars through [deleteAppDatabaseAndSidecars],
+   * resolving `{ deleted: boolean }`.
+   *
+   * **Deliberately NOT covered by the [SyncEngineProcess] main-process refusal.** That refusal
+   * exists because `runOnce` opens `autoreas.db` through the framework SQLite core, and a call
+   * outside the main process would recreate the dual-core hazard T3 removed. Android's
+   * `SQLiteDatabase.deleteDatabase` opens NO connection -- it is a pure unlink of the database and
+   * its sidecars -- so this call is safe exactly where JS runs, in the app's main process.
+   *
+   * It RESOLVES for every outcome and never rejects. An already-missing database is a legitimate
+   * outcome of a resumed reset, so `deleted = false` is answered rather than refused, and the
+   * payload carries one non-sensitive boolean -- never a path, a connection value, or a statement.
+   * A missing React context cannot delete anything truthfully, so it answers `false` too; the JS
+   * adapter is what decides whether the reset may proceed, by checking the filesystem afterwards.
+   */
+  private fun runAppDatabaseDeletion(promise: Promise) {
+    val context = appContext.reactContext?.applicationContext
+    if (context == null) {
+      promise.resolve(mapOf("deleted" to false))
+      return
+    }
+
+    promise.resolve(mapOf("deleted" to deleteAppDatabaseAndSidecars(context)))
   }
 
   /**
@@ -128,6 +167,16 @@ class SyncEngineModule : Module() {
    * `cycleId` and the invocation log line stay here, ahead of the context resolution, so the
    * `MissingReactContext` refusal below -- which never reaches the runner -- still logs and
    * reports with the exact same shape as an attempt that does.
+   *
+   * **Process guard (ODD mobile-database-recovery T3 slice B2a).** [SyncEngineRunner] opens
+   * `autoreas.db` through the Android framework SQLite core in whatever process calls it. JS is
+   * the one caller that may not be in the app's main process, and a second process opening the
+   * app database recreates the exact dual-core corruption hazard this work unit removes. So a call
+   * that is not running in the main process is refused HERE -- before the runner or the database
+   * is touched -- by logging and rejecting the promise with the stable, non-sensitive
+   * [SYNC_ENGINE_WRONG_PROCESS_ERROR_CODE]; [SyncEngineProcess] owns the decision and documents the
+   * reasoning. A main-process call keeps the existing behavior. Cross-process routing of a refused
+   * call is deliberately out of scope for this slice.
    */
   private fun runAttempt(triggerSource: String, promise: Promise) {
     val cycleId = UUID.randomUUID().toString()
@@ -151,6 +200,25 @@ class SyncEngineModule : Module() {
       // No runtime to even open a database against: resolve, never reject or throw.
       promise.resolve(
         CycleOutcome("failed", "idle", 0, 0, "MissingReactContext").toMap(cycleId),
+      )
+      return
+    }
+
+    val wrongProcessRefusalCode = SyncEngineProcess.refusalCodeFor(
+      SyncEngineProcess.currentProcessName(context),
+      context.packageName,
+    )
+    if (wrongProcessRefusalCode != null) {
+      // Fail closed: this call is not in the app's main process, so it must not open `autoreas.db`
+      // with the framework core beside Expo's core. See [SyncEngineProcess] for the full reason.
+      Log.w(
+        LOG_TAG,
+        "runOnce refused: not running in the app's main process (cycleId=$cycleId)",
+      )
+      promise.reject(
+        wrongProcessRefusalCode,
+        SYNC_ENGINE_WRONG_PROCESS_MESSAGE,
+        null,
       )
       return
     }

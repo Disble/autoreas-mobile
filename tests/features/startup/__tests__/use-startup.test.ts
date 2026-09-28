@@ -36,6 +36,94 @@ describe('useStartup', () => {
     jest.useRealTimers();
   });
 
+  it('hands over a genuinely new provider initializer every time the recovery remounts the provider', () => {
+    const { result } = renderHook(() => useStartup());
+    const firstSqliteProvider = result.current.sqliteProvider;
+    const firstHandleDatabaseInit = result.current.handleDatabaseInit;
+
+    act(() => {
+      result.current.remountDatabaseProvider();
+    });
+
+    // `expo-sqlite` reopens the database when the initialization callback changes and replays its
+    // cached opening promise when it does not, so the new identity IS the remount.
+    expect(result.current.handleDatabaseInit).not.toBe(firstHandleDatabaseInit);
+    expect(result.current.sqliteProvider).toBe(firstSqliteProvider);
+    expect(result.current.startupState).toEqual({
+      failure: null,
+      phase: 'preparing_database',
+      target: null,
+    });
+  });
+
+  it('captures the live provider connection so the reset can close it before deleting', async () => {
+    const damagedDatabase = { id: 'damaged' };
+    const { result } = renderHook(() => useStartup());
+
+    // The recovery card renders outside the provider, so before any open there is nothing to close.
+    expect(result.current.getActiveDatabase()).toBeNull();
+
+    await act(async () => {
+      await result.current.handleDatabaseInit(damagedDatabase as never);
+    });
+
+    expect(result.current.getActiveDatabase()).toBe(damagedDatabase);
+
+    const freshDatabase = { id: 'fresh' };
+    act(() => {
+      result.current.remountDatabaseProvider();
+    });
+    await act(async () => {
+      await result.current.handleDatabaseInit(freshDatabase as never);
+    });
+
+    // The remounted provider's connection replaces the captured handle, so the NEXT reset closes
+    // the live one rather than the stale one from before the remount.
+    expect(result.current.getActiveDatabase()).toBe(freshDatabase);
+  });
+
+  it('clears the terminal failure and reopens the database through the new initializer after a remount', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (prepareForegroundDatabase as jest.Mock).mockRejectedValue(
+      new Error('SQLITE_BUSY: database is locked'),
+    );
+    const { result } = renderHook(() => useStartup());
+
+    await act(async () => {
+      await result.current.handleDatabaseInit({ id: 'damaged' } as never);
+    });
+
+    expect(result.current.startupState.phase).toBe('fatal');
+
+    const supersededHandleDatabaseInit = result.current.handleDatabaseInit;
+    (prepareForegroundDatabase as jest.Mock).mockResolvedValue(undefined);
+
+    act(() => {
+      result.current.remountDatabaseProvider();
+    });
+
+    // A retained failure would keep the recovery card mounted, so the provider would never render
+    // again and the fresh preparation this test drives below could never happen.
+    expect(result.current.startupState).toEqual({
+      failure: null,
+      phase: 'preparing_database',
+      target: null,
+    });
+    expect(result.current.handleDatabaseInit).not.toBe(supersededHandleDatabaseInit);
+
+    await act(async () => {
+      await result.current.handleDatabaseInit({ id: 'fresh' } as never);
+    });
+
+    expect(prepareForegroundDatabase).toHaveBeenLastCalledWith({ id: 'fresh' });
+    expect(result.current.startupState).toEqual({
+      failure: null,
+      phase: 'ready',
+      target: '/(tabs)',
+    });
+    consoleError.mockRestore();
+  });
+
   it('becomes ready only after foreground schema preparation and local config loading', async () => {
     const rawDb = { id: 'raw-db' };
     const { result } = renderHook(() => useStartup());
@@ -83,7 +171,7 @@ describe('useStartup', () => {
         },
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       phase: 'fatal',
       target: null,
@@ -134,7 +222,7 @@ describe('useStartup', () => {
         },
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       phase: 'fatal',
       target: null,
@@ -192,7 +280,7 @@ describe('useStartup', () => {
         },
         diagnosticMessage: 'Error al preparar la base local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       phase: 'fatal',
       target: null,
@@ -227,7 +315,7 @@ describe('useStartup', () => {
         },
         diagnosticMessage: 'Error al leer la configuración local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       phase: 'fatal',
       target: null,
@@ -305,7 +393,7 @@ describe('useStartup', () => {
         },
         diagnosticMessage: 'Error al leer la configuración local durante el inicio.',
         recoveryHint:
-          'Cerrá y volvé a abrir la app. Si vuelve a pasar, avisá que falló el inicio local.',
+          'Cierra y vuelve a abrir la app. Si vuelve a pasar, avisa que falló el inicio local.',
       },
       phase: 'fatal',
       target: null,
