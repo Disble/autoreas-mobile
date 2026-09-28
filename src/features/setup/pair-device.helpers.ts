@@ -28,10 +28,10 @@ export function buildPairRequestFailureMessage(params: {
   readonly status?: number | null;
 }): string {
   if (params.status === 401) {
-    return 'No pudimos emparejar el dispositivo. Verificá o regenerá el token del Bridge e intentá de nuevo.';
+    return 'No pudimos emparejar el dispositivo. Verifica o regenera el token del Bridge e intenta de nuevo.';
   }
 
-  return 'No pudimos emparejar el dispositivo. Revisá la IP, el puerto y el token del Bridge.';
+  return 'No pudimos emparejar el dispositivo. Revisa la IP, el puerto y el token del Bridge.';
 }
 
 /**
@@ -42,10 +42,10 @@ export function buildPairResponseValidationFailureMessage(params: {
   readonly missingFields?: readonly string[];
 }): string {
   if (params.missingFields?.includes('auth_token')) {
-    return 'El Bridge respondió con datos incompletos. Volvé a generar el token e intentá de nuevo.';
+    return 'El Bridge respondió con datos incompletos. Vuelve a generar el token e intenta de nuevo.';
   }
 
-  return 'El Bridge respondió con datos incompletos. Intentá emparejar nuevamente.';
+  return 'El Bridge respondió con datos incompletos. Intenta emparejar nuevamente.';
 }
 
 /**
@@ -72,7 +72,7 @@ export function buildInitialSyncFailureMessage(params: {
   const status = extractHttpStatusFromErrorMessage(params.cause);
 
   if (status === 401) {
-    return 'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Volvé a generar el token e intentá de nuevo.';
+    return 'Se completó el emparejamiento, pero el Bridge rechazó la sincronización inicial. Vuelve a generar el token e intenta de nuevo.';
   }
 
   return 'Se completó el emparejamiento, pero falló la sincronización inicial. Intentá nuevamente en unos segundos.';

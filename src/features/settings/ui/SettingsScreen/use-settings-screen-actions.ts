@@ -33,7 +33,7 @@ export function useSettingsScreenActions({
   const handleRePair = useCallback(() => {
     Alert.alert(
       'Re-emparejar bridge',
-      'Se va a borrar la configuración actual y vas a volver al setup. ¿Querés continuar?',
+      'Se va a borrar la configuración actual y volverás al setup. ¿Quieres continuar?',
       [
         {
           text: 'Cancelar',

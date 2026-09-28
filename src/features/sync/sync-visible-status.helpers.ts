@@ -24,6 +24,10 @@ export function isManualSyncAvailableNow(facts: SyncVisibleStatusFacts): boolean
   return true;
 }
 
+/**
+ * Builds the pending changes count label shown beside the sync chip.
+ * Uses singular wording when exactly one change is waiting.
+ */
 function buildPendingChangesLabel(pendingOpsCount: number): string {
   if (pendingOpsCount === 1) {
     return '1 cambio pendiente';
@@ -32,6 +36,10 @@ function buildPendingChangesLabel(pendingOpsCount: number): string {
   return `${pendingOpsCount} cambios pendientes`;
 }
 
+/**
+ * Builds the pending changes title used by the sync chip states.
+ * Uses singular wording when exactly one change is waiting.
+ */
 function buildPendingChangesTitle(pendingOpsCount: number): string {
   if (pendingOpsCount === 1) {
     return '1 cambio esperando sync';
@@ -40,6 +48,10 @@ function buildPendingChangesTitle(pendingOpsCount: number): string {
   return `${pendingOpsCount} cambios esperando sync`;
 }
 
+/**
+ * Computes the whole days elapsed since the last successful sync, or null when it never happened.
+ * Non-positive elapsed times are clamped to zero so same-day syncs report day zero.
+ */
 function getDaysSinceLastSync(lastSyncAt: number | null, now: Date): number | null {
   if (lastSyncAt === null) {
     return null;
@@ -53,6 +65,10 @@ function getDaysSinceLastSync(lastSyncAt: number | null, now: Date): number | nu
   return Math.floor(elapsedMilliseconds / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Computes the whole minutes elapsed since the last successful sync, or null when it never happened.
+ * Non-positive elapsed times are clamped to zero so in-flight syncs report minute zero.
+ */
 function getMinutesSinceLastSync(lastSyncAt: number | null, now: Date): number | null {
   if (lastSyncAt === null) {
     return null;
@@ -66,6 +82,10 @@ function getMinutesSinceLastSync(lastSyncAt: number | null, now: Date): number |
   return Math.floor(elapsedMilliseconds / (60 * 1000));
 }
 
+/**
+ * Formats the human-readable recency of the last sync, or null when there is no previous sync.
+ * Scales from "hace un momento" through minutes, hours, and whole days.
+ */
 function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | null {
   const minutesSinceLastSync = getMinutesSinceLastSync(lastSyncAt, now);
 
@@ -74,7 +94,7 @@ function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | n
   }
 
   if (minutesSinceLastSync < 1) {
-    return 'recién';
+    return 'hace un momento';
   }
 
   if (minutesSinceLastSync < 60) {
@@ -91,18 +111,27 @@ function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | n
   return daysSinceLastSync === 1 ? 'hace 1 día' : `hace ${daysSinceLastSync} días`;
 }
 
+/**
+ * Resolves the local mode description depending on whether the last bridge attempt failed.
+ * The failure variant keeps the user oriented without blaming the local catalog.
+ */
 function getLocalModeDescription(syncError: string | null): string {
   if (syncError) {
     return 'El último intento con el bridge falló, pero tu catálogo local sigue disponible en este dispositivo.';
   }
 
-  return 'Podés seguir usando esta copia local mientras el bridge no esté disponible.';
+  return 'Puedes seguir usando esta copia local mientras el bridge no esté disponible.';
 }
 
+/** Returns the local mode description shown when no bridge is paired yet. */
 function getUnpairedLocalModeDescription(): string {
   return 'No hay bridge emparejado. Esta app sigue funcionando con tu copia local en este dispositivo.';
 }
 
+/**
+ * Resolves the offline phone description for the sync chip.
+ * The pending-changes variant reassures the user that a retry is queued.
+ */
 function getOfflinePhoneDescription(hasPendingChanges: boolean): string {
   if (hasPendingChanges) {
     return 'Este teléfono está sin internet. Tus cambios siguen guardados en este dispositivo y se van a reintentar cuando vuelva la conexión.';
@@ -111,6 +140,10 @@ function getOfflinePhoneDescription(hasPendingChanges: boolean): string {
   return 'Este teléfono está sin internet. Tu copia local sigue disponible y el sync se va a reintentar cuando vuelva la conexión.';
 }
 
+/**
+ * Derives the visible status for a local catalog with no pending changes.
+ * Distinguishes unpaired, offline, and bridge-connected local mode variants.
+ */
 function deriveNoPendingSyncStatus(
   facts: SyncVisibleStatusFacts,
 ): SyncVisibleStatus {

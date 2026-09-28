@@ -42,7 +42,7 @@ describe('SetupQrScanner', () => {
       />,
     );
 
-    expect(screen.getByText('Escaneá el QR del Bridge')).toBeTruthy();
+    expect(screen.getByText('Escanea el QR del Bridge')).toBeTruthy();
     expect(screen.getByText(/No pudimos acceder a la cámara/)).toBeTruthy();
   });
 

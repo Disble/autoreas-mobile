@@ -123,7 +123,7 @@ function buildProps(
     syncStatus: {
       actionLabel: null,
       chipLabel: 'Catálogo local',
-      description: 'Podés seguir usando esta copia local mientras el bridge no esté disponible.',
+      description: 'Puedes seguir usando esta copia local mientras el bridge no esté disponible.',
       title: 'Catálogo local listo',
       tone: 'default',
     },

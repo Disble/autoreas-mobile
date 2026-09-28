@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import type { AnimePseudoDayFilter } from '../../anime.types';
 
+/** Provides the Ionicons glyph names used by the anime empty state. */
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
 /** Provides the shared default weekday icon value. */
@@ -32,4 +33,4 @@ export const WEEKDAY_EMPTY_STATE_HINT =
 /** Provides the shared pseudo day empty state hint value. */
 
 export const PSEUDO_DAY_EMPTY_STATE_HINT =
-  'Probá con otro día o refrescá la sincronización manual.';
+  'Prueba con otro día o actualiza la sincronización manual.';

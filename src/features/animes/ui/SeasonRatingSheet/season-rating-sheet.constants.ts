@@ -11,7 +11,7 @@ export const SEASON_RATING_SHEET_COPY = {
     "Tu nota queda guardada en este teléfono hasta que el bridge la confirme.",
   failedTitle: "Requiere reparación",
   failedDescription:
-    "La nota quedó guardada. Revisá el bridge para reintentar sin perder la intención.",
+    "La nota quedó guardada. Revisa el bridge para reintentar sin perder la intención.",
   confirmedTitle: "Bridge confirmó esta nota",
   currentBridgeTitle: "Nota actual del bridge",
   currentBridgeMissing: "Sin nota confirmada todavía",
