@@ -6,23 +6,28 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import {
-  STARTUP_FONT_LOAD_DEADLINE_MS,
-  STARTUP_PROVIDER_READINESS_DEADLINE_MS,
-} from '../../startup.constants';
+import { useCallback, useMemo, useState } from 'react';
+import { useStartupRecovery } from '../../recovery/use-startup-recovery';
+import type { StartupRecoveryCause } from '../../recovery/recovery.types';
 import { useStartup } from '../../use-startup';
 import {
   createFontStartupFailure,
   createProviderReadinessStartupFailure,
+  createStartupRecoveryCause,
   renderKeyboardAvoidingWrapper,
-  navigateAndReleaseStartupSplash,
-  releaseStartupBoundarySplashScreen,
   resolveStartupBoundaryContent,
+  resolveStartupBoundaryRecovery,
   resolveStartupBoundaryRootContent,
   resolveStartupBoundaryScreen,
+  resolveStartupFailureClassification,
   resolveStartupFailureState,
+  shouldRenderStartupRouteSlot,
 } from './startup-boundary.helpers';
+import {
+  useStartupBoundaryFontLoadDeadline,
+  useStartupBoundaryLifecycle,
+  useStartupBoundaryProviderReadinessDeadline,
+} from './use-startup-boundary-lifecycle';
 import { useStartupFailureLogs } from './use-startup-failure-logs';
 import { useStartupSlowNotice } from './use-startup-slow-notice';
 import type {
@@ -34,8 +39,8 @@ import type {
 export function useStartupBoundary(
   _props: StartupBoundaryProps,
 ): StartupBoundaryViewModel {
-  // 1. Refs
-  const hasCompletedStartupRef = useRef(false);
+  // 1. Refs. There is deliberately no completion ref here: the one-shot startup completion flag is
+  // owned by `useStartupBoundaryLifecycle`, together with every effect that reads it.
 
   // 2. State
   const [hasFontLoadDeadlineElapsed, setHasFontLoadDeadlineElapsed] = useState(false);
@@ -52,12 +57,23 @@ export function useStartupBoundary(
   });
 
   // 4. Queries/Mutations
-  const { databaseName, handleDatabaseInit, isReady, sqliteOptions, sqliteProvider, startupState } =
-    useStartup();
+  const {
+    databaseName,
+    getActiveDatabase,
+    handleDatabaseInit,
+    isReady,
+    remountDatabaseProvider,
+    sqliteOptions,
+    sqliteProvider,
+    startupState,
+  } = useStartup();
 
   // 5. Derived State (useMemo)
   const SQLiteProvider = sqliteProvider;
-  const shouldRenderRouteSlot = isReady && !startupState.failure;
+  const shouldRenderRouteSlot = shouldRenderStartupRouteSlot({
+    isReady,
+    startupFailure: startupState.failure,
+  });
   const fontStartupFailure = createFontStartupFailure({
     fontLoadError,
     hasFontLoadDeadlineElapsed,
@@ -78,13 +94,63 @@ export function useStartupBoundary(
     isReady,
   });
   useStartupFailureLogs({ failures: [fontStartupFailure, providerReadinessStartupFailure] });
+  const recoveryCause = useMemo<StartupRecoveryCause | null>(
+    () => createStartupRecoveryCause(resolveStartupFailureClassification(startupState.failure)),
+    [startupState.failure],
+  );
+
+  // 6. Callbacks (useCallback calling pure helpers)
+  const contentWrapper = renderKeyboardAvoidingWrapper;
+  const { resetCompletion } = useStartupBoundaryLifecycle({
+    fontsLoaded,
+    hasSQLiteProvider: Boolean(SQLiteProvider),
+    isReady,
+    router,
+    startupFailure,
+    target: startupState.target,
+  });
+  /** Settles the font-load deadline exactly once so its effect stops rescheduling. */
+  const handleFontLoadDeadlineElapsed = useCallback((): void => {
+    setHasFontLoadDeadlineElapsed(true);
+  }, []);
+  /** Settles the provider-readiness deadline exactly once so its effect stops rescheduling. */
+  const handleProviderReadinessDeadlineElapsed = useCallback((): void => {
+    setHasProviderReadinessDeadlineElapsed(true);
+  }, []);
+  /**
+   * Makes the recovery retry and the post-reset remount start a genuinely new startup attempt.
+   *
+   * Clearing the completion ref is what lets the splash and navigation effects run again: without
+   * it they would early-return for the rest of the session, the fresh provider's ready state would
+   * never navigate, and a successful reset would leave the user in front of a terminal card.
+   */
+  const handleRemountDatabaseProvider = useCallback((): void => {
+    resetCompletion();
+    remountDatabaseProvider();
+  }, [remountDatabaseProvider, resetCompletion]);
+
+  // 7. Recovery and the content it resolves. The recovery hook consumes the remount callback
+  // above, so it runs after the callbacks section; the screen is resolved here because the
+  // recovery screen exists only when the recovery layer has a terminal presentation to show, and
+  // that presentation has to reach the fallback element together with the failure it explains.
+  const recovery = useStartupRecovery({
+    cause: recoveryCause,
+    // The provider's live connection, captured by the initializer: the recovery card renders
+    // outside `SQLiteProvider`, so the SQLite context is null here and the reset would otherwise
+    // delete the database while that connection is still open.
+    getActiveDatabase,
+    remountProvider: handleRemountDatabaseProvider,
+  });
+  const recoveryPresentation = resolveStartupBoundaryRecovery(recovery);
   const screen = resolveStartupBoundaryScreen({
     fontsLoaded,
+    hasRenderableRecovery: recoveryPresentation !== null,
     hasSQLiteProvider: Boolean(SQLiteProvider),
     shouldRenderRouteSlot,
     startupFailure,
   });
   const resolvedContent = resolveStartupBoundaryContent({
+    recovery: recoveryPresentation,
     screen,
     startupFailure,
   });
@@ -99,70 +165,21 @@ export function useStartupBoundary(
     sqliteOptions,
   });
 
-  // 6. Callbacks (useCallback calling pure helpers)
-  const contentWrapper = renderKeyboardAvoidingWrapper;
-
-  // 7. Effects
-  useEffect(() => {
-    if (fontsLoaded || fontLoadError) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setHasFontLoadDeadlineElapsed(true);
-    }, STARTUP_FONT_LOAD_DEADLINE_MS);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [fontLoadError, fontsLoaded]);
-
-  useEffect(() => {
-    if (!fontsLoaded || !SQLiteProvider || isReady || existingStartupFailure) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setHasProviderReadinessDeadlineElapsed(true);
-    }, STARTUP_PROVIDER_READINESS_DEADLINE_MS);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [SQLiteProvider, existingStartupFailure, fontsLoaded, isReady]);
-
-  useEffect(() => {
-    if (!fontsLoaded || SQLiteProvider || hasCompletedStartupRef.current) {
-      return;
-    }
-
-    hasCompletedStartupRef.current = true;
-    releaseStartupBoundarySplashScreen();
-  }, [SQLiteProvider, fontsLoaded]);
-
-  useEffect(() => {
-    if (!startupFailure || hasCompletedStartupRef.current) {
-      return;
-    }
-
-    hasCompletedStartupRef.current = true;
-    releaseStartupBoundarySplashScreen();
-  }, [startupFailure]);
-
-  useEffect(() => {
-    if (
-      !fontsLoaded ||
-      !isReady ||
-      !startupState.target ||
-      startupFailure ||
-      hasCompletedStartupRef.current
-    ) {
-      return;
-    }
-
-    hasCompletedStartupRef.current = true;
-    navigateAndReleaseStartupSplash(router, startupState.target);
-  }, [fontsLoaded, isReady, router, startupFailure, startupState.target]);
+  // 8. Effects. Every effect owns only wiring: the decision inside its guard lives in a pure
+  // helper, and the shared one-shot completion ref lives in [useStartupBoundaryLifecycle] so the
+  // splash and navigation paths cannot disagree about whether startup already completed.
+  useStartupBoundaryFontLoadDeadline({
+    fontLoadError,
+    fontsLoaded,
+    onDeadlineElapsed: handleFontLoadDeadlineElapsed,
+  });
+  useStartupBoundaryProviderReadinessDeadline({
+    existingStartupFailure,
+    fontsLoaded,
+    hasSQLiteProvider: Boolean(SQLiteProvider),
+    isReady,
+    onDeadlineElapsed: handleProviderReadinessDeadlineElapsed,
+  });
 
   return {
     SQLiteProvider,
