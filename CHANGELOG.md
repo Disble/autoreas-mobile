@@ -16,6 +16,32 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-09-28
+
+**A damaged local database no longer leaves the app stuck.** When the device's database fails its integrity check, the app now explains what happened and offers to configure Mobile again, instead of showing the same fatal message on every launch. Nothing is deleted without one explicit confirmation, and the app says plainly that changes made in Mobile and not yet sent to the Bridge may be lost.
+
+### Added
+
+- If the local database is damaged, the app can rebuild it: it stops background writers, closes the database, deletes it together with its journal, write-ahead and shared-memory files through Android's SQLite API, prepares a clean one, and returns to the usual setup and pairing flow. With the Bridge off, setup stays open with the option to connect later, and the catalogue is never shown as if recovery had finished.
+- Startup now tells a damaged database apart from an incomplete schema. A damaged file is reported as damage, is never retried and never has migrations run over it, while a missing table or column keeps its single repair attempt.
+- When startup fails for a reason that can clear on its own, the app says so and suggests closing and reopening it.
+
+### Changed
+
+- Recovery asks for confirmation once per attempt, in the user's own terms. If the reset itself fails, the app explains it and offers opening Android's app settings as a last resort, warning that clearing storage deletes all app data and settings.
+- The app's Spanish copy is written in neutral Spanish throughout.
+
+### Fixed
+
+- Opening the app no longer repeats schema preparation over a damaged database on every launch, the loop that made the app unusable until it was reinstalled. A device with this failure showed the fatal card with the schema-validation reason and a null code.
+
+### Internal
+
+- Background sync's native owner, the foreground service and the periodic WorkManager floor, now runs in its own Android process, so Android's SQLite and the JavaScript engine's SQLite no longer open the same database file from one process. That configuration is the one the offline lab reproduced as silently lost committed writes.
+- The native owner waits for the foreground's schema stamp before opening or writing the database, and it no longer creates the file on a fresh install.
+- Background ticker ownership is answered from the system alarm token, so a secondary process sees the same answer as the main one.
+- A reset deletes the write-ahead and shared-memory files as well, because a stale write-ahead log left beside a fresh database can bring previous content back.
+
 ## [1.7.0] — 2026-09-26
 
 **Chapter actions can now send diagnostics to Bridge 1.15.0 or newer.** Older Bridges do not receive these new observations; catalogue sync remains available. This release also changes how Android schedules background sync. The new native WorkManager floor has been observed scheduled and skipping while the foreground service owns sync; its own FGS-off execution has not yet been observed on a device.
