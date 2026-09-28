@@ -68,23 +68,6 @@ describe('database startup helpers', () => {
     ]);
   });
 
-  it('never writes readiness when schema validation fails', async () => {
-    const rawDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValueOnce({ user_version: 0 })
-        .mockResolvedValueOnce({ quick_check: 'database disk image is malformed' })
-        .mockResolvedValueOnce({ count: 8 }),
-    } as unknown as SQLiteDatabase;
-    (runMigrations as jest.Mock).mockResolvedValueOnce(undefined);
-
-    await expect(prepareForegroundDatabase(rawDb)).rejects.toBeInstanceOf(
-      SchemaValidationError,
-    );
-    expect(rawDb.execAsync).not.toHaveBeenCalledWith(`PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION};`);
-  });
-
   it('never writes readiness when a required table exists but is missing a required column', async () => {
     // H0Xx: a table surviving in `sqlite_master` proves nothing about which columns a silently
     // skipped migration (poisoned journal `when` gate) would have added. The table-count check

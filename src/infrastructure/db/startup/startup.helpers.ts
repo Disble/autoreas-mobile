@@ -9,6 +9,7 @@ import {
 } from './startup.constants';
 import {
   SchemaIncompatibleError,
+  SchemaIntegrityError,
   SchemaNotReadyError,
   SchemaValidationError,
 } from './startup.errors';
@@ -50,6 +51,12 @@ async function validateRequiredColumns(rawDb: SQLiteDatabase): Promise<void> {
  * integrity check, every required table exists, AND every required column on those tables exists.
  * All three run before the version is written, so a half-prepared database never gets marked
  * ready and then trusted by the headless path.
+ *
+ * The two failure kinds stay separate on purpose. A failed `quick_check` is physical damage and
+ * throws `SchemaIntegrityError`, which no amount of migrating can heal. A short table count or a
+ * missing column is a logical mismatch the repair path may legitimately fix, and throws
+ * `SchemaValidationError`. Both are detected by the same probes that already ran here, so the
+ * healthy path gains no extra query.
  */
 async function validatePreparedSchema(rawDb: SQLiteDatabase): Promise<void> {
   const [integrity, tableCount] = await Promise.all([
@@ -60,10 +67,11 @@ async function validatePreparedSchema(rawDb: SQLiteDatabase): Promise<void> {
     ),
   ]);
 
-  if (
-    integrity?.quick_check !== 'ok' ||
-    Number(tableCount?.count) !== REQUIRED_SCHEMA_TABLES.length
-  ) {
+  if (integrity?.quick_check !== 'ok') {
+    throw new SchemaIntegrityError();
+  }
+
+  if (Number(tableCount?.count) !== REQUIRED_SCHEMA_TABLES.length) {
     throw new SchemaValidationError();
   }
 
@@ -86,6 +94,11 @@ export async function prepareForegroundDatabase(rawDb: SQLiteDatabase): Promise<
       return;
     } catch (error) {
       if (!(error instanceof SchemaValidationError)) {
+        // Physical damage is NOT repairable here and must never reach `runMigrations`. Re-running
+        // the migrator against a malformed image, re-validating, and re-stamping it is exactly how
+        // a damaged file turned every launch into a fresh repair attempt that ended in a fatal
+        // card. Propagating immediately keeps the integrity failure intact for the startup
+        // diagnostic to classify as `corruption` and stops the write path here.
         throw error;
       }
 
