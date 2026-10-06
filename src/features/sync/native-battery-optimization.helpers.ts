@@ -35,6 +35,10 @@ export function createNativeBatteryOptimizationExemption(
   );
 
   return {
+    isAvailable() {
+      return nativeModule !== null;
+    },
+
     isExempt() {
       return nativeModule?.isIgnoringBatteryOptimizations() ?? false;
     },

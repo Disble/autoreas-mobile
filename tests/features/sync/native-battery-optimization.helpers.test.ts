@@ -32,6 +32,27 @@ describe('native-battery-optimization', () => {
     expect(exemption.requestExemption()).toBe(false);
   });
 
+  it('reports the seam as unavailable when the native module is missing', () => {
+    expect(
+      createNativeBatteryOptimizationExemption({ requireOptionalNativeModule: () => null }).isAvailable(),
+    ).toBe(false);
+    expect(
+      createNativeBatteryOptimizationExemption({
+        requireOptionalNativeModule: () => {
+          throw new Error('bridge not ready');
+        },
+      }).isAvailable(),
+    ).toBe(false);
+  });
+
+  it('reports the seam as available when the native module loaded', () => {
+    const exemption = createNativeBatteryOptimizationExemption({
+      requireOptionalNativeModule: () => buildNativeModule(),
+    });
+
+    expect(exemption.isAvailable()).toBe(true);
+  });
+
   it('reports the native exemption state through isExempt', () => {
     const module = buildNativeModule({
       isIgnoringBatteryOptimizations: jest.fn().mockReturnValue(true),

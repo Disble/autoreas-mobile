@@ -1,5 +1,6 @@
 export {
   animes,
+  appPreferences,
   bridgeConfig,
   operationLog,
   pendingRemoteChanges,
@@ -8,6 +9,7 @@ export {
 } from './database.schema';
 export type {
   AnimeRow,
+  AppPreferencesRow,
   BridgeConfig,
   InsertAnimeRow,
   InsertOperationLogRow,

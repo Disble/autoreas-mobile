@@ -215,6 +215,7 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS season_rating_queue/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS active_season_cache/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS sync_cycle_lock/),
+      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS app_preferences/),
     ]);
   });
 

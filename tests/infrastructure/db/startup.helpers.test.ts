@@ -32,7 +32,7 @@ describe('database startup helpers', () => {
         })
         .mockImplementationOnce(async () => {
           events.push('table-check');
-          return { count: 8 };
+          return { count: 9 };
         }),
       getAllAsync: jest.fn().mockImplementation(async () => {
         events.push('column-check');
@@ -79,7 +79,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: 0 })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 8 }),
+        .mockResolvedValueOnce({ count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           // Missing `last_cycle_id`: the table exists, but a skipped migration never added it.
@@ -104,7 +104,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 8 }),
+        .mockResolvedValueOnce({ count: 9 }),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -134,7 +134,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return repaired ? [{ name: 'last_cycle_id' }] : [{ name: 'id' }];
@@ -170,7 +170,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return [{ name: 'id' }];
@@ -259,7 +259,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }];
@@ -282,7 +282,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }];
@@ -313,7 +313,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(operation_log)') {
           return [{ name: 'id' }];

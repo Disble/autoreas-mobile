@@ -7,7 +7,11 @@ import {
   getOpenDatabaseSync,
 } from "../native-runtime/native-runtime.helpers";
 import * as schema from "../schema";
-import { SQLITE_BUSY_TIMEOUT_MS, SYNC_CYCLE_LOCK_TABLE_SQL } from '../startup/startup.constants';
+import {
+  APP_PREFERENCES_TABLE_SQL,
+  SQLITE_BUSY_TIMEOUT_MS,
+  SYNC_CYCLE_LOCK_TABLE_SQL,
+} from '../startup/startup.constants';
 import { withDeadline } from '../../async/deadline.helpers';
 import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
@@ -285,6 +289,11 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(SYNC_CYCLE_LOCK_TABLE_SQL);
 }
 
+/** Creates the single-row app preferences table. Exists in no migration file; only here. */
+async function ensureAppPreferencesTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(APP_PREFERENCES_TABLE_SQL);
+}
+
 /**
  * Adds every `sync_cycle_lock` column added after the table first shipped, mirroring
  * `ensureAnimesColumns`'s single-PRAGMA-read mechanism. `CREATE TABLE IF NOT EXISTS` above is a
@@ -360,8 +369,8 @@ async function reconcileMigrationLedger(rawDb: SQLiteDatabase): Promise<void> {
 
 /**
  * Brings a connection's schema to the shape the app expects: the drizzle migrator first, then
- * ordered idempotent repair steps for everything migrations cannot express. Two REQUIRED_SCHEMA
- * tables -- `active_season_cache` and `sync_cycle_lock` -- exist ONLY as repair steps, so running
+ * ordered idempotent repair steps for everything migrations cannot express. Three REQUIRED_SCHEMA
+ * tables -- `active_season_cache`, `sync_cycle_lock` and `app_preferences` -- exist ONLY as repair steps, so running
  * the migration files alone leaves a database that fails readiness.
  */
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
@@ -379,6 +388,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureActiveSeasonCacheTable(rawDb);
   await ensureSyncCycleLockTable(rawDb);
   await ensureSyncCycleLockColumns(rawDb);
+  await ensureAppPreferencesTable(rawDb);
   return db;
 }
 

@@ -100,6 +100,17 @@ export const activeSeasonCache = sqliteTable('active_season_cache', {
   candidatesJson: text('candidates_json').notNull(),
 });
 
+/**
+ * Provides the single-row app preferences that must survive re-pairing. Kept out of
+ * `bridge_config` on purpose: pairing deletes and reinserts that row. Created only by the
+ * `ensureAppPreferencesTable` repair step, never by a migration file.
+ */
+export const appPreferences = sqliteTable('app_preferences', {
+  id: integer('id').primaryKey().default(1),
+  batteryPromptShownAt: integer('battery_prompt_shown_at'),
+  batteryReminderShownAt: integer('battery_reminder_shown_at'),
+});
+
 /** Provides the shared bridge config value. */
 
 export const bridgeConfig = sqliteTable("bridge_config", {
@@ -236,3 +247,5 @@ export type NewBridgeConfig = typeof bridgeConfig.$inferInsert;
 export type SyncRuntimeStatusRow = typeof syncRuntimeStatus.$inferSelect;
 /** Defines the new sync runtime status row value shape. */
 export type NewSyncRuntimeStatusRow = typeof syncRuntimeStatus.$inferInsert;
+/** Defines the app preferences row value shape. */
+export type AppPreferencesRow = typeof appPreferences.$inferSelect;
