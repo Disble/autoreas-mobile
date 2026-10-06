@@ -63,7 +63,7 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
 - [x] **T3 Global prompt component** (delegated: generate:feature scaffold, hook, dialog, mount)
   - Checks: component + hook tests, react-doctor diff.
 - [x] **T4 Settings row highlight** (delegated)
-- [ ] **T5 Close**: `npx lefthook run pre-commit` green, merge decision left to the user.
+- [x] **T5 Close**: `npx lefthook run pre-commit` green, merge decision left to the user.
 
 ## Progress / evidence
 
@@ -138,6 +138,16 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
 - T1 `b5a4501`, T2 `9a19ab1`, T3 `5b79097`, T4 `087e516` (each passed `npx lefthook run pre-commit`
   through the commit hook).
 
+### T5 (parent)
+
+- Parent spot check: `npx jest tests/features/battery-exemption` -> 5 suites / 46 tests passed.
+- Branch tip clean; every work-unit commit passed the lefthook pre-commit hook.
+- RDD: `gentle-ai review mode status` -> off (global); no native review.
+- Size: 43 files, +1697/-46 (forecast ~700); growth came from tests, the fallow-driven hook split,
+  and contract-count updates in existing startup/db tests.
+- Pending: on-device check (pair -> dialog, decline -> no repeat, Settings warning), and the
+  merge decision (user).
+
 ## Next step
 
-T5: final `npx lefthook run pre-commit` on the branch tip and the merge decision (user).
+Device check, then local merge to `main` if the user approves.
