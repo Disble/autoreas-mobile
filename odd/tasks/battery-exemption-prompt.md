@@ -133,6 +133,11 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   in `SettingsSyncCard.tsx`.
 - `npx tsc --noEmit`: exit 0. `npx -y react-doctor@latest . --verbose --diff`: 100/100.
 
+### Commits
+
+- T1 `b5a4501`, T2 `9a19ab1`, T3 `5b79097`, T4 `087e516` (each passed `npx lefthook run pre-commit`
+  through the commit hook).
+
 ## Next step
 
 T5: final `npx lefthook run pre-commit` on the branch tip and the merge decision (user).
