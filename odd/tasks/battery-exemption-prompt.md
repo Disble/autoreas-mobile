@@ -62,7 +62,7 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   - `shouldShowBatteryPrompt`, `shouldShowBatteryReminder` (silence window on `lastAttemptAt`).
 - [x] **T3 Global prompt component** (delegated: generate:feature scaffold, hook, dialog, mount)
   - Checks: component + hook tests, react-doctor diff.
-- [ ] **T4 Settings row highlight** (delegated)
+- [x] **T4 Settings row highlight** (delegated)
 - [ ] **T5 Close**: `npx lefthook run pre-commit` green, merge decision left to the user.
 
 ## Progress / evidence
@@ -117,6 +117,22 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   the `recordBatteryExemptionDialogShown` helper (3 new tests). Latch mutation re-checked (2 fail),
   react-doctor re-run 100/100, `bun run audit` exit 0, battery-exemption suite 46 passed.
 
+### T4 (delegated writer)
+
+- T3 commit: `5b79097`.
+- RED: `use-settings-screen.test.ts` "highlights the battery-exemption row only on an available,
+  non-exempt device" failed (`isBatteryExemptionHighlighted` undefined); `settings.test.tsx` warning
+  test failed (no `settings-battery-exemption-warning`). The "unavailable -> plain row" test passed
+  before and after: it pins unchanged behavior.
+- GREEN: `npx jest tests/features/settings tests/app tests/features/battery-exemption` -> 124 passed.
+- MUTATE: dropping `isAvailable` from the highlight derivation fails 2 tests; never rendering the
+  warning fails 1; restored with `git checkout --`.
+- Row extracted to `SettingsBatteryExemptionRow.tsx` (warning `HeroAlert` + primary
+  "Activar excepción" button; exempt and unavailable states keep the previous plain row). Copy moved
+  to `BATTERY_EXEMPTION_ROW_COPY`. Its file-level `jsx-max-depth` disable mirrors the justified one
+  in `SettingsSyncCard.tsx`.
+- `npx tsc --noEmit`: exit 0. `npx -y react-doctor@latest . --verbose --diff`: 100/100.
+
 ## Next step
 
-T4.
+T5: final `npx lefthook run pre-commit` on the branch tip and the merge decision (user).

@@ -53,6 +53,7 @@ describe('useSettingsScreen', () => {
   const setSyncTelemetryEnabled = jest.fn().mockResolvedValue(undefined);
   const mockIsExempt = jest.fn<boolean, []>();
   const mockRequestExemption = jest.fn<boolean, []>();
+  const mockIsAvailable = jest.fn<boolean, []>();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -111,9 +112,11 @@ describe('useSettingsScreen', () => {
     });
     mockIsExempt.mockReturnValue(false);
     mockRequestExemption.mockReturnValue(true);
+    mockIsAvailable.mockReturnValue(true);
     (
       batteryOptimizationModule.createNativeBatteryOptimizationExemption as jest.Mock
     ).mockReturnValue({
+      isAvailable: mockIsAvailable,
       isExempt: mockIsExempt,
       requestExemption: mockRequestExemption,
     });
@@ -231,6 +234,20 @@ describe('useSettingsScreen', () => {
     const { result } = renderHook(() => useSettingsScreen({}));
 
     expect(result.current.isBatteryOptimizationExempt).toBe(true);
+  });
+
+  it('highlights the battery-exemption row only on an available, non-exempt device', () => {
+    const { result: notExempt } = renderHook(() => useSettingsScreen({}));
+    expect(notExempt.current.isBatteryExemptionHighlighted).toBe(true);
+
+    mockIsExempt.mockReturnValue(true);
+    const { result: exempt } = renderHook(() => useSettingsScreen({}));
+    expect(exempt.current.isBatteryExemptionHighlighted).toBe(false);
+
+    mockIsExempt.mockReturnValue(false);
+    mockIsAvailable.mockReturnValue(false);
+    const { result: unavailable } = renderHook(() => useSettingsScreen({}));
+    expect(unavailable.current.isBatteryExemptionHighlighted).toBe(false);
   });
 
   it('re-reads isExempt after requesting, without trusting the request return value', () => {

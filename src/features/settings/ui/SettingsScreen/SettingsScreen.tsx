@@ -41,6 +41,7 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
     isConfigured,
     isSyncTelemetryEnabled,
     isBatteryOptimizationExempt,
+    isBatteryExemptionHighlighted,
     isUnpairing,
     layoutMode,
     syncSummary,
@@ -78,6 +79,7 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
       handleRequestBatteryExemption={handleRequestBatteryExemption}
       handleSummaryAction={handleSyncSummaryAction}
       handleToggleSyncTelemetry={handleToggleSyncTelemetry}
+      isBatteryExemptionHighlighted={isBatteryExemptionHighlighted}
       isBatteryOptimizationExempt={isBatteryOptimizationExempt}
       isSyncTelemetryEnabled={isSyncTelemetryEnabled}
       layoutMode={layoutMode}

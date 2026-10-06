@@ -143,6 +143,8 @@ export interface BuildSettingsSyncSummaryInput {
 /** Defines the result contract for `useSettingsScreenBatteryExemption`. */
 export interface UseSettingsScreenBatteryExemptionResult {
   readonly isBatteryOptimizationExempt: boolean;
+  /** True while the exemption is missing on a device that can request it (warning emphasis). */
+  readonly isBatteryExemptionHighlighted: boolean;
   readonly handleRequestBatteryExemption: () => void;
 }
 
@@ -198,6 +200,8 @@ export interface SettingsScreenViewModel {
   readonly themeColorDanger: string;
   readonly isSyncTelemetryEnabled: boolean;
   readonly isBatteryOptimizationExempt: boolean;
+  /** True while the exemption is missing on a device that can request it (warning emphasis). */
+  readonly isBatteryExemptionHighlighted: boolean;
   readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
   readonly handleSyncSummaryAction: (() => void) | null;
@@ -225,11 +229,19 @@ export interface SettingsSyncCardProps {
   readonly isSyncTelemetryEnabled: boolean;
   readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
   readonly isBatteryOptimizationExempt: boolean;
+  /** True while the exemption is missing on a device that can request it (warning emphasis). */
+  readonly isBatteryExemptionHighlighted: boolean;
   readonly handleRequestBatteryExemption: () => void;
   readonly layoutMode: LayoutMode;
   readonly section: BackgroundSyncSection;
   readonly summary: SettingsSyncSummary;
 }
+
+/** Defines the data contract for the settings battery-exemption row props. */
+export type SettingsBatteryExemptionRowProps = Pick<
+  SettingsSyncCardProps,
+  'handleRequestBatteryExemption' | 'isBatteryExemptionHighlighted' | 'isBatteryOptimizationExempt'
+>;
 
 /** Defines the data contract for settings metric tile props. */
 export interface SettingsMetricTileProps {
