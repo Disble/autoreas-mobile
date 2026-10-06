@@ -18,6 +18,7 @@ export function useSettingsScreenBatteryExemption(): UseSettingsScreenBatteryExe
   // 1. Refs
 
   // 2. State
+  const [isAvailable] = useState(() => createNativeBatteryOptimizationExemption().isAvailable());
   const [isBatteryOptimizationExempt, setIsBatteryOptimizationExempt] = useState(
     () => createNativeBatteryOptimizationExemption().isExempt(),
   );
@@ -27,6 +28,7 @@ export function useSettingsScreenBatteryExemption(): UseSettingsScreenBatteryExe
   // 4. Queries/Mutations
 
   // 5. Derived State (useMemo)
+  const isBatteryExemptionHighlighted = isAvailable && !isBatteryOptimizationExempt;
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleRequestBatteryExemption = useCallback(() => {
@@ -61,5 +63,9 @@ export function useSettingsScreenBatteryExemption(): UseSettingsScreenBatteryExe
     };
   }, []);
 
-  return { isBatteryOptimizationExempt, handleRequestBatteryExemption };
+  return {
+    isBatteryOptimizationExempt,
+    isBatteryExemptionHighlighted,
+    handleRequestBatteryExemption,
+  };
 }

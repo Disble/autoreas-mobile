@@ -16,6 +16,7 @@ import {
   METRIC_TILE_COLUMNS_BY_LAYOUT,
   STATUS_CHIP_COLOR_BY_TONE,
 } from './settings-screen.constants';
+import { SettingsBatteryExemptionRow } from './SettingsBatteryExemptionRow';
 import { SettingsMetricTileGrid } from './SettingsMetricTileGrid';
 import type { SettingsSyncCardProps } from './settings-screen.types';
 
@@ -52,6 +53,7 @@ export function SettingsSyncCard(props: Readonly<SettingsSyncCardProps>) {
     handleRequestBatteryExemption,
     handleSummaryAction,
     handleToggleSyncTelemetry,
+    isBatteryExemptionHighlighted,
     isBatteryOptimizationExempt,
     isSyncTelemetryEnabled,
     layoutMode,
@@ -104,23 +106,11 @@ export function SettingsSyncCard(props: Readonly<SettingsSyncCardProps>) {
 
         <View className="h-px w-full bg-surface-secondary" />
 
-        <View className="flex-row items-center justify-between gap-3">
-          <View className="flex-1 gap-1">
-            <AppText className="text-sm font-medium text-foreground">
-              Excepción de batería
-            </AppText>
-            <AppText className="text-xs leading-snug text-muted">
-              {isBatteryOptimizationExempt
-                ? 'La app está exenta de las restricciones de batería de Android.'
-                : 'Sin esta excepción, Android puede detener el servicio persistente en segundo plano.'}
-            </AppText>
-          </View>
-          {isBatteryOptimizationExempt ? null : (
-            <Button onPress={handleRequestBatteryExemption} size="sm" variant="secondary">
-              <Button.Label>Activar excepción</Button.Label>
-            </Button>
-          )}
-        </View>
+        <SettingsBatteryExemptionRow
+          handleRequestBatteryExemption={handleRequestBatteryExemption}
+          isBatteryExemptionHighlighted={isBatteryExemptionHighlighted}
+          isBatteryOptimizationExempt={isBatteryOptimizationExempt}
+        />
 
         <View className="h-px w-full bg-surface-secondary" />
 

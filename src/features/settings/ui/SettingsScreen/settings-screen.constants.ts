@@ -174,3 +174,15 @@ export const SETTINGS_CONTAINER_WIDTH_CLASS: Readonly<Record<LayoutMode, string>
   'tablet-portrait': 'max-w-[760px]',
   'tablet-landscape': 'max-w-[1120px]',
 };
+
+/** User-facing copy (neutral Spanish) for the Settings battery-exemption row. */
+export const BATTERY_EXEMPTION_ROW_COPY = {
+  title: 'Excepción de batería',
+  warningTitle: 'Excepción de batería desactivada',
+  exemptDescription: 'La app está exenta de las restricciones de batería de Android.',
+  notExemptDescription:
+    'Sin esta excepción, Android puede detener el servicio persistente en segundo plano.',
+  warningDescription:
+    'Sin esta excepción, Android puede detener la sincronización en segundo plano. Actívala para que tus capítulos se sigan sincronizando con la app cerrada.',
+  actionLabel: 'Activar excepción',
+} as const;

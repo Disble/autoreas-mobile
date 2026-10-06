@@ -44,8 +44,11 @@ export function useSettingsScreen(
   const backgroundSyncSection = useSettingsScreenBackgroundSyncSection(isConfigured);
   const { isEnabled: isSyncTelemetryEnabled, setEnabled: setSyncTelemetryEnabled } =
     useSyncTelemetryPreference();
-  const { isBatteryOptimizationExempt, handleRequestBatteryExemption } =
-    useSettingsScreenBatteryExemption();
+  const {
+    isBatteryOptimizationExempt,
+    isBatteryExemptionHighlighted,
+    handleRequestBatteryExemption,
+  } = useSettingsScreenBatteryExemption();
 
   // 5. Derived State (useMemo)
   // Memoized because it is handed straight to `SettingsSyncCard` as a prop: rebuilt inline on
@@ -94,6 +97,7 @@ export function useSettingsScreen(
     isConfigured,
     isSyncTelemetryEnabled,
     isBatteryOptimizationExempt,
+    isBatteryExemptionHighlighted,
     isUnpairing,
     layoutMode,
     syncSummary,

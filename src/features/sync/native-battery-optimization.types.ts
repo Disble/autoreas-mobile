@@ -7,6 +7,8 @@ import type { OptionalNativeModuleLoader } from './native-module-loader/native-m
  * whether the user granted it, so callers must re-read `isExempt()` to observe the outcome.
  */
 export interface BatteryOptimizationExemption {
+  /** True only when the native module loaded (an Android build); false on iOS and Expo Go. */
+  readonly isAvailable: () => boolean;
   readonly isExempt: () => boolean;
   readonly requestExemption: () => boolean;
 }

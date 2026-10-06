@@ -16,6 +16,19 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-10-06
+
+**The app now tells you when Android may stop background sync to save battery.** Until now the battery exemption that keeps sync running with the app closed was only reachable from the bottom of Settings, so most people never found it.
+
+### Added
+
+- Right after pairing with the Bridge, the app explains why the battery exemption matters and offers to enable it with one tap. It asks only once, and only when the device is not already exempt; declining is respected even if you pair again later.
+- If you declined and background sync later stops running for a couple of hours, the app shows one last reminder. After that, the option stays in Settings.
+
+### Changed
+
+- In Settings, the battery exemption row is now highlighted as a warning, with a clear "Activar excepción" button, whenever the exemption is missing.
+
 ## [1.8.0] — 2026-09-28
 
 **A damaged local database no longer leaves the app stuck.** When the device's database fails its integrity check, the app now explains what happened and offers to configure Mobile again, instead of showing the same fatal message on every launch. Nothing is deleted without one explicit confirmation, and the app says plainly that changes made in Mobile and not yet sent to the Bridge may be lost.

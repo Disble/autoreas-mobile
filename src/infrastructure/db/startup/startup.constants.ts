@@ -22,6 +22,7 @@ export const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 export const REQUIRED_SCHEMA_TABLES = [
   'active_season_cache',
   'animes',
+  'app_preferences',
   'bridge_config',
   'operation_log',
   'pending_remote_changes',
@@ -37,6 +38,18 @@ export const SYNC_CYCLE_LOCK_TABLE_SQL =
   'owner TEXT NOT NULL, ' +
   'expires_at INTEGER NOT NULL, ' +
   'fence TEXT)';
+
+/**
+ * Creates the single-row app preferences table during foreground schema preparation. It exists
+ * in no migration file: a journal entry would bump `EXPECTED_SCHEMA_READINESS_VERSION` and its
+ * Kotlin twin in `SyncEngineDatabases.kt`, while a repair-only table reaches installed devices
+ * through the readiness fall-through that `REQUIRED_SCHEMA_TABLES` triggers.
+ */
+export const APP_PREFERENCES_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS app_preferences (' +
+  'id INTEGER PRIMARY KEY DEFAULT 1, ' +
+  'battery_prompt_shown_at INTEGER, ' +
+  'battery_reminder_shown_at INTEGER)';
 
 /**
  * Maps each table needing column-level readiness proof to its required column names. A table
