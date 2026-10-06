@@ -69,6 +69,8 @@ function createNeverInitializingSQLiteProvider() {
 
 /** Tracks how many times the sync runtime gate rendered, proving sync stays unmounted on failure. */
 const mockSyncRuntimeGateRender = jest.fn();
+/** Records every render of the global battery-exemption prompt. */
+const mockBatteryExemptionPromptRender = jest.fn();
 
 jest.mock('@expo-google-fonts/inter', () => ({
   Inter_400Regular: {},
@@ -177,6 +179,13 @@ jest.mock('../../../../src/features/sync/ui/SyncRuntimeGate/SyncRuntimeGate', ()
   },
 }));
 
+jest.mock('../../../../src/features/battery-exemption/ui/BatteryExemptionPrompt', () => ({
+  BatteryExemptionPrompt: () => {
+    mockBatteryExemptionPromptRender();
+    return null;
+  },
+}));
+
 describe('StartupBoundary integration', () => {
   const replace = jest.fn();
   const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -211,6 +220,7 @@ describe('StartupBoundary integration', () => {
     expect(view.getByText('Preparando tu biblioteca')).toBeOnTheScreen();
     expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
     expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
+    expect(mockBatteryExemptionPromptRender).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
     expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
   });
@@ -254,6 +264,8 @@ describe('StartupBoundary integration', () => {
 
     expect(view.queryByText('Preparando tu biblioteca')).not.toBeOnTheScreen();
     expect(mockSyncRuntimeGateRender).toHaveBeenCalledTimes(1);
+    // The global battery-exemption prompt mounts beside the sync gate, inside the same providers.
+    expect(mockBatteryExemptionPromptRender).toHaveBeenCalled();
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/setup');
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);

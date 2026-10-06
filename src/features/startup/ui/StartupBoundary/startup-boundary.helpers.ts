@@ -8,6 +8,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SQLiteUnavailableScreen } from '../../../../components/sqlite-unavailable-screen';
 import { AppThemeProvider } from '../../../../contexts/app-theme-context/app-theme-context';
+import { BatteryExemptionPrompt } from '../../../battery-exemption/ui/BatteryExemptionPrompt';
 import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate/SyncRuntimeGate';
 import { StartupBoundaryLoading } from './StartupBoundaryLoading';
 import { StartupBoundaryFallback } from './StartupBoundaryFallback';
@@ -352,13 +353,20 @@ export function resolveStartupBoundaryRootContent(
     readonly isBootstrapped: boolean;
   }>;
 
+  // The battery-exemption prompt mounts beside the sync gate, inside SQLiteProvider and
+  // HeroUINativeProvider, so it can read its stored history and render a HeroUI dialog on any route.
   const bootstrappedContent = params.isBootstrapped
     ? createElement(
-        SyncRuntimeGateComponent,
-        {
-          isBootstrapped: true,
-        },
-        params.providerContent,
+        Fragment,
+        null,
+        createElement(
+          SyncRuntimeGateComponent,
+          {
+            isBootstrapped: true,
+          },
+          params.providerContent,
+        ),
+        createElement(BatteryExemptionPrompt),
       )
     : params.providerContent;
 

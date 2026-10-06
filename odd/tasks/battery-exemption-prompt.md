@@ -60,7 +60,7 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   - Checks: helper/hook tests, migration-repair-parity test, typecheck.
 - [x] **T2 Decision helpers** (delegated with T3: pure helpers + tests)
   - `shouldShowBatteryPrompt`, `shouldShowBatteryReminder` (silence window on `lastAttemptAt`).
-- [ ] **T3 Global prompt component** (delegated: generate:feature scaffold, hook, dialog, mount)
+- [x] **T3 Global prompt component** (delegated: generate:feature scaffold, hook, dialog, mount)
   - Checks: component + hook tests, react-doctor diff.
 - [ ] **T4 Settings row highlight** (delegated)
 - [ ] **T5 Close**: `npx lefthook run pre-commit` green, merge decision left to the user.
@@ -96,6 +96,27 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   test constants, fixed); Stryker's staged scope (`stryker.dlinter.json`) does not list the new
   helpers, so the manual mutation above is the mutation evidence.
 
+### T3 (delegated writer)
+
+- T2 commit: `9a19ab1`.
+- Scaffold: `npm run generate:feature battery-exemption BatteryExemptionPrompt`; the unused zod
+  `.schema.ts` was deleted, the placeholder label/tests were replaced.
+- RED: `resolveBatteryExemptionPromptVariant is not a function` (5 tests), the startup integration
+  test's new "prompt mounts beside the sync gate" assertion failed, and the hook suite failed
+  13/13 against the scaffold.
+- GREEN: `npx jest tests/features/battery-exemption tests/features/startup tests/app` -> 176 passed;
+  battery-exemption alone 43 passed.
+- MUTATE (staged green, `git checkout --` restore): removing the latch (2 fail), the readiness gate
+  (3 fail), the AppState exemption re-read (1 fail), or the `requestExemption()` call (1 fail) is
+  caught. Swapping prompt/reminder order survives because the two decisions are mutually exclusive
+  on `promptShownAt` (equivalent mutant); the test was renamed to state that.
+- `npx -y react-doctor@latest . --verbose --diff`: 100/100, no issues. ESLint `jsx-max-depth`
+  warning fixed by extracting the actions component. `npx tsc --noEmit`: exit 0.
+- Pre-commit first attempt failed `fallow` (`useBatteryExemptionPrompt` cognitive complexity 20);
+  split into `use-battery-exemption-foreground-state.ts`, `use-battery-exemption-preferences.ts` and
+  the `recordBatteryExemptionDialogShown` helper (3 new tests). Latch mutation re-checked (2 fail),
+  react-doctor re-run 100/100, `bun run audit` exit 0, battery-exemption suite 46 passed.
+
 ## Next step
 
-T3.
+T4.
