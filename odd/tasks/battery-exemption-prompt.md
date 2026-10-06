@@ -58,7 +58,7 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   - Columns: `batteryPromptShownAt` (nullable ms), `batteryReminderShownAt` (nullable ms).
   - `isAvailable()` on `createNativeBatteryOptimizationExemption`.
   - Checks: helper/hook tests, migration-repair-parity test, typecheck.
-- [ ] **T2 Decision helpers** (delegated with T3: pure helpers + tests)
+- [x] **T2 Decision helpers** (delegated with T3: pure helpers + tests)
   - `shouldShowBatteryPrompt`, `shouldShowBatteryReminder` (silence window on `lastAttemptAt`).
 - [ ] **T3 Global prompt component** (delegated: generate:feature scaffold, hook, dialog, mount)
   - Checks: component + hook tests, react-doctor diff.
@@ -83,6 +83,19 @@ Strategy: `single-pr` resolved as a local branch merged into `main` (no push, no
   parallel `test --coverage` job rewrote it) and Stryker reported 1 survived mutant on `isAvailable`
   (redundant `!== undefined`, removed); second run green (fallow, lint, typecheck, test, mutation 100%).
 
+### T2 (delegated writer)
+
+- T1 commit: `b5a4501`.
+- RED: with `false`-returning stubs, `npx jest tests/features/battery-exemption/battery-exemption-decision.helpers.test.ts`
+  -> 2 failed / 13 passed (both positive cases); before the stubs the suite failed on the missing module.
+- GREEN: same command -> 15 passed.
+- MUTATE (staged green, guard deleted, focused test, `git checkout --` restore): dropping the
+  `promptShownAt === null` guard, the `reminderShownAt` guard, the prompt-age window, the silence
+  window, or `isAvailable` each fails 1-2 tests.
+- `npx tsc --noEmit`: exit 0. Pre-commit: first commit attempt failed `lint` (missing JSDoc on two
+  test constants, fixed); Stryker's staged scope (`stryker.dlinter.json`) does not list the new
+  helpers, so the manual mutation above is the mutation evidence.
+
 ## Next step
 
-T2.
+T3.
