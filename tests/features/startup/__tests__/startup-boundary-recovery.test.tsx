@@ -116,7 +116,9 @@ jest.mock('heroui-native', () => {
 
   const Dialog = Object.assign(DialogRoot, {
     Close: DialogClose,
-    Content: view('dialog-content'),
+    // Keeps `className` so the width constraint that stops the dialog spanning a tablet is visible.
+    Content: ({ children, ...props }: MockPrimitiveProps) =>
+      React.createElement(RN.View, { testID: 'dialog-content', ...props }, children),
     Description: text('dialog-description'),
     Overlay: view('dialog-overlay'),
     Portal: ({ children }: MockPrimitiveProps) => children,
@@ -252,6 +254,18 @@ describe('StartupBoundaryFallback recovery surface', () => {
     expect(view.getByText(/pueden perderse: el Bridge no los tiene/)).toBeOnTheScreen();
     expect(ports.deleteDatabase).not.toHaveBeenCalled();
     expect(ports.stopNativeWriters).not.toHaveBeenCalled();
+  });
+
+  it('shows the confirmation at a readable width over a dimmed backdrop', async () => {
+    createDatabaseResetAdaptersMock.mockReturnValue(createFakePorts());
+    const view = render(<RecoveryFallbackHarness cause={CORRUPTION_CAUSE} />);
+
+    await act(async () => {
+      fireEvent.press(view.getByText('Volver a configurar Mobile'));
+    });
+
+    expect(view.getByTestId('dialog-overlay')).toBeOnTheScreen();
+    expect(view.getByTestId('dialog-content').props.className).toMatch(/(^| )max-w-/);
   });
 
   it('leaves the app untouched when the confirmation is cancelled', async () => {
