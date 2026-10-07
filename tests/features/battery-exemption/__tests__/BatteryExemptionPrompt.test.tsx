@@ -81,7 +81,10 @@ jest.mock('heroui-native', () => {
 
   const Dialog = Object.assign(DialogRoot, {
     Close: DialogClose,
-    Content: view('dialog-content'),
+    // Keeps `className` so the width constraint that stops the dialog spanning a tablet is visible.
+    Content: ({ children, ...props }: MockPrimitiveProps) =>
+      React.createElement(RN.View, { testID: 'dialog-content', ...props }, children),
+    Overlay: view('dialog-overlay'),
     Description: text('dialog-description'),
     Portal: ({ children }: MockPrimitiveProps) => children,
     Title: text('dialog-title'),
@@ -156,5 +159,14 @@ describe('BatteryExemptionPrompt', () => {
 
     expect(handleDismiss).toHaveBeenCalledTimes(1);
     expect(handleAllow).not.toHaveBeenCalled();
+  });
+
+  it('dims the screen behind the dialog and keeps it at a readable width', () => {
+    mockHook(true, 'prompt');
+
+    const view = render(<BatteryExemptionPrompt />);
+
+    expect(view.getByTestId('dialog-overlay')).toBeOnTheScreen();
+    expect(view.getByTestId('dialog-content').props.className).toMatch(/(^| )max-w-/);
   });
 });
