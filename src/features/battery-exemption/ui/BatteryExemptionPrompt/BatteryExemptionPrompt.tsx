@@ -24,10 +24,12 @@ function BatteryExemptionPromptContent(props: Readonly<BatteryExemptionPromptCon
   const { copy, onAllow, onDismiss } = props;
 
   return (
-    <Dialog.Content>
+    <Dialog.Content className={cn('w-full max-w-md self-center')}>
       <Dialog.Close variant="ghost" />
-      <Dialog.Title>{copy.title}</Dialog.Title>
-      <Dialog.Description>{copy.description}</Dialog.Description>
+      <View className={cn('mb-5 gap-1.5')}>
+        <Dialog.Title>{copy.title}</Dialog.Title>
+        <Dialog.Description>{copy.description}</Dialog.Description>
+      </View>
       <BatteryExemptionPromptActions copy={copy} onAllow={onAllow} onDismiss={onDismiss} />
     </Dialog.Content>
   );
@@ -44,6 +46,7 @@ export function BatteryExemptionPrompt() {
   return (
     <Dialog isOpen={isOpen} onOpenChange={handleDismiss}>
       <Dialog.Portal>
+        <Dialog.Overlay />
         {copy ? (
           <BatteryExemptionPromptContent
             copy={copy}

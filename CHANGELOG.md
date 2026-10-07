@@ -16,6 +16,12 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-10-06
+
+### Fixed
+
+- The battery exemption dialog no longer stretches across the whole screen on tablets: it now appears centered at a comfortable reading width, over a dimmed background, with the title and description grouped and clearly separated from the buttons.
+
 ## [1.9.0] — 2026-10-06
 
 **The app now tells you when Android may stop background sync to save battery.** Until now the battery exemption that keeps sync running with the app closed was only reachable from the bottom of Settings, so most people never found it.
