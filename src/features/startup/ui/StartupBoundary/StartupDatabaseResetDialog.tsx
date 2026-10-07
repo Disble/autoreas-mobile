@@ -40,10 +40,12 @@ function StartupDatabaseResetContent(
   const { confirmation, onCancel, onConfirm } = props;
 
   return (
-    <Dialog.Content>
+    <Dialog.Content className={cn('w-full max-w-md self-center')}>
       <Dialog.Close variant="ghost" />
-      <Dialog.Title>{confirmation.title}</Dialog.Title>
-      <Dialog.Description>{confirmation.description}</Dialog.Description>
+      <View className={cn('mb-5 gap-1.5')}>
+        <Dialog.Title>{confirmation.title}</Dialog.Title>
+        <Dialog.Description>{confirmation.description}</Dialog.Description>
+      </View>
       <StartupDatabaseResetActions
         cancelActionLabel={confirmation.cancelActionLabel}
         confirmActionLabel={confirmation.confirmActionLabel}
@@ -75,6 +77,7 @@ export function StartupDatabaseResetDialog(
   return (
     <Dialog isOpen={isVisible} onOpenChange={onCancel}>
       <Dialog.Portal>
+        <Dialog.Overlay />
         <StartupDatabaseResetContent
           confirmation={confirmation}
           onCancel={onCancel}

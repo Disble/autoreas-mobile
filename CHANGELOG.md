@@ -16,6 +16,12 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-10-07
+
+### Fixed
+
+- The confirmation shown before rebuilding a damaged local database no longer stretches across the whole screen on tablets: it now appears centered at a comfortable reading width, over a dimmed background, with its warning clearly separated from the buttons.
+
 ## [1.9.1] — 2026-10-06
 
 ### Fixed
