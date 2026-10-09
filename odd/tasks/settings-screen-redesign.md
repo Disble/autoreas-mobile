@@ -74,7 +74,7 @@ not by opening the app. What is left on screen duplicates that channel and alarm
 - New `docs/mobile-sync-status-ux.md`: state, copy and tone table, and the rules behind it.
 - Update `docs/Autoreas_mobile_design_doc.md` §4.4.3 and `docs/mobile-diagnostic-telemetry.md`
   (counters are no longer shown in Settings), plus `docs/learning-log.md` if it applies.
-- [ ] Done — evidence:
+- [x] Done — evidence: work-unit commit `docs(settings): document the calm sync status contract and new layout`. New `docs/mobile-sync-status-ux.md` (question, why a PC that is off is normal, tone ladder, state table read from `deriveVisibleSyncStatus` and `buildSettingsSyncSummary`, layout, copy rules, counters only via telemetry). Dated update notes in `Autoreas_mobile_design_doc.md` §4.4.3 and the Fase 6 exit table; `mobile-diagnostic-telemetry.md` names the toggle "Enviar diagnóstico a la PC" and states Settings renders no counters; one `learning-log.md` entry. Passive docs: no RED applies; structural readback plus `lefthook run pre-commit` green.
 
 ## Checks per task
 
@@ -96,3 +96,9 @@ not by opening the app. What is left on screen duplicates that channel and alarm
   RDD is `off` (global), so no native review; medium tier = writer self-verification (accepted).
   Delivery: local merge model, no PRs, so the >400-line chain strategy does not apply.
 - 2026-10-08: T2 done (delegated writer). Settings is now status card + connection + background + privacy. Background card fixes: battery exemption (existing request), notification permission and stopped service (`Linking.openSettings`). Now dead outside T2 surfaces: the public `readShedCount` member of the diagnostics outbox store (still used internally), and `UseSyncFacadeResult.syncError` (no src reader left).
+- 2026-10-08: Dead surface left by T2 removed (delegated writer), commit `34cb562` `refactor(sync): drop facade and outbox reads left without consumers`. The diagnostics outbox store no longer exposes `readShedCount`; `getShedCount` owns the counter read with its never-throws, reads-as-zero contract (zero before any shed, cumulative across instances, zero on an unreadable counter: all still covered; mutation `shed_rows ?? 0` to `0` killed, 1 failure). `UseSyncFacadeResult.syncError` removed with its 17 test-mock references. Grep of src/ and tests/: zero hits for both. Focused Jest 113 suites / 1060 tests; `tsc --noEmit` clean; `lefthook run pre-commit` green.
+- 2026-10-08: T3 done (delegated writer), docs commit `docs(settings): document the calm sync status contract and new layout`. Live docs only; `docs/mobile-bridge-background-sync-redesign.md` and other design/history docs that mention a "Settings tile" were left as historical evidence.
+
+## Next step
+
+Local merge to dev after user review.
