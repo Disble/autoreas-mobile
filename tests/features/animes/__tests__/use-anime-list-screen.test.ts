@@ -71,7 +71,6 @@ jest.mock("../../../../src/features/sync/use-sync-facade", () => ({
     manualSync: mockManualSync,
     pendingOpsCount: 0,
     requestSync: jest.fn(),
-    syncError: null,
   })),
 }));
 
@@ -270,7 +269,6 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 2,
       requestSync: jest.fn(),
-      syncError: "bridge unavailable",
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -303,7 +301,6 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 2,
       requestSync: jest.fn(),
-      syncError: null,
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -324,7 +321,6 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: null,
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));

@@ -44,7 +44,6 @@ jest.mock('../../../../src/features/sync/use-sync-facade', () => ({
     lastSyncAt: null,
     manualSync: jest.fn(),
     pendingOpsCount: 0,
-    syncError: null,
   }),
 }));
 

@@ -173,7 +173,6 @@ describe('useSyncFacade', () => {
     });
 
     expect(result.current.connectionStatus).toBe('unreachable');
-    expect(result.current.syncError).toBe(unreachableError.message);
     expect(warnSpy).toHaveBeenCalledWith(
       '[useSyncFacade] Failed to persist sync failure telemetry',
       expect.any(Error),

@@ -233,7 +233,6 @@ describe("useSyncRuntime status projection", () => {
       manualSync: jest.fn(),
       pendingOpsCount: 0,
       requestSync: jest.fn(async () => 1),
-      syncError: null,
     });
     (
       nativeForegroundSyncAdapterModule.createNativeForegroundSyncAdapter as jest.Mock

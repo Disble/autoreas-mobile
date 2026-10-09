@@ -110,7 +110,6 @@ describe('SettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       manualSync: mockManualSync,
     });
 
@@ -186,7 +185,6 @@ describe('SettingsScreen', () => {
       lastSyncAt: null,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: null,
       manualSync: mockManualSync,
     });
 

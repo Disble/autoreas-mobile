@@ -103,7 +103,6 @@ describe('useSettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
       manualSync,
     });
     (useResponsiveLayout as jest.Mock).mockReturnValue({
@@ -189,7 +188,6 @@ describe('useSettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: null,
       manualSync,
     });
 
@@ -262,7 +260,6 @@ describe('useSettingsScreen', () => {
       lastSyncAt: null,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: null,
       manualSync,
     });
 
