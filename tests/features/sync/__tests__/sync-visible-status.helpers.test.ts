@@ -1,10 +1,28 @@
 import {
   deriveVisibleSyncStatus,
+  formatLastSyncRecency,
   isManualSyncAvailableNow,
 } from '../../../../src/features/sync/sync-visible-status.helpers';
 import type { SyncVisibleStatusFacts } from '../../../../src/features/sync/sync-visible-status.types';
 
 describe('sync-visible-status.helpers', () => {
+  describe('formatLastSyncRecency', () => {
+    const now = new Date('2026-04-09T10:00:00.000Z');
+    const minuteMs = 60 * 1000;
+
+    it.each([
+      [null, null],
+      [now.getTime() + minuteMs, 'hace un momento'],
+      [now.getTime() - 5 * minuteMs, 'hace 5 min'],
+      [now.getTime() - 60 * minuteMs, 'hace 1 h'],
+      [now.getTime() - 9 * 60 * minuteMs, 'hace 9 h'],
+      [now.getTime() - 24 * 60 * minuteMs, 'hace 1 día'],
+      [now.getTime() - 6 * 24 * 60 * minuteMs, 'hace 6 días'],
+    ])('formats a last sync at %p as %p', (lastSyncAt, expected) => {
+      expect(formatLastSyncRecency(lastSyncAt, now)).toBe(expected);
+    });
+  });
+
   describe('isManualSyncAvailableNow', () => {
     it('returns false when the phone is offline', () => {
       expect(
@@ -14,7 +32,6 @@ describe('sync-visible-status.helpers', () => {
           isDeviceOnline: false,
           lastSyncAt: null,
           pendingOpsCount: 0,
-          syncError: 'offline',
         }),
       ).toBe(false);
     });
@@ -27,7 +44,6 @@ describe('sync-visible-status.helpers', () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 0,
-          syncError: null,
         }),
       ).toBe(false);
     });
@@ -40,7 +56,6 @@ describe('sync-visible-status.helpers', () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 0,
-          syncError: null,
         }),
       ).toBe(false);
     });
@@ -53,7 +68,6 @@ describe('sync-visible-status.helpers', () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 2,
-          syncError: 'bridge unavailable',
         }),
       ).toBe(true);
     });
@@ -71,7 +85,6 @@ describe('sync-visible-status.helpers', () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 0,
-          syncError: null,
           ...facts,
         },
         NOW,
@@ -110,7 +123,6 @@ describe('sync-visible-status.helpers', () => {
           connectionStatus: 'sync_error',
           lastSyncAt: NOW.getTime() - HOUR_MS,
           pendingOpsCount: 2,
-          syncError: 'Reconcile failed: 422',
         }),
       ).toEqual({
         chipLabel: 'Envío rechazado',
@@ -146,7 +158,7 @@ describe('sync-visible-status.helpers', () => {
 
     it('treats an unreachable PC with nothing pending as neutral and shows the last sync', () => {
       expect(
-        derive({ lastSyncAt: NOW.getTime() - HOUR_MS, syncError: 'Bridge unreachable' }),
+        derive({ lastSyncAt: NOW.getTime() - HOUR_MS }),
       ).toEqual({
         chipLabel: 'Nada por enviar',
         description: 'Último sync hace 1 h.',
@@ -156,7 +168,7 @@ describe('sync-visible-status.helpers', () => {
     });
 
     it('says the PC has not answered yet when nothing is pending and there was never a sync', () => {
-      expect(derive({ syncError: 'Reconcile failed: 500' }).description).toBe(
+      expect(derive({}).description).toBe(
         'La PC todavía no respondió.',
       );
     });

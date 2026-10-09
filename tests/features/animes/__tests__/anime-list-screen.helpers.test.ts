@@ -232,7 +232,6 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 0,
-          syncError: null,
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
@@ -251,7 +250,6 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: true,
           lastSyncAt: new Date("2026-04-09T09:58:00.000Z").getTime(),
           pendingOpsCount: 0,
-          syncError: null,
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
@@ -271,7 +269,6 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: true,
           lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
           pendingOpsCount: 3,
-          syncError: "bridge unavailable",
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
@@ -279,7 +276,7 @@ describe("anime-list-screen helpers", () => {
       expect(status.tone).toBe("default");
       expect(status.chipLabel).toBe("Esperando a la PC");
       expect(status.title).toBe("Esperando a la PC");
-      expect(status.actionLabel).toBe("Revisar bridge");
+      expect(status.actionLabel).toBe("Revisar conexión");
     });
 
     it("warns, without reaching danger, about a backlog stale for several days", () => {
@@ -290,7 +287,6 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: true,
           lastSyncAt: new Date("2026-04-03T10:00:00.000Z").getTime(),
           pendingOpsCount: 2,
-          syncError: "bridge unavailable",
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
@@ -298,7 +294,7 @@ describe("anime-list-screen helpers", () => {
       expect(status.tone).toBe("warning");
       expect(status.title).toBe("Hace 6 días que no hay sync");
       expect(status.description).toContain("la PC no los ha recibido");
-      expect(status.actionLabel).toBe("Revisar bridge");
+      expect(status.actionLabel).toBe("Revisar conexión");
     });
 
     it("hides the bridge CTA when the device itself is offline", () => {
@@ -309,7 +305,6 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: false,
           lastSyncAt: new Date("2026-04-08T10:00:00.000Z").getTime(),
           pendingOpsCount: 2,
-          syncError: "bridge unavailable",
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
@@ -326,13 +321,12 @@ describe("anime-list-screen helpers", () => {
           isDeviceOnline: true,
           lastSyncAt: null,
           pendingOpsCount: 2,
-          syncError: null,
         },
         new Date("2026-04-09T10:00:00.000Z"),
       );
 
       expect(status.chipLabel).toBe("Modo local");
-      expect(status.actionLabel).toBe("Emparejar bridge");
+      expect(status.actionLabel).toBe("Emparejar PC");
     });
   });
 
@@ -344,7 +338,6 @@ describe("anime-list-screen helpers", () => {
         isDeviceOnline: false,
         lastSyncAt: null,
         pendingOpsCount: 1,
-        syncError: "bridge unavailable",
       });
 
       expect(feedback.label).toBe("Sin Wi-Fi.");
@@ -360,7 +353,6 @@ describe("anime-list-screen helpers", () => {
         isDeviceOnline: true,
         lastSyncAt: null,
         pendingOpsCount: 1,
-        syncError: "bridge unavailable",
       });
 
       expect(feedback.label).toBe("No se pudo contactar a la PC.");
@@ -380,7 +372,6 @@ describe("anime-list-screen helpers", () => {
           isRefreshing: true,
           lastSyncAt: null,
           pendingOpsCount: 1,
-          syncError: "bridge unavailable",
         }),
       ).toBe(false);
     });
@@ -394,7 +385,6 @@ describe("anime-list-screen helpers", () => {
           isRefreshing: false,
           lastSyncAt: null,
           pendingOpsCount: 1,
-          syncError: "bridge unavailable",
         }),
       ).toBe(true);
     });

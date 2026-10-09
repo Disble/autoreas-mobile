@@ -1,192 +1,167 @@
-import {
-  buildSettingsBridgeStatus,
-  buildSettingsSyncSummary,
-} from '../../../../src/features/settings/ui/SettingsScreen/settings-sync-status.helpers';
+import { buildSettingsSyncSummary } from '../../../../src/features/settings/ui/SettingsScreen/settings-sync-status.helpers';
+import type { BuildSettingsSyncSummaryInput } from '../../../../src/features/settings/ui/SettingsScreen/settings-screen.types';
 
-/**
- * Split from `settings-screen.helpers.test.ts` (CLAUDE.md #5, the 500-line rule): this file owns
- * `buildSettingsSyncSummary`/`buildSettingsBridgeStatus`; the sibling file owns
- * `buildBackgroundSyncSection`/`formatBackgroundSyncTimestamp`.
- */
-describe('settings-sync-status.helpers', () => {
-  it('builds a calm local-only summary with setup guidance when no bridge is paired', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: false,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'idle',
-        lastSyncAt: null,
-        pendingOpsCount: 0,
-        syncError: null,
-      },
+/** Fixed clock every summary in this file is derived against. */
+const NOW = new Date('2026-04-09T10:00:00.000Z');
+/** Milliseconds in one hour, used to place the last sync relative to `NOW`. */
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Builds a paired, online summary input and lets each test override only the facts it is about. */
+function buildInput(
+  overrides: Partial<Omit<BuildSettingsSyncSummaryInput, 'syncFacts'>> & {
+    readonly syncFacts?: Partial<BuildSettingsSyncSummaryInput['syncFacts']>;
+  } = {},
+): BuildSettingsSyncSummaryInput {
+  return {
+    isConfigured: overrides.isConfigured ?? true,
+    isDeviceOnline: overrides.isDeviceOnline === undefined ? true : overrides.isDeviceOnline,
+    now: overrides.now ?? NOW,
+    syncFacts: {
+      connectionStatus: 'unreachable',
+      lastSyncAt: NOW.getTime() - 9 * HOUR_MS,
+      pendingOpsCount: 0,
+      ...overrides.syncFacts,
+    },
+  };
+}
+
+describe('buildSettingsSyncSummary', () => {
+  describe('copy and tone', () => {
+    it('reuses the shared visible status for the title, description and tone', () => {
+      const summary = buildSettingsSyncSummary(buildInput({ syncFacts: { pendingOpsCount: 1 } }));
+
+      expect(summary.title).toBe('Esperando a la PC');
+      expect(summary.description).toBe(
+        'Tienes 1 cambio guardado en este dispositivo. Se enviará solo cuando la PC esté encendida.',
+      );
+      expect(summary.tone).toBe('default');
     });
-
-    expect(summary.tone).toBe('default');
-    expect(summary.chipLabel).toBe('Modo local');
-    expect(summary.title).toBe('Sin PC emparejada');
-    expect(summary.description).toContain('Empareja una PC');
-    expect(summary.bridgeStatusKind).toBe('unpaired');
-    expect(summary.actionKind).toBe('go_to_setup');
-    expect(summary.actionLabel).toBe('Emparejar PC');
   });
 
-  it('keeps device-offline pending changes neutral and without an action', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: false,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
+  describe('meta line', () => {
+    it('joins the last sync recency and the pending count while changes are waiting', () => {
+      const summary = buildSettingsSyncSummary(buildInput({ syncFacts: { pendingOpsCount: 1 } }));
+
+      expect(summary.meta).toBe('Último sync hace 9 h · 1 por enviar');
     });
 
-    expect(summary.tone).toBe('default');
-    expect(summary.chipLabel).toBe('Sin Wi-Fi');
-    expect(summary.title).toBe('Sin Wi-Fi');
-    expect(summary.description).toContain('vuelvas a conectarte');
-    expect(summary.bridgeStatusKind).toBe('phone_offline');
-    expect(summary.actionKind).toBeNull();
-    expect(summary.actionLabel).toBeNull();
+    it('shows only the pending count when the device never synced', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ syncFacts: { lastSyncAt: null, pendingOpsCount: 4 } }),
+      );
+
+      expect(summary.meta).toBe('4 por enviar');
+    });
+
+    it('has no meta line when nothing is waiting, because the description already says when it synced', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ syncFacts: { connectionStatus: 'online', pendingOpsCount: 0 } }),
+      );
+
+      expect(summary.description).toBe('Último sync hace 9 h.');
+      expect(summary.meta).toBeNull();
+    });
+
+    it('has no meta line while no PC is paired', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ isConfigured: false, syncFacts: { pendingOpsCount: 3 } }),
+      );
+
+      expect(summary.meta).toBeNull();
+    });
   });
 
-  it('never suggests re-pairing when the PC is merely unreachable with a pending backlog', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
-        pendingOpsCount: 3,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
+  describe('icon', () => {
+    it.each([
+      ['unpaired', buildInput({ isConfigured: false }), 'link-outline'],
+      ['syncing', buildInput({ syncFacts: { connectionStatus: 'syncing' } }), 'sync-outline'],
+      [
+        'up to date',
+        buildInput({ syncFacts: { connectionStatus: 'online', pendingOpsCount: 0 } }),
+        'checkmark-circle-outline',
+      ],
+      [
+        'rejected',
+        buildInput({ syncFacts: { connectionStatus: 'sync_error', pendingOpsCount: 2 } }),
+        'alert-circle-outline',
+      ],
+      ['offline device', buildInput({ isDeviceOnline: false }), 'cloud-offline-outline'],
+      ['waiting for the PC', buildInput({ syncFacts: { pendingOpsCount: 1 } }), 'desktop-outline'],
+    ] as const)('uses the %s icon', (_label, input, iconName) => {
+      expect(buildSettingsSyncSummary(input).iconName).toBe(iconName);
     });
-
-    expect(summary.tone).toBe('default');
-    expect(summary.chipLabel).toBe('Esperando a la PC');
-    expect(summary.title).toBe('Esperando a la PC');
-    expect(summary.bridgeStatusKind).toBe('bridge_unreachable');
-    expect(summary.actionKind).toBeNull();
-    expect(summary.actionLabel).toBeNull();
   });
 
-  it('flags bridge unreachability separately from calm local-only mode when no backlog exists', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'unreachable',
-        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
-        pendingOpsCount: 0,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
+  describe('contextual action', () => {
+    it('offers pairing as the only action while no PC is paired', () => {
+      const summary = buildSettingsSyncSummary(buildInput({ isConfigured: false }));
+
+      expect(summary.action).toEqual({
+        kind: 'go_to_setup',
+        label: 'Emparejar PC',
+        isDisabled: false,
+      });
     });
 
-    expect(summary.tone).toBe('default');
-    expect(summary.chipLabel).toBe('Nada por enviar');
-    expect(summary.bridgeStatusKind).toBe('bridge_unreachable');
-    expect(summary.actionKind).toBeNull();
-  });
+    it('offers a retry while changes are waiting for the PC', () => {
+      const summary = buildSettingsSyncSummary(buildInput({ syncFacts: { pendingOpsCount: 1 } }));
 
-  it('presents a reachable sync rejection without blaming bridge connectivity', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'sync_error',
-        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Reconcile failed: 422',
-      },
-    });
-    const bridgeStatus = buildSettingsBridgeStatus(summary);
-
-    expect(summary.bridgeStatusKind).toBe('sync_error');
-    expect(summary.tone).toBe('danger');
-    expect(summary.title).toBe('La PC no aceptó tus cambios');
-    expect(summary.actionKind).toBeNull();
-    expect(bridgeStatus.chipLabel).toBe('Bridge disponible');
-    expect(bridgeStatus.title).toBe('El bridge rechazó el sync');
-    expect(bridgeStatus.description).toContain('respondió, pero no pudo completar');
-    expect(bridgeStatus.tone).toBe('danger');
-  });
-
-  it('marks old pending backlog as stale so the bridge card can escalate it', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'idle',
-        lastSyncAt: new Date('2026-04-05T10:00:00.000Z').getTime(),
-        pendingOpsCount: 4,
-        syncError: null,
-      },
+      expect(summary.action).toEqual({
+        kind: 'sync_now',
+        label: 'Reintentar ahora',
+        isDisabled: false,
+      });
     });
 
-    expect(summary.bridgeStatusKind).toBe('stale_backlog');
-    expect(summary.tone).toBe('warning');
-    expect(summary.title).toBe('Hace 4 días que no hay sync');
-    expect(summary.description).toContain('la PC no los ha recibido');
-    expect(summary.actionKind).toBeNull();
-  });
+    it('offers a retry after the PC rejected the sync even with nothing counted as pending', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ syncFacts: { connectionStatus: 'sync_error', pendingOpsCount: 0 } }),
+      );
 
-  it('keeps a pending backlog younger than 72 hours out of the stale kind', () => {
-    const summary = buildSettingsSyncSummary({
-      isConfigured: true,
-      isDeviceOnline: true,
-      now: new Date('2026-04-09T10:00:00.000Z'),
-      syncFacts: {
-        connectionStatus: 'idle',
-        lastSyncAt: new Date('2026-04-06T11:00:00.000Z').getTime(),
-        pendingOpsCount: 4,
-        syncError: null,
-      },
+      expect(summary.action?.label).toBe('Reintentar ahora');
     });
 
-    expect(summary.bridgeStatusKind).toBe('pending_backlog');
-    expect(summary.tone).toBe('default');
-  });
+    it('offers a plain sync when everything is up to date', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ syncFacts: { connectionStatus: 'online', pendingOpsCount: 0 } }),
+      );
 
-  it('builds a bridge-card warning copy when the bridge is configured but unreachable', () => {
-    const bridgeStatus = buildSettingsBridgeStatus({
-      chipLabel: 'Catálogo local',
-      description:
-        'El último intento con el bridge falló, pero tu catálogo local sigue disponible en este dispositivo.',
-      title: 'Catálogo local listo',
-      tone: 'default',
-      bridgeStatusKind: 'bridge_unreachable',
-      actionKind: null,
-      actionLabel: null,
+      expect(summary.action).toEqual({
+        kind: 'sync_now',
+        label: 'Sincronizar ahora',
+        isDisabled: false,
+      });
     });
 
-    expect(bridgeStatus.chipLabel).toBe('Bridge no disponible');
-    expect(bridgeStatus.title).toBe('Bridge configurado pero inaccesible');
-    expect(bridgeStatus.description).toContain('último intento con el bridge falló');
-    expect(bridgeStatus.tone).toBe('warning');
-  });
+    it('disables the sync action while the device has no connection', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ isDeviceOnline: false, syncFacts: { pendingOpsCount: 2 } }),
+      );
 
-  it('builds bridge-card copy that blames phone connectivity when the device is offline', () => {
-    const bridgeStatus = buildSettingsBridgeStatus({
-      chipLabel: 'Sin conexión',
-      description:
-        'Este teléfono está sin internet. Tus cambios siguen guardados en este dispositivo y se van a reintentar cuando vuelva la conexión.',
-      title: '2 cambios esperando sync',
-      tone: 'warning',
-      bridgeStatusKind: 'phone_offline',
-      actionKind: null,
-      actionLabel: null,
+      expect(summary.action).toEqual({
+        kind: 'sync_now',
+        label: 'Reintentar ahora',
+        isDisabled: true,
+      });
     });
 
-    expect(bridgeStatus.chipLabel).toBe('Sin conexión');
-    expect(bridgeStatus.title).toBe('Teléfono sin internet');
-    expect(bridgeStatus.description).toContain('teléfono está sin internet');
-    expect(bridgeStatus.tone).toBe('warning');
+    it('hides the action while a sync is already running', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({ syncFacts: { connectionStatus: 'syncing', pendingOpsCount: 3 } }),
+      );
+
+      expect(summary.action).toBeNull();
+    });
+
+    it('never offers re-pairing for a PC that is merely off', () => {
+      const summary = buildSettingsSyncSummary(
+        buildInput({
+          syncFacts: { lastSyncAt: NOW.getTime() - 200 * HOUR_MS, pendingOpsCount: 5 },
+        }),
+      );
+
+      expect(summary.tone).toBe('warning');
+      expect(summary.action?.kind).toBe('sync_now');
+    });
   });
 });

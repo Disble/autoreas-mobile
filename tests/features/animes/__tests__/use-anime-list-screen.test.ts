@@ -309,7 +309,7 @@ describe("useAnimeListScreen", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     expect(result.current.syncStatus.chipLabel).toBe("Modo local");
-    expect(result.current.syncStatus.actionLabel).toBe("Emparejar bridge");
+    expect(result.current.syncStatus.actionLabel).toBe("Emparejar PC");
   });
 
   it("expone el refresh manual como deshabilitado mientras sync ya está en progreso", () => {

@@ -1,4 +1,5 @@
 import { useThemeColor } from 'heroui-native';
+import { useMemo } from 'react';
 import { useResponsiveLayout } from '../../../../hooks/use-responsive-layout';
 import type { SettingsScreenThemeResult } from './settings-screen.types';
 
@@ -13,13 +14,8 @@ export function useSettingsScreenTheme(): SettingsScreenThemeResult {
   // 2. State
 
   // 3. Context/3rd Party Hooks
-  const [
-    themeColorForeground,
-    themeColorMuted,
-    themeColorSuccess,
-    themeColorWarning,
-    themeColorDanger,
-  ] = useThemeColor([
+  const [accent, foreground, muted, success, warning, danger] = useThemeColor([
+    'accent',
     'foreground',
     'muted',
     'success',
@@ -31,17 +27,14 @@ export function useSettingsScreenTheme(): SettingsScreenThemeResult {
   // 4. Queries/Mutations
 
   // 5. Derived State (useMemo)
+  const toneColors = useMemo(
+    () => ({ accent, foreground, muted, success, warning, danger }),
+    [accent, danger, foreground, muted, success, warning],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
 
   // 7. Effects
 
-  return {
-    themeColorForeground,
-    themeColorMuted,
-    themeColorSuccess,
-    themeColorWarning,
-    themeColorDanger,
-    layoutMode,
-  };
+  return { toneColors, layoutMode };
 }

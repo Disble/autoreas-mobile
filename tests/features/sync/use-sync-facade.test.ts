@@ -381,7 +381,6 @@ describe('useSyncFacade', () => {
         isDeviceOnline: true,
         lastSyncAt: result.current.lastSyncAt,
         pendingOpsCount: result.current.pendingOpsCount,
-        syncError: result.current.syncError,
       },
       new Date(2_000),
     );

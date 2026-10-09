@@ -66,7 +66,7 @@ not by opening the app. What is left on screen duplicates that channel and alarm
   re-pair). Background section collapsed to one line unless something needs fixing (battery
   exemption, permission, service). Privacy toggle unchanged.
 - Remove `SettingsMetricTile*`, the runtime tile builders, and their constants and tests.
-- [ ] Done — evidence:
+- [x] Done — evidence: work-unit commit `feat(settings): replace the runtime log with a single sync status layout`. RED: 29/34 new helper tests (status meta, icon, action; background items; connection) failed before implementation. GREEN: focused Jest 38 suites / 373 tests; `tsc --noEmit` clean; react-doctor `--diff` no issues; `lefthook run pre-commit` green. Mutations killed on `buildSettingsBackgroundStatus`: battery branch (2 failures), foreground-service gate on the notification item (1), unsupported short-circuit (1). Manual sync wired to the existing `useSyncFacade().manualSync`. Removed: metric tile grid and builders, convergence descriptors, label maps, background section builder, `buildSettingsBridgeStatus`, the capacity-shed read, `SyncVisibleStatusFacts.syncError`.
 
 ### T3 — Documentation
 
@@ -91,3 +91,8 @@ not by opening the app. What is left on screen duplicates that channel and alarm
 
 - 2026-10-08: feature document created; branch created from `dev` (0052cac).
 - 2026-10-08: T1 done (delegated writer). Tone ladder and copy applied in `deriveVisibleSyncStatus`; Settings summary no longer offers re-pairing for a pending backlog; anime-list refresh-failure copy aligned. Follow-ups outside T1 surfaces: `SyncVisibleStatusFacts.syncError` is no longer read by the shared status (still fed by two hooks); `season-rating-sheet.constants.ts` still says "teléfono".
+- 2026-10-08: T1 parent spot check: focused helper suites 30/30 green. Review assessment on
+  `dev..bc9d915`: risk `medium`, `review_due` (slice_budget_reached, 844 lines incl. tests).
+  RDD is `off` (global), so no native review; medium tier = writer self-verification (accepted).
+  Delivery: local merge model, no PRs, so the >400-line chain strategy does not apply.
+- 2026-10-08: T2 done (delegated writer). Settings is now status card + connection + background + privacy. Background card fixes: battery exemption (existing request), notification permission and stopped service (`Linking.openSettings`). Now dead outside T2 surfaces: the public `readShedCount` member of the diagnostics outbox store (still used internally), and `UseSyncFacadeResult.syncError` (no src reader left).

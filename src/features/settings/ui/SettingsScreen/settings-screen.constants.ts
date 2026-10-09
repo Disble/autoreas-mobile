@@ -1,172 +1,9 @@
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type {
-  SyncRuntimeRegistrationStatus,
-  SyncRuntimeTriggerSource,
-} from '../../../sync/sync-runtime-status.types';
-import type { SyncExecutionMode } from '../../../sync/sync-execution-mode.types';
-import type {
-  BackgroundSyncSectionTone,
-  ConvergenceCountTileDescriptor,
+  SettingsBackgroundIssue,
+  SettingsBackgroundIssueId,
+  SettingsTone,
 } from './settings-screen.types';
-
-/** Provides the shared background sync section title value. */
-
-export const BACKGROUND_SYNC_SECTION_TITLE = 'Estado de sync en segundo plano';
-
-/** Provides the shared background sync registration labels value. */
-
-export const BACKGROUND_SYNC_REGISTRATION_LABELS: Record<
-  SyncRuntimeRegistrationStatus,
-  string
-> = {
-  registered: 'Registrado',
-  unregistered: 'No registrado',
-  unsupported: 'No soportado',
-};
-
-/** Provides the shared background sync trigger source labels value. */
-
-export const BACKGROUND_SYNC_TRIGGER_SOURCE_LABELS: Record<
-  SyncRuntimeTriggerSource,
-  string
-> = {
-  bootstrap: 'Inicio de la app',
-  manual: 'Sync manual',
-  app_active: 'Volvió al foreground',
-  network_regained: 'Reconexión de red',
-  local_mutation: 'Cambio local',
-  local_mutation_write: 'Escritura local fallida',
-  ws_sync_required: 'WebSocket pidió sync',
-  foreground_service: 'Servicio foreground',
-  background_task: 'Task en segundo plano',
-};
-
-/** Provides the shared background sync execution mode labels value. */
-
-export const BACKGROUND_SYNC_EXECUTION_MODE_LABELS: Record<SyncExecutionMode, string> = {
-  best_effort_background_task: 'Task best-effort',
-  android_foreground_service: 'Servicio foreground Android',
-};
-
-/** Provides the shared metric tile tone bg class value. */
-
-export const METRIC_TILE_TONE_BG_CLASS: Record<BackgroundSyncSectionTone, string> = {
-  default: 'bg-surface-secondary',
-  accent: 'bg-accent/15',
-  success: 'bg-success/15',
-  warning: 'bg-warning/15',
-  danger: 'bg-danger/15',
-};
-
-/** Provides the shared metric tile tone text class value. */
-
-export const METRIC_TILE_TONE_TEXT_CLASS: Record<BackgroundSyncSectionTone, string> = {
-  default: 'text-foreground',
-  accent: 'text-accent',
-  success: 'text-success',
-  warning: 'text-warning',
-  danger: 'text-danger',
-};
-
-/** Provides the shared metric tile columns by layout value. */
-
-export const METRIC_TILE_COLUMNS_BY_LAYOUT: Record<LayoutMode, number> = {
-  phone: 2,
-  'tablet-portrait': 3,
-  'tablet-landscape': 3,
-};
-
-/** Provides the shared status chip color by tone value. */
-
-export const STATUS_CHIP_COLOR_BY_TONE: Record<
-  BackgroundSyncSectionTone,
-  'default' | 'accent' | 'success' | 'warning' | 'danger'
-> = {
-  default: 'default',
-  accent: 'accent',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-};
-
-/**
- * The nine count-only convergence tiles, in the order the card renders them (design.md
- * `2026-09-09-convergence-instrumentation` Decision 6). One table driven by one loop replaces nine
- * structurally identical `pushCountTile` calls, which fallow reported as a single clone group.
- *
- * Each descriptor binds a tile's copy to the snapshot counter that decides whether it renders at
- * all: a `null` counter means "never measured" (Decision 7), so the tile is omitted rather than
- * zero-filled, while a measured `0` renders neutral. The two derived neighbours -- the oldest
- * pending age and the true backlog depth -- deliberately stay outside the table, because their
- * values are formatted and suffixed rather than pushed as a raw count.
- */
-
-export const CONVERGENCE_COUNT_TILE_DESCRIPTORS: readonly ConvergenceCountTileDescriptor[] = [
-  {
-    snapshotField: 'lastDiagnosticsDiscardedCount',
-    id: 'diagnosticsDiscardedCount',
-    label: 'Diagnósticos descartados',
-    iconName: 'close-circle-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastDiagnosticsFailedRemovalCount',
-    id: 'diagnosticsFailedRemovalCount',
-    label: 'Diagnósticos a reintentar',
-    iconName: 'repeat-outline',
-    nonZeroTone: 'warning',
-  },
-  {
-    snapshotField: 'lastDiagnosticsUndeliverableCount',
-    id: 'diagnosticsUndeliverableCount',
-    label: 'Diagnósticos destruidos por declaración',
-    iconName: 'remove-circle-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastDiagnosticsUnclassifiedCount',
-    id: 'diagnosticsUnclassifiedCount',
-    label: 'Diagnósticos sin clasificar',
-    iconName: 'help-circle-outline',
-    nonZeroTone: 'warning',
-  },
-  {
-    snapshotField: 'lastDiagnosticsReapedCount',
-    id: 'diagnosticsReapedCount',
-    label: 'Diagnósticos retirados por antigüedad',
-    iconName: 'alarm-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastOutboxFailedWriteCount',
-    id: 'outboxFailedWriteCount',
-    label: 'Escrituras de outbox fallidas',
-    iconName: 'warning-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastDeadLetterCount',
-    id: 'deadLetterCount',
-    label: 'Operaciones bloqueadas',
-    iconName: 'ban-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastConflictExhaustedCount',
-    id: 'conflictExhaustedCount',
-    label: 'Conflictos sin resolver',
-    iconName: 'alert-outline',
-    nonZeroTone: 'danger',
-  },
-  {
-    snapshotField: 'lastStuckProcessingCount',
-    id: 'stuckProcessingCount',
-    label: 'Operaciones atascadas',
-    iconName: 'hourglass-outline',
-    nonZeroTone: 'warning',
-  },
-];
-
 
 /** Maps responsive layout modes to the Settings content width class. */
 export const SETTINGS_CONTAINER_WIDTH_CLASS: Readonly<Record<LayoutMode, string>> = {
@@ -175,14 +12,92 @@ export const SETTINGS_CONTAINER_WIDTH_CLASS: Readonly<Record<LayoutMode, string>
   'tablet-landscape': 'max-w-[1120px]',
 };
 
-/** User-facing copy (neutral Spanish) for the Settings battery-exemption row. */
-export const BATTERY_EXEMPTION_ROW_COPY = {
-  title: 'Excepción de batería',
-  warningTitle: 'Excepción de batería desactivada',
-  exemptDescription: 'La app está exenta de las restricciones de batería de Android.',
-  notExemptDescription:
-    'Sin esta excepción, Android puede detener el servicio persistente en segundo plano.',
-  warningDescription:
-    'Sin esta excepción, Android puede detener la sincronización en segundo plano. Actívala para que tus capítulos se sigan sincronizando con la app cerrada.',
-  actionLabel: 'Activar excepción',
+/** Tints the status card icon badge with the soft variant of its tone. */
+export const SETTINGS_STATUS_ICON_BG_CLASS: Readonly<Record<SettingsTone, string>> = {
+  default: 'bg-surface-secondary',
+  accent: 'bg-accent/15',
+  success: 'bg-success/15',
+  warning: 'bg-warning/15',
+  danger: 'bg-danger/15',
+};
+
+/** Colors the status title only when the state asks for attention; calm states stay foreground. */
+export const SETTINGS_STATUS_TITLE_CLASS: Readonly<Record<SettingsTone, string>> = {
+  default: 'text-foreground',
+  accent: 'text-foreground',
+  success: 'text-foreground',
+  warning: 'text-warning',
+  danger: 'text-danger',
+};
+
+/** Separator between the parts of the status card meta line. */
+export const SETTINGS_STATUS_META_SEPARATOR = ' · ';
+
+/** User-facing copy (neutral Spanish) for the status card's contextual actions. */
+export const SETTINGS_STATUS_ACTION_LABELS = {
+  goToSetup: 'Emparejar PC',
+  retry: 'Reintentar ahora',
+  syncNow: 'Sincronizar ahora',
+} as const;
+
+/** User-facing copy (neutral Spanish) for the connection card. */
+export const SETTINGS_CONNECTION_COPY = {
+  title: 'Conexión con la PC',
+  hostLabel: 'PC',
+  deviceIdLabel: 'Este dispositivo',
+  missingIp: 'Sin IP',
+  missingPort: 'Sin puerto',
+  rePairTitle: 'Re-emparejar',
+  rePairDescription: 'Úsalo si cambiaste de PC o se reinstaló el bridge.',
+  rePairLabel: 'Re-emparejar',
+  rePairingLabel: 'Re-emparejando...',
+} as const;
+
+/** User-facing copy (neutral Spanish) for the background card. */
+export const SETTINGS_BACKGROUND_COPY = {
+  title: 'Segundo plano',
+  okTitle: 'Sync automático activo',
+  okDescription: 'Sigue funcionando con la app cerrada.',
+  inactiveDescription: 'Se activa al emparejar una PC.',
+} as const;
+
+/** Copy and fix for each background-sync item that can need the user's attention. */
+export const SETTINGS_BACKGROUND_ISSUES: Readonly<
+  Record<SettingsBackgroundIssueId, SettingsBackgroundIssue>
+> = {
+  background_unsupported: {
+    id: 'background_unsupported',
+    title: 'Segundo plano no disponible',
+    description:
+      'Este dispositivo no permite el sync con la app cerrada. Se sincroniza mientras la app está abierta.',
+    action: null,
+  },
+  background_service: {
+    id: 'background_service',
+    title: 'El sync automático no está activo',
+    description:
+      'El servicio en segundo plano no está corriendo. Revisa que la app pueda funcionar en segundo plano.',
+    action: { kind: 'open_app_settings', label: 'Abrir ajustes' },
+  },
+  battery_exemption: {
+    id: 'battery_exemption',
+    title: 'El sync puede pausarse con la app cerrada',
+    description: 'Android limita la batería de esta app. Permítele funcionar en segundo plano.',
+    action: { kind: 'request_battery_exemption', label: 'Permitir' },
+  },
+  notification_permission: {
+    id: 'notification_permission',
+    title: 'Notificación persistente desactivada',
+    description:
+      'Permite las notificaciones de la app para que Android mantenga el sync activo con la app cerrada.',
+    action: { kind: 'open_app_settings', label: 'Abrir ajustes' },
+  },
+};
+
+/** User-facing copy (neutral Spanish) for the privacy card. */
+export const SETTINGS_PRIVACY_COPY = {
+  title: 'Privacidad',
+  telemetryLabel: 'Enviar diagnóstico a la PC',
+  telemetryDescription:
+    'Ayuda a encontrar fallas de sync sin conectar el cable. Solo viajan códigos y contadores: ningún título, ruta ni dato tuyo.',
 } as const;

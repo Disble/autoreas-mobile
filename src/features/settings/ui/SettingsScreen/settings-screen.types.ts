@@ -3,74 +3,21 @@ import type { useRouter } from 'expo-router';
 import type { Ionicons } from '@expo/vector-icons';
 import type { BridgeConfig } from '../../../../infrastructure/db/schema';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
-import type { SyncVisibleStatus } from '../../../sync/sync-visible-status.types';
+import type { SyncVisibleStatus, SyncVisibleStatusTone } from '../../../sync/sync-visible-status.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../sync/sync-runtime-status.types';
 import type { SyncConnectionStatus } from '../../../sync/sync-connection-store/sync-connection-store.types';
+import type { UseSyncFacadeResult } from '../../../sync/sync-facade.types';
 import type { useBridgeConfig } from '../../use-bridge-config';
 
 /** Defines the settings screen props value shape. */
 export type SettingsScreenProps = Record<never, never>;
 
-/** Defines the background sync section tone value shape. */
-export type BackgroundSyncSectionTone =
-  | 'default'
-  | 'accent'
-  | 'success'
-  | 'warning'
-  | 'danger';
+/** Defines the icon name value shape the Settings cards render. */
+export type SettingsIconName = ComponentProps<typeof Ionicons>['name'];
 
-/** Defines the metric tile icon name value shape. */
-export type MetricTileIconName = ComponentProps<typeof Ionicons>['name'];
-
-/** Defines the metric tile span value shape. */
-export type MetricTileSpan = 'half' | 'full';
-
-/**
- * The snapshot counter fields that drive the count-only convergence tiles. Closed on purpose: a
- * tile descriptor can only read a counter this device actually persists and folds each cycle.
- */
-export type ConvergenceCountTileField =
-  | 'lastDiagnosticsDiscardedCount'
-  | 'lastDiagnosticsFailedRemovalCount'
-  | 'lastDiagnosticsUndeliverableCount'
-  | 'lastDiagnosticsUnclassifiedCount'
-  | 'lastDiagnosticsReapedCount'
-  | 'lastOutboxFailedWriteCount'
-  | 'lastDeadLetterCount'
-  | 'lastConflictExhaustedCount'
-  | 'lastStuckProcessingCount';
-
-/**
- * Static shape shared by every count-only convergence tile: its stable `id`, its Spanish `label`,
- * its icon, and the tone it escalates to once its count is non-zero.
- */
-export interface CountTileConfig {
-  readonly id: string;
-  readonly label: string;
-  readonly iconName: MetricTileIconName;
-  readonly nonZeroTone: BackgroundSyncSectionTone;
-}
-
-/**
- * One count-only convergence tile plus the snapshot counter that decides whether it renders at
- * all: a `null` counter means "never measured", so the tile is omitted rather than zero-filled.
- */
-export interface ConvergenceCountTileDescriptor extends CountTileConfig {
-  readonly snapshotField: ConvergenceCountTileField;
-}
-
-/** Defines the data contract for metric tile. */
-export interface MetricTile {
-  readonly id: string;
-  readonly label: string;
-  readonly value: string;
-  readonly tone: BackgroundSyncSectionTone;
-  readonly iconName: MetricTileIconName;
-  readonly span?: MetricTileSpan;
-}
-
-/** Defines the data contract for resolved tone colors. */
+/** Defines the data contract for the theme colors a tone resolves to. */
 export interface ResolvedToneColors {
+  readonly accent: string;
   readonly foreground: string;
   readonly muted: string;
   readonly success: string;
@@ -78,53 +25,23 @@ export interface ResolvedToneColors {
   readonly danger: string;
 }
 
-/** Defines the data contract for background sync section. */
-export interface BackgroundSyncSection {
-  readonly title: string;
-  readonly description: string;
-  readonly status: string;
-  readonly statusTone: BackgroundSyncSectionTone;
-  readonly tiles: readonly MetricTile[];
+/** Defines the kind of the single contextual action the status card can offer. */
+export type SettingsStatusActionKind = 'go_to_setup' | 'sync_now';
+
+/** Defines the data contract for the status card's contextual action. */
+export interface SettingsStatusAction {
+  readonly kind: SettingsStatusActionKind;
+  readonly label: string;
+  /** True while the action cannot start right now, e.g. the device has no connection. */
+  readonly isDisabled: boolean;
 }
 
-/** Defines the data contract for build background sync section input. */
-export interface BuildBackgroundSyncSectionInput {
-  readonly isConfigured: boolean;
-  readonly snapshot: SyncRuntimeStatusSnapshot;
-  /**
-   * The outbox's CUMULATIVE capacity-shed count, read live from the store's own counter table --
-   * deliberately NOT a `SyncRuntimeStatusSnapshot` field, because surfacing it must not require a
-   * schema migration or a new status write. `null` (or an omitted field) means the counter could
-   * not be read, and the tile is omitted rather than rendered as a fabricated zero.
-   */
-  readonly shedCount?: number | null;
-}
-
-/** Defines the settings sync summary action kind value shape. */
-export type SettingsSyncSummaryActionKind = 'go_to_setup';
-
-/** Defines the settings bridge status kind value shape. */
-export type SettingsBridgeStatusKind =
-  | 'unpaired'
-  | 'healthy'
-  | 'syncing'
-  | 'phone_offline'
-  | 'bridge_unreachable'
-  | 'sync_error'
-  | 'local_only'
-  | 'pending_backlog'
-  | 'stale_backlog';
-
-/** Defines the data contract for settings sync summary. */
+/** Defines the data contract for the status card: the shared visible status plus Settings extras. */
 export interface SettingsSyncSummary extends SyncVisibleStatus {
-  readonly bridgeStatusKind: SettingsBridgeStatusKind;
-  readonly actionKind: SettingsSyncSummaryActionKind | null;
-  readonly actionLabel: string | null;
-}
-
-/** Defines the data contract for settings bridge status. */
-export interface SettingsBridgeStatus extends SyncVisibleStatus {
-  readonly bridgeStatusKind: SettingsBridgeStatusKind;
+  readonly iconName: SettingsIconName;
+  /** Short line such as "Último sync hace 9 h · 1 por enviar", or null when it adds nothing. */
+  readonly meta: string | null;
+  readonly action: SettingsStatusAction | null;
 }
 
 /** Defines the data contract for build settings sync summary input. */
@@ -136,122 +53,151 @@ export interface BuildSettingsSyncSummaryInput {
     readonly connectionStatus: SyncConnectionStatus;
     readonly lastSyncAt: number | null;
     readonly pendingOpsCount: number;
-    readonly syncError: string | null;
   };
 }
 
+/** Defines the identifier of one background-sync item that needs the user's attention. */
+export type SettingsBackgroundIssueId =
+  | 'background_unsupported'
+  | 'background_service'
+  | 'battery_exemption'
+  | 'notification_permission';
+
+/** Defines the kind of fix a background issue offers. */
+export type SettingsBackgroundIssueActionKind = 'request_battery_exemption' | 'open_app_settings';
+
+/** Defines the data contract for the fix button of a background issue. */
+export interface SettingsBackgroundIssueAction {
+  readonly kind: SettingsBackgroundIssueActionKind;
+  readonly label: string;
+}
+
+/** Defines the data contract for one background-sync item that needs the user's attention. */
+export interface SettingsBackgroundIssue {
+  readonly id: SettingsBackgroundIssueId;
+  readonly title: string;
+  readonly description: string;
+  readonly action: SettingsBackgroundIssueAction | null;
+}
+
+/**
+ * Defines what the background card shows: inactive while no PC is paired, one ok line when
+ * everything works, or only the failing items otherwise.
+ */
+export type SettingsBackgroundStatus =
+  | { readonly kind: 'inactive' }
+  | { readonly kind: 'ok' }
+  | { readonly kind: 'needs_attention'; readonly issues: readonly SettingsBackgroundIssue[] };
+
+/** Defines the data contract for build settings background status input. */
+export interface BuildSettingsBackgroundStatusInput {
+  readonly isConfigured: boolean;
+  /** True while the battery exemption is missing on a device that can request it. */
+  readonly isBatteryExemptionHighlighted: boolean;
+  readonly snapshot: Pick<
+    SyncRuntimeStatusSnapshot,
+    'registrationStatus' | 'executionMode' | 'canShowPersistentNotification'
+  >;
+}
+
+/** Defines the data contract for the connection card. */
+export interface SettingsConnection {
+  readonly host: string;
+  readonly deviceId: string;
+}
+
+/** Defines the bridge config fields the connection card reads. */
+export type SettingsConnectionConfig = Pick<BridgeConfig, 'ip' | 'port' | 'deviceId'>;
+
 /** Defines the result contract for `useSettingsScreenBatteryExemption`. */
 export interface UseSettingsScreenBatteryExemptionResult {
-  readonly isBatteryOptimizationExempt: boolean;
-  /** True while the exemption is missing on a device that can request it (warning emphasis). */
+  /** True while the exemption is missing on a device that can request it. */
   readonly isBatteryExemptionHighlighted: boolean;
   readonly handleRequestBatteryExemption: () => void;
 }
 
 /** Defines the result contract for `useSettingsScreenTheme`. */
 export interface SettingsScreenThemeResult {
-  readonly themeColorForeground: string;
-  readonly themeColorMuted: string;
-  readonly themeColorSuccess: string;
-  readonly themeColorWarning: string;
-  readonly themeColorDanger: string;
+  readonly toneColors: ResolvedToneColors;
   readonly layoutMode: LayoutMode;
 }
 
 /** Defines the result contract for `useSettingsScreenSyncSummary`. */
 export interface SettingsScreenSyncSummaryResult
-  extends Pick<
-    ReturnType<typeof useBridgeConfig>,
-    'config' | 'isConfigured' | 'isUnpairing' | 'error' | 'unpair'
-  > {
+  extends Pick<ReturnType<typeof useBridgeConfig>, 'isConfigured' | 'isUnpairing' | 'error' | 'unpair'> {
+  readonly connection: SettingsConnection | null;
+  readonly manualSync: UseSyncFacadeResult['manualSync'];
   readonly syncSummary: SettingsSyncSummary;
-  readonly bridgeStatus: SettingsBridgeStatus;
 }
 
 /** Defines the input contract for `useSettingsScreenActions`. */
 export interface UseSettingsScreenActionsInput {
   readonly router: ReturnType<typeof useRouter>;
   readonly unpair: ReturnType<typeof useBridgeConfig>['unpair'];
-  readonly actionKind: SettingsSyncSummaryActionKind | null;
+  readonly manualSync: UseSyncFacadeResult['manualSync'];
+  readonly statusActionKind: SettingsStatusActionKind | null;
+  readonly handleRequestBatteryExemption: () => void;
 }
 
 /** Defines the result contract for `useSettingsScreenActions`. */
 export interface UseSettingsScreenActionsResult {
-  readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
-  readonly handleSyncSummaryAction: (() => void) | null;
+  readonly handleStatusAction: (() => void) | null;
+  readonly backgroundIssueActionHandlers: SettingsBackgroundIssueActionHandlers;
 }
+
+/** Maps each background fix to the handler that performs it. */
+export type SettingsBackgroundIssueActionHandlers = Readonly<
+  Record<SettingsBackgroundIssueActionKind, () => void>
+>;
 
 /** Defines the data contract for settings screen view model. */
 export interface SettingsScreenViewModel {
-  readonly backgroundSyncSection: BackgroundSyncSection;
-  readonly bridgeStatus: SettingsBridgeStatus;
-  readonly config: BridgeConfig | null;
+  readonly backgroundStatus: SettingsBackgroundStatus;
+  readonly connection: SettingsConnection | null;
   readonly error: string | null;
-  readonly isConfigured: boolean;
   readonly isUnpairing: boolean;
   readonly layoutMode: LayoutMode;
   readonly syncSummary: SettingsSyncSummary;
-  readonly toneColors: ResolvedToneColors;
-  readonly themeColorForeground: string;
-  readonly themeColorMuted: string;
-  readonly themeColorSuccess: string;
-  readonly themeColorWarning: string;
-  readonly themeColorDanger: string;
+  readonly statusIconColor: string;
   readonly isSyncTelemetryEnabled: boolean;
-  readonly isBatteryOptimizationExempt: boolean;
-  /** True while the exemption is missing on a device that can request it (warning emphasis). */
-  readonly isBatteryExemptionHighlighted: boolean;
-  readonly handleGoToSetup: () => void;
   readonly handleRePair: () => void;
-  readonly handleSyncSummaryAction: (() => void) | null;
+  readonly handleStatusAction: (() => void) | null;
+  readonly backgroundIssueActionHandlers: SettingsBackgroundIssueActionHandlers;
   readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
-  readonly handleRequestBatteryExemption: () => void;
 }
 
-/** Defines the data contract for settings bridge card props. */
-export interface SettingsBridgeCardProps {
-  readonly bridgeStatus: SettingsBridgeStatus;
-  readonly config: BridgeConfig | null;
-  readonly isConfigured: boolean;
-  readonly isUnpairing: boolean;
-  readonly layoutMode: LayoutMode;
-  readonly themeColorForeground: string;
-  readonly themeColorMuted: string;
-  readonly handleGoToSetup: () => void;
-  readonly handleRePair: () => void;
-}
-
-/** Defines the data contract for settings sync card props. */
-export interface SettingsSyncCardProps {
-  readonly colors: ResolvedToneColors;
-  readonly handleSummaryAction: (() => void) | null;
-  readonly isSyncTelemetryEnabled: boolean;
-  readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
-  readonly isBatteryOptimizationExempt: boolean;
-  /** True while the exemption is missing on a device that can request it (warning emphasis). */
-  readonly isBatteryExemptionHighlighted: boolean;
-  readonly handleRequestBatteryExemption: () => void;
-  readonly layoutMode: LayoutMode;
-  readonly section: BackgroundSyncSection;
+/** Defines the data contract for the status card props. */
+export interface SettingsStatusCardProps {
   readonly summary: SettingsSyncSummary;
+  readonly iconColor: string;
+  readonly handleStatusAction: (() => void) | null;
 }
 
-/** Defines the data contract for the settings battery-exemption row props. */
-export type SettingsBatteryExemptionRowProps = Pick<
-  SettingsSyncCardProps,
-  'handleRequestBatteryExemption' | 'isBatteryExemptionHighlighted' | 'isBatteryOptimizationExempt'
->;
-
-/** Defines the data contract for settings metric tile props. */
-export interface SettingsMetricTileProps {
-  readonly tile: MetricTile;
-  readonly colors: ResolvedToneColors;
+/** Defines the data contract for the connection card props. */
+export interface SettingsConnectionCardProps {
+  readonly connection: SettingsConnection;
+  readonly isUnpairing: boolean;
+  readonly handleRePair: () => void;
 }
 
-/** Defines the data contract for settings metric tile grid props. */
-export interface SettingsMetricTileGridProps {
-  readonly tiles: readonly MetricTile[];
-  readonly columns: number;
-  readonly colors: ResolvedToneColors;
+/** Defines the data contract for the background card props. */
+export interface SettingsBackgroundCardProps {
+  readonly status: SettingsBackgroundStatus;
+  readonly backgroundIssueActionHandlers: SettingsBackgroundIssueActionHandlers;
 }
+
+/** Defines the data contract for one background issue row props. */
+export interface SettingsBackgroundIssueRowProps {
+  readonly issue: SettingsBackgroundIssue;
+  readonly backgroundIssueActionHandlers: SettingsBackgroundIssueActionHandlers;
+}
+
+/** Defines the data contract for the privacy card props. */
+export interface SettingsPrivacyCardProps {
+  readonly isSyncTelemetryEnabled: boolean;
+  readonly handleToggleSyncTelemetry: (nextEnabled: boolean) => void;
+}
+
+/** Re-states the shared tone so Settings constants can be keyed by it. */
+export type SettingsTone = SyncVisibleStatusTone;

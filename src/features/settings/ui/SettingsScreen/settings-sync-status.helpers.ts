@@ -1,82 +1,87 @@
 import {
-  SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS,
-} from '../../../sync/sync-visible-status.constants';
-import {
   deriveVisibleSyncStatus,
+  formatLastSyncRecency,
+  isManualSyncAvailableNow,
 } from '../../../sync/sync-visible-status.helpers';
+import type { SyncVisibleStatusFacts } from '../../../sync/sync-visible-status.types';
+import {
+  SETTINGS_STATUS_ACTION_LABELS,
+  SETTINGS_STATUS_META_SEPARATOR,
+} from './settings-screen.constants';
 import type {
   BuildSettingsSyncSummaryInput,
-  SettingsBridgeStatus,
+  SettingsIconName,
+  SettingsStatusAction,
   SettingsSyncSummary,
 } from './settings-screen.types';
 
+/** Picks the status icon in the same precedence the shared visible status uses for its copy. */
+function resolveStatusIconName(facts: SyncVisibleStatusFacts): SettingsIconName {
+  if (facts.isBridgeConfigured === false) {
+    return 'link-outline';
+  }
+
+  if (facts.connectionStatus === 'syncing') {
+    return 'sync-outline';
+  }
+
+  if (facts.connectionStatus === 'online' && facts.pendingOpsCount === 0) {
+    return 'checkmark-circle-outline';
+  }
+
+  if (facts.connectionStatus === 'sync_error') {
+    return 'alert-circle-outline';
+  }
+
+  if (facts.isDeviceOnline === false) {
+    return 'cloud-offline-outline';
+  }
+
+  return 'desktop-outline';
+}
+
 /**
- * Computes the whole days elapsed since a timestamp, or null when there is none.
- * Non-positive elapsed times are clamped to zero.
+ * Builds the meta line, only while changes are waiting: with nothing pending, the shared
+ * description already says when the last sync happened, so repeating it would be noise.
  */
-function getDaysSinceTimestamp(timestamp: number | null, now: Date): number | null {
-  if (timestamp === null) {
+function buildStatusMeta(facts: SyncVisibleStatusFacts, now: Date): string | null {
+  if (facts.isBridgeConfigured === false || facts.pendingOpsCount === 0) {
     return null;
   }
 
-  const elapsedMilliseconds = now.getTime() - timestamp;
+  const recency = formatLastSyncRecency(facts.lastSyncAt, now);
+  const parts = recency ? [`Último sync ${recency}`] : [];
+  parts.push(`${facts.pendingOpsCount} por enviar`);
 
-  if (elapsedMilliseconds <= 0) {
-    return 0;
-  }
-
-  return Math.floor(elapsedMilliseconds / (24 * 60 * 60 * 1000));
+  return parts.join(SETTINGS_STATUS_META_SEPARATOR);
 }
 
 /**
- * Tags the bridge-specific state the Settings bridge card needs on top of the shared visible status.
- * A backlog counts as stale once whole days times 24 reach the shared 72 h warning threshold.
+ * Picks the one contextual action: pairing while no PC is paired, otherwise a manual sync that is
+ * hidden while a sync runs and disabled while it cannot start. Re-pairing is never offered here:
+ * a PC that is merely off does not need a new pairing.
  */
-function resolveBridgeStatusKind({
-  isConfigured,
-  isDeviceOnline,
-  now,
-  syncFacts,
-}: BuildSettingsSyncSummaryInput): SettingsSyncSummary['bridgeStatusKind'] {
-  if (!isConfigured) {
-    return 'unpaired';
+function resolveStatusAction(facts: SyncVisibleStatusFacts): SettingsStatusAction | null {
+  if (facts.isBridgeConfigured === false) {
+    return { kind: 'go_to_setup', label: SETTINGS_STATUS_ACTION_LABELS.goToSetup, isDisabled: false };
   }
 
-  if (syncFacts.connectionStatus === 'syncing') {
-    return 'syncing';
+  if (facts.connectionStatus === 'syncing') {
+    return null;
   }
 
-  if (syncFacts.connectionStatus === 'online' && syncFacts.pendingOpsCount === 0) {
-    return 'healthy';
-  }
+  const isRetry = facts.pendingOpsCount > 0 || facts.connectionStatus === 'sync_error';
 
-  if (isDeviceOnline === false) {
-    return 'phone_offline';
-  }
-
-  if (syncFacts.connectionStatus === 'sync_error') {
-    return 'sync_error';
-  }
-
-  if (syncFacts.connectionStatus === 'unreachable') {
-    return 'bridge_unreachable';
-  }
-
-  if (syncFacts.pendingOpsCount > 0) {
-    const daysSinceLastSync = getDaysSinceTimestamp(syncFacts.lastSyncAt, now);
-    const isStaleBacklog =
-      daysSinceLastSync !== null &&
-      daysSinceLastSync * 24 >= SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS;
-
-    return isStaleBacklog ? 'stale_backlog' : 'pending_backlog';
-  }
-
-  return 'local_only';
+  return {
+    kind: 'sync_now',
+    label: isRetry ? SETTINGS_STATUS_ACTION_LABELS.retry : SETTINGS_STATUS_ACTION_LABELS.syncNow,
+    isDisabled: !isManualSyncAvailableNow(facts),
+  };
 }
 
 /**
- * Builds the shared local-first sync summary for Settings while tagging the bridge-specific state needed by the left card.
- * The only contextual action is pairing when no PC is paired: a PC that is merely off never suggests re-pairing.
+ * Builds the Settings status card from the shared local-first visible status: its title,
+ * description and tone, plus the icon, the meta line and the single contextual action.
  */
 export function buildSettingsSyncSummary({
   isConfigured,
@@ -84,111 +89,16 @@ export function buildSettingsSyncSummary({
   now,
   syncFacts,
 }: BuildSettingsSyncSummaryInput): SettingsSyncSummary {
-  const bridgeStatusKind = resolveBridgeStatusKind({
-    isConfigured,
+  const facts: SyncVisibleStatusFacts = {
+    ...syncFacts,
+    isBridgeConfigured: isConfigured,
     isDeviceOnline,
-    now,
-    syncFacts,
-  });
-  const status = deriveVisibleSyncStatus(
-    {
-      ...syncFacts,
-      isBridgeConfigured: isConfigured,
-      isDeviceOnline,
-    },
-    now,
-  );
-
-  if (!isConfigured) {
-    return {
-      ...status,
-      bridgeStatusKind,
-      actionKind: 'go_to_setup',
-      actionLabel: 'Emparejar PC',
-    };
-  }
+  };
 
   return {
-    ...status,
-    bridgeStatusKind,
-    actionKind: null,
-    actionLabel: null,
+    ...deriveVisibleSyncStatus(facts, now),
+    iconName: resolveStatusIconName(facts),
+    meta: buildStatusMeta(facts, now),
+    action: resolveStatusAction(facts),
   };
-}
-
-/**
- * Adapts the shared sync summary into bridge-card copy so the left Settings card explains bridge reachability honestly.
- * The card keeps device identity details while this helper supplies the user-facing operational title, chip, and description.
- */
-export function buildSettingsBridgeStatus(
-  summary: SettingsSyncSummary,
-): SettingsBridgeStatus {
-  switch (summary.bridgeStatusKind) {
-    case 'unpaired':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: 'Sin bridge',
-        description: 'Todavía no hay un bridge emparejado en esta app.',
-        title: 'Sin bridge configurado',
-        tone: 'warning',
-      };
-    case 'healthy':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: summary.chipLabel,
-        description: summary.description,
-        title: 'Bridge disponible ahora',
-        tone: summary.tone,
-      };
-    case 'syncing':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: summary.chipLabel,
-        description: summary.description,
-        title: 'Bridge sincronizando ahora',
-        tone: summary.tone,
-      };
-    case 'phone_offline':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: 'Sin conexión',
-        description: summary.description,
-        title: 'Teléfono sin internet',
-        tone: summary.tone,
-      };
-    case 'bridge_unreachable':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: 'Bridge no disponible',
-        description: summary.description,
-        title: 'Bridge configurado pero inaccesible',
-        tone: 'warning',
-      };
-    case 'sync_error':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: 'Bridge disponible',
-        description:
-          'El bridge respondió, pero no pudo completar el sync. Tus cambios locales siguen pendientes hasta corregir el rechazo.',
-        title: 'El bridge rechazó el sync',
-        tone: 'danger',
-      };
-    case 'local_only':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: 'Modo local',
-        description: summary.description,
-        title: 'Bridge configurado en modo local',
-        tone: summary.tone,
-      };
-    case 'stale_backlog':
-    case 'pending_backlog':
-      return {
-        bridgeStatusKind: summary.bridgeStatusKind,
-        chipLabel: summary.chipLabel,
-        description: summary.description,
-        title: summary.title,
-        tone: summary.tone,
-      };
-  }
 }

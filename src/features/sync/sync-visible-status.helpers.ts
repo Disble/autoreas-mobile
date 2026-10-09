@@ -58,9 +58,10 @@ function getElapsedSinceLastSync(lastSyncAt: number | null, now: Date): number |
 
 /**
  * Formats the human-readable recency of the last sync, or null when there is no previous sync.
- * Scales from "hace un momento" through minutes, hours, and whole days.
+ * Scales from "hace un momento" through minutes, hours, and whole days, and is shared so every
+ * screen that mentions the last sync words it the same way.
  */
-function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | null {
+export function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | null {
   const elapsedMilliseconds = getElapsedSinceLastSync(lastSyncAt, now);
 
   if (elapsedMilliseconds === null) {
