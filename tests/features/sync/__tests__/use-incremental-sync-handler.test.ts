@@ -16,7 +16,6 @@ describe("useIncrementalSyncHandler", () => {
       connectionStatus: 'idle',
       lastSyncAt: null,
       pendingOpsCount: 0,
-      syncError: null,
     });
   });
 

@@ -71,7 +71,6 @@ jest.mock("../../../../src/features/sync/use-sync-facade", () => ({
     manualSync: jest.fn(),
     pendingOpsCount: 0,
     requestSync: jest.fn(),
-    syncError: null,
   })),
 }));
 

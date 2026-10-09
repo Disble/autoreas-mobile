@@ -173,7 +173,6 @@ describe('useSyncFacade', () => {
     });
 
     expect(result.current.connectionStatus).toBe('unreachable');
-    expect(result.current.syncError).toBe(unreachableError.message);
     expect(warnSpy).toHaveBeenCalledWith(
       '[useSyncFacade] Failed to persist sync failure telemetry',
       expect.any(Error),
@@ -381,14 +380,13 @@ describe('useSyncFacade', () => {
         isDeviceOnline: true,
         lastSyncAt: result.current.lastSyncAt,
         pendingOpsCount: result.current.pendingOpsCount,
-        syncError: result.current.syncError,
       },
       new Date(2_000),
     );
 
     expect(result.current.pendingOpsCount).toBe(1);
-    expect(visible.title).not.toBe('Catálogo al día');
-    expect(visible.tone).toBe('warning');
+    expect(visible.title).toBe('Esperando a la PC');
+    expect(visible.tone).not.toBe('success');
   });
 
   it('does not publish online when reconcile reports more bounded backlog', async () => {

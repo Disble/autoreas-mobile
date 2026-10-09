@@ -1,5 +1,7 @@
 import {
-  SYNC_VISIBLE_STATUS_STALE_DANGER_DAYS,
+  SYNC_VISIBLE_STATUS_DAY_MS,
+  SYNC_VISIBLE_STATUS_HOUR_MS,
+  SYNC_VISIBLE_STATUS_MINUTE_MS,
   SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS,
 } from './sync-visible-status.constants';
 import type { SyncVisibleStatus, SyncVisibleStatusFacts } from './sync-visible-status.types';
@@ -25,74 +27,48 @@ export function isManualSyncAvailableNow(facts: SyncVisibleStatusFacts): boolean
 }
 
 /**
- * Builds the pending changes count label shown beside the sync chip.
- * Uses singular wording when exactly one change is waiting.
+ * Builds "N cambio(s) guardado(s)" with singular wording when exactly one change is waiting.
  */
-function buildPendingChangesLabel(pendingOpsCount: number): string {
+function buildSavedChangesPhrase(pendingOpsCount: number): string {
   if (pendingOpsCount === 1) {
-    return '1 cambio pendiente';
+    return '1 cambio guardado';
   }
 
-  return `${pendingOpsCount} cambios pendientes`;
+  return `${pendingOpsCount} cambios guardados`;
 }
 
 /**
- * Builds the pending changes title used by the sync chip states.
- * Uses singular wording when exactly one change is waiting.
+ * Builds the future "se enviará(n)" verb so it agrees with the number of pending changes.
  */
-function buildPendingChangesTitle(pendingOpsCount: number): string {
-  if (pendingOpsCount === 1) {
-    return '1 cambio esperando sync';
-  }
-
-  return `${pendingOpsCount} cambios esperando sync`;
+function buildWillBeSentVerb(pendingOpsCount: number): string {
+  return pendingOpsCount === 1 ? 'Se enviará' : 'Se enviarán';
 }
 
 /**
- * Computes the whole days elapsed since the last successful sync, or null when it never happened.
- * Non-positive elapsed times are clamped to zero so same-day syncs report day zero.
+ * Computes the milliseconds elapsed since the last successful sync, or null when it never happened.
+ * Non-positive elapsed times are clamped to zero so in-flight or clock-skewed syncs read as "just now".
  */
-function getDaysSinceLastSync(lastSyncAt: number | null, now: Date): number | null {
+function getElapsedSinceLastSync(lastSyncAt: number | null, now: Date): number | null {
   if (lastSyncAt === null) {
     return null;
   }
 
-  const elapsedMilliseconds = now.getTime() - lastSyncAt;
-  if (elapsedMilliseconds <= 0) {
-    return 0;
-  }
-
-  return Math.floor(elapsedMilliseconds / (24 * 60 * 60 * 1000));
-}
-
-/**
- * Computes the whole minutes elapsed since the last successful sync, or null when it never happened.
- * Non-positive elapsed times are clamped to zero so in-flight syncs report minute zero.
- */
-function getMinutesSinceLastSync(lastSyncAt: number | null, now: Date): number | null {
-  if (lastSyncAt === null) {
-    return null;
-  }
-
-  const elapsedMilliseconds = now.getTime() - lastSyncAt;
-  if (elapsedMilliseconds <= 0) {
-    return 0;
-  }
-
-  return Math.floor(elapsedMilliseconds / (60 * 1000));
+  return Math.max(0, now.getTime() - lastSyncAt);
 }
 
 /**
  * Formats the human-readable recency of the last sync, or null when there is no previous sync.
- * Scales from "hace un momento" through minutes, hours, and whole days.
+ * Scales from "hace un momento" through minutes, hours, and whole days, and is shared so every
+ * screen that mentions the last sync words it the same way.
  */
-function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | null {
-  const minutesSinceLastSync = getMinutesSinceLastSync(lastSyncAt, now);
+export function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | null {
+  const elapsedMilliseconds = getElapsedSinceLastSync(lastSyncAt, now);
 
-  if (minutesSinceLastSync === null) {
+  if (elapsedMilliseconds === null) {
     return null;
   }
 
+  const minutesSinceLastSync = Math.floor(elapsedMilliseconds / SYNC_VISIBLE_STATUS_MINUTE_MS);
   if (minutesSinceLastSync < 1) {
     return 'hace un momento';
   }
@@ -112,70 +88,109 @@ function formatLastSyncRecency(lastSyncAt: number | null, now: Date): string | n
 }
 
 /**
- * Resolves the local mode description depending on whether the last bridge attempt failed.
- * The failure variant keeps the user oriented without blaming the local catalog.
+ * Derives the visible status when nothing is waiting to be sent.
+ * Every variant is neutral: a PC that is off or a device without Wi-Fi is the normal state of a local-first app.
  */
-function getLocalModeDescription(syncError: string | null): string {
-  if (syncError) {
-    return 'El último intento con el bridge falló, pero tu catálogo local sigue disponible en este dispositivo.';
-  }
-
-  return 'Puedes seguir usando esta copia local mientras el bridge no esté disponible.';
-}
-
-/** Returns the local mode description shown when no bridge is paired yet. */
-function getUnpairedLocalModeDescription(): string {
-  return 'No hay bridge emparejado. Esta app sigue funcionando con tu copia local en este dispositivo.';
-}
-
-/**
- * Resolves the offline phone description for the sync chip.
- * The pending-changes variant reassures the user that a retry is queued.
- */
-function getOfflinePhoneDescription(hasPendingChanges: boolean): string {
-  if (hasPendingChanges) {
-    return 'Este teléfono está sin internet. Tus cambios siguen guardados en este dispositivo y se van a reintentar cuando vuelva la conexión.';
-  }
-
-  return 'Este teléfono está sin internet. Tu copia local sigue disponible y el sync se va a reintentar cuando vuelva la conexión.';
-}
-
-/**
- * Derives the visible status for a local catalog with no pending changes.
- * Distinguishes unpaired, offline, and bridge-connected local mode variants.
- */
-function deriveNoPendingSyncStatus(
-  facts: SyncVisibleStatusFacts,
-): SyncVisibleStatus {
+function deriveNoPendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): SyncVisibleStatus {
   if (facts.isBridgeConfigured === false) {
     return {
       chipLabel: 'Modo local',
-      description: getUnpairedLocalModeDescription(),
-      title: 'Catálogo local listo',
+      description:
+        'La app funciona igual con tu catálogo en este dispositivo. Empareja una PC para tener una copia allí.',
+      title: 'Sin PC emparejada',
       tone: 'default',
     };
   }
 
   if (facts.isDeviceOnline === false) {
     return {
-      chipLabel: 'Sin conexión',
-      description: getOfflinePhoneDescription(false),
-      title: 'Catálogo local listo',
+      chipLabel: 'Sin Wi-Fi',
+      description: 'Tu catálogo sigue disponible en este dispositivo.',
+      title: 'Sin Wi-Fi',
       tone: 'default',
     };
   }
 
+  const lastSyncRecency = formatLastSyncRecency(facts.lastSyncAt, now);
+
   return {
-    chipLabel: 'Catálogo local',
-    description: getLocalModeDescription(facts.syncError),
-    title: 'Catálogo local listo',
+    chipLabel: 'Nada por enviar',
+    description: lastSyncRecency
+      ? `Último sync ${lastSyncRecency}.`
+      : 'La PC todavía no respondió.',
+    title: 'Nada por enviar',
     tone: 'default',
   };
 }
 
 /**
- * Derives the shared offline-first sync status copy used across screens.
- * Centralizing the copy and thresholds keeps local/bridge semantics consistent without global state.
+ * Derives the warning shown once a pending backlog has waited at least the stale threshold.
+ * The copy asks whether the PC is on instead of implying that anything was lost.
+ */
+function deriveStaleBacklogStatus(pendingOpsCount: number, elapsedMilliseconds: number): SyncVisibleStatus {
+  const daysSinceLastSync = Math.floor(elapsedMilliseconds / SYNC_VISIBLE_STATUS_DAY_MS);
+  const backlogPhrase =
+    pendingOpsCount === 1
+      ? 'Tu cambio sigue guardado en este dispositivo, pero la PC no lo ha recibido.'
+      : `Tus ${pendingOpsCount} cambios siguen guardados en este dispositivo, pero la PC no los ha recibido.`;
+
+  return {
+    chipLabel: 'Esperando a la PC',
+    description: `${backlogPhrase} ¿Está encendida y en la misma red?`,
+    title: `Hace ${daysSinceLastSync} días que no hay sync`,
+    tone: 'warning',
+  };
+}
+
+/**
+ * Derives the visible status when changes are waiting to be sent.
+ * Waiting stays neutral until the stale threshold, and never escalates past `warning`.
+ */
+function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): SyncVisibleStatus {
+  const { pendingOpsCount } = facts;
+  const savedChanges = buildSavedChangesPhrase(pendingOpsCount);
+  const willBeSent = buildWillBeSentVerb(pendingOpsCount);
+
+  if (facts.isBridgeConfigured === false) {
+    return {
+      chipLabel: 'Modo local',
+      description: 'Empareja una PC para tener una copia allí.',
+      title: `${savedChanges} en este dispositivo`,
+      tone: 'default',
+    };
+  }
+
+  if (facts.isDeviceOnline === false) {
+    return {
+      chipLabel: 'Sin Wi-Fi',
+      description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} cuando vuelvas a conectarte.`,
+      title: 'Sin Wi-Fi',
+      tone: 'default',
+    };
+  }
+
+  const elapsedMilliseconds = getElapsedSinceLastSync(facts.lastSyncAt, now);
+  if (
+    elapsedMilliseconds !== null &&
+    elapsedMilliseconds >= SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS * SYNC_VISIBLE_STATUS_HOUR_MS
+  ) {
+    return deriveStaleBacklogStatus(pendingOpsCount, elapsedMilliseconds);
+  }
+
+  return {
+    chipLabel: 'Esperando a la PC',
+    description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} ${
+      pendingOpsCount === 1 ? 'solo' : 'solos'
+    } cuando la PC esté encendida.`,
+    title: 'Esperando a la PC',
+    tone: 'default',
+  };
+}
+
+/**
+ * Derives the shared local-first sync status copy used across screens.
+ * Tone ladder: neutral while the PC is off or the device is offline, `warning` only for a backlog
+ * stale for 72 h, and `danger` only when the PC answered and rejected the sync.
  */
 export function deriveVisibleSyncStatus(
   facts: SyncVisibleStatusFacts,
@@ -184,8 +199,8 @@ export function deriveVisibleSyncStatus(
   if (facts.connectionStatus === 'syncing') {
     return {
       chipLabel: 'Sincronizando',
-      description: 'Estamos reconciliando tu copia local con el bridge.',
-      title: 'Sincronizando cambios',
+      description: 'Enviando tus cambios a la PC.',
+      title: 'Sincronizando',
       tone: 'accent',
     };
   }
@@ -194,60 +209,28 @@ export function deriveVisibleSyncStatus(
     const lastSyncRecency = formatLastSyncRecency(facts.lastSyncAt, now);
 
     return {
-      chipLabel: 'Bridge activo',
+      chipLabel: 'Al día',
       description: lastSyncRecency
-        ? `Última sincronización ${lastSyncRecency}.`
-        : 'La copia local está al día con el bridge.',
-      title: 'Catálogo al día',
+        ? `Último sync ${lastSyncRecency}.`
+        : 'Todo lo que cambiaste ya está en la PC.',
+      title: 'Al día',
       tone: 'success',
     };
   }
 
-  if (facts.pendingOpsCount === 0) {
-    return deriveNoPendingSyncStatus(facts);
-  }
-
-  const pendingChangesLabel = buildPendingChangesLabel(facts.pendingOpsCount);
-  const pendingChangesTitle = buildPendingChangesTitle(facts.pendingOpsCount);
-
-  if (facts.isBridgeConfigured === false) {
+  if (facts.connectionStatus === 'sync_error') {
     return {
-      chipLabel: 'Sync pendiente',
+      chipLabel: 'Envío rechazado',
       description:
-        'Tus cambios siguen guardados en este dispositivo. Emparejá un bridge para confirmarlos fuera de este teléfono.',
-      title: pendingChangesTitle,
-      tone: 'warning',
+        'La PC respondió, pero rechazó el envío. Tus cambios siguen guardados en este dispositivo.',
+      title: 'La PC no aceptó tus cambios',
+      tone: 'danger',
     };
   }
 
-  if (facts.isDeviceOnline === false) {
-    return {
-      chipLabel: 'Sin conexión',
-      description: getOfflinePhoneDescription(true),
-      title: pendingChangesTitle,
-      tone: 'warning',
-    };
+  if (facts.pendingOpsCount === 0) {
+    return deriveNoPendingSyncStatus(facts, now);
   }
 
-  const daysSinceLastSync = getDaysSinceLastSync(facts.lastSyncAt, now);
-  const shouldEscalateStaleBacklog =
-    daysSinceLastSync !== null &&
-    daysSinceLastSync * 24 >= SYNC_VISIBLE_STATUS_STALE_WARNING_HOURS;
-
-  if (shouldEscalateStaleBacklog) {
-    return {
-      chipLabel: 'Sync pendiente',
-      description: `Tus cambios siguen guardados en este dispositivo. Hace ${daysSinceLastSync} días que el bridge no confirma cambios.`,
-      title: pendingChangesTitle,
-      tone:
-        daysSinceLastSync >= SYNC_VISIBLE_STATUS_STALE_DANGER_DAYS ? 'danger' : 'warning',
-    };
-  }
-
-  return {
-    chipLabel: 'Sync pendiente',
-    description: `Tus cambios siguen guardados localmente y se van a reintentar cuando el bridge vuelva. ${pendingChangesLabel}.`,
-    title: pendingChangesTitle,
-    tone: 'warning',
-  };
+  return derivePendingSyncStatus(facts, now);
 }

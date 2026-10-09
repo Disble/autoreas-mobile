@@ -31,6 +31,5 @@ export interface UseSyncFacadeResult {
   readonly lastSyncAt: number | null;
   readonly pendingOpsCount: number;
   readonly requestSync: (source: SyncRuntimeTriggerSource) => Promise<number>;
-  readonly syncError: string | null;
   readonly manualSync: () => Promise<number>;
 }

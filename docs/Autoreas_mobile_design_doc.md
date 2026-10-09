@@ -361,6 +361,8 @@ autoreas-mobile://pair?v=1&ip=192.168.1.5&port=9876&token=abc123def456
 
 #### 4.4.3 Pantalla de settings (`settings.tsx`)
 
+> **Update 2026-10-08:** the wireframe below is the original design and is kept as history. The current Settings screen is a status page: one status card with a single contextual action, a connection card (re-pair is a secondary action there), a background card that only lists items to fix, and a privacy card. It shows no runtime counters. See [`mobile-sync-status-ux.md`](./mobile-sync-status-ux.md).
+
 ```
 ┌─────────────────────────────┐
 │ ← Configuración             │
@@ -650,6 +652,8 @@ El desarrollo se organiza en fases con entregables funcionales. Cada fase asume 
 | Settings funcional | Todas las secciones muestran datos correctos | Verificar IP, estado, último sync, contadores |
 | Forzar sync | Reconcilia bajo demanda | Botón "Forzar sync" → verificar reconciliación |
 | Re-parear | Funciona sin reinstalar | Re-parear desde settings con nuevo token, verificar conexión |
+
+> **Update 2026-10-08:** Settings no longer shows counters, so the "contadores" check in the "Settings funcional" row no longer applies. Settings now shows the sync status, the last sync and the pending count; runtime counters reach the bridge through diagnostics telemetry. See [`mobile-sync-status-ux.md`](./mobile-sync-status-ux.md).
 
 ## 7. Métricas y criterios de éxito globales
 

@@ -1,23 +1,20 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useSyncTelemetryPreference } from '../../use-sync-telemetry-preference';
+import { resolveToneIconColor } from './settings-screen.helpers';
 import { useSettingsScreenActions } from './use-settings-screen-actions';
-import { useSettingsScreenBackgroundSyncSection } from './use-settings-screen-background-sync-section';
+import { useSettingsScreenBackgroundStatus } from './use-settings-screen-background-status';
 import { useSettingsScreenBatteryExemption } from './use-settings-screen-battery-exemption';
 import { useSettingsScreenDeviceOnline } from './use-settings-screen-device-online';
 import { useSettingsScreenSyncSummary } from './use-settings-screen-sync-summary';
 import { useSettingsScreenTheme } from './use-settings-screen-theme';
-import type {
-  ResolvedToneColors,
-  SettingsScreenProps,
-  SettingsScreenViewModel,
-} from './settings-screen.types';
+import type { SettingsScreenProps, SettingsScreenViewModel } from './settings-screen.types';
 
 /**
  * Coordinates settings screen state and actions.
- * Composes the Settings screen's facade hooks (theme/layout, device connectivity, sync
- * summary, background sync section, and navigation actions) so this hook stays a thin
- * orchestrator instead of restating their internals.
+ * Composes the Settings screen's facade hooks (theme/layout, device connectivity, status card,
+ * background status, battery exemption and actions) so this hook stays a thin orchestrator
+ * instead of restating their internals.
  */
 export function useSettingsScreen(
   _props: SettingsScreenProps,
@@ -30,52 +27,29 @@ export function useSettingsScreen(
   const router = useRouter();
 
   // 4. Queries/Mutations
-  const {
-    themeColorForeground,
-    themeColorMuted,
-    themeColorSuccess,
-    themeColorWarning,
-    themeColorDanger,
-    layoutMode,
-  } = useSettingsScreenTheme();
+  const { toneColors, layoutMode } = useSettingsScreenTheme();
   const isDeviceOnline = useSettingsScreenDeviceOnline();
-  const { config, isConfigured, isUnpairing, error, unpair, syncSummary, bridgeStatus } =
+  const { connection, isConfigured, isUnpairing, error, manualSync, unpair, syncSummary } =
     useSettingsScreenSyncSummary(isDeviceOnline);
-  const backgroundSyncSection = useSettingsScreenBackgroundSyncSection(isConfigured);
+  const { isBatteryExemptionHighlighted, handleRequestBatteryExemption } =
+    useSettingsScreenBatteryExemption();
+  const backgroundStatus = useSettingsScreenBackgroundStatus(
+    isConfigured,
+    isBatteryExemptionHighlighted,
+  );
   const { isEnabled: isSyncTelemetryEnabled, setEnabled: setSyncTelemetryEnabled } =
     useSyncTelemetryPreference();
-  const {
-    isBatteryOptimizationExempt,
-    isBatteryExemptionHighlighted,
-    handleRequestBatteryExemption,
-  } = useSettingsScreenBatteryExemption();
 
   // 5. Derived State (useMemo)
-  // Memoized because it is handed straight to `SettingsSyncCard` as a prop: rebuilt inline on
-  // every render it would be a new object identity each time and re-render that card for no
-  // reason. It lives here rather than in the screen because `.tsx` files stay dumb UI.
-  const toneColors: ResolvedToneColors = useMemo(
-    () => ({
-      foreground: themeColorForeground,
-      muted: themeColorMuted,
-      success: themeColorSuccess,
-      warning: themeColorWarning,
-      danger: themeColorDanger,
-    }),
-    [
-      themeColorForeground,
-      themeColorMuted,
-      themeColorSuccess,
-      themeColorWarning,
-      themeColorDanger,
-    ],
-  );
+  const statusIconColor = resolveToneIconColor(syncSummary.tone, toneColors);
 
   // 6. Callbacks (useCallback calling pure helpers)
-  const { handleGoToSetup, handleRePair, handleSyncSummaryAction } = useSettingsScreenActions({
+  const { handleRePair, handleStatusAction, backgroundIssueActionHandlers } = useSettingsScreenActions({
     router,
     unpair,
-    actionKind: syncSummary.actionKind,
+    manualSync,
+    statusActionKind: syncSummary.action?.kind ?? null,
+    handleRequestBatteryExemption,
   });
   const handleToggleSyncTelemetry = useCallback(
     (nextEnabled: boolean) => {
@@ -90,27 +64,17 @@ export function useSettingsScreen(
   // 7. Effects
 
   return {
-    backgroundSyncSection,
-    bridgeStatus,
-    config,
+    backgroundStatus,
+    connection,
     error,
-    isConfigured,
-    isSyncTelemetryEnabled,
-    isBatteryOptimizationExempt,
-    isBatteryExemptionHighlighted,
     isUnpairing,
     layoutMode,
     syncSummary,
-    toneColors,
-    themeColorForeground,
-    themeColorMuted,
-    themeColorSuccess,
-    themeColorWarning,
-    themeColorDanger,
-    handleGoToSetup,
+    statusIconColor,
+    isSyncTelemetryEnabled,
     handleRePair,
-    handleSyncSummaryAction,
+    handleStatusAction,
+    backgroundIssueActionHandlers,
     handleToggleSyncTelemetry,
-    handleRequestBatteryExemption,
   };
 }

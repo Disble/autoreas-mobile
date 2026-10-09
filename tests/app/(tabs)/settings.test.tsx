@@ -1,7 +1,7 @@
 import { useNetworkState } from 'expo-network';
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import SettingsScreen from '../../../src/app/(tabs)/settings';
 import { useBackgroundSyncStatus } from '../../../src/features/settings/use-background-sync-status';
 import { useBridgeConfig } from '../../../src/features/settings/use-bridge-config';
@@ -53,6 +53,7 @@ describe('SettingsScreen', () => {
   const mockPush = jest.fn();
   const mockReplace = jest.fn();
   const mockUnpair = jest.fn();
+  const mockManualSync = jest.fn();
   const mockIsExempt = jest.fn<boolean, []>();
   const mockRequestExemption = jest.fn<boolean, []>();
   const mockIsAvailable = jest.fn<boolean, []>();
@@ -61,6 +62,7 @@ describe('SettingsScreen', () => {
     jest.clearAllMocks();
     jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     jest.useFakeTimers().setSystemTime(new Date(1782810300000));
+    mockManualSync.mockResolvedValue(1);
 
     (useRouter as jest.Mock).mockReturnValue({
       push: mockPush,
@@ -89,7 +91,7 @@ describe('SettingsScreen', () => {
         canShowPersistentNotification: false,
         lastAttemptAt: 1775812200000,
         lastSuccessAt: 1775811900000,
-        lastFailureMessage: 'Bridge timeout after 10s',
+        lastFailureMessage: null,
         lastTriggerSource: 'background_task',
         lastSyncedCount: 4,
         isCycleActive: false,
@@ -108,8 +110,7 @@ describe('SettingsScreen', () => {
       lastSyncAt: 1775811900000,
       pendingOpsCount: 3,
       requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      manualSync: jest.fn(),
+      manualSync: mockManualSync,
     });
 
     (useNetworkState as jest.Mock).mockReturnValue({
@@ -134,50 +135,44 @@ describe('SettingsScreen', () => {
     jest.restoreAllMocks();
   });
 
-  it('R1: muestra deviceName, IP, puerto y deviceId cuando isConfigured=true', () => {
+  it('R1: muestra la conexión con la PC: host, puerto y deviceId', () => {
     render(<SettingsScreen />);
 
-    expect(screen.getByText('Bridge Living')).toBeTruthy();
-    expect(screen.getByText('192.168.1.77:9876')).toBeTruthy();
-    expect(screen.getByText('bridge-abc')).toBeTruthy();
+    const card = screen.getByTestId('settings-connection-card');
+    expect(within(card).getByText('Conexión con la PC')).toBeTruthy();
+    expect(within(card).getByText('192.168.1.77:9876')).toBeTruthy();
+    expect(within(card).getByText('bridge-abc')).toBeTruthy();
   });
 
-  it('R1b: muestra el estado observable del background sync y el último error conocido', () => {
+  it('R1b: muestra un solo estado de sync, sin contadores ni errores crudos', () => {
     render(<SettingsScreen />);
 
-    expect(screen.getByText('Estado de sync en segundo plano')).toBeTruthy();
-    expect(screen.getByText('Sync pendiente')).toBeTruthy();
-    expect(screen.getByText('Bridge no disponible')).toBeTruthy();
-    expect(screen.getByText('3 cambios esperando sync')).toBeTruthy();
+    const card = screen.getByTestId('settings-status-card');
+    expect(within(card).getByText('Hace 81 días que no hay sync')).toBeTruthy();
     expect(
-      screen.getAllByText('Tus cambios siguen guardados en este dispositivo. Hace 81 días que el bridge no confirma cambios.'),
-    ).toHaveLength(2);
-    expect(screen.getByText('Re-emparejar bridge')).toBeTruthy();
-    expect(screen.getByText('Último sync con error')).toBeTruthy();
-    expect(screen.getByText('Bridge timeout after 10s')).toBeTruthy();
-    expect(screen.getByText('Task en segundo plano')).toBeTruthy();
-    expect(screen.queryByText('Emparejado')).toBeNull();
-    expect(screen.queryByText('Conexión local lista para sincronizar')).toBeNull();
+      within(card).getByText(
+        'Tus 3 cambios siguen guardados en este dispositivo, pero la PC no los ha recibido. ¿Está encendida y en la misma red?',
+      ),
+    ).toBeTruthy();
+    expect(within(card).getByText('Último sync hace 81 días · 3 por enviar')).toBeTruthy();
+    expect(within(card).getByText('Reintentar ahora')).toBeTruthy();
+    expect(screen.getAllByText('Hace 81 días que no hay sync')).toHaveLength(1);
+    expect(screen.queryByText('Estado de sync en segundo plano')).toBeNull();
+    expect(screen.queryByText('Último sync con error')).toBeNull();
+    expect(screen.queryByText('Bridge timeout after 10s')).toBeNull();
+    expect(screen.queryByText(/192\.168\.1\.10/)).toBeNull();
+    expect(screen.queryByText('Re-emparejar bridge')).toBeNull();
   });
 
-  it('R1c: muestra bridge no disponible en la card izquierda cuando falla el reachability sin backlog viejo', () => {
-    (useSyncFacade as jest.Mock).mockReturnValue({
-      connectionStatus: 'unreachable',
-      lastSyncAt: Date.now() - 60 * 60 * 1000,
-      pendingOpsCount: 0,
-      requestSync: jest.fn(),
-      syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      manualSync: jest.fn(),
-    });
-
+  it('R1c: el botón del estado dispara el sync manual existente', () => {
     render(<SettingsScreen />);
 
-    expect(screen.getByText('Bridge no disponible')).toBeTruthy();
-    expect(screen.getAllByText('Bridge configurado pero inaccesible')).toHaveLength(2);
-    expect(screen.queryByText('Conexión local lista para sincronizar')).toBeNull();
+    fireEvent.press(screen.getByText('Reintentar ahora'));
+
+    expect(mockManualSync).toHaveBeenCalledTimes(1);
   });
 
-  it('R2: muestra mensaje Sin bridge configurado cuando isConfigured=false', () => {
+  it('R2: sin PC emparejada ofrece emparejar, oculta la conexión y deja el segundo plano en espera', () => {
     (useBridgeConfig as jest.Mock).mockReturnValue({
       config: null,
       isConfigured: false,
@@ -190,17 +185,18 @@ describe('SettingsScreen', () => {
       lastSyncAt: null,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: null,
-      manualSync: jest.fn(),
+      manualSync: mockManualSync,
     });
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText('Sin bridge configurado')).toBeTruthy();
-    expect(screen.getByText('No disponible sin bridge emparejado')).toBeTruthy();
-    expect(screen.getByLabelText('Ir al setup')).toBeTruthy();
-    expect(screen.getByText('Modo local')).toBeTruthy();
-    expect(screen.getAllByText('Emparejar bridge')).toHaveLength(2);
+    expect(screen.getByText('Sin PC emparejada')).toBeTruthy();
+    expect(screen.queryByTestId('settings-connection-card')).toBeNull();
+    expect(screen.getByText('Se activa al emparejar una PC.')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Emparejar PC'));
+
+    expect(mockPush).toHaveBeenCalledWith('/setup');
   });
 
   it('R3: presionar Re-emparejar muestra Alert, confirmar llama unpair + navega a /setup en modo repair', async () => {
@@ -208,7 +204,7 @@ describe('SettingsScreen', () => {
 
     render(<SettingsScreen />);
 
-    fireEvent.press(screen.getByLabelText('Re-emparejar bridge'));
+    fireEvent.press(screen.getByLabelText('Re-emparejar'));
 
     expect(Alert.alert).toHaveBeenCalledWith(
       'Re-emparejar bridge',
@@ -230,7 +226,7 @@ describe('SettingsScreen', () => {
   it('R5: cancelar el Alert no llama unpair ni navega', () => {
     render(<SettingsScreen />);
 
-    fireEvent.press(screen.getByLabelText('Re-emparejar bridge'));
+    fireEvent.press(screen.getByLabelText('Re-emparejar'));
 
     const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
     const cancelButton = buttons[0];
@@ -241,41 +237,67 @@ describe('SettingsScreen', () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it('resalta la fila de batería como advertencia cuando la app no está exenta', () => {
+  it('muestra solo la excepción de batería que falta, con su botón', () => {
     render(<SettingsScreen />);
 
-    const warning = screen.getByTestId('settings-battery-exemption-warning');
-    expect(within(warning).getByText('Excepción de batería desactivada')).toBeTruthy();
-    expect(
-      within(warning).getByText(
-        'Sin esta excepción, Android puede detener la sincronización en segundo plano. Actívala para que tus capítulos se sigan sincronizando con la app cerrada.',
-      ),
-    ).toBeTruthy();
+    const issue = screen.getByTestId('settings-background-issue-battery_exemption');
+    expect(within(issue).getByText('El sync puede pausarse con la app cerrada')).toBeTruthy();
+    expect(screen.queryByText('Sync automático activo')).toBeNull();
 
-    fireEvent.press(screen.getByText('Activar excepción'));
+    fireEvent.press(within(issue).getByText('Permitir'));
 
     expect(mockRequestExemption).toHaveBeenCalledTimes(1);
   });
 
-  it('no resalta la fila cuando el módulo nativo no está disponible', () => {
-    mockIsAvailable.mockReturnValue(false);
-
-    render(<SettingsScreen />);
-
-    expect(screen.queryByTestId('settings-battery-exemption-warning')).toBeNull();
-    expect(screen.getByText('Excepción de batería')).toBeTruthy();
-    expect(
-      screen.getByText('Sin esta excepción, Android puede detener el servicio persistente en segundo plano.'),
-    ).toBeTruthy();
-  });
-
-  it('oculta la acción cuando la app ya está exenta de la optimización de batería', () => {
+  it('muestra una sola línea de segundo plano cuando todo funciona', () => {
     mockIsExempt.mockReturnValue(true);
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText('La app está exenta de las restricciones de batería de Android.')).toBeTruthy();
-    expect(screen.queryByText('Activar excepción')).toBeNull();
-    expect(screen.queryByTestId('settings-battery-exemption-warning')).toBeNull();
+    const card = screen.getByTestId('settings-background-card');
+    expect(within(card).getByText('Sync automático activo')).toBeTruthy();
+    expect(within(card).getByText('Sigue funcionando con la app cerrada.')).toBeTruthy();
+    expect(screen.queryByTestId('settings-background-issue-battery_exemption')).toBeNull();
+  });
+
+  it('no muestra la excepción de batería cuando el módulo nativo no está disponible', () => {
+    mockIsAvailable.mockReturnValue(false);
+
+    render(<SettingsScreen />);
+
+    expect(screen.queryByTestId('settings-background-issue-battery_exemption')).toBeNull();
+    expect(screen.getByText('Sync automático activo')).toBeTruthy();
+  });
+
+  it('abre los ajustes de la app cuando el servicio en segundo plano no está activo', () => {
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    mockIsExempt.mockReturnValue(true);
+    (useBackgroundSyncStatus as jest.Mock).mockReturnValue({
+      snapshot: {
+        registrationStatus: 'unregistered',
+        executionMode: 'android_foreground_service',
+        canShowPersistentNotification: true,
+      },
+    });
+
+    render(<SettingsScreen />);
+
+    const issue = screen.getByTestId('settings-background-issue-background_service');
+    fireEvent.press(within(issue).getByText('Abrir ajustes'));
+
+    expect(openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('muestra el switch de diagnóstico en la tarjeta de privacidad', () => {
+    render(<SettingsScreen />);
+
+    const card = screen.getByTestId('settings-privacy-card');
+    expect(within(card).getByText('Enviar diagnóstico a la PC')).toBeTruthy();
+    expect(
+      within(card).getByText(
+        'Ayuda a encontrar fallas de sync sin conectar el cable. Solo viajan códigos y contadores: ningún título, ruta ni dato tuyo.',
+      ),
+    ).toBeTruthy();
+    expect(within(card).getByLabelText('Enviar diagnóstico a la PC')).toBeTruthy();
   });
 });

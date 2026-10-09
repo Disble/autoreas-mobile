@@ -78,7 +78,7 @@ export function useAnimeListScreen(
     useMutateAnime();
   const { submitSeasonRatingIntent } = useSeasonRatingIntent();
   const { config, isConfigured } = useBridgeConfig();
-  const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount, syncError } =
+  const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount } =
     useSyncFacade();
 
   // 5. Derived State (useMemo)
@@ -125,11 +125,10 @@ export function useAnimeListScreen(
           isDeviceOnline,
           lastSyncAt,
           pendingOpsCount,
-          syncError,
         },
         new Date(),
       ),
-    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount, syncError],
+    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount],
   );
   const isManualSyncEnabled = useMemo(
     () =>
@@ -140,7 +139,6 @@ export function useAnimeListScreen(
         isRefreshing,
         lastSyncAt,
         pendingOpsCount,
-        syncError,
       }),
     [
       connectionStatus,
@@ -149,7 +147,6 @@ export function useAnimeListScreen(
       isRefreshing,
       lastSyncAt,
       pendingOpsCount,
-      syncError,
     ],
   );
 
@@ -176,7 +173,6 @@ export function useAnimeListScreen(
         isDeviceOnline,
         lastSyncAt,
         pendingOpsCount,
-        syncError,
       });
 
       toast.show({
@@ -196,7 +192,6 @@ export function useAnimeListScreen(
     lastSyncAt,
     manualSync,
     pendingOpsCount,
-    syncError,
     toast,
   ]);
 

@@ -15,9 +15,9 @@ export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS = 2;
  */
 export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME = 'flex-[0.5] px-2';
 /** Provides the shared anime list screen sync settings action label value. */
-export const ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL = 'Revisar bridge';
+export const ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL = 'Revisar conexión';
 /** Provides the shared anime list screen sync pair action label value. */
-export const ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL = 'Emparejar bridge';
+export const ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL = 'Emparejar PC';
 
 /** Provides the shared anime list screen sync chip color by tone value. */
 export const ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE: Record<

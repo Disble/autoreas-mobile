@@ -10,7 +10,6 @@ export interface SyncVisibleStatusFacts {
   readonly isDeviceOnline?: boolean | null;
   readonly lastSyncAt: number | null;
   readonly pendingOpsCount: number;
-  readonly syncError: string | null;
 }
 
 /** Defines the data contract for sync visible status. */
