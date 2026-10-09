@@ -146,13 +146,15 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
 
     expect(screen.getByText('Estado de sync en segundo plano')).toBeTruthy();
-    expect(screen.getByText('Sync pendiente')).toBeTruthy();
+    expect(screen.getByText('Esperando a la PC')).toBeTruthy();
     expect(screen.getByText('Bridge no disponible')).toBeTruthy();
-    expect(screen.getByText('3 cambios esperando sync')).toBeTruthy();
+    expect(screen.getByText('Hace 81 días que no hay sync')).toBeTruthy();
     expect(
-      screen.getAllByText('Tus cambios siguen guardados en este dispositivo. Hace 81 días que el bridge no confirma cambios.'),
+      screen.getAllByText(
+        'Tus 3 cambios siguen guardados en este dispositivo, pero la PC no los ha recibido. ¿Está encendida y en la misma red?',
+      ),
     ).toHaveLength(2);
-    expect(screen.getByText('Re-emparejar bridge')).toBeTruthy();
+    expect(screen.queryByText('Re-emparejar bridge')).toBeNull();
     expect(screen.getByText('Último sync con error')).toBeTruthy();
     expect(screen.getByText('Bridge timeout after 10s')).toBeTruthy();
     expect(screen.getByText('Task en segundo plano')).toBeTruthy();
@@ -200,7 +202,8 @@ describe('SettingsScreen', () => {
     expect(screen.getByText('No disponible sin bridge emparejado')).toBeTruthy();
     expect(screen.getByLabelText('Ir al setup')).toBeTruthy();
     expect(screen.getByText('Modo local')).toBeTruthy();
-    expect(screen.getAllByText('Emparejar bridge')).toHaveLength(2);
+    expect(screen.getByText('Emparejar bridge')).toBeTruthy();
+    expect(screen.getByText('Emparejar PC')).toBeTruthy();
   });
 
   it('R3: presionar Re-emparejar muestra Alert, confirmar llama unpair + navega a /setup en modo repair', async () => {

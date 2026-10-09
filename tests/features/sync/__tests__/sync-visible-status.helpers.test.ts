@@ -2,6 +2,7 @@ import {
   deriveVisibleSyncStatus,
   isManualSyncAvailableNow,
 } from '../../../../src/features/sync/sync-visible-status.helpers';
+import type { SyncVisibleStatusFacts } from '../../../../src/features/sync/sync-visible-status.types';
 
 describe('sync-visible-status.helpers', () => {
   describe('isManualSyncAvailableNow', () => {
@@ -58,144 +59,185 @@ describe('sync-visible-status.helpers', () => {
     });
   });
 
-  it('keeps a calm local-only state when no bridge is configured and there is no backlog', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'idle',
-        isBridgeConfigured: false,
-        isDeviceOnline: true,
-        lastSyncAt: null,
-        pendingOpsCount: 0,
-        syncError: null,
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+  describe('deriveVisibleSyncStatus', () => {
+    const NOW = new Date('2026-04-09T10:00:00.000Z');
+    const HOUR_MS = 60 * 60 * 1000;
 
-    expect(status.tone).toBe('default');
-    expect(status.chipLabel).toBe('Modo local');
-    expect(status.title).toBe('Catálogo local listo');
-    expect(status.description).toContain('No hay bridge emparejado');
-  });
+    function derive(facts: Partial<SyncVisibleStatusFacts>) {
+      return deriveVisibleSyncStatus(
+        {
+          connectionStatus: 'unreachable',
+          isBridgeConfigured: true,
+          isDeviceOnline: true,
+          lastSyncAt: null,
+          pendingOpsCount: 0,
+          syncError: null,
+          ...facts,
+        },
+        NOW,
+      );
+    }
 
-  it('keeps the healthy bridge-up-to-date state when the bridge is online without backlog', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'online',
-        isBridgeConfigured: true,
-        isDeviceOnline: true,
-        lastSyncAt: new Date('2026-04-09T09:58:00.000Z').getTime(),
-        pendingOpsCount: 0,
-        syncError: null,
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('reports an in-flight sync with the accent tone', () => {
+      expect(derive({ connectionStatus: 'syncing', pendingOpsCount: 2 })).toEqual({
+        chipLabel: 'Sincronizando',
+        description: 'Enviando tus cambios a la PC.',
+        title: 'Sincronizando',
+        tone: 'accent',
+      });
+    });
 
-    expect(status.tone).toBe('success');
-    expect(status.chipLabel).toBe('Bridge activo');
-    expect(status.title).toBe('Catálogo al día');
-    expect(status.description).toContain('Última sincronización');
-  });
+    it('reports an up-to-date catalog with the last sync recency', () => {
+      expect(
+        derive({ connectionStatus: 'online', lastSyncAt: NOW.getTime() - 2 * 60 * 1000 }),
+      ).toEqual({
+        chipLabel: 'Al día',
+        description: 'Último sync hace 2 min.',
+        title: 'Al día',
+        tone: 'success',
+      });
+    });
 
-  it('distinguishes a phone-offline backlog from a bridge issue', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'unreachable',
-        isBridgeConfigured: true,
-        isDeviceOnline: false,
-        lastSyncAt: new Date('2026-04-08T10:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('reports an up-to-date catalog without recency when there is no prior sync', () => {
+      expect(derive({ connectionStatus: 'online' }).description).toBe(
+        'Todo lo que cambiaste ya está en la PC.',
+      );
+    });
 
-    expect(status.tone).toBe('warning');
-    expect(status.chipLabel).toBe('Sin conexión');
-    expect(status.title).toBe('2 cambios esperando sync');
-    expect(status.description).toContain('teléfono está sin internet');
-  });
+    it('reserves the danger tone for a sync the PC answered and rejected', () => {
+      expect(
+        derive({
+          connectionStatus: 'sync_error',
+          lastSyncAt: NOW.getTime() - HOUR_MS,
+          pendingOpsCount: 2,
+          syncError: 'Reconcile failed: 422',
+        }),
+      ).toEqual({
+        chipLabel: 'Envío rechazado',
+        description:
+          'La PC respondió, pero rechazó el envío. Tus cambios siguen guardados en este dispositivo.',
+        title: 'La PC no aceptó tus cambios',
+        tone: 'danger',
+      });
+    });
 
-  it('escalates a stale backlog when the bridge has not confirmed changes for several days', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'unreachable',
-        isBridgeConfigured: true,
-        isDeviceOnline: true,
-        lastSyncAt: new Date('2026-04-03T10:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('keeps a rejected sync in danger even with nothing pending', () => {
+      expect(derive({ connectionStatus: 'sync_error', pendingOpsCount: 0 }).tone).toBe('danger');
+    });
 
-    expect(status.tone).toBe('danger');
-    expect(status.chipLabel).toBe('Sync pendiente');
-    expect(status.title).toBe('2 cambios esperando sync');
-    expect(status.description).toContain('Hace 6 días');
-  });
+    it('keeps a calm local mode when no PC is paired and nothing is pending', () => {
+      expect(derive({ connectionStatus: 'idle', isBridgeConfigured: false })).toEqual({
+        chipLabel: 'Modo local',
+        description:
+          'La app funciona igual con tu catálogo en este dispositivo. Empareja una PC para tener una copia allí.',
+        title: 'Sin PC emparejada',
+        tone: 'default',
+      });
+    });
 
-  it('reports the online state without a "last synced" phrase when there is no prior sync yet', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'online',
-        isBridgeConfigured: true,
-        isDeviceOnline: true,
-        lastSyncAt: null,
-        pendingOpsCount: 0,
-        syncError: null,
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('keeps a neutral no-Wi-Fi state when the device is offline and nothing is pending', () => {
+      expect(derive({ isDeviceOnline: false })).toEqual({
+        chipLabel: 'Sin Wi-Fi',
+        description: 'Tu catálogo sigue disponible en este dispositivo.',
+        title: 'Sin Wi-Fi',
+        tone: 'default',
+      });
+    });
 
-    expect(status.description).toBe('La copia local está al día con el bridge.');
-  });
+    it('treats an unreachable PC with nothing pending as neutral and shows the last sync', () => {
+      expect(
+        derive({ lastSyncAt: NOW.getTime() - HOUR_MS, syncError: 'Bridge unreachable' }),
+      ).toEqual({
+        chipLabel: 'Nada por enviar',
+        description: 'Último sync hace 1 h.',
+        title: 'Nada por enviar',
+        tone: 'default',
+      });
+    });
 
-  it('uses the singular pending-change label for exactly one pending operation', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'unreachable',
-        isBridgeConfigured: true,
-        isDeviceOnline: false,
-        lastSyncAt: null,
-        pendingOpsCount: 1,
-        syncError: 'offline',
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('says the PC has not answered yet when nothing is pending and there was never a sync', () => {
+      expect(derive({ syncError: 'Reconcile failed: 500' }).description).toBe(
+        'La PC todavía no respondió.',
+      );
+    });
 
-    expect(status.title).toBe('1 cambio esperando sync');
-  });
+    it('keeps pending changes neutral in local mode when no PC is paired', () => {
+      expect(
+        derive({ connectionStatus: 'idle', isBridgeConfigured: false, pendingOpsCount: 2 }),
+      ).toEqual({
+        chipLabel: 'Modo local',
+        description: 'Empareja una PC para tener una copia allí.',
+        title: '2 cambios guardados en este dispositivo',
+        tone: 'default',
+      });
+    });
 
-  it('does not escalate a fresh, still-pending backlog that has not gone stale yet', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'unreachable',
-        isBridgeConfigured: true,
-        isDeviceOnline: true,
-        lastSyncAt: new Date('2026-04-09T09:00:00.000Z').getTime(),
-        pendingOpsCount: 2,
-        syncError: 'Bridge unreachable at http://192.168.1.10:9876',
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('uses singular wording for one pending change in local mode', () => {
+      expect(
+        derive({ connectionStatus: 'idle', isBridgeConfigured: false, pendingOpsCount: 1 }).title,
+      ).toBe('1 cambio guardado en este dispositivo');
+    });
 
-    expect(status.tone).toBe('warning');
-    expect(status.description).toContain('se van a reintentar cuando el bridge vuelva');
-  });
+    it('keeps pending changes neutral when the device is offline, even when stale', () => {
+      expect(
+        derive({
+          isDeviceOnline: false,
+          lastSyncAt: NOW.getTime() - 10 * 24 * HOUR_MS,
+          pendingOpsCount: 2,
+        }),
+      ).toEqual({
+        chipLabel: 'Sin Wi-Fi',
+        description:
+          'Tienes 2 cambios guardados en este dispositivo. Se enviarán cuando vuelvas a conectarte.',
+        title: 'Sin Wi-Fi',
+        tone: 'default',
+      });
+    });
 
-  it('reports the local-mode description including the last sync error when one exists', () => {
-    const status = deriveVisibleSyncStatus(
-      {
-        connectionStatus: 'idle',
-        isBridgeConfigured: true,
-        isDeviceOnline: true,
-        lastSyncAt: null,
-        pendingOpsCount: 0,
-        syncError: 'Reconcile failed: 500',
-      },
-      new Date('2026-04-09T10:00:00.000Z'),
-    );
+    it('uses singular wording for one pending change while offline', () => {
+      expect(derive({ isDeviceOnline: false, pendingOpsCount: 1 }).description).toBe(
+        'Tienes 1 cambio guardado en este dispositivo. Se enviará cuando vuelvas a conectarte.',
+      );
+    });
 
-    expect(status.description).toContain('último intento con el bridge falló');
+    it('waits calmly for the PC while a pending backlog is younger than 72 hours', () => {
+      expect(
+        derive({ lastSyncAt: NOW.getTime() - (72 * HOUR_MS - 1), pendingOpsCount: 3 }),
+      ).toEqual({
+        chipLabel: 'Esperando a la PC',
+        description:
+          'Tienes 3 cambios guardados en este dispositivo. Se enviarán solos cuando la PC esté encendida.',
+        title: 'Esperando a la PC',
+        tone: 'default',
+      });
+    });
+
+    it('waits calmly when one change is pending and there was never a sync', () => {
+      expect(derive({ pendingOpsCount: 1 })).toMatchObject({
+        description:
+          'Tienes 1 cambio guardado en este dispositivo. Se enviará solo cuando la PC esté encendida.',
+        tone: 'default',
+      });
+    });
+
+    it('warns once a pending backlog reaches 72 hours without a sync', () => {
+      expect(derive({ lastSyncAt: NOW.getTime() - 72 * HOUR_MS, pendingOpsCount: 2 })).toEqual({
+        chipLabel: 'Esperando a la PC',
+        description:
+          'Tus 2 cambios siguen guardados en este dispositivo, pero la PC no los ha recibido. ¿Está encendida y en la misma red?',
+        title: 'Hace 3 días que no hay sync',
+        tone: 'warning',
+      });
+    });
+
+    it('never escalates a long-stale backlog past warning', () => {
+      const status = derive({ lastSyncAt: NOW.getTime() - 30 * 24 * HOUR_MS, pendingOpsCount: 1 });
+
+      expect(status.tone).toBe('warning');
+      expect(status.title).toBe('Hace 30 días que no hay sync');
+      expect(status.description).toBe(
+        'Tu cambio sigue guardado en este dispositivo, pero la PC no lo ha recibido. ¿Está encendida y en la misma red?',
+      );
+    });
   });
 });

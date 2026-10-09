@@ -12,6 +12,7 @@ import { AnimeListScreenHeaderLeft } from "../../../../src/features/animes/ui/An
 import { AnimeListScreenHeaderRight } from "../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderRight";
 import type { Anime } from "../../../../src/infrastructure/validation/anime-schema";
 
+/** Builds an active anime fixture tagged with the given days, applying optional overrides. */
 function buildAnime(
   id: string,
   dias: Anime["dias"],
@@ -223,7 +224,7 @@ describe("anime-list-screen helpers", () => {
   });
 
   describe("deriveVisibleSyncStatus", () => {
-    it("returns a neutral local-only state when the bridge is unavailable without backlog", () => {
+    it("returns a neutral state when the PC has not answered and nothing is pending", () => {
       const status = deriveVisibleSyncStatus(
         {
           connectionStatus: "idle",
@@ -237,8 +238,8 @@ describe("anime-list-screen helpers", () => {
       );
 
       expect(status.tone).toBe("default");
-      expect(status.chipLabel).toBe("Catálogo local");
-      expect(status.title).toBe("Catálogo local listo");
+      expect(status.chipLabel).toBe("Nada por enviar");
+      expect(status.title).toBe("Nada por enviar");
       expect(status.actionLabel).toBeNull();
     });
 
@@ -256,13 +257,13 @@ describe("anime-list-screen helpers", () => {
       );
 
       expect(status.tone).toBe("success");
-      expect(status.chipLabel).toBe("Bridge activo");
-      expect(status.title).toBe("Catálogo al día");
-      expect(status.description).toContain("Última sincronización");
+      expect(status.chipLabel).toBe("Al día");
+      expect(status.title).toBe("Al día");
+      expect(status.description).toBe("Último sync hace 2 min.");
       expect(status.actionLabel).toBeNull();
     });
 
-    it("surfaces pending local changes while staying in local mode", () => {
+    it("surfaces pending changes calmly while waiting for the PC", () => {
       const status = deriveVisibleSyncStatus(
         {
           connectionStatus: "unreachable",
@@ -275,13 +276,13 @@ describe("anime-list-screen helpers", () => {
         new Date("2026-04-09T10:00:00.000Z"),
       );
 
-      expect(status.tone).toBe("warning");
-      expect(status.chipLabel).toBe("Sync pendiente");
-      expect(status.title).toBe("3 cambios esperando sync");
+      expect(status.tone).toBe("default");
+      expect(status.chipLabel).toBe("Esperando a la PC");
+      expect(status.title).toBe("Esperando a la PC");
       expect(status.actionLabel).toBe("Revisar bridge");
     });
 
-    it("elevates stale backlog after multiple days without sync", () => {
+    it("warns, without reaching danger, about a backlog stale for several days", () => {
       const status = deriveVisibleSyncStatus(
         {
           connectionStatus: "unreachable",
@@ -294,13 +295,13 @@ describe("anime-list-screen helpers", () => {
         new Date("2026-04-09T10:00:00.000Z"),
       );
 
-      expect(status.tone).toBe("danger");
-      expect(status.title).toBe("2 cambios esperando sync");
-      expect(status.description).toContain("Hace 6 días");
+      expect(status.tone).toBe("warning");
+      expect(status.title).toBe("Hace 6 días que no hay sync");
+      expect(status.description).toContain("la PC no los ha recibido");
       expect(status.actionLabel).toBe("Revisar bridge");
     });
 
-    it("hides the bridge CTA when the phone itself is offline", () => {
+    it("hides the bridge CTA when the device itself is offline", () => {
       const status = deriveVisibleSyncStatus(
         {
           connectionStatus: "unreachable",
@@ -313,7 +314,7 @@ describe("anime-list-screen helpers", () => {
         new Date("2026-04-09T10:00:00.000Z"),
       );
 
-      expect(status.chipLabel).toBe("Sin conexión");
+      expect(status.chipLabel).toBe("Sin Wi-Fi");
       expect(status.actionLabel).toBeNull();
     });
 
@@ -330,13 +331,13 @@ describe("anime-list-screen helpers", () => {
         new Date("2026-04-09T10:00:00.000Z"),
       );
 
-      expect(status.chipLabel).toBe("Sync pendiente");
+      expect(status.chipLabel).toBe("Modo local");
       expect(status.actionLabel).toBe("Emparejar bridge");
     });
   });
 
   describe("buildRefreshFailureFeedback", () => {
-    it("returns phone-offline copy when the device has no internet", () => {
+    it("returns device-offline copy when the device has no internet", () => {
       const feedback = buildRefreshFailureFeedback({
         connectionStatus: "unreachable",
         isBridgeConfigured: true,
@@ -346,11 +347,13 @@ describe("anime-list-screen helpers", () => {
         syncError: "bridge unavailable",
       });
 
-      expect(feedback.label).toBe("Este teléfono está sin internet.");
-      expect(feedback.description).toContain("sync se va a reintentar");
+      expect(feedback.label).toBe("Sin Wi-Fi.");
+      expect(feedback.description).toBe(
+        "Tus cambios siguen guardados en este dispositivo. Se enviarán cuando vuelvas a conectarte.",
+      );
     });
 
-    it("returns bridge-specific copy when the phone is online", () => {
+    it("returns PC-specific copy when the device is online", () => {
       const feedback = buildRefreshFailureFeedback({
         connectionStatus: "unreachable",
         isBridgeConfigured: true,
@@ -360,9 +363,9 @@ describe("anime-list-screen helpers", () => {
         syncError: "bridge unavailable",
       });
 
-      expect(feedback.label).toBe("No se pudo sincronizar con el bridge.");
+      expect(feedback.label).toBe("No se pudo contactar a la PC.");
       expect(feedback.description).toBe(
-        "Tus cambios siguen guardados en este dispositivo.",
+        "Tus cambios siguen guardados en este dispositivo. Se enviarán solos cuando la PC esté encendida.",
       );
     });
   });

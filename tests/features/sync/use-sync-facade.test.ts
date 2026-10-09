@@ -387,8 +387,8 @@ describe('useSyncFacade', () => {
     );
 
     expect(result.current.pendingOpsCount).toBe(1);
-    expect(visible.title).not.toBe('Catálogo al día');
-    expect(visible.tone).toBe('warning');
+    expect(visible.title).toBe('Esperando a la PC');
+    expect(visible.tone).not.toBe('success');
   });
 
   it('does not publish online when reconcile reports more bounded backlog', async () => {

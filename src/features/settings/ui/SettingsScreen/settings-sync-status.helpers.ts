@@ -10,6 +10,10 @@ import type {
   SettingsSyncSummary,
 } from './settings-screen.types';
 
+/**
+ * Computes the whole days elapsed since a timestamp, or null when there is none.
+ * Non-positive elapsed times are clamped to zero.
+ */
 function getDaysSinceTimestamp(timestamp: number | null, now: Date): number | null {
   if (timestamp === null) {
     return null;
@@ -24,6 +28,10 @@ function getDaysSinceTimestamp(timestamp: number | null, now: Date): number | nu
   return Math.floor(elapsedMilliseconds / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Tags the bridge-specific state the Settings bridge card needs on top of the shared visible status.
+ * A backlog counts as stale once whole days times 24 reach the shared 72 h warning threshold.
+ */
 function resolveBridgeStatusKind({
   isConfigured,
   isDeviceOnline,
@@ -67,8 +75,8 @@ function resolveBridgeStatusKind({
 }
 
 /**
- * Builds the shared offline-first sync summary for Settings while tagging the bridge-specific state needed by the left card.
- * This keeps the Settings surface aligned with the existing sync-visible-state rules instead of inventing card-local logic.
+ * Builds the shared local-first sync summary for Settings while tagging the bridge-specific state needed by the left card.
+ * The only contextual action is pairing when no PC is paired: a PC that is merely off never suggests re-pairing.
  */
 export function buildSettingsSyncSummary({
   isConfigured,
@@ -96,20 +104,7 @@ export function buildSettingsSyncSummary({
       ...status,
       bridgeStatusKind,
       actionKind: 'go_to_setup',
-      actionLabel: 'Emparejar bridge',
-    };
-  }
-
-  if (
-    syncFacts.connectionStatus !== 'sync_error' &&
-    syncFacts.pendingOpsCount > 0 &&
-    isDeviceOnline !== false
-  ) {
-    return {
-      ...status,
-      bridgeStatusKind,
-      actionKind: 'repair_bridge',
-      actionLabel: 'Re-emparejar bridge',
+      actionLabel: 'Emparejar PC',
     };
   }
 

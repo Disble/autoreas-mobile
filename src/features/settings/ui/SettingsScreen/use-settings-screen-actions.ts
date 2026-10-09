@@ -57,22 +57,11 @@ export function useSettingsScreenActions({
     );
   }, [router, unpair]);
 
-  const handleSyncSummaryAction = useCallback(() => {
-    if (actionKind === 'go_to_setup') {
-      handleGoToSetup();
-      return;
-    }
-
-    if (actionKind === 'repair_bridge') {
-      handleRePair();
-    }
-  }, [actionKind, handleGoToSetup, handleRePair]);
-
   // 7. Effects
 
   return {
     handleGoToSetup,
     handleRePair,
-    handleSyncSummaryAction: actionKind === null ? null : handleSyncSummaryAction,
+    handleSyncSummaryAction: actionKind === 'go_to_setup' ? handleGoToSetup : null,
   };
 }

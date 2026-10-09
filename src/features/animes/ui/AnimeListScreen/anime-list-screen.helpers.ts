@@ -124,22 +124,23 @@ export function deriveVisibleSyncStatus(
 
 /**
  * Builds the warning toast copy shown when a manual refresh fails from the anime list.
- * The message stays aligned with the shared visible-status model so phone-offline and bridge issues do not blur together.
+ * The message stays aligned with the shared visible-status model so device-offline and PC-unreachable cases do not blur together.
  */
 export function buildRefreshFailureFeedback(
   facts: AnimeListScreenSyncFacts,
 ): AnimeListScreenRefreshFeedback {
   if (facts.isDeviceOnline === false) {
     return {
-      label: 'Este teléfono está sin internet.',
+      label: 'Sin Wi-Fi.',
       description:
-        'Tu catálogo local sigue disponible y el sync se va a reintentar cuando vuelva la conexión.',
+        'Tus cambios siguen guardados en este dispositivo. Se enviarán cuando vuelvas a conectarte.',
     };
   }
 
   return {
-    label: 'No se pudo sincronizar con el bridge.',
-    description: 'Tus cambios siguen guardados en este dispositivo.',
+    label: 'No se pudo contactar a la PC.',
+    description:
+      'Tus cambios siguen guardados en este dispositivo. Se enviarán solos cuando la PC esté encendida.',
   };
 }
 

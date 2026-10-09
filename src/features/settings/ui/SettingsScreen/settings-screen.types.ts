@@ -101,7 +101,7 @@ export interface BuildBackgroundSyncSectionInput {
 }
 
 /** Defines the settings sync summary action kind value shape. */
-export type SettingsSyncSummaryActionKind = 'go_to_setup' | 'repair_bridge';
+export type SettingsSyncSummaryActionKind = 'go_to_setup';
 
 /** Defines the settings bridge status kind value shape. */
 export type SettingsBridgeStatusKind =

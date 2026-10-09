@@ -133,10 +133,12 @@ describe('useSettingsScreen', () => {
     expect(result.current.backgroundSyncSection.tiles.map((tile) => tile.id)).toEqual(
       expect.arrayContaining(['registration', 'lastFailure']),
     );
-    expect(result.current.syncSummary.title).toBe('3 cambios esperando sync');
+    expect(result.current.syncSummary.title).toBe('Hace 181 días que no hay sync');
+    expect(result.current.syncSummary.tone).toBe('warning');
     expect(result.current.bridgeStatus.chipLabel).toBe('Bridge no disponible');
     expect(result.current.bridgeStatus.title).toBe('Bridge configurado pero inaccesible');
-    expect(result.current.syncSummary.actionKind).toBe('repair_bridge');
+    expect(result.current.syncSummary.actionKind).toBeNull();
+    expect(result.current.handleSyncSummaryAction).toBeNull();
   });
 
   it('exposes the responsive layout mode to the view', () => {
@@ -179,7 +181,7 @@ describe('useSettingsScreen', () => {
     expect(result.current.syncSummary.actionKind).toBe('go_to_setup');
   });
 
-  it('does not expose a repair CTA when the phone is offline', () => {
+  it('does not expose a summary CTA when the device is offline', () => {
     (useNetworkState as jest.Mock).mockReturnValue({
       isConnected: false,
       isInternetReachable: false,
@@ -187,7 +189,7 @@ describe('useSettingsScreen', () => {
 
     const { result } = renderHook(() => useSettingsScreen({}));
 
-    expect(result.current.syncSummary.chipLabel).toBe('Sin conexión');
+    expect(result.current.syncSummary.chipLabel).toBe('Sin Wi-Fi');
     expect(result.current.bridgeStatus.title).toBe('Teléfono sin internet');
     expect(result.current.syncSummary.actionKind).toBeNull();
     expect(result.current.handleSyncSummaryAction).toBeNull();
@@ -199,7 +201,7 @@ describe('useSettingsScreen', () => {
     const { result } = renderHook(() => useSettingsScreen({}));
 
     act(() => {
-      result.current.handleSyncSummaryAction?.();
+      result.current.handleRePair();
     });
 
     const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
