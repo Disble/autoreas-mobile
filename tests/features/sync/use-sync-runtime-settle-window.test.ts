@@ -253,7 +253,6 @@ describe("useSyncRuntime settle window and projection ordering", () => {
       manualSync: jest.fn(),
       pendingOpsCount: 0,
       requestSync: jest.fn(async () => 1),
-      syncError: null,
     });
     (
       nativeForegroundSyncAdapterModule.createNativeForegroundSyncAdapter as jest.Mock

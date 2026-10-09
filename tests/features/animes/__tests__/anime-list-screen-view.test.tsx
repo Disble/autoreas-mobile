@@ -190,7 +190,7 @@ describe('AnimeListScreenView', () => {
 
     expect(getByText('Modo temporada')).toBeTruthy();
     expect(getByText('Catálogo local listo')).toBeTruthy();
-    expect(queryByText('Revisar bridge')).toBeNull();
+    expect(queryByText('Revisar conexión')).toBeNull();
     expect(handleOpenSettings).not.toHaveBeenCalled();
   });
 
@@ -283,7 +283,7 @@ describe('AnimeListScreenView', () => {
   it('renders the inline sync status copy above the list', () => {
     const props = buildProps({
       syncStatus: {
-        actionLabel: 'Revisar bridge',
+        actionLabel: 'Revisar conexión',
         chipLabel: 'Sync pendiente',
         description: 'Tus cambios siguen guardados en este dispositivo. Hace 6 días que el bridge no confirma cambios.',
         title: '2 cambios esperando sync',
@@ -295,7 +295,7 @@ describe('AnimeListScreenView', () => {
 
     expect(getByText('Sync pendiente')).toBeTruthy();
     expect(getByText('2 cambios esperando sync')).toBeTruthy();
-    expect(getByText('Revisar bridge')).toBeTruthy();
+    expect(getByText('Revisar conexión')).toBeTruthy();
   });
 
   it('opens settings from the inline sync action when the bridge needs attention', () => {
@@ -303,7 +303,7 @@ describe('AnimeListScreenView', () => {
     const props = buildProps({
       handleOpenSettings,
       syncStatus: {
-        actionLabel: 'Revisar bridge',
+        actionLabel: 'Revisar conexión',
         chipLabel: 'Sync pendiente',
         description: 'Tus cambios siguen guardados en este dispositivo.',
         title: '2 cambios esperando sync',
@@ -313,7 +313,7 @@ describe('AnimeListScreenView', () => {
 
     const { getByText } = render(<AnimeListScreenView model={props} />);
 
-    fireEvent.press(getByText('Revisar bridge'));
+    fireEvent.press(getByText('Revisar conexión'));
 
     expect(handleOpenSettings).toHaveBeenCalledTimes(1);
   });

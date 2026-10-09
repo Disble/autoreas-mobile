@@ -181,7 +181,9 @@ Measured sizes: full ~474 B, without error detail ~436 B, without the previous c
 
 `resolveClientTelemetry` is the single exit to the wire. User preference, size budget and serialization converge there on purpose: leaving any of the three to the caller would make it a convention some future call site forgets. Funnelled into one function they are a property of the system, because no path to the wire bypasses it.
 
-The switch lives in Settings and defaults **on**. A device that hits the failure before anyone opens Settings must still be able to report it — a default-off switch reproduces the blindness this feature removes. The payload is PII-free by construction and travels to the user's own bridge on their own LAN.
+The switch lives in Settings, labelled "Enviar diagnóstico a la PC", and defaults **on**. A device that hits the failure before anyone opens Settings must still be able to report it — a default-off switch reproduces the blindness this feature removes. The payload is PII-free by construction and travels to the user's own bridge on their own LAN.
+
+Settings no longer renders runtime counters (since 2026-10-08): this telemetry, read through the bridge MCP, is the only place they are inspected. What Settings does show is specified in [`mobile-sync-status-ux.md`](./mobile-sync-status-ux.md).
 
 When there is nothing to send the key is **omitted**, never emitted as null: the bridge stores this body raw, so an empty key is permanent noise in its store rather than a serialization detail.
 

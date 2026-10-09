@@ -71,7 +71,6 @@ jest.mock("../../../../src/features/sync/use-sync-facade", () => ({
     manualSync: mockManualSync,
     pendingOpsCount: 0,
     requestSync: jest.fn(),
-    syncError: null,
   })),
 }));
 
@@ -167,14 +166,15 @@ describe("useAnimeListScreen", () => {
     expect(result.current.isRefreshing).toBe(false);
     expect(mockToastShow).toHaveBeenCalledWith(
       expect.objectContaining({
-        description: 'Tus cambios siguen guardados en este dispositivo.',
-        label: 'No se pudo sincronizar con el bridge.',
+        description:
+          'Tus cambios siguen guardados en este dispositivo. Se enviarán solos cuando la PC esté encendida.',
+        label: 'No se pudo contactar a la PC.',
         variant: "warning",
       }),
     );
   });
 
-  it("no muestra toast ni intenta sync cuando el teléfono está offline", async () => {
+  it("no muestra toast ni intenta sync cuando el dispositivo está offline", async () => {
     (useNetworkState as jest.Mock).mockReturnValueOnce({
       isConnected: true,
       isInternetReachable: false,
@@ -191,7 +191,7 @@ describe("useAnimeListScreen", () => {
     expect(mockToastShow).not.toHaveBeenCalled();
   });
 
-  it("expone el refresh manual como deshabilitado cuando el teléfono está offline", () => {
+  it("expone el refresh manual como deshabilitado cuando el dispositivo está offline", () => {
     (useNetworkState as jest.Mock).mockReturnValueOnce({
       isConnected: true,
       isInternetReachable: false,
@@ -247,12 +247,12 @@ describe("useAnimeListScreen", () => {
   it("expone un estado de sync derivado para el banner inline", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
-    expect(result.current.syncStatus.chipLabel).toBe("Catálogo local");
-    expect(result.current.syncStatus.title).toBe("Catálogo local listo");
+    expect(result.current.syncStatus.chipLabel).toBe("Nada por enviar");
+    expect(result.current.syncStatus.title).toBe("Nada por enviar");
     expect(result.current.syncStatus.actionLabel).toBeNull();
   });
 
-  it("marca el teléfono offline como una causa distinta al bridge caído", () => {
+  it("marca el dispositivo sin Wi-Fi como una causa distinta a la PC apagada", () => {
     (useNetworkState as jest.Mock).mockReturnValueOnce({
       isConnected: true,
       isInternetReachable: false,
@@ -269,12 +269,11 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 2,
       requestSync: jest.fn(),
-      syncError: "bridge unavailable",
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));
 
-    expect(result.current.syncStatus.chipLabel).toBe("Sin conexión");
+    expect(result.current.syncStatus.chipLabel).toBe("Sin Wi-Fi");
     expect(result.current.syncStatus.actionLabel).toBeNull();
   });
 
@@ -302,13 +301,12 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 2,
       requestSync: jest.fn(),
-      syncError: null,
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));
 
-    expect(result.current.syncStatus.chipLabel).toBe("Sync pendiente");
-    expect(result.current.syncStatus.actionLabel).toBe("Emparejar bridge");
+    expect(result.current.syncStatus.chipLabel).toBe("Modo local");
+    expect(result.current.syncStatus.actionLabel).toBe("Emparejar PC");
   });
 
   it("expone el refresh manual como deshabilitado mientras sync ya está en progreso", () => {
@@ -323,7 +321,6 @@ describe("useAnimeListScreen", () => {
       manualSync: mockManualSync,
       pendingOpsCount: 0,
       requestSync: jest.fn(),
-      syncError: null,
     });
 
     const { result } = renderHook(() => useAnimeListScreen({}));

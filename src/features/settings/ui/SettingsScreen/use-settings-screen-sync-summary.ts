@@ -1,16 +1,14 @@
 import { useMemo } from 'react';
 import { useBridgeConfig } from '../../use-bridge-config';
 import { useSyncFacade } from '../../../sync/use-sync-facade';
-import {
-  buildSettingsBridgeStatus,
-  buildSettingsSyncSummary,
-} from './settings-sync-status.helpers';
+import { buildSettingsConnection } from './settings-screen.helpers';
+import { buildSettingsSyncSummary } from './settings-sync-status.helpers';
 import type { SettingsScreenSyncSummaryResult } from './settings-screen.types';
 
 /**
- * Resolves the bridge configuration, live sync facts, and the derived sync summary and
- * bridge status the Settings screen renders. Extracted as a facade hook (per the project's
- * Facade Hook pattern) so `useSettingsScreen` stays under its complexity and line budget.
+ * Resolves the bridge configuration, live sync facts, and the derived status card and connection
+ * the Settings screen renders. Extracted as a facade hook (per the project's Facade Hook pattern)
+ * so `useSettingsScreen` stays under its complexity and line budget.
  */
 export function useSettingsScreenSyncSummary(
   isDeviceOnline: boolean | null,
@@ -23,7 +21,7 @@ export function useSettingsScreenSyncSummary(
 
   // 4. Queries/Mutations
   const { config, isConfigured, isUnpairing, error, unpair } = useBridgeConfig();
-  const { connectionStatus, lastSyncAt, pendingOpsCount, syncError } = useSyncFacade();
+  const { connectionStatus, lastSyncAt, manualSync, pendingOpsCount } = useSyncFacade();
 
   // 5. Derived State (useMemo)
   const syncSummary = useMemo(
@@ -36,14 +34,13 @@ export function useSettingsScreenSyncSummary(
           connectionStatus,
           lastSyncAt,
           pendingOpsCount,
-          syncError,
         },
       }),
-    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount, syncError],
+    [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount],
   );
-  const bridgeStatus = useMemo(
-    () => buildSettingsBridgeStatus(syncSummary),
-    [syncSummary],
+  const connection = useMemo(
+    () => buildSettingsConnection(isConfigured, config),
+    [config, isConfigured],
   );
 
   // 6. Callbacks (useCallback calling pure helpers)
@@ -51,12 +48,12 @@ export function useSettingsScreenSyncSummary(
   // 7. Effects
 
   return {
-    config,
+    connection,
     isConfigured,
     isUnpairing,
     error,
+    manualSync,
     unpair,
     syncSummary,
-    bridgeStatus,
   };
 }

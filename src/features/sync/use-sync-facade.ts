@@ -95,7 +95,6 @@ export function useSyncFacade(): UseSyncFacadeResult {
     lastSyncAt: syncConnection.lastSyncAt,
     pendingOpsCount,
     requestSync,
-    syncError: syncConnection.message,
     manualSync,
   };
 }

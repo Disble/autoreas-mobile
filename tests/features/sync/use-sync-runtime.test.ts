@@ -158,7 +158,6 @@ describe("useSyncRuntime", () => {
       manualSync: jest.fn(),
       pendingOpsCount: 0,
       requestSync: mockRequestSync,
-      syncError: null,
     });
     mockRegisterConcurrentStrategies.mockResolvedValue(undefined);
     mockHasCurrentStrategy.mockReturnValue(false);

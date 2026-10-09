@@ -64,7 +64,6 @@ export function useSettingsScreenBatteryExemption(): UseSettingsScreenBatteryExe
   }, []);
 
   return {
-    isBatteryOptimizationExempt,
     isBatteryExemptionHighlighted,
     handleRequestBatteryExemption,
   };

@@ -16,6 +16,20 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-10-08
+
+### Changed
+
+- Settings now opens with a single sync status that says whether your changes are safe and reaching your PC, with one button for what to do next: sync now, retry, or pair a PC.
+- A PC that is turned off is no longer shown as an error. Changes waiting for it appear in a neutral tone, a gentle reminder appears only after three days without a sync, and red is reserved for a PC that answers but rejects your changes.
+- Settings no longer suggests re-pairing just because the PC is unreachable; re-pairing stays available in the new "Conexión con la PC" card.
+- The background sync section is a single line when everything works and only lists what needs fixing, such as the battery exemption, each with its own button.
+- Sync messages across the app talk about your PC and this device instead of the bridge, and no longer call a tablet a "teléfono".
+
+### Removed
+
+- The grid of technical sync counters and the raw last-error message in Settings. That information still reaches your PC through the diagnostics switch, now labelled "Enviar diagnóstico a la PC".
+
 ## [1.9.2] — 2026-10-07
 
 ### Fixed
