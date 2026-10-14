@@ -43,6 +43,7 @@ describe('anime wire helpers', () => {
       tipo: 3, fechaUltCapVisto: 1710000000000, fechaEstreno: 1710000001000,
       fechaCreacion: 1710000002000, fechaEliminacion: null, portada: 'cover.jpg',
       pagina: 'https://example.com/anime-1', carpeta: 'anime-1', estudios: 'Bones', origen: 'Manga', duracion: 24,
+      episodes: null,
     });
   });
 
@@ -56,6 +57,35 @@ describe('anime wire helpers', () => {
         'unsupportedField',
       ])
     ).toEqual(['estado', 'nrocapvisto', 'fechaUltCapVisto', 'pagina']);
+  });
+
+  it('maps the episodes array, sorted as the bridge sends it, into the domain shape', () => {
+    const mapped = mapWireAnimeToLegacyAnime(
+      makeWireAnime({
+        episodes: [
+          { episode: 1, minutes: 24, long: false },
+          { episode: 2, minutes: 46, long: true },
+        ],
+      }) as never,
+    );
+
+    expect(mapped.episodes).toEqual([
+      { episode: 1, minutes: 24, long: false },
+      { episode: 2, minutes: 46, long: true },
+    ]);
+  });
+
+  it('treats a malformed episodes value as absent instead of failing the whole snapshot', () => {
+    const parsed = WireAnimeListSchema.safeParse([
+      makeWireAnime({ episodes: [{ episode: '1', minutes: 24, long: false }] }),
+    ]);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && mapWireAnimeToLegacyAnime(parsed.data[0]).episodes).toBeNull();
+  });
+
+  it('keeps episodes when normalizing changed_fields so a durations-only update is applied', () => {
+    expect(normalizeWireAnimeChangedFields(['episodes'])).toEqual(['episodes']);
   });
 
   it('falla fuerte cuando un snapshot wire en inglés es inválido y no lo oculta como lista vacía', () => {

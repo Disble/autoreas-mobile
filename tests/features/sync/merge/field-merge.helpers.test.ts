@@ -119,8 +119,7 @@ describe("buildPartialUpdate", () => {
 });
 
 describe("deriveChangedFields", () => {
-  // The bridge watcher detects legacy changes by hash and never populates changed_fields at
-  // runtime, so mobile derives the changed set by diffing the snapshot against the local row.
+  // Used only by the foreground full resync, which diffs the bridge's full list against local rows.
   it("devuelve solo los campos cuyo valor del snapshot difiere de la fila local", () => {
     const snapshot = makeSnapshot({ estado: 1, nrocapvisto: 5 });
     const currentRow = {
@@ -144,6 +143,7 @@ describe("deriveChangedFields", () => {
       estudios: null,
       origen: null,
       duracion: null,
+      episodes: null,
       lastAppliedChangeMs: null,
     };
 
@@ -173,6 +173,7 @@ describe("deriveChangedFields", () => {
       estudios: null,
       origen: null,
       duracion: null,
+      episodes: null,
       lastAppliedChangeMs: 123,
     };
 
@@ -202,6 +203,7 @@ describe("deriveChangedFields", () => {
       estudios: null,
       origen: null,
       duracion: null,
+      episodes: null,
       lastAppliedChangeMs: null,
     };
 
@@ -224,5 +226,46 @@ describe("isStale", () => {
 
   it("changeMs menor al guard es stale (snapshot congelado se descarta)", () => {
     expect(isStale(50, 100)).toBe(true);
+  });
+});
+
+describe("episodes merge", () => {
+  const EPISODES = [
+    { episode: 1, minutes: 24, long: false },
+    { episode: 2, minutes: 46, long: true },
+  ];
+  const EPISODES_TEXT =
+    '[{"episode":1,"minutes":24,"long":false},{"episode":2,"minutes":46,"long":true}]';
+
+  it("writes episodes as canonical JSON text for a durations-only update", () => {
+    const { columns, skippedFields } = buildPartialUpdate(
+      ["episodes"],
+      makeSnapshot({ episodes: EPISODES } as Partial<Anime>),
+    );
+
+    expect(columns).toEqual({ episodes: EPISODES_TEXT });
+    expect(skippedFields).toEqual([]);
+  });
+
+  it("clears the local copy when episodes is named but absent from the snapshot", () => {
+    const { columns } = buildPartialUpdate(["episodes"], makeSnapshot());
+
+    expect(columns).toEqual({ episodes: null });
+  });
+
+  it("resync reports episodes as changed only when the stored text differs", () => {
+    const snapshot = makeSnapshot({ episodes: EPISODES } as Partial<Anime>);
+    const rowFor = (episodes: string | null) => ({
+      ...buildPartialUpdate(
+        ["nombre", "estado", "nrocapvisto", "totalcap", "activo", "primeravez", "dias", "generos",
+          "tipo", "fechaUltCapVisto", "fechaEstreno", "fechaCreacion", "fechaEliminacion",
+          "portada", "pagina", "carpeta", "estudios", "origen", "duracion"],
+        snapshot,
+      ).columns,
+      episodes,
+    });
+
+    expect(deriveChangedFields(snapshot, rowFor(null))).toEqual(["episodes"]);
+    expect(deriveChangedFields(snapshot, rowFor(EPISODES_TEXT))).toEqual([]);
   });
 });

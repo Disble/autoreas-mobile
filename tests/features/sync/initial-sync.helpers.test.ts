@@ -71,6 +71,7 @@ describe('initial-sync helpers', () => {
       estudios: null,
       origen: null,
       duracion: null,
+      episodes: null,
     },
   ];
   const ingestedAnimeSnapshot = [

@@ -62,6 +62,31 @@ describe("applyAnimePartial", () => {
 });
 
 describe("upsertAnime", () => {
+  it("persists episodes as canonical JSON text, and NULL when no durations are known", async () => {
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const db = { insert: jest.fn().mockReturnValue({ values }) } as never;
+    const anime = {
+      _id: "anime-1",
+      nombre: "Naruto",
+      estado: 1,
+      nrocapvisto: 6,
+      activo: 1,
+      primeravez: 0,
+      dias: [],
+      generos: [],
+    };
+
+    await upsertAnime(db, { ...anime, episodes: [{ episode: 7, minutes: 45, long: true }] });
+    await upsertAnime(db, anime);
+
+    expect(values.mock.calls[0][0].episodes).toBe('[{"episode":7,"minutes":45,"long":true}]');
+    expect(onConflictDoUpdate.mock.calls[0][0].set.episodes).toBe(
+      '[{"episode":7,"minutes":45,"long":true}]',
+    );
+    expect(values.mock.calls[1][0].episodes).toBeNull();
+  });
+
   it("persiste únicamente el modelo legacy normalizado en español", async () => {
     const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });

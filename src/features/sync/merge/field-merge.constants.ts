@@ -27,4 +27,5 @@ export const MERGEABLE_FIELDS = [
   'estudios',
   'origen',
   'duracion',
+  'episodes',
 ] as const;

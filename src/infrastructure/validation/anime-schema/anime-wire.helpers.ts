@@ -18,6 +18,7 @@ export function mapWireAnimeToLegacyAnime(anime: WireAnime): Anime {
     fechaCreacion: anime.createdAt ?? null, fechaEliminacion: anime.deletedAt ?? null,
     portada: anime.cover ?? null, pagina: anime.sourceUrl ?? null, carpeta: anime.folder ?? null,
     estudios: anime.studios ?? null, origen: anime.origin ?? null, duracion: anime.durationMinutes ?? null,
+    episodes: anime.episodes ?? null,
   };
 }
 
