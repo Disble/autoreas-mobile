@@ -1,3 +1,4 @@
+import type { EpisodeLength } from '../../../../infrastructure/validation/anime-schema';
 import type { AnimeSeasonProjection } from '../../anime-season.types';
 import { STATE_CHIP_BY_ESTADO } from './anime-card.constants';
 import type { AnimeSeasonStatusDescriptor, AnimeStateChipDescriptor } from './anime-card.types';
@@ -53,6 +54,24 @@ export function getRestantesLabel(
   }
 
   return `${remaining} restantes`;
+}
+
+/**
+ * Builds the long-episode mark for the next episode to watch: the entry whose `episode` is
+ * `nrocapvisto + 1` and that the bridge flagged `long`. A fractional count has no next episode,
+ * so it matches no entry and shows no mark. Mobile never decides what "long" means; it only reads the bridge's flag.
+ */
+export function getLongEpisodeLabel(
+  episodes: readonly EpisodeLength[] | null | undefined,
+  nrocapvisto: number,
+): string | null {
+  // A fractional count (6.5) looks for episode 7.5, which no entry has: no mark, by construction.
+  const next = episodes?.find((entry) => entry.episode === nrocapvisto + 1);
+  if (!next?.long) {
+    return null;
+  }
+
+  return `Ep. ${next.episode} · ${next.minutes} min`;
 }
 
 /**

@@ -13,6 +13,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     disableIncrease,
     stateChip,
     seasonStatus,
+    longEpisodeLabel,
     restantesShown,
     restantesLabel,
     toggleRestantesShown,
@@ -41,6 +42,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           metaLabel={metaLabel}
           onToggleMeta={toggleRestantesShown}
           seasonStatus={seasonStatus}
+          longEpisodeLabel={longEpisodeLabel}
           stateChip={stateChip}
           onStateBadgePress={handleStateBadgePress}
           isMutationLocked={isMutationLocked}

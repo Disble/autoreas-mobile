@@ -24,9 +24,9 @@ Branch: `feat/episode-durations` (from `main` @ b8da9ad) · Delivery: `ask-on-ri
 |----|-------|-------|--------|----------|
 | T1 | S4 | inline | done | `d69d305` (RED 4 failing → GREEN 355/355 infra; repair-twin mutation caught by 3 tests) |
 | T2b | S9 | inline | done | `fc43de2` RED 2 failing (empty update rewrote the whole row, nrocapvisto 12→3; unknown field unrecorded) → GREEN 749/749 sync+validation+behaviour; guard mutation caught |
-| T2 | S1, S2, S3, S5, S8 (TS) | inline | done | (commit with T3) RED 17 failing → GREEN 1662/1662; mutations caught: merge `episodes` case (4 tests), canonical key order (1 test) |
-| T3 | S1, S3, S8 (Kotlin) | inline | done | same commit as T2 (shared contract fixtures bind both runners); Kotlin RED contract case → GREEN 318/318 + kover 100% branches; mutation (drop episodes mapping) caught by 5 tests |
-| T4 | S6, S7 | inline | pending | — |
+| T2 | S1, S2, S3, S5, S8 (TS) | inline | done | `6aa3b18` RED 17 failing → GREEN 1662/1662; mutations caught: merge `episodes` case (4 tests), canonical key order (1 test) |
+| T3 | S1, S3, S8 (Kotlin) | inline | done | `6aa3b18` (shared contract fixtures bind both runners); Kotlin RED contract case → GREEN 318/318 + kover 100% branches; mutation (drop episodes mapping) caught by 5 tests |
+| T4 | S6, S7 | inline | done | (commit below) RED 7 failing → GREEN 289/289 animes+app; mutation `!next?.long`→`!next` caught; the integer guard survived mutation (redundant: N.5+1 never matches an integer episode) and was removed |
 | T5 | all | delegated verifier (Risk: item 1 migration, item 3 shared wire contract) | pending | — |
 
 Route evidence: no Writer trigger (no parallel units launched together, no context backstop) — the parent writes inline.
@@ -43,4 +43,5 @@ Route evidence: no Writer trigger (no parallel units launched together, no conte
 - **L8 (2026-10-14):** Bridge `33db8f7e` (feat/episode-durations, not pushed) adds `native_module_unavailable` and `remote_change_rejected` to `recentEventTypes` (vocabulary.go), with a test and openapi; verified in the bridge repo. The changelog fix (current snapshot, increasing ts, no empty lists) is still pending its own commit.
 - **L9 (2026-10-14):** T2 adds `EpisodeLengthSchema` (`.catch(null)` on the array), `serializeEpisodeLengths`/`parseStoredEpisodeLengths` (`anime-episodes.helpers.ts`), `episodes` in the wire map, `MERGEABLE_FIELDS`, `upsertAnime`, `parseAnimeRow` and the mutation reader. Local mutations never rewrite the full row (only sync paths call `upsertAnime`), and no outbound payload serializes the full `Anime`, so bridge's strict decode is unaffected.
 - **L10 (2026-10-14):** S8 correction: the native engine never writes `animes` itself; it stages the legacy snapshot JSON and the JS drain writes the column through `serializeEpisodeLengths`. So Kotlin's job is the domain shape, not the stored text: `mapEpisodes` rebuilds entries with keys `episode, minutes, long` and maps any malformed value to `null`, mirroring `EpisodeLengthSchema.catch(null)`. The shared fixtures (`reconcile-response-cases.json`, `reconcile-response-divergence-cases.json`) now pin `episodes`, with a new case `episodes-mapped-whole-or-null`.
-- **Next:** T4 (card chip).
+- **L11 (2026-10-14):** T4: `getLongEpisodeLabel` in `anime-card.helpers.ts`, threaded through `useAnimeCard` → `AnimeCard` → `AnimeCardContent` → `AnimeCardInfo`, rendered as a HeroUI `Chip` (`warning`, `sm`, `secondary`) under the progress meta. The list's live query selects every column and `parseAnimeRow` carries `episodes`, so no list change was needed.
+- **Next:** T5 (independent verifier).
