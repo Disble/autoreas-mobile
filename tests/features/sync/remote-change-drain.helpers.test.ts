@@ -40,7 +40,7 @@ describe('drainPendingRemoteChanges', () => {
     mockCreateDrizzleDb.mockReturnValue({ kind: 'drizzle-db' });
     mockLoadGuardMap.mockResolvedValue(new Map());
     mockLoadPendingOutboxRecordIds.mockResolvedValue(new Set());
-    mockApplyRemoteChanges.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 });
+    mockApplyRemoteChanges.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0, rejected: 0 });
     mockDeletePendingRemoteChanges.mockResolvedValue(undefined);
   });
 
@@ -61,7 +61,7 @@ describe('drainPendingRemoteChanges', () => {
     const rawDb = { name: 'drain-db' };
     const result = await drainPendingRemoteChanges(rawDb as never);
 
-    expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, drainedCount: 0 });
+    expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, rejected: 0, drainedCount: 0 });
     expect(mockWithDeferredWrite).not.toHaveBeenCalled();
     expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
   });

@@ -26,8 +26,8 @@ Branch: `feat/episode-durations` (from `main` @ b8da9ad) · Delivery: `ask-on-ri
 | T2b | S9 | inline | done | `fc43de2` RED 2 failing (empty update rewrote the whole row, nrocapvisto 12→3; unknown field unrecorded) → GREEN 749/749 sync+validation+behaviour; guard mutation caught |
 | T2 | S1, S2, S3, S5, S8 (TS) | inline | done | `6aa3b18` RED 17 failing → GREEN 1662/1662; mutations caught: merge `episodes` case (4 tests), canonical key order (1 test) |
 | T3 | S1, S3, S8 (Kotlin) | inline | done | `6aa3b18` (shared contract fixtures bind both runners); Kotlin RED contract case → GREEN 318/318 + kover 100% branches; mutation (drop episodes mapping) caught by 5 tests |
-| T4 | S6, S7 | inline | done | (commit below) RED 7 failing → GREEN 289/289 animes+app; mutation `!next?.long`→`!next` caught; the integer guard survived mutation (redundant: N.5+1 never matches an integer episode) and was removed |
-| T5 | all | delegated verifier (Risk: item 1 migration, item 3 shared wire contract) | pending | — |
+| T4 | S6, S7 | inline | done | `4fda749` RED 7 failing → GREEN 289/289 animes+app; mutation `!next?.long`→`!next` caught; the integer guard survived mutation (redundant: N.5+1 never matches an integer episode) and was removed |
+| T5 | all | delegated verifier (Risk: item 1 migration, item 3 shared wire contract) | done | S1–S9 met, 0 blockers; parent spot check `tsc` exit 0; advisory 2 fixed (drain result type) |
 
 Route evidence: no Writer trigger (no parallel units launched together, no context backstop) — the parent writes inline.
 
@@ -44,4 +44,12 @@ Route evidence: no Writer trigger (no parallel units launched together, no conte
 - **L9 (2026-10-14):** T2 adds `EpisodeLengthSchema` (`.catch(null)` on the array), `serializeEpisodeLengths`/`parseStoredEpisodeLengths` (`anime-episodes.helpers.ts`), `episodes` in the wire map, `MERGEABLE_FIELDS`, `upsertAnime`, `parseAnimeRow` and the mutation reader. Local mutations never rewrite the full row (only sync paths call `upsertAnime`), and no outbound payload serializes the full `Anime`, so bridge's strict decode is unaffected.
 - **L10 (2026-10-14):** S8 correction: the native engine never writes `animes` itself; it stages the legacy snapshot JSON and the JS drain writes the column through `serializeEpisodeLengths`. So Kotlin's job is the domain shape, not the stored text: `mapEpisodes` rebuilds entries with keys `episode, minutes, long` and maps any malformed value to `null`, mirroring `EpisodeLengthSchema.catch(null)`. The shared fixtures (`reconcile-response-cases.json`, `reconcile-response-divergence-cases.json`) now pin `episodes`, with a new case `episodes-mapped-whole-or-null`.
 - **L11 (2026-10-14):** T4: `getLongEpisodeLabel` in `anime-card.helpers.ts`, threaded through `useAnimeCard` → `AnimeCard` → `AnimeCardContent` → `AnimeCardInfo`, rendered as a HeroUI `Chip` (`warning`, `sm`, `secondary`) under the progress meta. The list's live query selects every column and `parseAnimeRow` carries `episodes`, so no list change was needed.
-- **Next:** T5 (independent verifier).
+- **L12 (2026-10-14):** Bridge `a64a7bc5` (local, not pushed) records every changelog row in one tx with the current snapshot, a per-anime rising ts, no create/update for a missing anime, and no empty `changed_fields`; their independent verifier passed. Documented limit: the per-anime clock only sees rows still in the changelog, so after pruning the next ts restarts from the wall clock. Mobile consequence: if ties had pushed the clock ahead of wall time, the next change can be `<=` the device guard and is dropped as stale until the foreground resync heals the row. Raised with bridge.
+- **Release gate:** do NOT release the mobile build that rejects empty lists until bridge confirms a RELEASED bridge build containing `33db8f7e` and `a64a7bc5` (bridge's correction: "Bridge primero" means published, not committed).
+- **L13 (2026-10-14):** T5 verifier: S1–S9 met, no blockers. It replayed the real `.sql` files and journal through the ledger pin + migrator + repair in scratch SQLite: a fresh install and a provisioned device both converge and rerun cleanly. Advisories:
+  (1) an all-unknown update on an existing row records `remote_change_rejected` twice (inflates a counter only; left as is);
+  (2) `DrainPendingRemoteChangesResult` lacked `rejected` (FIXED, RED→GREEN);
+  (3) integers beyond the safe range: zod rejects, Kotlin saturates (out of contract domain);
+  (4) rows staged by an older build with empty `changed_fields` are now rejected on upgrade (intended by S9);
+  (5) its `test:kotlin` run was mostly cached.
+- **Next:** wait for the bridge release, then local merge into `dev` (user decision).
