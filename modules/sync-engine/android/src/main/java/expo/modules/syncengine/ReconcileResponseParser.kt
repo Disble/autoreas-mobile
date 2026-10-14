@@ -1,5 +1,6 @@
 package expo.modules.syncengine
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -203,17 +204,24 @@ private val LOCAL_FIELD_BY_WIRE_FIELD = mapOf(
   "durationMinutes" to "duracion",
 )
 
+private const val WIRE_MAPPER_LOG_TAG = "SyncEngineWireMapper"
+
 object WireAnimeMapper {
 
   /**
    * Normalizes one bridge change for staging: normalizes `changed_fields` into the local
-   * vocabulary (unknown wire names are DROPPED, mirroring `normalizeWireAnimeChangedFields`'s
-   * flatMap) and maps the snapshot into the legacy shape. Throws
+   * vocabulary (unknown wire names are DROPPED and logged, mirroring
+   * `normalizeWireAnimeChangedFields`; an update left with no known field is rejected by the JS
+   * drain, which never guesses the changed set) and maps the snapshot into the legacy shape. Throws
    * {@link ReconcileParseException} when a snapshot is present but lacks its required scalars
    * — same retryable-failure semantics as a failed zod parse of the whole response.
    */
   fun normalize(change: BridgeChangeEntry): NormalizedBridgeChange {
     val normalizedFields = change.changedFields.mapNotNull { LOCAL_FIELD_BY_WIRE_FIELD[it] }
+    val rejectedFields = change.changedFields.filterNot { LOCAL_FIELD_BY_WIRE_FIELD.containsKey(it) }
+    if (rejectedFields.isNotEmpty()) {
+      Log.w(WIRE_MAPPER_LOG_TAG, "remote_change_rejected ${change.recordId}: unknown fields $rejectedFields")
+    }
     return NormalizedBridgeChange(
       recordId = change.recordId,
       changeType = change.changeType,

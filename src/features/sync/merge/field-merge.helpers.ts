@@ -81,14 +81,12 @@ export function buildPartialUpdate(
 }
 
 /**
- * Derives the effective changed-field set by diffing the remote snapshot against the current
- * local row, for the (runtime-normal) case where the bridge sends an empty `changed_fields`:
- * the autoreas-bridge watcher detects legacy edits by content hash and cannot say WHICH fields
- * changed, so mobile reconstructs the set itself. Returns only mergeable fields whose snapshot
- * value differs from the persisted value. This is safe against clobbering un-acked local edits
- * because the merge boundary already defers any anime with a pending outbox op: when there is
- * no pending op, the local row equals the last bridge-synced state, so a diff surfaces exactly
- * what the legacy side changed.
+ * Derives the changed-field set by diffing a remote snapshot against the current local row.
+ * Returns only mergeable fields whose snapshot value differs from the persisted value.
+ *
+ * Used ONLY by the foreground full resync, a deliberate reconciliation against the bridge's full
+ * list. Single remote changes never use it: an update with no known `changed_fields` is rejected
+ * by `applyRemoteChanges`, never reconstructed by guessing.
  */
 export function deriveChangedFields(
   snapshot: Anime,

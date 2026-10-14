@@ -48,6 +48,9 @@ export const SYNC_DIAGNOSTIC_SOURCES = [
  *   root cause after hours of silent background-sync death -- but it only ever reached
  *   `adb logcat`, and in production there is no cable. Routed here so the degradation rides the
  *   same reconcile piggyback as every other signal.
+ * - `remote_change_rejected` -> a bridge change, or part of one, named a field this build does not
+ *   know. The unknown part is dropped and an update left with no known field writes nothing --
+ *   fail closed, never a guess -- while the change is still acked so it is not retried forever.
  */
 export const SYNC_DIAGNOSTIC_EVENTS = [
   'ws_opened',
@@ -64,6 +67,7 @@ export const SYNC_DIAGNOSTIC_EVENTS = [
   'conflict_token_missing',
   'conflict_operation_stalled',
   'native_module_unavailable',
+  'remote_change_rejected',
 ] as const;
 
 /**
