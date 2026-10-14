@@ -130,7 +130,22 @@ describe('useSettingsScreen', () => {
   });
 
   it('builds the status card, the connection and the background status from the live facts', () => {
+    // The title counts whole days from the fixed `lastSyncAt` to "now", so the clock is pinned:
+    // against the real clock this assertion went stale one day after it was written.
+    jest.useFakeTimers({
+      now: 1775811900000 + 181 * 24 * 60 * 60 * 1000,
+      doNotFake: [
+        'nextTick',
+        'setImmediate',
+        'setTimeout',
+        'setInterval',
+        'clearTimeout',
+        'clearInterval',
+        'queueMicrotask',
+      ],
+    });
     const { result } = renderHook(() => useSettingsScreen({}));
+    jest.useRealTimers();
 
     expect(result.current.syncSummary.title).toBe('Hace 181 días que no hay sync');
     expect(result.current.syncSummary.tone).toBe('warning');
