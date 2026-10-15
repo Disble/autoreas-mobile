@@ -49,7 +49,9 @@ export const APP_PREFERENCES_TABLE_SQL =
   'CREATE TABLE IF NOT EXISTS app_preferences (' +
   'id INTEGER PRIMARY KEY DEFAULT 1, ' +
   'battery_prompt_shown_at INTEGER, ' +
-  'battery_reminder_shown_at INTEGER)';
+  'battery_reminder_shown_at INTEGER, ' +
+  'anime_folders_root_uri TEXT, ' +
+  'anime_folders_hint_dismissed_at INTEGER)';
 
 /**
  * Maps each table needing column-level readiness proof to its required column names. A table
@@ -66,6 +68,9 @@ export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>
   // release (and the native engine's fenced writes): without it a lease lapse only prevents
   // NEW claims while the stale owner can still delete the current holder's row.
   sync_cycle_lock: ['fence'],
+  // The anime-folders columns reach installed devices only through `ensureAppPreferencesColumns`;
+  // listing them here is what fails readiness on a device whose table predates them.
+  app_preferences: ['anime_folders_root_uri', 'anime_folders_hint_dismissed_at'],
 };
 
 /** Counts required tables without exposing runtime values or application data. */

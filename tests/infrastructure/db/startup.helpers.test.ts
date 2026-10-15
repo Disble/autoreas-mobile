@@ -44,6 +44,8 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'conflict_attempt_count' },
           { name: 'fence' },
+          { name: 'anime_folders_root_uri' },
+          { name: 'anime_folders_hint_dismissed_at' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -60,6 +62,7 @@ describe('database startup helpers', () => {
       'migrations',
       'quick-check',
       'table-check',
+      'column-check',
       'column-check',
       'column-check',
       'column-check',
@@ -114,6 +117,8 @@ describe('database startup helpers', () => {
         { name: 'episodes' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
+        { name: 'anime_folders_root_uri' },
+        { name: 'anime_folders_hint_dismissed_at' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockClear();
@@ -149,6 +154,8 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'conflict_attempt_count' },
           { name: 'fence' },
+          { name: 'anime_folders_root_uri' },
+          { name: 'anime_folders_hint_dismissed_at' },
         ];
       }),
     } as unknown as SQLiteDatabase;
@@ -236,6 +243,8 @@ describe('database startup helpers', () => {
         { name: 'episodes' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
+        { name: 'anime_folders_root_uri' },
+        { name: 'anime_folders_hint_dismissed_at' },
       ]),
     } as unknown as SQLiteDatabase;
     const newerDb = {
@@ -296,7 +305,7 @@ describe('database startup helpers', () => {
           return [{ name: 'id' }, { name: 'conflict_attempt_count' }];
         }
 
-        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }];
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }, { name: 'anime_folders_root_uri' }, { name: 'anime_folders_hint_dismissed_at' }];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();

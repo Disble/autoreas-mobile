@@ -217,6 +217,8 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS active_season_cache/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS sync_cycle_lock/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS app_preferences/),
+      'ALTER TABLE app_preferences ADD COLUMN anime_folders_root_uri TEXT',
+      'ALTER TABLE app_preferences ADD COLUMN anime_folders_hint_dismissed_at INTEGER',
     ]);
   });
 

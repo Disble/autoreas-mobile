@@ -1,6 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { runMigrations } from '../../../src/infrastructure/db/client/client.helpers';
-import { REQUIRED_SCHEMA_TABLES } from '../../../src/infrastructure/db/startup/startup.constants';
+import {
+  REQUIRED_SCHEMA_COLUMNS,
+  REQUIRED_SCHEMA_TABLES,
+} from '../../../src/infrastructure/db/startup/startup.constants';
 import {
   applyMigrationFiles,
   createTestSqliteAdapter,
@@ -44,7 +47,41 @@ describe('ensureAppPreferencesTable (repair-only singleton table)', () => {
       'id',
       'battery_prompt_shown_at',
       'battery_reminder_shown_at',
+      'anime_folders_root_uri',
+      'anime_folders_hint_dismissed_at',
     ]);
+  });
+
+  it('adds the anime-folders columns to an installed table and keeps its row', async () => {
+    const adapter = createTestSqliteAdapter();
+    await applyMigrationFiles(adapter);
+    await adapter.runAsync(
+      'CREATE TABLE app_preferences (id INTEGER PRIMARY KEY DEFAULT 1, ' +
+        'battery_prompt_shown_at INTEGER, battery_reminder_shown_at INTEGER)',
+    );
+    await adapter.runAsync(
+      'INSERT INTO app_preferences (id, battery_prompt_shown_at) VALUES (1, 1234)',
+    );
+
+    await runMigrations(adapter);
+
+    await expect(readAppPreferencesColumns(adapter)).resolves.toEqual([
+      'id',
+      'battery_prompt_shown_at',
+      'battery_reminder_shown_at',
+      'anime_folders_root_uri',
+      'anime_folders_hint_dismissed_at',
+    ]);
+    const row = await adapter.getFirstAsync<{
+      battery_prompt_shown_at: number;
+      anime_folders_root_uri: string | null;
+      anime_folders_hint_dismissed_at: number | null;
+    }>('SELECT * FROM app_preferences WHERE id = 1');
+    expect(row).toMatchObject({
+      battery_prompt_shown_at: 1234,
+      anime_folders_root_uri: null,
+      anime_folders_hint_dismissed_at: null,
+    });
   });
 
   it('stays idempotent across reruns and keeps existing rows', async () => {
@@ -65,5 +102,12 @@ describe('ensureAppPreferencesTable (repair-only singleton table)', () => {
 
   it('lists app_preferences as a required table so readiness forces the repair on installed devices', () => {
     expect(REQUIRED_SCHEMA_TABLES).toContain('app_preferences');
+  });
+
+  it('requires the anime-folders columns so readiness forces the column repair on installed devices', () => {
+    expect(REQUIRED_SCHEMA_COLUMNS.app_preferences).toEqual([
+      'anime_folders_root_uri',
+      'anime_folders_hint_dismissed_at',
+    ]);
   });
 });

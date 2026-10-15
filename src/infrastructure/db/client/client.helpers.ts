@@ -17,7 +17,11 @@ import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
 
 import {
+  ACTIVE_SEASON_CACHE_TABLE_SQL,
   ANIMES_COLUMN_DEFINITIONS,
+  APP_PREFERENCES_COLUMN_DEFINITIONS,
+  PENDING_REMOTE_CHANGES_TABLE_SQL,
+  SEASON_RATING_QUEUE_TABLE_SQL,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
@@ -241,33 +245,12 @@ async function ensureOperationLogColumns(rawDb: SQLiteDatabase) {
  * reruns a no-op without needing a PRAGMA existence check first.
  */
 async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(
-    'CREATE TABLE IF NOT EXISTS pending_remote_changes (' +
-      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-      'record_id TEXT NOT NULL, ' +
-      'change_type TEXT NOT NULL, ' +
-      'changed_fields TEXT NOT NULL, ' +
-      'snapshot TEXT, ' +
-      'timestamp INTEGER NOT NULL, ' +
-      'created_at INTEGER NOT NULL)'
-  );
+  await rawDb.runAsync(PENDING_REMOTE_CHANGES_TABLE_SQL);
 }
 
 /** Creates the durable season-rating queue for installs that predate it. */
 async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(
-    'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
-      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-      'season_id TEXT NOT NULL, ' +
-      'anime_id TEXT NOT NULL, ' +
-      'nota INTEGER NOT NULL, ' +
-      'rated_at INTEGER NOT NULL, ' +
-      "status TEXT NOT NULL DEFAULT 'pending', " +
-      'created_at INTEGER NOT NULL, ' +
-      'updated_at INTEGER NOT NULL, ' +
-      'last_attempt_at INTEGER, ' +
-      'last_failure_kind TEXT)'
-  );
+  await rawDb.runAsync(SEASON_RATING_QUEUE_TABLE_SQL);
 
   await rawDb.runAsync(
     'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
@@ -276,12 +259,7 @@ async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
 
 /** Creates the single-row active-season cache. Exists in no migration file; only here. */
 async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(
-    'CREATE TABLE IF NOT EXISTS active_season_cache (' +
-      'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
-      'season_id TEXT NOT NULL, ' +
-      'candidates_json TEXT NOT NULL)'
-  );
+  await rawDb.runAsync(ACTIVE_SEASON_CACHE_TABLE_SQL);
 }
 
 /** Creates the advisory sync-cycle lock table. Exists in no migration file; only here. */
@@ -292,6 +270,18 @@ async function ensureSyncCycleLockTable(rawDb: SQLiteDatabase) {
 /** Creates the single-row app preferences table. Exists in no migration file; only here. */
 async function ensureAppPreferencesTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(APP_PREFERENCES_TABLE_SQL);
+}
+
+/**
+ * Adds every `app_preferences` column added after the table first shipped, mirroring
+ * `ensureAnimesColumns`'s single-PRAGMA-read mechanism. It must run after
+ * `ensureAppPreferencesTable`: a fresh table already carries every column and skips all ALTERs.
+ */
+async function ensureAppPreferencesColumns(rawDb: SQLiteDatabase) {
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(app_preferences)');
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  await ensureMissingColumns(rawDb, columnNames, APP_PREFERENCES_COLUMN_DEFINITIONS);
 }
 
 /**
@@ -389,6 +379,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureSyncCycleLockTable(rawDb);
   await ensureSyncCycleLockColumns(rawDb);
   await ensureAppPreferencesTable(rawDb);
+  await ensureAppPreferencesColumns(rawDb);
   return db;
 }
 

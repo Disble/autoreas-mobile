@@ -256,6 +256,14 @@ describe("db client tracer helpers", () => {
           ];
         }
 
+        if (query === "PRAGMA table_info(app_preferences)") {
+          return [
+            { name: "id" },
+            { name: "anime_folders_root_uri" },
+            { name: "anime_folders_hint_dismissed_at" },
+          ];
+        }
+
         return [];
       }),
       getFirstAsync: jest.fn().mockResolvedValue(null),
