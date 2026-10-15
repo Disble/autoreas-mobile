@@ -33,7 +33,7 @@ describe('native schema readiness twin', () => {
 
   it('pins the journal length the twin mirrors, so a silent migration change is caught here', () => {
     // Mirrors the literal assertion in `tests/infrastructure/db/startup.helpers.test.ts`: adding
-    // migration `0017` moves this to 18 and fails BOTH the TypeScript constant and the Kotlin twin.
-    expect(migrationJournal.entries.length).toBe(17);
+    // migration `0018` moves this to 19 and fails BOTH the TypeScript constant and the Kotlin twin.
+    expect(migrationJournal.entries.length).toBe(18);
   });
 });

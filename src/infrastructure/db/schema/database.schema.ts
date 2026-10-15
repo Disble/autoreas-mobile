@@ -28,6 +28,9 @@ export const animes = sqliteTable("animes", {
   portada: text("portada"),
   pagina: text("pagina"),
   carpeta: text("carpeta"),
+  // Bridge folder path below its library root (`folderRelative` on the wire, `/`-separated);
+  // NULL = no path sent, so the device falls back to matching the folder by name.
+  folderRelative: text("folder_relative"),
   estudios: text("estudios"),
   origen: text("origen"),
   duracion: integer("duracion"),

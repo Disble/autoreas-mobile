@@ -210,6 +210,7 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS operation_log/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN bridge_modified_at/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN episodes/),
+      expect.stringMatching(/^ALTER TABLE animes ADD COLUMN folder_relative/),
       expect.stringMatching(/^ALTER TABLE operation_log ADD COLUMN conflict_attempt_count/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS pending_remote_changes/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS season_rating_queue/),
