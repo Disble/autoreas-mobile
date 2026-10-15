@@ -1,0 +1,1 @@
+export { AnimeFoldersSettingsCard } from './AnimeFoldersSettingsCard';

@@ -12,7 +12,7 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(() => ({
-    select: () => ({ from: () => ({ where: () => 'active-animes-query' }) }),
+    select: () => ({ from: () => 'all-animes-query' }),
   })),
 }));
 
@@ -44,12 +44,12 @@ beforeEach(() => {
 });
 
 describe('useAnimeFolderResolution', () => {
-  it('resolves the queried animes against the shared index', () => {
+  it('resolves every stored anime, active or not, against the shared index', () => {
     givenIndex(INDEX);
 
     const { result } = renderHook(() => useAnimeFolderResolution());
 
-    expect(nativeRuntime.useOptionalLiveQuery).toHaveBeenCalledWith('active-animes-query', []);
+    expect(nativeRuntime.useOptionalLiveQuery).toHaveBeenCalledWith('all-animes-query', []);
     expect(result.current?.byAnimeId.get('a1')?.folder.devicePath).toBe(
       '/storage/0123-4567/Videos/Anime/Bleach',
     );

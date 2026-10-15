@@ -1,0 +1,1 @@
+export { AnimeFoldersDetailScreen } from './AnimeFoldersDetailScreen';
