@@ -65,16 +65,20 @@ export function indexAnimeFolders(rootUri: string | null, force = false): Promis
     return Promise.resolve();
   }
 
+  if (state.rootUri !== rootUri) {
+    setState({ ...INITIAL_ANIME_FOLDERS_INDEX_STATE, rootUri });
+  }
+
   if (inFlight?.rootUri === rootUri) {
+    if (state.status === 'idle') {
+      setState({ status: 'indexing' });
+    }
+
     return inFlight.promise;
   }
 
-  if (state.rootUri === rootUri && state.status !== 'idle' && !force) {
+  if (state.status !== 'idle' && !force) {
     return Promise.resolve();
-  }
-
-  if (state.rootUri !== rootUri) {
-    setState({ ...INITIAL_ANIME_FOLDERS_INDEX_STATE, rootUri });
   }
 
   const run = { rootUri, promise: Promise.resolve() };

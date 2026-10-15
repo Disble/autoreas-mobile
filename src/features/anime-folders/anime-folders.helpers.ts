@@ -3,6 +3,7 @@ import {
   COMBINING_MARKS_PATTERN,
   DOCUMENT_SEGMENT,
   NON_ALPHANUMERIC_PATTERN,
+  NON_LATIN_LETTER_PATTERN,
   PRIMARY_STORAGE_PATH,
   PRIMARY_VOLUME_ID,
   PRIMARY_VOLUME_LABEL,
@@ -94,13 +95,17 @@ function toExactKey(name: string): string {
   return name.normalize('NFC').trim().toLowerCase();
 }
 
-/** Normalized-match key: letters and digits only, without accents. Empty when nothing is left. */
+/**
+ * Normalized-match key: latin letters and digits only, without accents. Empty, so it never
+ * matches, when nothing is left or when the name has non-latin letters the key would drop.
+ */
 function toNormalizedKey(name: string): string {
-  return name
-    .normalize('NFKD')
-    .replace(COMBINING_MARKS_PATTERN, '')
-    .toLowerCase()
-    .replace(NON_ALPHANUMERIC_PATTERN, '');
+  const unaccented = name.normalize('NFKD').replace(COMBINING_MARKS_PATTERN, '');
+  if (NON_LATIN_LETTER_PATTERN.test(unaccented)) {
+    return '';
+  }
+
+  return unaccented.toLowerCase().replace(NON_ALPHANUMERIC_PATTERN, '');
 }
 
 /**
@@ -261,14 +266,16 @@ function summarizeClaims(index: FolderIndex, claims: ReadonlyMap<string, FolderC
     }
   }
 
-  // A folder inside or around a matched one is that anime's content or container, not a finding.
+  // A folder inside or around a matched one is that anime's content or container, and a folder
+  // inside an unmatched or shared one is already covered by it: neither is a finding of its own.
   const unmatchedFolders = candidates.filter(
     (folder) =>
       !matchedFolders.some(
         ({ folder: matched }) =>
           isWithin(folder.relativePath, matched.relativePath) ||
           isWithin(matched.relativePath, folder.relativePath),
-      ),
+      ) &&
+      ![...candidates, ...sharedFolders].some((outer) => isWithin(folder.relativePath, outer.relativePath)),
   );
 
   return {

@@ -149,6 +149,14 @@ describe('resolveAnimeFolders', () => {
     expect(byAnimeId.get('a1')).toMatchObject({ method: 'normalized' });
   });
 
+  it('never matches a non-latin name by what is left after normalization', () => {
+    const index = indexOf('大阪 1');
+
+    const { byAnimeId } = resolveAnimeFolders(index, [anime('a1', 'D:/Anime/東京 1')]);
+
+    expect(byAnimeId.has('a1')).toBe(false);
+  });
+
   it('resolves nothing when a name matches more than one folder', () => {
     const index = indexOf('2024/Bleach', '2025/Bleach');
 
@@ -207,5 +215,13 @@ describe('resolveAnimeFolders', () => {
       'Suzumiya Haruhi no Yuuutsu BD Castellano',
     ]);
     expect(summary.sharedFolders).toEqual([]);
+  });
+
+  it('lists only the outermost folder without anime, not its subfolders', () => {
+    const index = indexOf('Haruhi BD', 'Haruhi BD/Disc 1', 'Bleach');
+
+    const { summary } = resolveAnimeFolders(index, [anime('a1', 'D:/Anime/Bleach')]);
+
+    expect(summary.unmatchedFolders.map((folder) => folder.relativePath)).toEqual(['Haruhi BD']);
   });
 });

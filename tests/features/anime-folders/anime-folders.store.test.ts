@@ -108,6 +108,17 @@ describe('indexAnimeFolders', () => {
     expect(store.getAnimeFoldersIndexState().index?.folders).toEqual([]);
   });
 
+  it('keeps the root chosen again while its first walk is still running', async () => {
+    const store = loadStore();
+
+    const first = store.indexAnimeFolders(ROOT_URI);
+    await store.indexAnimeFolders(null);
+    const again = store.indexAnimeFolders(ROOT_URI);
+    await Promise.all([first, again]);
+
+    expect(store.getAnimeFoldersIndexState()).toMatchObject({ rootUri: ROOT_URI, status: 'ready' });
+  });
+
   it('clears the index when no root is chosen', async () => {
     const store = loadStore();
     await store.indexAnimeFolders(ROOT_URI);
