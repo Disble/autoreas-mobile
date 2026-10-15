@@ -204,4 +204,58 @@ describe("ensureAnimesColumns (formerly ensureAnimesGuardColumn)", () => {
     expect(column.hasDefault).toBe(false);
     expect(column.notNull).toBe(false);
   });
+
+  it("adds episodes when missing, nullable with no default", async () => {
+    const rawDb = {
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === "PRAGMA table_info(animes)") {
+          return [
+            { name: "_id" },
+            { name: "last_applied_change_ms" },
+            { name: "bridge_modified_at" },
+          ];
+        }
+
+        return [];
+      }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(rawDb.runAsync).toHaveBeenCalledWith("ALTER TABLE animes ADD COLUMN episodes TEXT");
+  });
+
+  it("is idempotent for episodes when the column already exists", async () => {
+    const rawDb = {
+      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
+        if (query === "PRAGMA table_info(animes)") {
+          return [
+            { name: "_id" },
+            { name: "last_applied_change_ms" },
+            { name: "bridge_modified_at" },
+            { name: "episodes" },
+          ];
+        }
+
+        return [];
+      }),
+      getFirstAsync: jest.fn().mockResolvedValue(null),
+      runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
+    };
+
+    await runMigrations(rawDb as never);
+
+    expect(rawDb.runAsync).not.toHaveBeenCalledWith(
+      "ALTER TABLE animes ADD COLUMN episodes TEXT"
+    );
+  });
+
+  it("declares episodes with no default and no NOT NULL, so a row synced before the column existed reads back NULL (no durations)", () => {
+    const column = animes.episodes;
+
+    expect(column.hasDefault).toBe(false);
+    expect(column.notNull).toBe(false);
+  });
 });

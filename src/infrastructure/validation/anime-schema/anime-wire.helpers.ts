@@ -18,6 +18,7 @@ export function mapWireAnimeToLegacyAnime(anime: WireAnime): Anime {
     fechaCreacion: anime.createdAt ?? null, fechaEliminacion: anime.deletedAt ?? null,
     portada: anime.cover ?? null, pagina: anime.sourceUrl ?? null, carpeta: anime.folder ?? null,
     estudios: anime.studios ?? null, origen: anime.origin ?? null, duracion: anime.durationMinutes ?? null,
+    episodes: anime.episodes ?? null,
   };
 }
 
@@ -46,4 +47,15 @@ export function normalizeWireAnimeChangedFields(
 
     return normalizedField ? [normalizedField] : [];
   });
+}
+
+/**
+ * Returns the `changed_fields` names this build does not know. `normalizeWireAnimeChangedFields`
+ * drops them; this lets the caller record that a change was partly or wholly rejected instead of
+ * losing that fact silently.
+ */
+export function findUnsupportedWireAnimeChangedFields(
+  changedFields: readonly string[],
+): string[] {
+  return changedFields.filter((field) => !Object.hasOwn(LOCAL_FIELD_BY_WIRE_FIELD, field));
 }

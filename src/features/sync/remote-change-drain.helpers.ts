@@ -28,7 +28,7 @@ export async function drainPendingRemoteChanges(
   const staged = await loadPendingRemoteChanges(createDrizzleDb(rawDb));
 
   if (staged.length === 0) {
-    return { applied: 0, dropped: 0, deferred: 0, drainedCount: 0 };
+    return { applied: 0, dropped: 0, deferred: 0, rejected: 0, drainedCount: 0 };
   }
 
   const changes = staged.map((entry) => entry.change);

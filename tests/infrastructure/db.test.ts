@@ -252,6 +252,7 @@ describe("db client tracer helpers", () => {
             { name: "_id" },
             { name: "last_applied_change_ms" },
             { name: "bridge_modified_at" },
+            { name: "episodes" },
           ];
         }
 

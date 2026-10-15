@@ -17,6 +17,7 @@ import m0012 from './0012_add_operation_log_conflict_attempt_count.sql';
 import m0013 from './0013_add_convergence_instrumentation_columns.sql';
 import m0014 from './0014_add_diagnostics_disposition_counters.sql';
 import m0015 from './0015_add_diagnostics_reaped_counter.sql';
+import m0016 from './0016_add_animes_episodes.sql';
 
   export default {
     journal,
@@ -36,7 +37,8 @@ m0011,
 m0012,
 m0013,
 m0014,
-m0015
+m0015,
+m0016
     }
   }
   

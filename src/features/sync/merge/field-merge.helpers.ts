@@ -1,11 +1,12 @@
 import type { Anime } from '../../../infrastructure/validation/anime-schema';
+import { serializeEpisodeLengths } from '../../../infrastructure/validation/anime-schema/anime-episodes.helpers';
 import { MERGEABLE_FIELDS } from './field-merge.constants';
 import type { FieldMergeResult } from './merge.types';
 
 /**
  * Whitelist of remote `changed_fields` names mapped to the local `animes` column value,
- * mirroring the field set `upsertAnime` already writes. Serializes `dias`/`generos` to JSON
- * the same way the cold-load writer does, keeping both writers consistent.
+ * mirroring the field set `upsertAnime` already writes. Serializes `dias`/`generos`/`episodes` to
+ * JSON the same way the cold-load writer does, keeping both writers consistent.
  */
 function mapKnownField(field: string, snapshot: Anime): { value: unknown } | undefined {
   switch (field) {
@@ -47,6 +48,9 @@ function mapKnownField(field: string, snapshot: Anime): { value: unknown } | und
       return { value: snapshot.origen ?? null };
     case 'duracion':
       return { value: snapshot.duracion ?? null };
+    case 'episodes':
+      // Replaced whole, never merged: an absent array clears the local copy.
+      return { value: serializeEpisodeLengths(snapshot.episodes) };
     default:
       return undefined;
   }
@@ -81,14 +85,12 @@ export function buildPartialUpdate(
 }
 
 /**
- * Derives the effective changed-field set by diffing the remote snapshot against the current
- * local row, for the (runtime-normal) case where the bridge sends an empty `changed_fields`:
- * the autoreas-bridge watcher detects legacy edits by content hash and cannot say WHICH fields
- * changed, so mobile reconstructs the set itself. Returns only mergeable fields whose snapshot
- * value differs from the persisted value. This is safe against clobbering un-acked local edits
- * because the merge boundary already defers any anime with a pending outbox op: when there is
- * no pending op, the local row equals the last bridge-synced state, so a diff surfaces exactly
- * what the legacy side changed.
+ * Derives the changed-field set by diffing a remote snapshot against the current local row.
+ * Returns only mergeable fields whose snapshot value differs from the persisted value.
+ *
+ * Used ONLY by the foreground full resync, a deliberate reconciliation against the bridge's full
+ * list. Single remote changes never use it: an update with no known `changed_fields` is rejected
+ * by `applyRemoteChanges`, never reconstructed by guessing.
  */
 export function deriveChangedFields(
   snapshot: Anime,
@@ -98,8 +100,8 @@ export function deriveChangedFields(
 
   for (const field of MERGEABLE_FIELDS) {
     const mapped = mapKnownField(field, snapshot);
-    /* istanbul ignore next -- defensive parity guard: MERGEABLE_FIELDS' 19 entries and
-     * mapKnownField's 19 switch cases are two separately-maintained lists the module comment
+    /* istanbul ignore next -- defensive parity guard: MERGEABLE_FIELDS' 20 entries and
+     * mapKnownField's 20 switch cases are two separately-maintained lists the module comment
      * documents as mirrored; this `undefined` branch only fires if a future edit adds a field to
      * one without the other. Deleting it would turn that drift into a crash here (destructuring
      * `.value` off `undefined`) instead of a skipped field; unreachable only as long as the two

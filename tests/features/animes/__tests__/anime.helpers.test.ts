@@ -16,6 +16,7 @@ const FROZEN_ANIME_DOMAIN_KEYS = [
   "carpeta",
   "dias",
   "duracion",
+  "episodes",
   "estado",
   "estudios",
   "fechaCreacion",
@@ -43,6 +44,7 @@ function buildAnimeRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     totalcap: null,
     dias: null,
     generos: null,
+    episodes: null,
     tipo: null,
     activo: 1,
     primeravez: 0,
@@ -208,6 +210,17 @@ describe("anime.helpers", () => {
 
       expect(parsed.dias).toEqual([{ dia: "Jueves", orden: 1 }]);
       expect(parsed.generos).toEqual(["accion"]);
+    });
+
+    it("parses the episodes JSON column into duration entries", () => {
+      const row = buildAnimeRow({ episodes: '[{"episode":7,"minutes":45,"long":true}]' });
+
+      expect(parseAnimeRow(row).episodes).toEqual([{ episode: 7, minutes: 45, long: true }]);
+    });
+
+    it("reads a NULL or malformed episodes column as no durations", () => {
+      expect(parseAnimeRow(buildAnimeRow({ episodes: null })).episodes).toBeNull();
+      expect(parseAnimeRow(buildAnimeRow({ episodes: "not json" })).episodes).toBeNull();
     });
 
     it("still strips the token via AnimeSchema's default zod strip mode (pins anime-mutation.helpers.ts's fetchParsedAnime path)", () => {

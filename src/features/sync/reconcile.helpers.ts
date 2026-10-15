@@ -2,10 +2,6 @@ import { eq, inArray } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient } from '../../infrastructure/api';
 import {
-  mapWireAnimeToLegacyAnime,
-  normalizeWireAnimeChangedFields,
-} from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
-import {
   createDrizzleDb,
   getBridgeConfigSnapshot,
   withLocalWrite,
@@ -25,7 +21,6 @@ import {
 } from './last-changelog.helpers';
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
-import type { RemoteAnimeChange } from './merge/merge.types';
 import {
   countOperationLogBacklogRows,
   readOperationLogBacklog,
@@ -39,7 +34,8 @@ import {
   syncStateByDatabase,
 } from './reconcile.constants';
 import { ReconcileHttpError } from './reconcile.errors';
-import { ReconcileResponseSchema, type ReconcileAnimeChange } from './reconcile.schema';
+import { normalizeBridgeChange } from './bridge-change.helpers';
+import { ReconcileResponseSchema } from './reconcile.schema';
 import type {
   ApplyReconcileResponseWritesParams,
   ReconcileApplyMode,
@@ -172,20 +168,6 @@ export async function syncPendingOperations(
   syncStateByDatabase.set(syncKey, syncState);
 
   return syncState.inFlight;
-}
-
-/**
- * Normalizes a wire-shape `ReconcileAnimeChange` into the merge boundary's `RemoteAnimeChange`
- * DTO. Reconcile is the "rich" entry shape (carries `changed_fields` + `timestamp` always).
- */
-function normalizeBridgeChange(change: ReconcileAnimeChange): RemoteAnimeChange {
-  return {
-    recordId: change.record_id,
-    changeType: change.change_type,
-    changedFields: normalizeWireAnimeChangedFields(change.changed_fields),
-    snapshot: change.snapshot ? mapWireAnimeToLegacyAnime(change.snapshot) : undefined,
-    timestamp: change.timestamp,
-  };
 }
 
 /**

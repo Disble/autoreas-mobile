@@ -11,6 +11,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     metaLabel,
     onToggleMeta,
     seasonStatus,
+    longEpisodeLabel,
     stateChip,
     onStateBadgePress,
     isMutationLocked,
@@ -32,6 +33,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
           metaLabel={metaLabel}
           onToggleMeta={onToggleMeta}
           seasonStatus={seasonStatus}
+          longEpisodeLabel={longEpisodeLabel}
         />
         <AnimeCardStateBadge stateChip={stateChip} onPress={onStateBadgePress} />
       </View>

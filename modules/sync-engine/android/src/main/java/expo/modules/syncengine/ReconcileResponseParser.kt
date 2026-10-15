@@ -1,5 +1,6 @@
 package expo.modules.syncengine
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -201,19 +202,27 @@ private val LOCAL_FIELD_BY_WIRE_FIELD = mapOf(
   "studios" to "estudios",
   "origin" to "origen",
   "durationMinutes" to "duracion",
+  "episodes" to "episodes",
 )
+
+private const val WIRE_MAPPER_LOG_TAG = "SyncEngineWireMapper"
 
 object WireAnimeMapper {
 
   /**
    * Normalizes one bridge change for staging: normalizes `changed_fields` into the local
-   * vocabulary (unknown wire names are DROPPED, mirroring `normalizeWireAnimeChangedFields`'s
-   * flatMap) and maps the snapshot into the legacy shape. Throws
+   * vocabulary (unknown wire names are DROPPED and logged, mirroring
+   * `normalizeWireAnimeChangedFields`; an update left with no known field is rejected by the JS
+   * drain, which never guesses the changed set) and maps the snapshot into the legacy shape. Throws
    * {@link ReconcileParseException} when a snapshot is present but lacks its required scalars
    * — same retryable-failure semantics as a failed zod parse of the whole response.
    */
   fun normalize(change: BridgeChangeEntry): NormalizedBridgeChange {
     val normalizedFields = change.changedFields.mapNotNull { LOCAL_FIELD_BY_WIRE_FIELD[it] }
+    val rejectedFields = change.changedFields.filterNot { LOCAL_FIELD_BY_WIRE_FIELD.containsKey(it) }
+    if (rejectedFields.isNotEmpty()) {
+      Log.w(WIRE_MAPPER_LOG_TAG, "remote_change_rejected ${change.recordId}: unknown fields $rejectedFields")
+    }
     return NormalizedBridgeChange(
       recordId = change.recordId,
       changeType = change.changeType,
@@ -252,7 +261,39 @@ object WireAnimeMapper {
     legacy.put("estudios", wire.opt("studios") ?: JSONObject.NULL)
     legacy.put("origen", wire.opt("origin") ?: JSONObject.NULL)
     legacy.put("duracion", wire.opt("durationMinutes") ?: JSONObject.NULL)
+    legacy.put("episodes", mapEpisodes(wire.opt("episodes")))
     return legacy
+  }
+
+  /**
+   * Maps the per-episode durations, mirroring `EpisodeLengthSchema` with its `.catch(null)`: every
+   * entry is rebuilt with the keys `episode, minutes, long` (extra keys dropped), and an absent,
+   * `null` or malformed value maps to `null` instead of failing the snapshot. Durations are display
+   * data; rejecting the snapshot would block every other field of the anime with them.
+   */
+  private fun mapEpisodes(value: Any?): Any {
+    if (value !is JSONArray) return JSONObject.NULL
+    val mapped = JSONArray()
+    for (index in 0 until value.length()) {
+      val entry = value.opt(index) as? JSONObject ?: return JSONObject.NULL
+      val episode = wholeNumberOrNull(entry.opt("episode"))
+      val minutes = wholeNumberOrNull(entry.opt("minutes"))
+      val long = entry.opt("long")
+      if (episode == null || episode < 1 || minutes == null || minutes < 0 || long !is Boolean) {
+        return JSONObject.NULL
+      }
+      mapped.put(JSONObject().put("episode", episode).put("minutes", minutes).put("long", long))
+    }
+    return mapped
+  }
+
+  /** A JSON number with no fractional part, as a [Long]; anything else (strings included) is null. */
+  private fun wholeNumberOrNull(value: Any?): Long? {
+    if (value !is Number) return null
+    val asDouble = value.toDouble()
+    // JSON cannot carry NaN or Infinity, so a fractional part is the only non-integer case left.
+    if (asDouble != Math.floor(asDouble)) return null
+    return asDouble.toLong()
   }
 
   /** A required string; absence throws (retryable parse failure), mirroring zod's required field. */
