@@ -16,6 +16,8 @@ export const animes = sqliteTable("animes", {
   totalcap: integer("totalcap"),
   dias: text("dias"),
   generos: text("generos"),
+  // Bridge per-episode durations as JSON text (`[{ episode, minutes, long }]`); NULL = none known.
+  episodes: text("episodes"),
   tipo: integer("tipo"),
   activo: integer("activo").notNull().default(1),
   primeravez: integer("primeravez").notNull().default(1),

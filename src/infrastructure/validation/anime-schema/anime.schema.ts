@@ -72,6 +72,23 @@ const wireAnimeDayArrayOrEmpty = z.preprocess(
   z.array(WireAnimeDaySchema)
 );
 
+/** Validates one bridge per-episode duration entry. `long` is decided by the bridge, never here. */
+export const EpisodeLengthSchema = z.object({
+  episode: z.number().int().min(1),
+  minutes: z.number().int().min(0),
+  long: z.boolean(),
+});
+
+/** Defines one per-episode duration entry. */
+export type EpisodeLength = z.infer<typeof EpisodeLengthSchema>;
+
+/**
+ * Per-episode durations, shared by the wire and domain shapes. An absent key means "no durations".
+ * A malformed value is read as `null` instead of failing the whole anime: durations are display
+ * data, and rejecting the snapshot would block every other field of the anime with it.
+ */
+const episodeLengths = z.array(EpisodeLengthSchema).nullable().optional().catch(null);
+
 /** Optional nullable numeric timestamp shared by every wire date field. */
 const numericDate = z.number().nullable().optional();
 
@@ -98,6 +115,7 @@ export const AnimeSchema = z.object({
   estudios: z.string().nullable().optional(),
   origen: z.string().nullable().optional(),
   duracion: z.number().int().nullable().optional(),
+  episodes: episodeLengths,
 });
 
 /** Defines the anime value shape. */
@@ -125,6 +143,7 @@ export const WireAnimeSchema = z.object({
   studios: z.string().nullable().optional(),
   origin: z.string().nullable().optional(),
   durationMinutes: z.number().int().nullable().optional(),
+  episodes: episodeLengths,
   // Bridge-authored optimistic-concurrency token. REQUIRED, not optional: the bridge sends
   // `*int64` with `omitempty` on the Go side, so a pointer to 0 still serializes as
   // `"modified_at":0` and only a nil pointer omits the key -- measured on a live listAnimes

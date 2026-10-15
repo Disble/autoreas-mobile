@@ -383,4 +383,50 @@ class ReconcileResponseParserTest {
         .let { array -> (0 until array.length()).map { array.getString(it) } },
     )
   }
+
+  /** Maps one snapshot whose `episodes` value is the given raw JSON, returning the legacy `episodes`. */
+  private fun legacyEpisodesFor(episodesJson: String): Any {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["episodes"],"timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"episodes":$episodesJson}}]}""",
+    ).bridgeChanges.single()
+
+    return org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!).get("episodes")
+  }
+
+  @Test
+  fun rebuildsEpisodeEntriesWithCanonicalKeysAndDropsExtraKeys() {
+    val episodes = legacyEpisodesFor("""[{"long":true,"extra":1,"minutes":45.0,"episode":7}]""")
+
+    assertEquals("""[{"episode":7,"minutes":45,"long":true}]""", episodes.toString())
+  }
+
+  @Test
+  fun mapsEveryMalformedEpisodesShapeToNullInsteadOfFailingTheSnapshot() {
+    val malformed = listOf(
+      "null",
+      "\"not-an-array\"",
+      "[1]",
+      """[{"episode":"1","minutes":24,"long":false}]""",
+      """[{"episode":1.5,"minutes":24,"long":false}]""",
+      """[{"episode":0,"minutes":24,"long":false}]""",
+      """[{"episode":1,"minutes":"24","long":false}]""",
+      """[{"episode":1,"minutes":-1,"long":false}]""",
+      """[{"episode":1,"minutes":24,"long":"yes"}]""",
+    )
+
+    for (raw in malformed) {
+      assertEquals("episodes=$raw", org.json.JSONObject.NULL, legacyEpisodesFor(raw))
+    }
+  }
+
+  @Test
+  fun mapsAnAbsentEpisodesKeyToNull() {
+    val change = ReconcileResponseParser.parse(
+      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0}}]}""",
+    ).bridgeChanges.single()
+
+    val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
+
+    assertEquals(org.json.JSONObject.NULL, legacy.get("episodes"))
+  }
 }

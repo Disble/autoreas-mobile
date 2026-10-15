@@ -2,35 +2,41 @@ import { eq } from 'drizzle-orm';
 import { applyAnimePartial, upsertAnime } from '../../../infrastructure/db/anime-repository';
 import type { AppDatabase } from '../../../infrastructure/db/client';
 import { animes } from '../../../infrastructure/db/schema';
-import { buildPartialUpdate, deriveChangedFields } from './field-merge.helpers';
+import { recordDiagnosticEvent } from '../sync-diagnostic-store/sync-diagnostic-store.helpers';
+import { buildPartialUpdate } from './field-merge.helpers';
 import { decideMerge } from './merge-decision.helpers';
 import type { ApplyRemoteChangesResult, MergeContext, RemoteAnimeChange } from './merge.types';
+
+/** What happened to one accepted change: written, rejected as not understood, or nothing to write. */
+type AcceptedChangeOutcome = 'applied' | 'rejected' | 'skipped';
 
 /**
  * Writes one change the merge boundary already decided to accept. A `create` inserts the full
  * snapshot; an `update` looks the record up first and upserts when it is unknown, then writes
- * only the changed columns. Returns whether a write was issued.
+ * only the changed columns.
+ *
+ * An `update` whose `changed_fields` is empty after normalization is REJECTED: the bridge never
+ * sends an empty list for an update, so an empty one means no field in it is known to this build.
+ * Nothing is written -- not even the staleness guard -- because guessing which fields changed by
+ * diffing the whole snapshot would overwrite the anime with values this build did not ask for.
  */
 async function applyAcceptedChange(
   db: AppDatabase,
   change: RemoteAnimeChange,
-): Promise<boolean> {
+): Promise<AcceptedChangeOutcome> {
   if (!change.snapshot) {
-    return false;
+    return 'skipped';
   }
 
   if (change.changeType === 'create') {
     await upsertAnime(db, change.snapshot, change.timestamp);
-    return true;
+    return 'applied';
   }
 
-  // The existence check is UNCONDITIONAL (A10). It used to sit inside the
-  // `changedFields.length === 0` branch, so an `update` carrying changed_fields for a record the
-  // device had never seen fell straight through to `applyAnimePartial` -- an UPDATE ... WHERE
-  // _id = ? matching zero rows -- and still returned true, incrementing `applied` for a write
-  // that never happened. The bridge emits `update` for anything created on the PC while the
-  // phone was offline, so that was the ORDINARY path for such records, not an edge case, and the
-  // diagnostic counter reported success for its own failure.
+  // The existence check is UNCONDITIONAL (A10): the bridge emits `update` for anything created on
+  // the PC while the phone was offline, and an UPDATE matching zero rows would report success for
+  // a write that never happened. A record this device has never seen has no local copy to protect,
+  // so the full snapshot is the only correct write.
   const [currentRow] = await db
     .select()
     .from(animes)
@@ -39,17 +45,22 @@ async function applyAcceptedChange(
 
   if (!currentRow) {
     await upsertAnime(db, change.snapshot, change.timestamp);
-    return true;
+    return 'applied';
   }
 
-  let effectiveFields: readonly string[] = change.changedFields;
-  if (effectiveFields.length === 0) {
-    effectiveFields = deriveChangedFields(change.snapshot, currentRow);
+  if (change.changedFields.length === 0) {
+    recordDiagnosticEvent({
+      source: 'sync_cycle',
+      event: 'remote_change_rejected',
+      cause: null,
+      at: Date.now(),
+    });
+    return 'rejected';
   }
 
-  const { columns } = buildPartialUpdate(effectiveFields, change.snapshot);
+  const { columns } = buildPartialUpdate(change.changedFields, change.snapshot);
   await applyAnimePartial(db, change.recordId, columns, change.timestamp);
-  return true;
+  return 'applied';
 }
 
 /**
@@ -60,6 +71,7 @@ async function applyAcceptedChange(
  *   snapshot), stamping the per-anime staleness guard in the same statement.
  * - 'apply' on a create -> full-row insert via `upsertAnime` (cold create has no prior
  *   columns to preserve).
+ * - 'apply' on an update with no known field -> rejected: no write, counted and recorded.
  * - 'drop_stale' / 'defer_outbox' -> no write; counted only.
  *
  * `applyMode` is accepted so callers can express where this coordinator runs (foreground
@@ -77,6 +89,7 @@ export async function applyRemoteChanges(
   let applied = 0;
   let dropped = 0;
   let deferred = 0;
+  let rejected = 0;
 
   for (const change of changes) {
     const decision = decideMerge(change, ctx);
@@ -89,8 +102,11 @@ export async function applyRemoteChanges(
         break;
       }
       case 'apply': {
-        if (await applyAcceptedChange(db, change)) {
+        const outcome = await applyAcceptedChange(db, change);
+        if (outcome === 'applied') {
           applied += 1;
+        } else if (outcome === 'rejected') {
+          rejected += 1;
         }
         break;
       }
@@ -105,5 +121,5 @@ export async function applyRemoteChanges(
     }
   }
 
-  return { applied, dropped, deferred };
+  return { applied, dropped, deferred, rejected };
 }

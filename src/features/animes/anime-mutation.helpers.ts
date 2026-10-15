@@ -1,5 +1,6 @@
 import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
+import { parseStoredEpisodeLengths } from '../../infrastructure/validation/anime-schema/anime-episodes.helpers';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema/anime.schema';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type {
@@ -349,6 +350,7 @@ function parseStoredJson(value: string): unknown {
  * Rehydrates a raw SQLite row into the shape `AnimeSchema` validates.
  * `dias` and `generos` are stored as JSON text but were written as arrays by older versions, so
  * each is parsed only when it is still a string and falls back to an empty array otherwise.
+ * `episodes` is JSON text too; an unreadable value reads as no durations.
  */
 function parseStoredAnimeRow(row: AnimeRow) {
   return {
@@ -358,5 +360,6 @@ function parseStoredAnimeRow(row: AnimeRow) {
       typeof row.generos === 'string'
         ? parseStoredJson(row.generos)
         : (row.generos ?? []),
+    episodes: parseStoredEpisodeLengths(row.episodes),
   };
 }

@@ -102,6 +102,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     estudios: null,
     origen: null,
     duracion: null,
+    episodes: null,
     lastAppliedChangeMs: 500,
     bridgeModifiedAt: null,
     ...overrides,
@@ -185,7 +186,25 @@ describe('resyncFromBridgeSnapshot', () => {
       estudios: null,
       origen: null,
       duracion: null,
+      episodes: null,
     });
+    expect(result.healed).toBe(1);
+  });
+
+  it('backfills durations into an already-synced row that has none stored', async () => {
+    wireWriteWithLocalRows([makeRow({ episodes: null })]);
+    mockFetch.mockResolvedValue([
+      makeIngestedSnapshot({ episodes: [{ episode: 13, minutes: 45, long: true }] }),
+    ]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(
+      expect.anything(),
+      'anime-1',
+      { episodes: '[{"episode":13,"minutes":45,"long":true}]' },
+      500,
+    );
     expect(result.healed).toBe(1);
   });
 

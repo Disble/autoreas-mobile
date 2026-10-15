@@ -46,6 +46,7 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     totalcap: null,
     dias: "[]",
     generos: "[]",
+    episodes: null,
     tipo: null,
     activo: 1,
     primeravez: 0,

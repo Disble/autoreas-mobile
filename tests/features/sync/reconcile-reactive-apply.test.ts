@@ -3,6 +3,11 @@ import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
+import { recordDiagnosticEvent } from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
+
+jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
+  recordDiagnosticEvent: jest.fn(),
+}));
 
 jest.mock('../../../src/infrastructure/api', () => ({
   bridgeClient: { reconcile: jest.fn() },
@@ -102,5 +107,96 @@ describe('reconcile applies remote bridge changes reactively', () => {
       }),
       'deferred',
     );
+  });
+
+  it('applies only the known fields of a change and records the unknown ones as rejected', async () => {
+    const writeDb = {};
+
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
+      await task(writeDb, {});
+    });
+
+    mockReconcile.mockResolvedValue({
+      ok: true,
+      status: 202,
+      url: 'http://192.168.1.10:9876/api/sync/reconcile',
+      rawBody: '{}',
+      data: {
+        status: 'accepted',
+        applied_operations: [],
+        bridge_changes: [
+          {
+            record_id: 'anime-1',
+            change_type: 'update',
+            changed_fields: ['status', 'fieldFromTheFuture'],
+            snapshot: {
+              id: 'anime-1',
+              name: 'Naruto',
+              status: 2,
+              episodesWatched: 3,
+              active: 1,
+              firstCycle: 0,
+              modified_at: 0,
+            },
+            timestamp: 1710000001000,
+          },
+        ],
+      },
+    });
+
+    await syncPendingOperations({ name: 'unknown-field-reconcile-db' } as never);
+
+    expect(mergeApplyChangesModule.applyRemoteChanges).toHaveBeenCalledWith(
+      writeDb,
+      [expect.objectContaining({ recordId: 'anime-1', changedFields: ['estado'] })],
+      expect.any(Object),
+      'deferred',
+    );
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      source: 'sync_cycle',
+      event: 'remote_change_rejected',
+      cause: null,
+      at: expect.any(Number),
+    });
+  });
+
+  it('records nothing as rejected when every changed field is known', async () => {
+    const writeDb = {};
+
+    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
+      await task(writeDb, {});
+    });
+
+    mockReconcile.mockResolvedValue({
+      ok: true,
+      status: 202,
+      url: 'http://192.168.1.10:9876/api/sync/reconcile',
+      rawBody: '{}',
+      data: {
+        status: 'accepted',
+        applied_operations: [],
+        bridge_changes: [
+          {
+            record_id: 'anime-1',
+            change_type: 'update',
+            changed_fields: ['status'],
+            snapshot: {
+              id: 'anime-1',
+              name: 'Naruto',
+              status: 2,
+              episodesWatched: 3,
+              active: 1,
+              firstCycle: 0,
+              modified_at: 0,
+            },
+            timestamp: 1710000001000,
+          },
+        ],
+      },
+    });
+
+    await syncPendingOperations({ name: 'known-field-reconcile-db' } as never);
+
+    expect(recordDiagnosticEvent).not.toHaveBeenCalled();
   });
 });

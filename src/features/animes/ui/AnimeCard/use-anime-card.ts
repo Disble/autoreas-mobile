@@ -4,6 +4,7 @@ import {
   canDecrease,
   canIncrease,
   getAnimeSeasonStatus,
+  getLongEpisodeLabel,
   getRestantesLabel,
   getStateChip,
   isAnimeMutationLocked,
@@ -34,6 +35,7 @@ export function useAnimeCard(props: AnimeCardProps) {
 
   const restantesLabel = getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap);
   const seasonStatus = getAnimeSeasonStatus(props.anime.seasonProjection);
+  const longEpisodeLabel = getLongEpisodeLabel(props.anime.episodes, props.anime.nrocapvisto);
 
   // 6. Callbacks
   const toggleRestantesShown = () => {
@@ -72,6 +74,7 @@ export function useAnimeCard(props: AnimeCardProps) {
     disableIncrease,
     stateChip,
     seasonStatus,
+    longEpisodeLabel,
     restantesShown,
     restantesLabel,
     toggleRestantesShown,

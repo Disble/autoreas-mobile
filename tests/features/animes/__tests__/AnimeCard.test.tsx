@@ -12,6 +12,38 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 describe('AnimeCard', () => {
+  it('marks the next episode when the bridge says it is long', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            nrocapvisto: 6,
+            episodes: [{ episode: 7, minutes: 45, long: true }],
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('Ep. 7 · 45 min')).toBeTruthy();
+  });
+
+  it('shows no long-episode mark when the next episode is not long', () => {
+    const { queryByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            nrocapvisto: 6,
+            episodes: [{ episode: 7, minutes: 24, long: false }],
+          },
+        })}
+      />,
+    );
+
+    expect(queryByText(/^Ep\. 7/)).toBeNull();
+  });
+
   it('shows no season CTA for non-candidates', () => {
     const { queryByText } = render(<AnimeCard {...buildAnimeCardProps()} />);
 

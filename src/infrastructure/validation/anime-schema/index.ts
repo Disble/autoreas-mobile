@@ -1,4 +1,8 @@
 export {
+  parseStoredEpisodeLengths,
+  serializeEpisodeLengths,
+} from './anime-episodes.helpers';
+export {
   AnimeSchema,
   WireAnimeListSchema,
   WireAnimeSchema,
@@ -9,4 +13,4 @@ export {
   normalizeWireAnimeChangedFields,
 } from './anime-wire.helpers';
 export type { IngestedAnime } from './anime-wire.helpers';
-export type { Anime, AnimeDay, WireAnime } from './anime.schema';
+export type { Anime, AnimeDay, EpisodeLength, WireAnime } from './anime.schema';

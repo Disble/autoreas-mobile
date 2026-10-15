@@ -3,6 +3,7 @@ import type {
   Anime,
   AnimeDay,
 } from "../../infrastructure/validation/anime-schema";
+import { parseStoredEpisodeLengths } from "../../infrastructure/validation/anime-schema/anime-episodes.helpers";
 import {
   ANIME_DAY_FILTER_OPTIONS,
   ANIME_PSEUDO_DAY_FILTERS,
@@ -69,6 +70,7 @@ export function parseAnimeRow(row: AnimeRow): Anime {
     estudios: row.estudios,
     origen: row.origen,
     duracion: row.duracion,
+    episodes: parseStoredEpisodeLengths(row.episodes),
   };
 }
 

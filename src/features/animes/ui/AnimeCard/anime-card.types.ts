@@ -58,6 +58,8 @@ export interface AnimeCardInfoProps {
   readonly metaLabel: string;
   readonly onToggleMeta: () => void;
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
+  /** "Ep. 7 · 45 min" when the next episode is long; `null` hides the mark. */
+  readonly longEpisodeLabel: string | null;
 }
 
 /** Defines the data contract for the anime card state badge (ellipsis or state chip). */
@@ -98,6 +100,7 @@ export interface AnimeCardContentProps {
   readonly metaLabel: string;
   readonly onToggleMeta: () => void;
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
+  readonly longEpisodeLabel: string | null;
   readonly stateChip: AnimeStateChipDescriptor;
   readonly onStateBadgePress: () => void;
   readonly isMutationLocked: boolean;

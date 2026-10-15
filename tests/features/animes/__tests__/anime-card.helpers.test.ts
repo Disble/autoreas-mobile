@@ -1,6 +1,7 @@
 import {
   canDecrease,
   canIncrease,
+  getLongEpisodeLabel,
   getRestantesLabel,
   getStateChip,
   isAnimeMutationLocked,
@@ -77,5 +78,39 @@ describe("anime-card helpers", () => {
       expect(getRestantesLabel(12, 12)).toBeNull();
       expect(getRestantesLabel(13, 12)).toBeNull();
     });
+  });
+});
+
+describe("getLongEpisodeLabel", () => {
+  const EPISODES = [
+    { episode: 6, minutes: 24, long: false },
+    { episode: 7, minutes: 45, long: true },
+  ];
+
+  it("labels the next episode when the bridge marked it long", () => {
+    expect(getLongEpisodeLabel(EPISODES, 6)).toBe("Ep. 7 · 45 min");
+  });
+
+  it("trusts the bridge's long flag even at 30 minutes", () => {
+    expect(getLongEpisodeLabel([{ episode: 7, minutes: 30, long: true }], 6)).toBe(
+      "Ep. 7 · 30 min",
+    );
+  });
+
+  it("shows nothing when the next episode is not long", () => {
+    expect(getLongEpisodeLabel(EPISODES, 5)).toBeNull();
+  });
+
+  it("shows nothing when only a later episode is long", () => {
+    expect(getLongEpisodeLabel(EPISODES, 4)).toBeNull();
+  });
+
+  it("shows nothing for a fractional count, which has no next episode", () => {
+    expect(getLongEpisodeLabel(EPISODES, 6.5)).toBeNull();
+  });
+
+  it("shows nothing when no durations are known", () => {
+    expect(getLongEpisodeLabel(null, 6)).toBeNull();
+    expect(getLongEpisodeLabel(undefined, 6)).toBeNull();
   });
 });

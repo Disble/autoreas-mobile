@@ -84,7 +84,7 @@
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
             "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
-            "estudios": "Studio X", "origen": "Manga", "duracion": 24
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
           }
         }
       ]
@@ -151,7 +151,7 @@
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
             "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
-            "estudios": "Studio X", "origen": "Manga", "duracion": 24
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
           }
         }
       ]
@@ -270,6 +270,68 @@
       "confirmedOperationIds": [],
       "bridgeChanges": [
         { "recordId": "anime-31", "changeType": "update", "changedFields": ["nrocapvisto"], "snapshot": null, "timestamp": 600 }
+      ]
+    }
+  },
+  {
+    "name": "episodes-mapped-whole-or-null",
+    "description": "A durations-only update keeps changed_fields episodes and carries the entries with keys episode, minutes, long; a malformed episodes value maps to null instead of failing the snapshot.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-8",
+            "change_type": "update",
+            "changed_fields": ["episodes"],
+            "snapshot": {
+              "id": "anime-8", "name": "Long Night", "status": 1, "episodesWatched": 6, "active": 1, "firstCycle": 0,
+              "modified_at": 0,
+              "episodes": [{ "long": false, "minutes": 24, "episode": 6 }, { "episode": 7, "minutes": 45, "long": true }]
+            },
+            "timestamp": 40
+          },
+          {
+            "record_id": "anime-9",
+            "change_type": "update",
+            "changed_fields": ["episodes"],
+            "snapshot": {
+              "id": "anime-9", "name": "Bad Data", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0,
+              "episodes": [{ "episode": "1", "minutes": 24, "long": false }]
+            },
+            "timestamp": 41
+          }
+        ],
+        "last_changelog_id": 2390
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2390,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        {
+          "recordId": "anime-8", "changeType": "update", "changedFields": ["episodes"], "timestamp": 40,
+          "snapshot": {
+            "_id": "anime-8", "nombre": "Long Night", "estado": 1, "nrocapvisto": 6, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null,
+            "episodes": [{ "episode": 6, "minutes": 24, "long": false }, { "episode": 7, "minutes": 45, "long": true }]
+          }
+        },
+        {
+          "recordId": "anime-9", "changeType": "update", "changedFields": ["episodes"], "timestamp": 41,
+          "snapshot": {
+            "_id": "anime-9", "nombre": "Bad Data", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null,
+            "episodes": null
+          }
+        }
       ]
     }
   }

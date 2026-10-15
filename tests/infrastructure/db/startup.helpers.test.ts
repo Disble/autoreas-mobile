@@ -41,6 +41,7 @@ describe('database startup helpers', () => {
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
+          { name: 'episodes' },
           { name: 'conflict_attempt_count' },
           { name: 'fence' },
         ];
@@ -110,6 +111,7 @@ describe('database startup helpers', () => {
         { name: 'is_sync_telemetry_enabled' },
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
+        { name: 'episodes' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
       ]),
@@ -144,6 +146,7 @@ describe('database startup helpers', () => {
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
+          { name: 'episodes' },
           { name: 'conflict_attempt_count' },
           { name: 'fence' },
         ];
@@ -230,6 +233,7 @@ describe('database startup helpers', () => {
         { name: 'is_sync_telemetry_enabled' },
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
+        { name: 'episodes' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
       ]),
@@ -285,7 +289,7 @@ describe('database startup helpers', () => {
         .mockResolvedValue({ quick_check: 'ok', count: 9 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
-          return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }];
+          return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }, { name: 'episodes' }];
         }
 
         if (query === 'PRAGMA table_info(operation_log)') {
@@ -298,11 +302,11 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0015`
-    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`. Pinned as a
+    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0016`
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`. Pinned as a
     // literal rather than against the exported constant so a migration that silently fails to
     // register in the journal is caught here instead of agreeing with itself.
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(16);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(17);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });
@@ -324,6 +328,7 @@ describe('database startup helpers', () => {
           { name: 'is_sync_telemetry_enabled' },
           { name: 'last_applied_change_ms' },
           { name: 'bridge_modified_at' },
+          { name: 'episodes' },
         ];
       }),
     } as unknown as SQLiteDatabase;
