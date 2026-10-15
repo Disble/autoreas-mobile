@@ -16,6 +16,20 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-10-15
+
+### Added
+
+- An anime card now shows "Ep. 7 · 45 min" when the next episode you have to watch is a long one, using the episode durations your PC already knows. The mark works offline, and animes already on the device get their durations the next time you open the app. A PC that does not send durations yet simply shows no mark.
+
+### Changed
+
+- A change from your PC that this version cannot understand is now ignored and reported in the diagnostics, instead of being guessed at. Before, such a change could overwrite an anime with values the PC never changed.
+
+### Internal
+
+- New local database column for episode durations, added in place on devices that already have data.
+
 ## [1.10.0] — 2026-10-08
 
 ### Changed
