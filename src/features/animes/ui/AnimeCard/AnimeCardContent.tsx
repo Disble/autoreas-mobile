@@ -19,6 +19,10 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     disableDecrease,
     disableIncrease,
     onOpenSeasonRatingSheet,
+    hasPageLink,
+    hasFolder,
+    onOpenPage,
+    onOpenFolder,
     onCapMinusPress,
     onCapPlusPress,
     onCapMinusLongPress,
@@ -44,6 +48,10 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
         disableDecrease={disableDecrease}
         disableIncrease={disableIncrease}
         onOpenSeasonRatingSheet={onOpenSeasonRatingSheet}
+        hasPageLink={hasPageLink}
+        hasFolder={hasFolder}
+        onOpenPage={onOpenPage}
+        onOpenFolder={onOpenFolder}
         onReanudarPress={onStateBadgePress}
         onCapMinusPress={onCapMinusPress}
         onCapPlusPress={onCapPlusPress}

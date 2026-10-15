@@ -1,6 +1,7 @@
 import {
   buildFolderIndex,
   formatRootLabel,
+  getOpenablePageUrl,
   getSafDocumentId,
   resolveAnimeFolders,
   toDeviceStoragePath,
@@ -223,5 +224,20 @@ describe('resolveAnimeFolders', () => {
     const { summary } = resolveAnimeFolders(index, [anime('a1', 'D:/Anime/Bleach')]);
 
     expect(summary.unmatchedFolders.map((folder) => folder.relativePath)).toEqual(['Haruhi BD']);
+  });
+});
+
+describe('getOpenablePageUrl', () => {
+  it('keeps an http(s) url with a host, trimmed', () => {
+    expect(getOpenablePageUrl(' https://jkanime.net/bleach/ ')).toBe('https://jkanime.net/bleach/');
+    expect(getOpenablePageUrl('http://example.com')).toBe('http://example.com');
+  });
+
+  it('has no page for anything else', () => {
+    expect(getOpenablePageUrl('descargado')).toBeNull();
+    expect(getOpenablePageUrl('https://')).toBeNull();
+    expect(getOpenablePageUrl('ftp://example.com')).toBeNull();
+    expect(getOpenablePageUrl('')).toBeNull();
+    expect(getOpenablePageUrl(null)).toBeNull();
   });
 });

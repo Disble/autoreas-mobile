@@ -1,0 +1,1 @@
+export { AnimeFolderBanner } from './AnimeFolderBanner';

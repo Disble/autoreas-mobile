@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { StyledIonicons } from '../../../../components/theme-toggle.constants';
 import { Button } from 'heroui-native';
 import { View } from 'react-native';
 import { AnimeCardChapterControls } from './AnimeCardChapterControls';
 import type { AnimeCardActionsProps } from './anime-card.types';
 
-/** Renders the anime card season CTA and the chapter progress actions. */
+/** Renders the page and folder shortcuts on the left, and the season CTA plus chapter progress on the right. */
 export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   const {
     seasonStatus,
@@ -13,6 +14,10 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
     disableDecrease,
     disableIncrease,
     onOpenSeasonRatingSheet,
+    hasPageLink,
+    hasFolder,
+    onOpenPage,
+    onOpenFolder,
     onReanudarPress,
     onCapMinusPress,
     onCapPlusPress,
@@ -21,7 +26,30 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   } = props;
 
   return (
-    <View className="flex-row items-center justify-end gap-2">
+    <View className="flex-row items-center gap-2">
+      {hasPageLink ? (
+        <Button
+          accessibilityLabel="Abrir página del anime"
+          isIconOnly
+          size="sm"
+          variant="tertiary"
+          onPress={onOpenPage}
+        >
+          <StyledIonicons name="link" size={18} className="text-foreground" />
+        </Button>
+      ) : null}
+      {hasFolder ? (
+        <Button
+          accessibilityLabel="Abrir carpeta del anime"
+          isIconOnly
+          size="sm"
+          variant="tertiary"
+          onPress={onOpenFolder}
+        >
+          <StyledIonicons name="folder-open" size={18} className="text-foreground" />
+        </Button>
+      ) : null}
+      <View className="flex-1" />
       {seasonStatus?.showRatingCta ? (
         <Button
           accessibilityLabel="Abrir calificación de temporada"

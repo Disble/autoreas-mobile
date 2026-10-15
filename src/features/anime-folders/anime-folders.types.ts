@@ -95,4 +95,11 @@ export interface AnimeFoldersView extends AnimeFoldersIndexState {
   readonly hintDismissedAt: number | null;
   /** Re-reads the chosen root and rebuilds the index. */
   readonly reindex: () => void;
+  /**
+   * Opens the system picker, stores the chosen root and indexes it. Resolves the chosen uri, or
+   * `null` when the user cancelled or the root could not be saved.
+   */
+  readonly chooseRoot: () => Promise<string | null>;
+  /** Hides the hint banner for good. */
+  readonly dismissHint: () => void;
 }

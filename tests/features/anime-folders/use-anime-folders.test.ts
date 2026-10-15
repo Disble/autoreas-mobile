@@ -2,6 +2,9 @@ import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useAnimeFolders } from '../../../src/features/anime-folders/use-anime-folders';
 import * as store from '../../../src/features/anime-folders/anime-folders.store';
+import * as io from '../../../src/features/anime-folders/anime-folders-io.helpers';
+import * as preferences from '../../../src/features/anime-folders/anime-folders-preferences.helpers';
+import { ANIME_FOLDERS_INITIAL_URI } from '../../../src/features/anime-folders/anime-folders.constants';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
@@ -13,6 +16,17 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   createDrizzleDb: jest.fn(() => ({
     select: () => ({ from: () => ({ limit: () => 'app-preferences-query' }) }),
   })),
+  withLocalWrite: jest.fn((_rawDb: unknown, write: (db: string) => Promise<void>) => write('write-db')),
+}));
+
+jest.mock('../../../src/features/anime-folders/anime-folders-io.helpers', () => ({
+  pickSafRoot: jest.fn(),
+}));
+
+jest.mock('../../../src/features/anime-folders/anime-folders-preferences.helpers', () => ({
+  ...jest.requireActual('../../../src/features/anime-folders/anime-folders-preferences.helpers'),
+  saveAnimeFoldersRoot: jest.fn().mockResolvedValue(undefined),
+  dismissAnimeFoldersHint: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/anime-folders/anime-folders.store', () => ({
@@ -103,5 +117,62 @@ describe('useAnimeFolders', () => {
 
     expect(store.recheckAnimeFoldersAccess).toHaveBeenCalledTimes(1);
     expect(store.indexAnimeFolders).not.toHaveBeenCalled();
+  });
+
+  it('opens the picker at the anime folder, stores the chosen root and forces its index', async () => {
+    jest.mocked(io.pickSafRoot).mockResolvedValue(ROOT_URI);
+    const { result } = renderHook(() => useAnimeFolders());
+    (store.indexAnimeFolders as jest.Mock).mockClear();
+
+    let chosen: string | null = null;
+    await act(async () => {
+      chosen = await result.current.chooseRoot();
+    });
+
+    expect(io.pickSafRoot).toHaveBeenCalledWith(ANIME_FOLDERS_INITIAL_URI);
+    expect(preferences.saveAnimeFoldersRoot).toHaveBeenCalledWith('write-db', ROOT_URI);
+    expect(store.indexAnimeFolders).toHaveBeenCalledWith(ROOT_URI, true);
+    expect(chosen).toBe(ROOT_URI);
+  });
+
+  it('changes nothing when the picker is cancelled', async () => {
+    jest.mocked(io.pickSafRoot).mockResolvedValue(null);
+    const { result } = renderHook(() => useAnimeFolders());
+    (store.indexAnimeFolders as jest.Mock).mockClear();
+
+    let chosen: string | null = 'not-called';
+    await act(async () => {
+      chosen = await result.current.chooseRoot();
+    });
+
+    expect(preferences.saveAnimeFoldersRoot).not.toHaveBeenCalled();
+    expect(store.indexAnimeFolders).not.toHaveBeenCalled();
+    expect(chosen).toBeNull();
+  });
+
+  it('does not index a root it could not store', async () => {
+    jest.mocked(io.pickSafRoot).mockResolvedValue(ROOT_URI);
+    jest.mocked(preferences.saveAnimeFoldersRoot).mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { result } = renderHook(() => useAnimeFolders());
+    (store.indexAnimeFolders as jest.Mock).mockClear();
+
+    let chosen: string | null = 'not-called';
+    await act(async () => {
+      chosen = await result.current.chooseRoot();
+    });
+
+    expect(store.indexAnimeFolders).not.toHaveBeenCalled();
+    expect(chosen).toBeNull();
+  });
+
+  it('stores the hint dismissal', async () => {
+    const { result } = renderHook(() => useAnimeFolders());
+
+    await act(async () => {
+      result.current.dismissHint();
+    });
+
+    expect(preferences.dismissAnimeFoldersHint).toHaveBeenCalledWith('write-db', expect.any(Number));
   });
 });

@@ -4,6 +4,7 @@ import {
   DOCUMENT_SEGMENT,
   NON_ALPHANUMERIC_PATTERN,
   NON_LATIN_LETTER_PATTERN,
+  OPENABLE_PAGE_URL_PATTERN,
   PRIMARY_STORAGE_PATH,
   PRIMARY_VOLUME_ID,
   PRIMARY_VOLUME_LABEL,
@@ -305,4 +306,10 @@ export function resolveAnimeFolders(
   }
 
   return { byAnimeId, summary: summarizeClaims(index, claims) };
+}
+
+/** Returns the anime page url when it is an http(s) url with a host, else `null` (no page button). */
+export function getOpenablePageUrl(pagina: string | null | undefined): string | null {
+  const trimmed = (pagina ?? '').trim();
+  return OPENABLE_PAGE_URL_PATTERN.test(trimmed) ? trimmed : null;
 }

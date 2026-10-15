@@ -42,6 +42,7 @@
     "expo-font": "~55.0.8",
     "expo-haptics": "~55.0.16",
     "expo-image": "~55.0.11",
+    "expo-intent-launcher": "~55.0.16",
     "expo-linking": "~55.0.16",
     "expo-modules-core": "~55.0.25",
     "expo-network": "~55.0.16",

@@ -19,6 +19,8 @@ export interface AnimeCardProps {
    * pipeline exists yet.
    */
   readonly coverUri?: string | null;
+  /** Device path of the anime folder; `null` or `undefined` hides the folder shortcut. */
+  readonly folderPath?: string | null;
 }
 
 /** Defines the visual tone for an anime state chip. */
@@ -76,6 +78,12 @@ export interface AnimeCardActionsProps {
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onOpenSeasonRatingSheet: () => void;
+  /** Shows the page shortcut; only an http(s) url with a host has a page. */
+  readonly hasPageLink: boolean;
+  /** Shows the folder shortcut; only when the anime resolved to exactly one folder. */
+  readonly hasFolder: boolean;
+  readonly onOpenPage: () => void;
+  readonly onOpenFolder: () => void;
   readonly onReanudarPress: () => void;
   readonly onCapMinusPress: () => void;
   readonly onCapPlusPress: () => void;
@@ -108,6 +116,12 @@ export interface AnimeCardContentProps {
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onOpenSeasonRatingSheet: () => void;
+  /** Shows the page shortcut; only an http(s) url with a host has a page. */
+  readonly hasPageLink: boolean;
+  /** Shows the folder shortcut; only when the anime resolved to exactly one folder. */
+  readonly hasFolder: boolean;
+  readonly onOpenPage: () => void;
+  readonly onOpenFolder: () => void;
   readonly onCapMinusPress: () => void;
   readonly onCapPlusPress: () => void;
   readonly onCapMinusLongPress: () => void;

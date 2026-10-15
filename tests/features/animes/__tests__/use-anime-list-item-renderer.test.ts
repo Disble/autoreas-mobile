@@ -1,7 +1,12 @@
 import { act, renderHook } from "@testing-library/react-native";
+import { useAnimeFolderResolution } from "../../../../src/features/anime-folders/use-anime-folder-resolution";
 import { useAnimeListItemRenderer } from "../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-item-renderer";
 import { useCoverUriStore } from "../../../../src/infrastructure/store/cover-uri-store";
 import { buildAnimeListItemFixture } from "./use-anime-list-item-renderer.helpers";
+
+jest.mock("../../../../src/features/anime-folders/use-anime-folder-resolution", () => ({
+  useAnimeFolderResolution: jest.fn(() => null),
+}));
 
 describe("useAnimeListItemRenderer", () => {
   afterEach(() => {
@@ -110,5 +115,37 @@ describe("useAnimeListItemRenderer", () => {
     );
 
     expect(result.current.getAnimeCardProps(item).coverUri).toBeNull();
+  });
+
+  it("passes the resolved folder path to the card, and none to an anime without one", () => {
+    const noop = jest.fn();
+    const noopAsync = jest.fn().mockResolvedValue(undefined);
+    const devicePath = "/storage/0123-4567/Videos/Anime/Bleach";
+    jest.mocked(useAnimeFolderResolution).mockReturnValue({
+      byAnimeId: new Map([
+        [
+          "anime-1",
+          { method: "exact", folder: { name: "Bleach", relativePath: "Bleach", devicePath } },
+        ],
+      ]),
+      summary: {
+        folderCount: 1,
+        animesWithFolder: 1,
+        matchedFolders: [],
+        sharedFolders: [],
+        unmatchedFolders: [],
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useAnimeListItemRenderer({}, noopAsync, noopAsync, noopAsync, noopAsync, noop, noop),
+    );
+
+    expect(result.current.getAnimeCardProps(buildAnimeListItemFixture("anime-1")).folderPath).toBe(
+      devicePath,
+    );
+    expect(
+      result.current.getAnimeCardProps(buildAnimeListItemFixture("anime-2")).folderPath,
+    ).toBeNull();
   });
 });

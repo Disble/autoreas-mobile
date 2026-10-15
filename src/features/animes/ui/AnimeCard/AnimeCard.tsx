@@ -23,6 +23,10 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     handleCapPlusLongPress,
     handleCapMinusLongPress,
     handleOpenSeasonRatingSheet,
+    hasPageLink,
+    hasFolder,
+    handleOpenPage,
+    handleOpenFolder,
   } = useAnimeCard(props);
 
   const chaptersLabel =
@@ -50,6 +54,10 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           disableDecrease={disableDecrease}
           disableIncrease={disableIncrease}
           onOpenSeasonRatingSheet={handleOpenSeasonRatingSheet}
+          hasPageLink={hasPageLink}
+          hasFolder={hasFolder}
+          onOpenPage={handleOpenPage}
+          onOpenFolder={handleOpenFolder}
           onCapMinusPress={handleCapMinusPress}
           onCapPlusPress={handleCapPlusPress}
           onCapMinusLongPress={handleCapMinusLongPress}

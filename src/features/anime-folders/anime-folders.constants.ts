@@ -1,4 +1,4 @@
-import type { AnimeFoldersIndexState } from './anime-folders.types';
+import type { AnimeFolderSource, AnimeFoldersIndexState } from './anime-folders.types';
 
 /** How many folder levels below the root the index walks. */
 export const ANIME_FOLDERS_MAX_DEPTH = 3;
@@ -46,3 +46,34 @@ export const INITIAL_ANIME_FOLDERS_INDEX_STATE: AnimeFoldersIndexState = {
   index: null,
   indexedAt: null,
 };
+
+/**
+ * Where the system folder picker opens: the tablet's `SD card › Videos › Anime` (verified via adb).
+ * When that folder does not exist, Android opens the picker at its default location instead.
+ */
+export const ANIME_FOLDERS_INITIAL_URI =
+  'content://com.android.externalstorage.documents/document/0123-4567%3AVideos%2FAnime';
+
+/** Samsung My Files action that opens a folder by absolute path. */
+export const SAMSUNG_MY_FILES_LAUNCH_ACTION = 'samsung.myfiles.intent.action.LAUNCH_MY_FILES';
+
+/** Extra that carries the absolute folder path for My Files. */
+export const SAMSUNG_MY_FILES_START_PATH_EXTRA = 'samsung.myfiles.intent.extra.START_PATH';
+
+/** `Intent.FLAG_ACTIVITY_NEW_TASK`; required for LAUNCH_ADJACENT to take effect. */
+export const FLAG_ACTIVITY_NEW_TASK = 0x10000000;
+
+/** `Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT`; in split screen, opens in the other half. */
+export const FLAG_ACTIVITY_LAUNCH_ADJACENT = 0x00001000;
+
+/** An http(s) url with a host; anything else (e.g. `descargado`) has no page to open. */
+export const OPENABLE_PAGE_URL_PATTERN = /^https?:\/\/[^\s/?#]+/i;
+
+/** Alert title when My Files could not open the folder. */
+export const OPEN_FOLDER_FAILED_TITLE = 'No se pudo abrir la carpeta';
+
+/** Alert title when the browser could not open the anime page. */
+export const OPEN_PAGE_FAILED_TITLE = 'No se pudo abrir la página';
+
+/** Stable empty fallback for the anime live query, so the resolution memo is not rebuilt each render. */
+export const EMPTY_ANIME_FOLDER_SOURCES: readonly AnimeFolderSource[] = [];

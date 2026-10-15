@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
-import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
+import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import {
   useOptionalLiveQuery,
   useOptionalSQLiteContext,
 } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { appPreferences, type AppPreferencesRow } from '../../infrastructure/db/schema';
-import { toAnimeFoldersPreferences } from './anime-folders-preferences.helpers';
+import {
+  dismissAnimeFoldersHint,
+  saveAnimeFoldersRoot,
+  toAnimeFoldersPreferences,
+} from './anime-folders-preferences.helpers';
+import { ANIME_FOLDERS_INITIAL_URI } from './anime-folders.constants';
+import { pickSafRoot } from './anime-folders-io.helpers';
 import { formatRootLabel } from './anime-folders.helpers';
 import {
   getAnimeFoldersIndexState,
@@ -18,7 +24,7 @@ import type { AnimeFoldersView } from './anime-folders.types';
 
 /**
  * Exposes the chosen anime root (from `app_preferences`) and its shared folder index. Indexes the
- * root once it is known and whenever it changes; every mounted caller shares one index run. When
+ * root once it is known and whenever it changes, and owns choosing the root and dismissing the hint; every mounted caller shares one index run. When
  * the app returns to the foreground it only re-checks access, never walks the tree again.
  */
 export function useAnimeFolders(): AnimeFoldersView {
@@ -45,6 +51,36 @@ export function useAnimeFolders(): AnimeFoldersView {
     void indexAnimeFolders(rootUri, true);
   }, [rootUri]);
 
+  const chooseRoot = useCallback(async (): Promise<string | null> => {
+    const pickedUri = await pickSafRoot(ANIME_FOLDERS_INITIAL_URI);
+    if (!pickedUri || !rawDb) {
+      return null;
+    }
+
+    try {
+      await withLocalWrite(rawDb, (writeDb) => saveAnimeFoldersRoot(writeDb, pickedUri));
+    } catch (error) {
+      console.warn('[anime-folders] could not save the chosen root', error);
+      return null;
+    }
+
+    // Forced: picking the same folder again (a new grant after losing access) must re-index it.
+    await indexAnimeFolders(pickedUri, true);
+    return pickedUri;
+  }, [rawDb]);
+
+  const dismissHint = useCallback(() => {
+    if (!rawDb) {
+      return;
+    }
+
+    withLocalWrite(rawDb, (writeDb) => dismissAnimeFoldersHint(writeDb, Date.now())).catch(
+      (error: unknown) => {
+        console.warn('[anime-folders] could not dismiss the hint', error);
+      },
+    );
+  }, [rawDb]);
+
   // 7. Effects
   useEffect(() => {
     if (isLoaded) {
@@ -64,5 +100,5 @@ export function useAnimeFolders(): AnimeFoldersView {
     };
   }, []);
 
-  return { ...indexState, isLoaded, rootLabel, hintDismissedAt, reindex };
+  return { ...indexState, isLoaded, rootLabel, hintDismissedAt, reindex, chooseRoot, dismissHint };
 }
