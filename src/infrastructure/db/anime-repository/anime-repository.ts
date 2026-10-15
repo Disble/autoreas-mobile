@@ -33,6 +33,7 @@ export async function upsertAnime(
     portada: anime.portada ?? null,
     pagina: anime.pagina ?? null,
     carpeta: anime.carpeta ?? null,
+    folderRelative: anime.folderRelative ?? null,
     estudios: anime.estudios ?? null,
     origen: anime.origen ?? null,
     duracion: anime.duracion ?? null,

@@ -23,6 +23,7 @@ const FROZEN_ANIME_DOMAIN_KEYS = [
   "fechaEliminacion",
   "fechaEstreno",
   "fechaUltCapVisto",
+  "folderRelative",
   "generos",
   "nombre",
   "nrocapvisto",
@@ -217,6 +218,12 @@ describe("anime.helpers", () => {
       const row = buildAnimeRow({ episodes: '[{"episode":7,"minutes":45,"long":true}]' });
 
       expect(parseAnimeRow(row).episodes).toEqual([{ episode: 7, minutes: 45, long: true }]);
+    });
+
+    it("carries the bridge folder path onto the domain shape", () => {
+      expect(parseAnimeRow(buildAnimeRow({ folderRelative: "Anime/Frieren" })).folderRelative).toBe(
+        "Anime/Frieren",
+      );
     });
 
     it("reads a NULL or malformed episodes column as no durations", () => {

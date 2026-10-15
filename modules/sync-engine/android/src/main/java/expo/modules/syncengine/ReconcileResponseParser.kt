@@ -258,6 +258,8 @@ object WireAnimeMapper {
     legacy.put("portada", wire.opt("cover") ?: JSONObject.NULL)
     legacy.put("pagina", wire.opt("sourceUrl") ?: JSONObject.NULL)
     legacy.put("carpeta", wire.opt("folder") ?: JSONObject.NULL)
+    // Sent only together with `folder`, so it is never a `changed_fields` name of its own.
+    legacy.put("folderRelative", wire.opt("folderRelative") ?: JSONObject.NULL)
     legacy.put("estudios", wire.opt("studios") ?: JSONObject.NULL)
     legacy.put("origen", wire.opt("origin") ?: JSONObject.NULL)
     legacy.put("duracion", wire.opt("durationMinutes") ?: JSONObject.NULL)

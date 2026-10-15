@@ -83,7 +83,7 @@
             "_id": "anime-3", "nombre": "North Star", "estado": 2, "nrocapvisto": 9, "totalcap": 12,
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
-            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
+            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North", "folderRelative": null,
             "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
           }
         }
@@ -150,7 +150,7 @@
             "_id": "anime-7", "nombre": "North Star", "estado": 2, "nrocapvisto": 4, "totalcap": 12,
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
-            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North",
+            "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North", "folderRelative": null,
             "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
           }
         }
@@ -318,7 +318,7 @@
             "_id": "anime-8", "nombre": "Long Night", "estado": 1, "nrocapvisto": 6, "totalcap": null,
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-            "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null,
             "episodes": [{ "episode": 6, "minutes": 24, "long": false }, { "episode": 7, "minutes": 45, "long": true }]
           }
         },
@@ -328,8 +328,70 @@
             "_id": "anime-9", "nombre": "Bad Data", "estado": 1, "nrocapvisto": 0, "totalcap": null,
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-            "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null,
             "episodes": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "folder-relative-coupled-to-folder",
+    "description": "folderRelative travels only with folder: a folder update keeps changed_fields carpeta (a folderRelative entry is dropped as unknown) and carries the path in the snapshot; a snapshot without the key maps folderRelative to null.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-10",
+            "change_type": "update",
+            "changed_fields": ["folder", "folderRelative"],
+            "snapshot": {
+              "id": "anime-10", "name": "Frieren", "status": 1, "episodesWatched": 3, "active": 1, "firstCycle": 0,
+              "modified_at": 0,
+              "folder": "D:/Videos/Anime/Frieren", "folderRelative": "Anime/Frieren"
+            },
+            "timestamp": 50
+          },
+          {
+            "record_id": "anime-11",
+            "change_type": "create",
+            "changed_fields": [],
+            "snapshot": {
+              "id": "anime-11", "name": "No Path", "status": 1, "episodesWatched": 0, "active": 1, "firstCycle": 0,
+              "modified_at": 0,
+              "folder": "D:/Elsewhere/No Path"
+            },
+            "timestamp": 51
+          }
+        ],
+        "last_changelog_id": 2400
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2400,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        {
+          "recordId": "anime-10", "changeType": "update", "changedFields": ["carpeta"], "timestamp": 50,
+          "snapshot": {
+            "_id": "anime-10", "nombre": "Frieren", "estado": 1, "nrocapvisto": 3, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": "D:/Videos/Anime/Frieren", "folderRelative": "Anime/Frieren",
+            "estudios": null, "origen": null, "duracion": null, "episodes": null
+          }
+        },
+        {
+          "recordId": "anime-11", "changeType": "create", "changedFields": [], "timestamp": 51,
+          "snapshot": {
+            "_id": "anime-11", "nombre": "No Path", "estado": 1, "nrocapvisto": 0, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": "D:/Elsewhere/No Path", "folderRelative": null,
+            "estudios": null, "origen": null, "duracion": null, "episodes": null
           }
         }
       ]

@@ -103,6 +103,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     origen: null,
     duracion: null,
     episodes: null,
+    folderRelative: null,
     lastAppliedChangeMs: 500,
     bridgeModifiedAt: null,
     ...overrides,
@@ -187,7 +188,25 @@ describe('resyncFromBridgeSnapshot', () => {
       origen: null,
       duracion: null,
       episodes: null,
+      folderRelative: null,
     });
+    expect(result.healed).toBe(1);
+  });
+
+  it('backfills the bridge folder path into an already-synced row that has none stored', async () => {
+    wireWriteWithLocalRows([makeRow({ carpeta: 'D:/Anime/Frieren', folderRelative: null })]);
+    mockFetch.mockResolvedValue([
+      makeIngestedSnapshot({ folder: 'D:/Anime/Frieren', folderRelative: 'Anime/Frieren' }),
+    ]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(
+      expect.anything(),
+      'anime-1',
+      { carpeta: 'D:/Anime/Frieren', folderRelative: 'Anime/Frieren' },
+      500,
+    );
     expect(result.healed).toBe(1);
   });
 

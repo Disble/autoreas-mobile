@@ -57,6 +57,19 @@ function mapKnownField(field: string, snapshot: Anime): { value: unknown } | und
 }
 
 /**
+ * Columns written alongside a known field instead of under their own `changed_fields` name. The
+ * bridge sends `folderRelative` only together with `folder` (`carpeta`), so a folder change also
+ * replaces the stored path, clearing it when the snapshot carries none.
+ */
+function mapCoupledColumns(field: string, snapshot: Anime): Record<string, unknown> {
+  if (field === 'carpeta') {
+    return { folderRelative: snapshot.folderRelative ?? null };
+  }
+
+  return {};
+}
+
+/**
  * Builds a partial column-update map from `changed_fields` + a snapshot. Only the fields
  * named in `changedFields` are included, never the full snapshot row, so untouched local
  * fields (e.g. an optimistic `nrocapvisto`) are never clobbered. Unknown field names are
@@ -79,6 +92,7 @@ export function buildPartialUpdate(
     }
 
     columns[field] = mapped.value;
+    Object.assign(columns, mapCoupledColumns(field, snapshot));
   }
 
   return { columns, skippedFields };
@@ -110,7 +124,10 @@ export function deriveChangedFields(
       continue;
     }
 
-    if (mapped.value !== currentRow[field]) {
+    const coupled = Object.entries(mapCoupledColumns(field, snapshot));
+    const isCoupledChanged = coupled.some(([column, value]) => value !== currentRow[column]);
+
+    if (mapped.value !== currentRow[field] || isCoupledChanged) {
       changed.push(field);
     }
   }

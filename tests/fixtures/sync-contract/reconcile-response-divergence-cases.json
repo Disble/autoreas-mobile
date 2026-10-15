@@ -29,7 +29,7 @@
               "_id": "anime-20", "nombre": "Divergent", "estado": 1, "nrocapvisto": 2, "totalcap": null,
               "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
               "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
+              "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
             }
           }
         ]
@@ -69,7 +69,7 @@
               "_id": "anime-21", "nombre": "DayGap", "estado": 1, "nrocapvisto": 0, "totalcap": null,
               "dias": [{ "dia": "", "orden": 3 }], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
               "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
+              "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
             }
           }
         ]
@@ -134,7 +134,7 @@
               "_id": "anime-23", "nombre": "DateGap", "estado": 1, "nrocapvisto": 0, "totalcap": null,
               "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
               "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
+              "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
             }
           }
         ]
@@ -174,7 +174,7 @@
               "_id": "anime-24", "nombre": "DollarDate", "estado": 1, "nrocapvisto": 0, "totalcap": null,
               "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
               "fechaUltCapVisto": 1750, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
+              "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
             }
           }
         ]
@@ -214,7 +214,7 @@
               "_id": "anime-25", "nombre": "StringDate", "estado": 1, "nrocapvisto": 0, "totalcap": null,
               "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
               "fechaUltCapVisto": 1760, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
-              "portada": null, "pagina": null, "carpeta": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
+              "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null, "episodes": null
             }
           }
         ]
