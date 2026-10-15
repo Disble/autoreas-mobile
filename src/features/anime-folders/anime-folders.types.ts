@@ -43,6 +43,8 @@ export interface AnimeFolderSource {
   readonly carpeta: string | null | undefined;
   /** Path below the bridge library root (`folderRelative` on the wire). */
   readonly folderRelative: string | null | undefined;
+  /** `1` for an anime the list shows; `0` for an inactive one, which stays a row but has no card. */
+  readonly activo: number;
 }
 
 /** The folder one anime opens, and how it was found. */
@@ -54,16 +56,17 @@ export interface ResolvedAnimeFolder {
 /** One folder and the animes that resolved to it. */
 export interface FolderClaim {
   readonly resolved: ResolvedAnimeFolder;
-  readonly animeIds: string[];
+  /** Active animes only: they decide who gets the button and whether the folder is shared. */
+  readonly activeAnimeIds: string[];
 }
 
 /** Totals and lists for the Settings card and the folder detail screen. */
 export interface FolderIndexSummary {
   readonly folderCount: number;
   readonly animesWithFolder: number;
-  /** Folders exactly one anime opens, in index order. */
+  /** Folders some anime uses and no two active animes share, in index order. */
   readonly matchedFolders: readonly ResolvedAnimeFolder[];
-  /** Folders more than one anime resolves to; none of those animes gets the button. */
+  /** Folders more than one active anime resolves to; none of those animes gets the button. */
   readonly sharedFolders: readonly IndexedFolder[];
   /** Folders no anime opens, leaving out folders inside or around a matched one. */
   readonly unmatchedFolders: readonly IndexedFolder[];

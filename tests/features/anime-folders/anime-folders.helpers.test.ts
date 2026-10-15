@@ -46,9 +46,14 @@ function indexOf(...relativePaths: string[]) {
   );
 }
 
-/** Anime source with only a PC folder. */
+/** Active anime source with only a PC folder. */
 function anime(id: string, carpeta: string | null, folderRelative: string | null = null): AnimeFolderSource {
-  return { id, carpeta, folderRelative };
+  return { id, carpeta, folderRelative, activo: 1 };
+}
+
+/** Inactive (soft-deleted) anime source: still a row on mobile, but no card in the list. */
+function inactiveAnime(id: string, carpeta: string): AnimeFolderSource {
+  return { id, carpeta, folderRelative: null, activo: 0 };
 }
 
 describe('SAF uri helpers', () => {
@@ -239,5 +244,42 @@ describe('getOpenablePageUrl', () => {
     expect(getOpenablePageUrl('ftp://example.com')).toBeNull();
     expect(getOpenablePageUrl('')).toBeNull();
     expect(getOpenablePageUrl(null)).toBeNull();
+  });
+
+  it('does not let an inactive anime take the folder of an active one', () => {
+    const index = indexOf('Bleach');
+
+    const { byAnimeId, summary } = resolveAnimeFolders(index, [
+      inactiveAnime('old', 'E:/Old/Bleach'),
+      anime('a1', 'D:/Anime/Bleach'),
+    ]);
+
+    expect(byAnimeId.get('a1')?.folder.relativePath).toBe('Bleach');
+    expect(summary.sharedFolders).toEqual([]);
+    expect(summary.matchedFolders.map((match) => match.folder.name)).toEqual(['Bleach']);
+  });
+
+  it('counts a folder only an inactive anime uses as having anime, without a button', () => {
+    const index = indexOf('Bleach', 'Haruhi BD');
+
+    const { byAnimeId, summary } = resolveAnimeFolders(index, [inactiveAnime('old', 'E:/Old/Bleach')]);
+
+    expect(byAnimeId.size).toBe(0);
+    expect(summary.matchedFolders.map((match) => match.folder.name)).toEqual(['Bleach']);
+    expect(summary.unmatchedFolders.map((folder) => folder.name)).toEqual(['Haruhi BD']);
+    expect(summary.animesWithFolder).toBe(0);
+  });
+
+  it('still shares a folder two active animes resolve to, whatever inactive ones do', () => {
+    const index = indexOf('Bleach');
+
+    const { byAnimeId, summary } = resolveAnimeFolders(index, [
+      anime('a1', 'D:/Anime/Bleach'),
+      anime('a2', 'E:/Old/Bleach'),
+      inactiveAnime('old', 'F:/Bleach'),
+    ]);
+
+    expect(byAnimeId.size).toBe(0);
+    expect(summary.sharedFolders.map((folder) => folder.name)).toEqual(['Bleach']);
   });
 });

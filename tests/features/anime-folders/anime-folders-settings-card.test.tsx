@@ -36,8 +36,8 @@ const RESOLUTION: FolderResolution = resolveAnimeFolders(
     })),
   ),
   [
-    { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: null },
-    { id: 'a2', carpeta: 'D:/Anime/Dandadan', folderRelative: null },
+    { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: null, activo: 1 },
+    { id: 'a2', carpeta: 'D:/Anime/Dandadan', folderRelative: null, activo: 1 },
   ],
 );
 

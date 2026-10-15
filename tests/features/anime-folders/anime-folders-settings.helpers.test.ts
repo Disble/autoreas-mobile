@@ -17,10 +17,10 @@ function deviceSummary() {
     ),
   );
   const animes: AnimeFolderSource[] = [
-    { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: 'Anime/Bleach' },
-    { id: 'a2', carpeta: 'D:/One Pace - Reverie/One Pace - Wano', folderRelative: null },
-    { id: 'a3', carpeta: 'D:/Anime/Date a Live', folderRelative: null },
-    { id: 'a4', carpeta: 'E:/Old/Date a Live', folderRelative: null },
+    { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: 'Anime/Bleach', activo: 1 },
+    { id: 'a2', carpeta: 'D:/One Pace - Reverie/One Pace - Wano', folderRelative: null, activo: 1 },
+    { id: 'a3', carpeta: 'D:/Anime/Date a Live', folderRelative: null, activo: 1 },
+    { id: 'a4', carpeta: 'E:/Old/Date a Live', folderRelative: null, activo: 1 },
   ];
 
   return resolveAnimeFolders(index, animes).summary;

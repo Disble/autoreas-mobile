@@ -241,8 +241,10 @@ function claimFolders(index: FolderIndex, animes: readonly AnimeFolderSource[]):
   for (const source of animes) {
     const resolved = resolveOne(index, source);
     if (resolved) {
-      const claim = claims.get(resolved.folder.relativePath) ?? { resolved, animeIds: [] };
-      claim.animeIds.push(source.id);
+      const claim = claims.get(resolved.folder.relativePath) ?? { resolved, activeAnimeIds: [] };
+      if (source.activo === 1) {
+        claim.activeAnimeIds.push(source.id);
+      }
       claims.set(resolved.folder.relativePath, claim);
     }
   }
@@ -255,15 +257,19 @@ function summarizeClaims(index: FolderIndex, claims: ReadonlyMap<string, FolderC
   const matchedFolders: ResolvedAnimeFolder[] = [];
   const sharedFolders: IndexedFolder[] = [];
   const candidates: IndexedFolder[] = [];
+  let animesWithFolder = 0;
 
   for (const folder of index.folders) {
     const claim = claims.get(folder.relativePath);
     if (!claim) {
       candidates.push(folder);
-    } else if (claim.animeIds.length === 1) {
-      matchedFolders.push(claim.resolved);
-    } else {
+    } else if (claim.activeAnimeIds.length > 1) {
       sharedFolders.push(folder);
+    } else {
+      matchedFolders.push(claim.resolved);
+      if (claim.activeAnimeIds.length === 1) {
+        animesWithFolder += 1;
+      }
     }
   }
 
@@ -281,7 +287,7 @@ function summarizeClaims(index: FolderIndex, claims: ReadonlyMap<string, FolderC
 
   return {
     folderCount: index.folders.length,
-    animesWithFolder: matchedFolders.length,
+    animesWithFolder,
     matchedFolders,
     sharedFolders,
     unmatchedFolders,
@@ -289,8 +295,10 @@ function summarizeClaims(index: FolderIndex, claims: ReadonlyMap<string, FolderC
 }
 
 /**
- * Resolves every anime against the index and summarizes the result. A folder more than one anime
- * resolves to gives none of them the button, so the user can tell them apart on the PC.
+ * Resolves every anime against the index and summarizes the result. A folder more than one active
+ * anime resolves to gives none of them the button, so the user can tell them apart on the PC. An
+ * inactive anime still marks its folder as used, so it is not listed as without anime, but it never
+ * makes a folder shared nor gets a button: it has no card.
  */
 export function resolveAnimeFolders(
   index: FolderIndex,
@@ -299,9 +307,9 @@ export function resolveAnimeFolders(
   const claims = claimFolders(index, animes);
   const byAnimeId = new Map<string, ResolvedAnimeFolder>();
 
-  for (const { resolved, animeIds } of claims.values()) {
-    if (animeIds.length === 1) {
-      byAnimeId.set(animeIds[0], resolved);
+  for (const { resolved, activeAnimeIds } of claims.values()) {
+    if (activeAnimeIds.length === 1) {
+      byAnimeId.set(activeAnimeIds[0], resolved);
     }
   }
 

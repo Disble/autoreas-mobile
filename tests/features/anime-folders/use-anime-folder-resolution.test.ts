@@ -36,8 +36,8 @@ function givenIndex(index: AnimeFoldersView['index']) {
 beforeEach(() => {
   jest.mocked(nativeRuntime.useOptionalLiveQuery).mockReturnValue({
     data: [
-      { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: null },
-      { id: 'a2', carpeta: 'D:/Anime/Naruto', folderRelative: null },
+      { id: 'a1', carpeta: 'D:/Anime/Bleach', folderRelative: null, activo: 1 },
+      { id: 'a2', carpeta: 'D:/Anime/Naruto', folderRelative: null, activo: 1 },
     ],
     status: 'loaded',
   });

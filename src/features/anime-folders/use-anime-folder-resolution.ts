@@ -11,11 +11,10 @@ import type { AnimeFolderSource, FolderResolution } from './anime-folders.types'
 import { useAnimeFolders } from './use-anime-folders';
 
 /**
- * Resolves the folder of every stored anime, active or not, against the shared folder index. The
- * card buttons and the Settings summary read this one result, so a folder two animes share opens
- * for neither on the card and is listed as shared in the detail, whichever day or tab is on screen.
- * The device baseline (22 animes with folder, 1 folder without anime) was measured over all
- * animes. `null` until an index exists.
+ * Resolves the folder of every stored anime against the shared folder index. Inactive animes are
+ * included so the folders they use are not listed as without anime, but only active animes get a
+ * button or make a folder shared (see `resolveAnimeFolders`). The card buttons and the Settings
+ * summary read this one result, whichever day or tab is on screen. `null` until an index exists.
  */
 export function useAnimeFolderResolution(): FolderResolution | null {
   // 1. Refs
@@ -32,7 +31,12 @@ export function useAnimeFolderResolution(): FolderResolution | null {
     () =>
       db
         ? db
-            .select({ id: animes._id, carpeta: animes.carpeta, folderRelative: animes.folderRelative })
+            .select({
+              id: animes._id,
+              carpeta: animes.carpeta,
+              folderRelative: animes.folderRelative,
+              activo: animes.activo,
+            })
             .from(animes)
         : null,
     [db],
