@@ -88,6 +88,42 @@ function sentAnimeIds(fakeBridge: FakeBridge, index: number): string[] {
   return body.pending_operations.map((operation) => operation.anime_id);
 }
 
+/** Queues one more `pending` outbox row, for `animeId`, behind the rows already there. */
+async function queueRow(adapter: SQLiteDatabase, animeId: string, createdAt: number): Promise<void> {
+  await adapter.runAsync(
+    'INSERT OR IGNORE INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez) VALUES (?, ?, ?, ?, ?, ?)',
+    animeId,
+    'Test Anime',
+    0,
+    4,
+    1,
+    1,
+  );
+  await adapter.runAsync(
+    'INSERT INTO operation_log (anime_id, operation, payload, status, created_at) VALUES (?, ?, ?, ?, ?)',
+    animeId,
+    'update',
+    JSON.stringify({ episodesWatched: 5 }),
+    'pending',
+    createdAt,
+  );
+}
+
+/** Reads every outbox row back with its claim columns and attempt count, by id. */
+function readRows(adapter: SQLiteDatabase) {
+  return adapter.getAllAsync<StoredClaimRow & { id: number; conflict_attempt_count: number }>(
+    'SELECT id, status, claim_owner, claimed_at, conflict_attempt_count FROM operation_log ORDER BY id',
+  );
+}
+
+/** Lets the other runtime take the `anime-2` row over, as after this runtime's claim expired. */
+function takeOverAnime2(adapter: SQLiteDatabase, claimedAt: number) {
+  return adapter.runAsync(
+    "UPDATE operation_log SET claim_owner = 'native', claimed_at = ? WHERE anime_id = 'anime-2'",
+    claimedAt,
+  );
+}
+
 /** A 202 that confirms the `anime-1` update. */
 const CONFIRMING_RESPONSE = {
   status: 202,
@@ -212,6 +248,92 @@ describe('per-key outbox claims between the two runtimes (ADR 009 R-13)', () => 
       status: 'pending',
       claim_owner: null,
       claimed_at: null,
+    });
+  });
+
+  // Regression tests from the T4 independent verification (probes P1-P4).
+
+  it('still sends every other key while one key is held by the other runtime', async () => {
+    const adapter = await openDatabaseWithRow({
+      status: 'processing',
+      claim_owner: 'native',
+      claimed_at: Date.now() - 10_000,
+    });
+    await queueRow(adapter, 'anime-2', 1_700_000_000_005);
+    fakeBridge.queueResponse({
+      status: 202,
+      body: buildReconcileResponseBody({ appliedOperations: [], lastChangelogId: 1 }),
+    });
+
+    await syncPendingOperations(adapter);
+
+    expect(sentAnimeIds(fakeBridge, 0)).toEqual(['anime-2']);
+  });
+
+  it('never sends a newer row of a key the other runtime holds', async () => {
+    const adapter = await openDatabaseWithRow({
+      status: 'processing',
+      claim_owner: 'native',
+      claimed_at: Date.now() - 10_000,
+    });
+    await queueRow(adapter, 'anime-1', 1_700_000_000_005);
+    fakeBridge.queueResponse({
+      status: 202,
+      body: buildReconcileResponseBody({ appliedOperations: [], lastChangelogId: 1 }),
+    });
+
+    await syncPendingOperations(adapter);
+
+    expect(sentAnimeIds(fakeBridge, 0)).toEqual([]);
+    expect((await readRows(adapter))[1]).toEqual(
+      expect.objectContaining({ id: 2, status: 'pending', claim_owner: null, claimed_at: null }),
+    );
+  });
+
+  it('dead-letters only the rows it still holds when the bridge rejects the batch', async () => {
+    const adapter = await openDatabaseWithRow({ status: 'pending', claim_owner: null, claimed_at: null });
+    await queueRow(adapter, 'anime-2', 1_700_000_000_005);
+    const held = fakeBridge.queueDeferredResponse();
+    const cycle = syncPendingOperations(adapter);
+    await waitForRequestCount(fakeBridge, 1);
+
+    const takenOverAt = Date.now();
+    await takeOverAnime2(adapter, takenOverAt);
+    held.release({ status: 400, body: { error: 'bad batch' } });
+    await expect(cycle).rejects.toThrow();
+
+    expect(await readRows(adapter)).toEqual([
+      expect.objectContaining({ id: 1, status: 'dead_letter', claim_owner: null, claimed_at: null }),
+      expect.objectContaining({ id: 2, status: 'processing', claim_owner: 'native', claimed_at: takenOverAt }),
+    ]);
+  });
+
+  it('leaves a taken-over row untouched by a conflict for it: status, claim and count', async () => {
+    const adapter = await openDatabaseWithRow({ status: 'pending', claim_owner: null, claimed_at: null });
+    await queueRow(adapter, 'anime-2', 1_700_000_000_005);
+    const held = fakeBridge.queueDeferredResponse();
+    const cycle = syncPendingOperations(adapter);
+    await waitForRequestCount(fakeBridge, 1);
+
+    const takenOverAt = Date.now();
+    await takeOverAnime2(adapter, takenOverAt);
+    held.release({
+      status: 202,
+      body: buildReconcileResponseBody({
+        appliedOperations: [
+          buildAppliedOperation({ anime_id: 'anime-2', operation: 'update', applied: false, reason: 'conflict', modified_at: 999 }),
+        ],
+        lastChangelogId: 1,
+      }),
+    });
+    await cycle;
+
+    expect((await readRows(adapter))[1]).toEqual({
+      id: 2,
+      status: 'processing',
+      claim_owner: 'native',
+      claimed_at: takenOverAt,
+      conflict_attempt_count: 0,
     });
   });
 });

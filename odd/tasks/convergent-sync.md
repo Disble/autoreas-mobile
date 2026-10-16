@@ -105,7 +105,7 @@ High-risk tasks get an independent verifier after their own checks.
 | T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | done | 751d3f1 |
 | T4 | S2 | inline + verifier | 4 (concurrency) | done | 3a040d3 |
 | T5 | S3 | inline | 3 | done | 7ad484c |
-| T6 | S4 | inline + verifier | 4 | in progress (JS done, Kotlin next) | (see L11) |
+| T6 | S4 | inline + verifier | 4 | verifying | b48ddca + (see L12) |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
 | T8 | S6 | inline | 4 | pending | |
 | T9 | S7 | inline + verifier | 1 | pending | |
@@ -167,4 +167,11 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - Rows behind a given-up row are held: the claimed backlog skips every anime with a `dead_letter` or `conflict_exhausted` row. Existing dead-lettered animes are held too until R-16(b) resolves them or retention prunes the row.
   - T4 verifier advisory 1 closed for JS: response tokens are written only for keys still held, re-read inside the write door.
   - RED: 4 of 6 in `outbox-chain.behaviour.test.ts`; GREEN 6/6; mutation: removing the 20 s check or the given-up exclusion each fails its test. Unit tests: 3 mocks now return the write door's result, and the token write-back tests send the operation they confirm. JS suites 1131/1131.
-- **Next:** T6 Kotlin (same chain in `SyncEngineCycle`, plus the token guard; move code out, the file is at 504 lines), the T4 verifier probes as regression tests, then the T6 verifier.
+- **L12 (T6, Kotlin + T4 probes):** the `:sync` cycle chains the same way.
+  - `runCycle` loops rounds; the response transaction claims the next row of every key it confirmed (`claimChainSuccessors` in `OutboxClaim.kt`), unless the injectable `clock` is past claim time + `OUTBOX_CHAIN_BUDGET_MS`. Each round sends the previous round's cursor; a failed round reverts only its own rows and the outcome reports the rounds already synced.
+  - The backlog query skips keys with a given-up row, like JS. The applier writes tokens only for keys still held and returns only confirmations of held rows, so a key taken over mid-request is neither counted nor chained (found by the takeover test: a second round had sent the next row).
+  - `HeldRowWriter.kt` (new) holds the claim-guarded status writes and the held re-read; `readAnimeBridgeTokens` moved to `OutboxClaim.kt`. `SyncEngineCycle.kt` back to 455 lines (was 504 since T5, over the 500 limit).
+  - Kover CORE now also gates `HeldRowWriter`, `OutboxClaimKt`, `OutboxClaim`, `ReconcileConflictKt` and `RejectedOperationOutcome` (they had left the gated cycle in T4/T5 ungated). Kotlin gate green.
+  - Tests: `SyncEngineChainTest` (6, mirroring the JS file) and 2 applier token-guard cases, written after the code; mutation instead of RED: removing the 20 s check, the given-up exclusion, or the held filter fails exactly its test.
+  - T4 verifier probes committed as regression tests: P1-P4 in `outbox-claims.behaviour.test.ts`; Kotlin "newer row of a held key" in `SyncEngineOutboxClaimTest`. P6/P6b/P8 were already covered by existing cases; P5 (seasons) by `season-rating-claims`.
+- **Next:** independent T6 verifier (concurrency, high risk); then T7.

@@ -65,6 +65,8 @@ class SyncEngineCycle(
   private val appDb: SQLiteDatabase,
   private val journal: SyncEngineJournal,
   private val diagnostics: SyncEngineDiagnosticsCourier = SyncEngineDiagnosticsCourier.forAppDatabase(appDb),
+  /** Epoch-ms clock for the claim time and the chain budget; tests advance it. */
+  private val clock: () -> Long = System::currentTimeMillis,
 ) {
   private val lease = SyncCycleLease(appDb)
 
@@ -72,8 +74,13 @@ class SyncEngineCycle(
    * Shared response-apply step: the claimed path and the pull-only empty path both stage the
    * parsed response through it, so the two paths cannot drift.
    */
-  private val responseApplier =
-    SyncEngineResponseApplier(appDb, this::updateOperationStatus, this::writeConflictOutcome)
+  private val heldRows = HeldRowWriter(appDb, { requireOwned() }, { claim })
+  private val responseApplier = SyncEngineResponseApplier(
+    appDb,
+    heldRows::updateOperationStatus,
+    heldRows::writeConflictOutcome,
+    heldRows::heldOperationIds,
+  )
   private var cycleId: String = ""
   private var lastState: String = "idle"
   private var claimedRows: List<BacklogRow> = emptyList()
@@ -89,7 +96,7 @@ class SyncEngineCycle(
   /**
    * The owner/fence pair this attempt writes under, set by a successful claim and cleared when
    * a fenced write proves the lease was reclaimed. Every destructive or monotonic write below is
-   * guarded by it -- see [requireOwned] and [updateOperationStatus].
+   * guarded by it -- see [requireOwned] and [HeldRowWriter].
    */
   private var leaseFence: LeaseFence? = null
 
@@ -201,81 +208,99 @@ class SyncEngineCycle(
     // send's re-check (R-13), immediately before the request.
     val (cycleClaim, backlog) = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, fence)
-      val taken = OutboxClaim(NATIVE_OUTBOX_CLAIM_OWNER, System.currentTimeMillis())
+      val taken = OutboxClaim(NATIVE_OUTBOX_CLAIM_OWNER, clock())
       taken to claimOperationLogBacklog(appDb, taken, BACKLOG_BATCH_LIMIT)
     }
     claim = cycleClaim
-    val backlogReadCount = backlog.size
 
     if (backlog.isEmpty()) {
       // Nothing to claim, but the attempt must still PULL: the JS no-op attempt always issues
       // the reconcile request, so remote changes reach the device even with nothing to push.
-      return runPullOnlyAttempt(config, deviceId, ip, port, token, triggerSource, backlogReadCount)
+      return runPullOnlyAttempt(config, deviceId, ip, port, token, triggerSource, 0)
     }
 
     transition("claimed", null)
-    claimedRows = backlog
-
-    val lastChangelogId = getLastChangelogId(config.lastChangelogId)
-    val tokensByAnimeId = readAnimeBridgeTokens(backlog.map { it.animeId })
-    val requestBody = ReconcileRequestBody.build(
-      deviceId = deviceId,
-      lastChangelogId = lastChangelogId,
-      rows = backlog,
-      tokensByAnimeId = tokensByAnimeId,
-      cycleId = cycleId,
-      triggerSource = triggerSource,
-    )
-
-    // Intent before effect, THEN the request (step 6).
-    transition("sent", null)
-    val response = try {
-      SyncEngineHttp.postJson(
-        url = "http://$ip:$port/api/sync/reconcile",
-        token = token,
-        body = requestBody.toString(),
-        timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
+    // The chain (ADR 009 R-14): each round sends the held rows, waits for their confirmation and
+    // tokens, and the transaction that applies the response claims the next row of every key it
+    // confirmed. A rejected key claims nothing; a failed round ends the chain; past the budget no
+    // successor is claimed. Earlier rounds stay committed whatever a later round does.
+    val chainDeadline = cycleClaim.claimedAt + OUTBOX_CHAIN_BUDGET_MS
+    var round = backlog
+    var lastChangelogId = getLastChangelogId(config.lastChangelogId)
+    var syncedCount = 0
+    var backlogReadCount = 0
+    while (round.isNotEmpty()) {
+      claimedRows = round
+      backlogReadCount += round.size
+      val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId })
+      val requestBody = ReconcileRequestBody.build(
+        deviceId = deviceId,
+        lastChangelogId = lastChangelogId,
+        rows = round,
+        tokensByAnimeId = tokensByAnimeId,
+        cycleId = cycleId,
+        triggerSource = triggerSource,
       )
-    } catch (error: Throwable) {
-      // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
-      revertClaimedRows(deadLetter = false)
-      transition("failed", error.message ?: error.javaClass.simpleName)
-      return outcome("failed", lastState, 0, backlogReadCount, error.javaClass.simpleName)
-    }
 
-    if (response.code !in 200..299) {
-      // The bridge rejected this exchange: a 4xx means the batch's CONTENT was rejected, so
-      // those rows go to `dead_letter`; anything else goes back to `pending` for retry.
-      revertClaimedRows(deadLetter = response.code in 400..499)
-      transition("failed", "bridge responded ${response.code}")
-      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileHttpError")
-    }
+      // Intent before effect, THEN the request (step 6).
+      transition("sent", null)
+      val response = try {
+        SyncEngineHttp.postJson(
+          url = "http://$ip:$port/api/sync/reconcile",
+          token = token,
+          body = requestBody.toString(),
+          timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
+        )
+      } catch (error: Throwable) {
+        // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
+        revertClaimedRows(deadLetter = false)
+        transition("failed", error.message ?: error.javaClass.simpleName)
+        return outcome("failed", lastState, syncedCount, backlogReadCount, error.javaClass.simpleName)
+      }
 
-    val parsed = try {
-      ReconcileResponseParser.parse(response.body)
-    } catch (error: ReconcileParseException) {
-      // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
-      revertClaimedRows(deadLetter = false)
-      // `error.message` bare, not `?: "..."` (T3, sync-core-test-assurance): ReconcileParseException
-      // requires a non-null constructor message, so `.message` is never actually null here --
-      // only its declared `String?` type is; `transition`'s `reason` already accepts that.
-      transition("failed", error.message)
-      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
-    }
+      if (response.code !in 200..299) {
+        // The bridge rejected this exchange: a 4xx means the batch's CONTENT was rejected, so
+        // those rows go to `dead_letter`; anything else goes back to `pending` for retry.
+        revertClaimedRows(deadLetter = response.code in 400..499)
+        transition("failed", "bridge responded ${response.code}")
+        return outcome("failed", lastState, syncedCount, backlogReadCount, "ReconcileHttpError")
+      }
 
-    // Intent before effect, THEN every response write in ONE transaction (step 8). The fence
-    // check is the FIRST statement inside the transaction: the write lock pins the lease for the
-    // whole transaction (a reclaim is itself a write), so the cursor advance and status updates
-    // below cannot interleave with a reclaim. The staging inserts and the `animes` OCC token
-    // writes stay deliberately unfenced: staging is append-only staging of bridge responses
-    // (re-application under the merge boundary is idempotent), and the token is a keyed advisory
-    // OCC value whose stale write self-heals at the bridge as a conflict on the next operation.
-    transition("applied", null)
-    val syncedCount = inImmediateTransaction(appDb) {
-      requireLeaseOwnership(appDb, requireOwned())
-      ensureStagingTable()
-      responseApplier.apply(config.id, parsed, backlog, lastChangelogId, tokensByAnimeId)
+      val parsed = try {
+        ReconcileResponseParser.parse(response.body)
+      } catch (error: ReconcileParseException) {
+        // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
+        revertClaimedRows(deadLetter = false)
+        // `error.message` bare: ReconcileParseException requires a non-null message.
+        transition("failed", error.message)
+        return outcome("failed", lastState, syncedCount, backlogReadCount, "ReconcileParseException")
+      }
+
+      // Intent before effect, THEN every response write in ONE transaction (step 8). The fence
+      // check is the FIRST statement inside the transaction: the write lock pins the lease for the
+      // whole transaction (a reclaim is itself a write), so the cursor advance and status updates
+      // below cannot interleave with a reclaim. Staging stays unfenced (append-only, idempotent
+      // under the merge boundary); token writes are limited to keys this claim still holds.
+      transition("applied", null)
+      val roundRows = round
+      val roundCursor = lastChangelogId
+      val (confirmedIds, successors) = inImmediateTransaction(appDb) {
+        requireLeaseOwnership(appDb, requireOwned())
+        ensureStagingTable()
+        val confirmed = responseApplier.apply(config.id, parsed, roundRows, roundCursor, tokensByAnimeId)
+        val confirmedSet = confirmed.toSet()
+        val next = if (clock() >= chainDeadline) {
+          emptyList()
+        } else {
+          claimChainSuccessors(appDb, claim, roundRows.filter { it.id in confirmedSet }.map { it.animeId })
+        }
+        confirmed to next
+      }
+      syncedCount += confirmedIds.size
+      lastChangelogId = maxOf(lastChangelogId, parsed.lastChangelogId ?: lastChangelogId)
+      round = successors
     }
+    claimedRows = emptyList()
 
     // Prune failure must not fail the attempt (step 9), but lease loss during the prune must
     // abandon it: the pruner re-verifies ownership as the FIRST statement inside its own
@@ -359,7 +384,7 @@ class SyncEngineCycle(
     val syncedCount = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, requireOwned())
       ensureStagingTable()
-      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId, emptyMap())
+      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId, emptyMap()).size
     }
 
     // Prune failure must not fail the attempt (step 9); fence check inside the prune's own
@@ -400,7 +425,7 @@ class SyncEngineCycle(
     if (rows.isEmpty()) return
     try {
       inImmediateTransaction(appDb) {
-        updateOperationStatus(
+        heldRows.updateOperationStatus(
           rows.map { it.id },
           if (deadLetter) "dead_letter" else "pending",
         )
@@ -409,80 +434,6 @@ class SyncEngineCycle(
       // A revert failure must not replace the attempt's own terminal outcome; the lease's
       // expiry and the recovery sweep are the designed backstops.
       Log.w(TAG, "failed to revert claimed rows", error)
-    }
-  }
-
-  /**
-   * Reads the stored OCC token per anime, mirroring `readAnimeBridgeTokens`: an absent map
-   * entry means the row was not found; a present `null` entry means the row exists but no
-   * token is known yet — both read as "no known token" (`base` omitted) at the call site.
-   */
-  private fun readAnimeBridgeTokens(animeIds: List<String>): Map<String, Long?> {
-    if (animeIds.isEmpty()) return emptyMap()
-    val tokens = mutableMapOf<String, Long?>()
-    val placeholders = animeIds.joinToString(", ") { "?" }
-    appDb.rawQuery(
-      "SELECT _id, bridge_modified_at FROM animes WHERE _id IN ($placeholders)",
-      animeIds.toTypedArray(),
-    ).use { cursor ->
-      while (cursor.moveToNext()) {
-        tokens[cursor.getString(0)] = if (cursor.isNull(1)) null else cursor.getLong(1)
-      }
-    }
-    return tokens
-  }
-
-  /**
-   * Bulk status update over `operation_log` that releases the claim, FENCED twice:
-   * - on the lease: [requireLeaseOwnership] throws [LeaseLostException] when the lease no
-   *   longer names this attempt, so the caller's transaction rolls back and the attempt abandons;
-   * - on the claim (ADR 009 R-13): the statement is compare-and-set, so a row the JS runtime
-   *   confirmed or took over after this claim expired is never touched. Zero rows here is
-   *   therefore a lost KEY, not a lost lease, and is not an error.
-   * Covers the failure revert and the response applier's confirmation/dead-letter/pending
-   * passes. The response applier receives this as a bound reference, so the claimed path and
-   * the pull-only path share one writer implementation.
-   */
-  private fun updateOperationStatus(ids: List<Long>, status: String) {
-    val fence = requireOwned()
-    requireLeaseOwnership(appDb, fence)
-    val heldClaim = claim
-    val placeholders = ids.joinToString(", ") { "?" }
-    appDb.compileStatement(
-      "UPDATE operation_log SET status = ?, claim_owner = NULL, claimed_at = NULL " +
-        "WHERE id IN ($placeholders) AND status = 'processing' AND claim_owner = ? " +
-        "AND claimed_at = ? AND $LEASE_OWNERSHIP_GUARD_SQL",
-    ).run {
-      bindString(1, status)
-      ids.forEachIndexed { index, id -> bindLong(index + 2, id) }
-      bindString(ids.size + 2, heldClaim.owner)
-      bindLong(ids.size + 3, heldClaim.claimedAt)
-      bindString(ids.size + 4, fence.owner)
-      bindString(ids.size + 5, fence.fence)
-      executeUpdateDelete()
-    }
-  }
-
-  /**
-   * Writes one conflicted row's status and attempt count and releases the claim (ADR 009 R-15),
-   * fenced on the lease and compare-and-set on the claim exactly like [updateOperationStatus].
-   */
-  private fun writeConflictOutcome(id: Long, status: String, attemptCount: Long) {
-    val fence = requireOwned()
-    requireLeaseOwnership(appDb, fence)
-    appDb.compileStatement(
-      "UPDATE operation_log SET status = ?, conflict_attempt_count = ?, claim_owner = NULL, " +
-        "claimed_at = NULL WHERE id = ? AND status = 'processing' AND claim_owner = ? " +
-        "AND claimed_at = ? AND $LEASE_OWNERSHIP_GUARD_SQL",
-    ).run {
-      bindString(1, status)
-      bindLong(2, attemptCount)
-      bindLong(3, id)
-      bindString(4, claim.owner)
-      bindLong(5, claim.claimedAt)
-      bindString(6, fence.owner)
-      bindString(7, fence.fence)
-      executeUpdateDelete()
     }
   }
 

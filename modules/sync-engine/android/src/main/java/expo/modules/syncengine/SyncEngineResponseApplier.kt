@@ -25,9 +25,16 @@ internal class SyncEngineResponseApplier(
    * same claim-guarded implementation it uses for [updateOperationStatus].
    */
   private val writeConflictOutcome: (id: Long, status: String, attemptCount: Long) -> Unit,
+  /**
+   * The ids among the given ones the cycle's claim still holds, read inside the open
+   * transaction: a token is only written for a key still held (ADR 009 R-13).
+   */
+  private val heldOperationIds: (ids: List<Long>) -> Set<Long>,
 ) {
   /**
-   * Applies every write the response produced; returns the number of confirmed operations.
+   * Applies every write the response produced; returns the ids it confirmed that this claim
+   * still held, in backlog order, so the cycle chains only keys it still holds (ADR 009 R-14).
+   * A row the JS runtime took over mid-request is neither counted nor chained here.
    * [storedTokens] is each anime's token as sent in this attempt's request (its `base`): the
    * conflict rule compares the bridge's token against it.
    */
@@ -37,7 +44,7 @@ internal class SyncEngineResponseApplier(
     backlog: List<BacklogRow>,
     lastChangelogId: Long,
     storedTokens: Map<String, Long?>,
-  ): Int {
+  ): List<Long> {
     val normalizedChanges = parsed.bridgeChanges.map { WireAnimeMapper.normalize(it) }
     val createdAt = System.currentTimeMillis()
     for (change in normalizedChanges) {
@@ -56,9 +63,11 @@ internal class SyncEngineResponseApplier(
       }
     }
 
+    val heldIds = heldOperationIds(backlog.map { it.id })
+    val heldAnimeIds = backlog.filter { it.id in heldIds }.map { it.animeId }.toSet()
     val tokenByAnimeId = LinkedHashMap<String, Long>()
     for (entry in parsed.appliedOperations) {
-      if (entry.applied && entry.modifiedAt != null) {
+      if (entry.applied && entry.modifiedAt != null && entry.animeId in heldAnimeIds) {
         tokenByAnimeId[entry.animeId] = entry.modifiedAt
       }
     }
@@ -88,7 +97,7 @@ internal class SyncEngineResponseApplier(
         is RejectedOperationOutcome.DeadLetter -> deadLetterIds.add(row.id)
         is RejectedOperationOutcome.StaysPending -> pendingIds.add(row.id)
         is RejectedOperationOutcome.Conflict -> {
-          writeAnimeToken(row.animeId, outcome.bridgeModifiedAt)
+          if (row.id in heldIds) writeAnimeToken(row.animeId, outcome.bridgeModifiedAt)
           writeConflictOutcome(row.id, outcome.status, outcome.attemptCount)
         }
       }
@@ -111,7 +120,7 @@ internal class SyncEngineResponseApplier(
       }
     }
 
-    return confirmedIds.size
+    return confirmedIds.filter { it in heldIds }
   }
 
   /** Stores one bridge-authored OCC token on its anime row. */

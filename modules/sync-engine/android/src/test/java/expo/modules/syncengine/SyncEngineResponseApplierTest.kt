@@ -15,6 +15,7 @@ import org.robolectric.annotation.SQLiteMode
 class SyncEngineResponseApplierTest {
   private lateinit var database: SQLiteDatabase
   private val statusUpdates = mutableListOf<Pair<List<Long>, String>>()
+  private val takenOver = mutableSetOf<Long>()
 
   @Before
   fun setUp() {
@@ -46,7 +47,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun appliesConfirmationTokenAndNormalizedBridgeChange() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-b","operation":"update","applied":false,"reason":"unsupported_operation"}],"bridge_changes":[{"record_id":"remote-b","change_type":"update","changed_fields":["name","episodesWatched","unmapped"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":999}}],"last_changelog_id":16}""",
     )
@@ -55,7 +56,7 @@ class SyncEngineResponseApplierTest {
       applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
-    assertEquals(1, confirmed)
+    assertEquals(1, confirmed.size)
     assertEquals("synced", operationStatus(11))
     assertEquals("dead_letter", operationStatus(12))
     assertEquals("pending", operationStatus(13))
@@ -77,7 +78,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun writesZeroAppliedOperationTokenAsARealToken() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":0}]}""",
     )
@@ -86,14 +87,14 @@ class SyncEngineResponseApplierTest {
       applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
-    assertEquals(1, confirmed)
+    assertEquals(1, confirmed.size)
     assertEquals("synced", operationStatus(11))
     assertEquals(0L, animeToken("anime-a"))
   }
 
   @Test
   fun lastAppliedOperationTokenWinsForRepeatedAnime() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":52}]}""",
     )
@@ -102,14 +103,14 @@ class SyncEngineResponseApplierTest {
       applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
-    assertEquals(1, confirmed)
+    assertEquals(1, confirmed.size)
     assertEquals("synced", operationStatus(11))
     assertEquals(52L, animeToken("anime-a"))
   }
 
   @Test
   fun cursorDoesNotRegressAndAdvancesWhenResponseIsAhead() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
 
     inImmediateTransaction(database) {
       applier.apply(
@@ -136,7 +137,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun cursorNeverMovesBelowAValueTheOtherRuntimeStoredDuringTheRequest() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // JS confirmed changelog 20 while this cycle's request (read at 10) was in flight.
     database.execSQL("UPDATE bridge_config SET last_changelog_id = 20 WHERE id = 1")
 
@@ -162,6 +163,7 @@ class SyncEngineResponseApplierTest {
         if (status == "synced") error("status persistence failed")
       },
       ::writeConflictOutcome,
+      ::heldOperationIds,
     )
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["name"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":16}""",
@@ -181,7 +183,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun anAppliedOperationWithoutAModifiedAtWritesNoToken() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // applied=true but modified_at is ABSENT: the `entry.applied && entry.modifiedAt != null`
     // guard's second operand must short-circuit to false, never crash on the null token.
     val parsed = ReconcileResponseParser.parse(
@@ -197,8 +199,38 @@ class SyncEngineResponseApplierTest {
   }
 
   @Test
+  fun aConfirmationForAKeyTheJsRuntimeTookOverWritesNoToken() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
+    takenOver.add(11)
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
+    }
+
+    assertEquals(4L, animeToken("anime-a"))
+  }
+
+  @Test
+  fun aConflictForAKeyTheJsRuntimeTookOverWritesNoToken() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
+    takenOver.add(11)
+    val parsed = ReconcileResponseParser.parse(
+      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":false,"reason":"conflict","modified_at":47}]}""",
+    )
+
+    inImmediateTransaction(database) {
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = mapOf("anime-a" to 4L))
+    }
+
+    assertEquals(4L, animeToken("anime-a"))
+  }
+
+  @Test
   fun aRejectedOperationWithAnUnrecognizedReasonResetsToPendingNotDeadLetter() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // Only "unsupported_operation" dead-letters; every other rejection reason (even a known,
     // non-null one) resets to pending -- the deferred conflict-exhaustion policy.
     val parsed = ReconcileResponseParser.parse(
@@ -214,7 +246,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aRejectedOperationWithNoReasonAtAllResetsToPendingNotDeadLetter() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // rejected is non-null but its `reason` field itself is null (never set), not merely a
     // different string -- a distinct path through the `rejected?.reason == ...` comparison.
     val parsed = ReconcileResponseParser.parse(
@@ -230,7 +262,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aRejectedEntryForTheSameAnimeButADifferentOperationNeverMatchesResetsToPending() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // anime_id matches row 13 ("anime-c"), but the operation does not ("delete" vs the row's
     // "update"): the rejected-entry lookup's `it.operation == row.operation` conjunct must be
     // what excludes it, not the anime_id check alone.
@@ -247,7 +279,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aNonStringGenresElementRejectsTheResponseWithoutLeavingPartialWrites() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     // The wire→legacy mapping runs BEFORE the first staging insert, so a rejected genres element
     // aborts step 8's transaction with nothing written yet: no staged row, no OCC token move,
     // no cursor advance. Together with the cycle's own claimed-batch revert (`run()`'s catch),
@@ -270,7 +302,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aBridgeChangeWithNoSnapshotStagesANullSnapshotColumn() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
       """{"bridge_changes":[{"record_id":"remote-c","change_type":"delete","changed_fields":[],"timestamp":5}]}""",
     )
@@ -285,11 +317,14 @@ class SyncEngineResponseApplierTest {
   }
 
   /**
-   * No response here carries a conflict; the conflict writes are pinned end to end through the
-   * real cycle in [SyncEngineConflictRuleTest].
+   * The conflict writes are pinned end to end through the real cycle in
+   * [SyncEngineConflictRuleTest]; here only the token guard around them is under test.
    */
   @Suppress("UNUSED_PARAMETER")
   private fun writeConflictOutcome(id: Long, status: String, attemptCount: Long) = Unit
+
+  /** Every row is held unless a test lets the JS runtime take it over via [takenOver]. */
+  private fun heldOperationIds(ids: List<Long>): Set<Long> = ids.toSet() - takenOver
 
   private fun updateOperationStatus(ids: List<Long>, status: String) {
     statusUpdates.add(ids.toList() to status)

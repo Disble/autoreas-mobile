@@ -17,13 +17,22 @@ const val NATIVE_OUTBOX_CLAIM_OWNER = "native"
  */
 data class OutboxClaim(val owner: String, val claimedAt: Long)
 
+/**
+ * How long one cycle keeps chaining sends per key (ADR 009 R-14); mirrors
+ * `OUTBOX_CHAIN_BUDGET_MS`. Past it, no further row of a key is claimed.
+ */
+const val OUTBOX_CHAIN_BUDGET_MS = 20_000L
+
 /** A claim no row carries: compare-and-set writes under it match nothing. */
 val UNCLAIMED = OutboxClaim(owner = "", claimedAt = 0L)
 
 /** The epoch-ms floor above which a `claimed_at` is still live at [now]. */
 fun liveClaimFloor(now: Long): Long = now - OUTBOX_CLAIM_TTL_MS
 
-/** Mirrors `buildDedupedBacklogQuery` with the live-claim key exclusion (R-13). */
+/**
+ * Mirrors `buildDedupedBacklogQuery` with its key exclusion: a key with a live claim (R-13) or
+ * with a row that was given up (R-14: the rows behind it are held).
+ */
 private const val BACKLOG_QUERY =
   "SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (" +
     "  SELECT" +
@@ -39,7 +48,8 @@ private const val BACKLOG_QUERY =
     "    ) AS animeRank" +
     "  FROM operation_log" +
     "  WHERE status IN (?, ?)" +
-    "  AND anime_id NOT IN (SELECT anime_id FROM operation_log WHERE claimed_at > ?)" +
+    "  AND anime_id NOT IN (SELECT anime_id FROM operation_log" +
+    "    WHERE claimed_at > ? OR status IN ('dead_letter', 'conflict_exhausted'))" +
     ")" +
     "WHERE animeRank = 1" +
     " ORDER BY createdAt ASC, id ASC" +
@@ -74,7 +84,7 @@ fun claimOperationLogBacklog(
 }
 
 /** Answers the ids among [ids] that [heldClaim] still holds, exactly. */
-private fun readHeldOperationIds(appDb: SQLiteDatabase, ids: List<Long>, heldClaim: OutboxClaim): List<Long> {
+internal fun readHeldOperationIds(appDb: SQLiteDatabase, ids: List<Long>, heldClaim: OutboxClaim): List<Long> {
   if (ids.isEmpty()) return emptyList()
   val placeholders = ids.joinToString(", ") { "?" }
   val args = ids.map { it.toString() } + listOf(heldClaim.owner, heldClaim.claimedAt.toString())
@@ -87,16 +97,59 @@ private fun readHeldOperationIds(appDb: SQLiteDatabase, ids: List<Long>, heldCla
   }
 }
 
+/** Mirrors `claimChainSuccessors`' candidate read: each key's oldest queued row, when pending. */
+private const val SUCCESSOR_QUERY_PREFIX =
+  "SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (" +
+    "  SELECT id, anime_id AS animeId, operation, payload, status, claimed_at AS claimedAt," +
+    "    created_at AS createdAt, conflict_attempt_count AS conflictAttemptCount," +
+    "    ROW_NUMBER() OVER (PARTITION BY anime_id ORDER BY created_at ASC, id ASC) AS animeRank" +
+    "  FROM operation_log"
+
+/**
+ * Claims, under the SAME claim, the next row of every key in [animeIds] (ADR 009 R-14), inside
+ * the caller's open transaction -- the one that confirmed the previous row -- so the JS runtime
+ * cannot slip between two sends. Mirrors `claimChainSuccessors`: only a key's oldest queued row
+ * is a candidate, only while `pending` and unclaimed, and the update is compare-and-set on that.
+ */
+fun claimChainSuccessors(appDb: SQLiteDatabase, claim: OutboxClaim, animeIds: List<String>): List<BacklogRow> {
+  if (animeIds.isEmpty()) return emptyList()
+  val candidates = appDb.readBacklogRows(
+    SUCCESSOR_QUERY_PREFIX +
+      "  WHERE anime_id IN (${animeIds.joinToString(", ") { "?" }})" +
+      "  AND status IN ('pending', 'processing')" +
+      ") WHERE animeRank = 1 AND status = 'pending' AND claimedAt IS NULL" +
+      " ORDER BY createdAt ASC, id ASC",
+    animeIds.toTypedArray(),
+  )
+  if (candidates.isEmpty()) return candidates
+  appDb.compileStatement(
+    "UPDATE operation_log SET status = 'processing', claim_owner = ?, claimed_at = ? " +
+      "WHERE id IN (${candidates.joinToString(", ") { "?" }}) " +
+      "AND status = 'pending' AND claimed_at IS NULL",
+  ).run {
+    bindString(1, claim.owner)
+    bindLong(2, claim.claimedAt)
+    candidates.forEachIndexed { index, row -> bindLong(index + 3, row.id) }
+    executeUpdateDelete()
+  }
+  val held = readHeldOperationIds(appDb, candidates.map { it.id }, claim).toSet()
+  return candidates.filter { it.id in held }
+}
+
 /**
  * Reads the deduped backlog verbatim from `buildDedupedBacklogQuery`, skipping every key with
  * a claim above [claimFloor].
  */
-private fun readBacklog(appDb: SQLiteDatabase, claimFloor: Long, limit: Int): List<BacklogRow> {
-  val rows = mutableListOf<BacklogRow>()
-  appDb.rawQuery(
+private fun readBacklog(appDb: SQLiteDatabase, claimFloor: Long, limit: Int): List<BacklogRow> =
+  appDb.readBacklogRows(
     BACKLOG_QUERY,
     arrayOf("pending", "processing", claimFloor.toString(), limit.toString()),
-  ).use { cursor ->
+  )
+
+/** Maps a query answering [BacklogRow]'s seven columns, in order, to rows. */
+private fun SQLiteDatabase.readBacklogRows(query: String, args: Array<String>): List<BacklogRow> {
+  val rows = mutableListOf<BacklogRow>()
+  rawQuery(query, args).use { cursor ->
     while (cursor.moveToNext()) {
       rows.add(
         BacklogRow(
@@ -112,4 +165,23 @@ private fun readBacklog(appDb: SQLiteDatabase, claimFloor: Long, limit: Int): Li
     }
   }
   return rows
+}
+
+/**
+ * Reads the stored OCC token per anime, mirroring `readAnimeBridgeTokens`: an absent map entry
+ * means the row was not found; a present `null` entry means the row exists but no token is
+ * known yet -- both read as "no known token" (`base` omitted) at the call site. Callers never
+ * pass an empty [animeIds].
+ */
+internal fun readAnimeBridgeTokens(appDb: SQLiteDatabase, animeIds: List<String>): Map<String, Long?> {
+  val tokens = mutableMapOf<String, Long?>()
+  appDb.rawQuery(
+    "SELECT _id, bridge_modified_at FROM animes WHERE _id IN (${animeIds.joinToString(", ") { "?" }})",
+    animeIds.toTypedArray(),
+  ).use { cursor ->
+    while (cursor.moveToNext()) {
+      tokens[cursor.getString(0)] = if (cursor.isNull(1)) null else cursor.getLong(1)
+    }
+  }
+  return tokens
 }

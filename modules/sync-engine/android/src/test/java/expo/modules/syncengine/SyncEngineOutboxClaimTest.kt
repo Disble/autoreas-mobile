@@ -35,6 +35,23 @@ class SyncEngineOutboxClaimTest {
   }
 
   @Test
+  fun neverSendsANewerRowOfAKeyTheJsRuntimeHolds() {
+    SyncEngineTestDatabase().use { fixture ->
+      SyncEngineTestHttpServer(200, EMPTY_RESPONSE).use { server ->
+        insertCycleInput(fixture, server.port, ClaimRow("processing", "js", System.currentTimeMillis() - 10_000))
+        val newerRow = ClaimRow("pending", null, null)
+        insertRow(fixture, ROW_ID + 1, "anime-claim", newerRow)
+
+        SyncEngineCycle(fixture.appDatabase, fixture.journal).run("foreground", "cycle-claim-newer") {}
+
+        val sent = JSONObject(server.request.body).getJSONArray("pending_operations")
+        assertEquals(0, sent.length())
+        assertEquals(newerRow, readClaim(fixture, ROW_ID + 1))
+      }
+    }
+  }
+
+  @Test
   fun takesAKeyWhoseClaimExpiredAfterSixtySecondsAndReleasesItOnceConfirmed() {
     SyncEngineTestDatabase().use { fixture ->
       SyncEngineTestHttpServer(200, CONFIRMING_RESPONSE).use { server ->

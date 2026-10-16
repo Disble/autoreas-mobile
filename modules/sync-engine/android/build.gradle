@@ -143,6 +143,11 @@ def CORE_CLASSES = [
   'ReconcileConfirmation', 'ReconcileConfirmation$*',
   // SyncEngineResponseApplier.kt
   'SyncEngineResponseApplier', 'SyncEngineResponseApplier$*',
+  // HeldRowWriter.kt, OutboxClaim.kt, ReconcileConflict.kt (ADR 009 R-13..R-15: the claim, the
+  // chain and the conflict rule moved out of SyncEngineCycle, so they keep a CORE gate)
+  'HeldRowWriter', 'HeldRowWriter$*', 'OutboxClaimKt', 'OutboxClaimKt$*', 'OutboxClaim',
+  'OutboxClaim$*', 'ReconcileConflictKt', 'ReconcileConflictKt$*', 'RejectedOperationOutcome',
+  'RejectedOperationOutcome$*',
   // SyncCycleLease.kt
   'SyncCycleLease', 'SyncCycleLease$*', 'LeaseLostException', 'LeaseLostException$*',
   'LeaseFence', 'LeaseFence$*',
