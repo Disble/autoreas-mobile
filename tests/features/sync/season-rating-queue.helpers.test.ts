@@ -27,6 +27,13 @@ jest.mock('../../../src/infrastructure/api', () => {
   };
 });
 
+// The automatic-resolution SQL is pinned against real SQLite in
+// `tests/behaviour/sync/unresolved-auto-resolution.behaviour.test.ts`; here it resolves nothing.
+jest.mock('../../../src/features/sync/unresolved-supersede.helpers', () => ({
+  resolveSupersededRatings: jest.fn(async () => []),
+  logAutomaticResolutions: jest.fn(),
+}));
+
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   getBridgeConfigSnapshot: jest.fn(),
   withLocalWrite: jest.fn(),
@@ -105,6 +112,8 @@ describe('drainSeasonRatingQueue', () => {
 
     expect(rawDb.getAllAsync).toHaveBeenCalledWith(
       expect.stringContaining("WHERE status IN ('pending', 'syncing', 'failed')"),
+      'not_found',
+      'conflict',
     );
     expect(result.failure).toBe(unreachableError);
     expect(rawDb.runAsync).toHaveBeenLastCalledWith(
@@ -335,8 +344,13 @@ describe('drainSeasonRatingQueue', () => {
       shouldRefreshActiveSeason: true,
       failure: firstFailure,
     });
+    // The 409 is kept as an unresolved rating (ADR 009 R-16b), released from the claim.
     expect(rawDb.runAsync).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM season_rating_queue'),
+      expect.stringContaining('claim_owner = NULL'),
+      'failed',
+      1_752_100_200_000,
+      1_752_100_200_000,
+      'conflict',
       10,
       'js',
       1_752_100_200_000,
@@ -347,7 +361,7 @@ describe('drainSeasonRatingQueue', () => {
     [404, 'not_found'],
     [409, 'conflict'],
   ])(
-    'deletes a terminal %s rating but returns reachable %s failure truth',
+    'keeps a terminal %s rating as unresolved and returns reachable %s failure truth',
     async (status, failureKind) => {
       (bridgeClient.postActiveSeasonRating as jest.Mock).mockResolvedValue({
         ok: false,
@@ -362,7 +376,11 @@ describe('drainSeasonRatingQueue', () => {
       });
 
       expect(rawDb.runAsync).toHaveBeenLastCalledWith(
-        expect.stringContaining('DELETE FROM season_rating_queue'),
+        expect.stringContaining('claim_owner = NULL'),
+        'failed',
+        1_752_100_200_000,
+        1_752_100_200_000,
+        failureKind,
         9,
         'js',
         1_752_100_200_000,

@@ -8,6 +8,8 @@ import { liveClaimFloor } from './outbox-claim.helpers';
 import type { OutboxClaim } from './outbox-claim.types';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
+import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
+import { logAutomaticResolutions, resolveSupersededRatings } from './unresolved-supersede.helpers';
 import type {
   CreateSeasonRatingQueueEntryInput,
   DrainSeasonRatingQueueResult,
@@ -84,6 +86,8 @@ export function markSeasonRatingQueueEntrySyncing(
 /**
  * Classifies one season-rating delivery attempt into retryable, confirmed, or terminal semantics.
  * The branch table keeps season ratings independent from anime reconcile status handling.
+ * A 404 or 409 is kept as an unresolved rating (`failed` with its failure kind, ADR 009 R-16b),
+ * never dropped: the backlog skips it until its key is resolved.
  */
 export function resolveSeasonRatingDelivery(
   input: ResolveSeasonRatingDeliveryInput,
@@ -111,8 +115,8 @@ export function resolveSeasonRatingDelivery(
   if (input.status === 404) {
     return {
       state: 'failed',
-      nextQueueStatus: null,
-      shouldKeepEntry: false,
+      nextQueueStatus: 'failed',
+      shouldKeepEntry: true,
       shouldRetry: false,
       failureKind: 'not_found',
     };
@@ -121,8 +125,8 @@ export function resolveSeasonRatingDelivery(
   if (input.status === 409) {
     return {
       state: 'failed',
-      nextQueueStatus: null,
-      shouldKeepEntry: false,
+      nextQueueStatus: 'failed',
+      shouldKeepEntry: true,
       shouldRetry: false,
       failureKind: 'conflict',
     };
@@ -174,7 +178,7 @@ function mapQueueRow(row: Record<string, unknown>): SeasonRatingQueueEntry {
   };
 }
 
-/** Reads every non-terminal season-rating queue row, oldest first. */
+/** Reads every sendable season-rating queue row (unresolved ratings excluded), oldest first. */
 async function readSeasonRatingQueueBacklog(
   rawDb: SQLiteDatabase,
 ): Promise<SeasonRatingQueueEntry[]> {
@@ -193,8 +197,11 @@ async function readSeasonRatingQueueBacklog(
       '  last_failure_kind',
       'FROM season_rating_queue',
       "WHERE status IN ('pending', 'syncing', 'failed')",
+      // An unresolved rating (ADR 009 R-16b) is never sent again until its key is resolved.
+      `AND NOT (status = 'failed' AND last_failure_kind IN (${UNRESOLVED_RATING_FAILURE_KINDS.map(() => '?').join(', ')}))`,
       'ORDER BY created_at ASC, id ASC',
     ].join(' '),
+    ...UNRESOLVED_RATING_FAILURE_KINDS,
   );
 
   return rows.map(mapQueueRow);
@@ -265,7 +272,7 @@ async function updateSeasonRatingQueueEntry(
   );
 }
 
-/** Deletes one confirmed or terminally-dropped row, only while this claim still holds it. */
+/** Deletes one confirmed row, only while this claim still holds it. */
 async function deleteSeasonRatingQueueEntry(
   tx: SQLiteDatabase,
   entryId: number,
@@ -317,7 +324,7 @@ function shouldRefreshAfterSeasonRatingDelivery(
 
 /**
  * Drains durable season-rating intent through the bridge adapter while preserving pending-vs-confirmed truth.
- * Retryable failures remain queued, terminal responses drop stale intent, and only bridge-confirmed delivery clears the row.
+ * Retryable failures remain queued, a 404/409 stays as an unresolved rating, and only bridge-confirmed delivery clears the row.
  */
 export async function drainSeasonRatingQueue(
   rawDb: SQLiteDatabase,
@@ -363,15 +370,18 @@ export async function drainSeasonRatingQueue(
         queuedEntry,
       );
 
-    // A null `nextQueueStatus` is the drop signal: `resolveSeasonRatingDelivery` pairs it with
-    // `shouldKeepEntry: false` on every return. Branching on the status itself lets the type
+    // A null `nextQueueStatus` is the confirmation signal: `resolveSeasonRatingDelivery` pairs it
+    // with `shouldKeepEntry: false` only for a 204. Branching on the status itself lets the type
     // narrow, so the kept branch needs no cast and no unreachable guard.
     const { nextQueueStatus } = deliveryResolution;
 
     if (nextQueueStatus === null) {
-      await withLocalWrite(rawDb, async (_db, tx) => {
+      const resolutions = await withLocalWrite(rawDb, async (_db, tx) => {
         await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!, claim);
+        // The confirmed rating supersedes the given-up ratings of its key (ADR 009 R-16b).
+        return resolveSupersededRatings(tx, { ...queuedEntry, id: queuedEntry.id! });
       });
+      logAutomaticResolutions(resolutions);
     } else {
       await withLocalWrite(rawDb, async (_db, tx) => {
         await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, {

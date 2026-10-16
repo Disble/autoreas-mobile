@@ -25,7 +25,7 @@ class SyncEngineResponseApplierTest {
       "CREATE TABLE bridge_config (id INTEGER PRIMARY KEY, last_changelog_id INTEGER)",
     )
     database.execSQL(
-      "CREATE TABLE operation_log (id INTEGER PRIMARY KEY, status TEXT NOT NULL)",
+      "CREATE TABLE operation_log (id INTEGER PRIMARY KEY, anime_id TEXT, status TEXT NOT NULL, unresolved_reason TEXT)",
     )
     database.execSQL(PENDING_REMOTE_CHANGES_TABLE_SQL)
     database.execSQL("INSERT INTO bridge_config (id, last_changelog_id) VALUES (1, 10)")

@@ -115,7 +115,7 @@ describe('season rating survives the round trip to the bridge', () => {
     ]);
   });
 
-  it('drops the row on a terminal 404 rather than retrying it forever', async () => {
+  it('keeps a terminal 404 as an unresolved rating rather than retrying it forever (ADR 009 R-16b)', async () => {
     const adapter = await openPairedDatabase();
     await enqueueSeasonRatingIntent(adapter, {
       seasonId: 'season-1',
@@ -126,9 +126,13 @@ describe('season rating survives the round trip to the bridge', () => {
     fakeBridge.queueResponse({ status: 404, body: { error: 'not found' } });
 
     const result = await drainSeasonRatingQueue(adapter);
+    await drainSeasonRatingQueue(adapter);
 
     expect(result.deliveredCount).toBe(0);
-    expect(await readQueue(adapter)).toEqual([]);
+    expect(fakeBridge.requests).toHaveLength(1);
+    expect(await readQueue(adapter)).toEqual([
+      { anime_id: 'anime-gone', nota: 5, status: 'failed', last_failure_kind: 'not_found' },
+    ]);
   });
 
   it('does nothing at all when no bridge is paired', async () => {

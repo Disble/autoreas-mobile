@@ -35,6 +35,8 @@ import type {
 } from './reconcile.types';
 import { applyStagedAndIncomingRemoteChanges } from './remote-change-drain.helpers';
 import type { SyncCycleStage } from './sync-runtime-status.types';
+import type { ConfirmedOperation } from './unresolved-key.types';
+import { logAutomaticResolutions, resolveSupersededOperations } from './unresolved-supersede.helpers';
 
 /**
  * Separates the failures that retrying can never fix from the ones it can.
@@ -296,24 +298,25 @@ export async function sendReconcileRound(
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
     publishCheckpoint(checkpointRecorder, 'apply_write');
-    const { heldConfirmedCount, successors } = await withLocalWrite(rawDb, async (writeDb, tx) => {
+    const { heldConfirmedCount, successors, resolutions } = await withLocalWrite(rawDb, async (writeDb, tx) => {
       // Re-read inside the door: a key the other runtime took over mid-request is not ours to
       // write, not even its token (ADR 009 R-13); its status writes already miss by CAS.
       const stillHeld = new Set(
         await readHeldOperationIds(tx, pendingOps.map((operation) => operation.id), claim),
       );
       const heldAnimeIds = new Set<string>();
-      const confirmedAnimeIds: string[] = [];
+      const confirmedOperations: ConfirmedOperation[] = [];
 
       for (const operation of pendingOps) {
         if (stillHeld.has(operation.id)) {
           heldAnimeIds.add(operation.animeId);
 
           if (confirmedIdSet.has(operation.id)) {
-            confirmedAnimeIds.push(operation.animeId);
+            confirmedOperations.push({ id: operation.id, animeId: operation.animeId });
           }
         }
       }
+      const confirmedAnimeIds = confirmedOperations.map((operation) => operation.animeId);
 
       await applyReconcileResponseWrites(writeDb, {
         applyMode: context.applyMode,
@@ -329,6 +332,10 @@ export async function sendReconcileRound(
         claim,
       });
 
+      // A confirmed later edit supersedes the edits of its key given up before it (ADR 009 R-16b):
+      // resolved in this same transaction, logged only once it commits.
+      const resolutions = await resolveSupersededOperations(tx, confirmedOperations);
+
       // The chain (ADR 009 R-14): every key whose row was just confirmed keeps its claim on its
       // next row, in this same transaction, until the cycle's chain budget runs out.
       const next = Date.now() >= context.chainDeadline
@@ -337,8 +344,9 @@ export async function sendReconcileRound(
 
       // Only the confirmations this claim wrote count as synced here: a row the other runtime
       // took over mid-request is that runtime's to report (mirrors the Kotlin applier).
-      return { heldConfirmedCount: confirmedAnimeIds.length, successors: next };
+      return { heldConfirmedCount: confirmedAnimeIds.length, successors: next, resolutions };
     });
+    logAutomaticResolutions(resolutions);
 
     return {
       sentCount: pendingOps.length,

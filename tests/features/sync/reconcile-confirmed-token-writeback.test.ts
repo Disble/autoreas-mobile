@@ -41,6 +41,12 @@ jest.mock('../../../src/features/sync/missing-token.helpers', () => ({
   resolveMissingTokens: jest.fn(async (...args: unknown[]) => [...(args[3] as unknown[])]),
 }));
 
+// The automatic-resolution SQL is pinned against real SQLite in
+// `tests/behaviour/sync/unresolved-auto-resolution.behaviour.test.ts`; here it resolves nothing.
+jest.mock('../../../src/features/sync/unresolved-supersede.helpers', () => ({
+  resolveSupersededOperations: jest.fn(async () => []),
+  logAutomaticResolutions: jest.fn(),
+}));
 jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
   require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),

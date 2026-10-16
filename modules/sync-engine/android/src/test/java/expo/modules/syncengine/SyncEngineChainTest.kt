@@ -72,10 +72,8 @@ class SyncEngineChainTest {
         val requests = reconcileRequests(server)
         assertEquals(2, requests.size)
         assertEquals(listOf(7L, 7L), sentBases(server))
-        assertEquals(
-          listOf(RowState(1, "dead_letter", null, 0), RowState(2, "synced", null, 0)),
-          rows(fixture),
-        )
+        // The confirmed later row supersedes the given-up one, which is resolved (ADR 009 R-16b).
+        assertEquals(listOf(RowState(2, "synced", null, 0)), rows(fixture))
       }
     }
   }

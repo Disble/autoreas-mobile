@@ -86,7 +86,7 @@ describe('season rating queue entry helpers', () => {
     });
   });
 
-  it('classifies 204 as confirmed clear and 404/409 as terminal drops', () => {
+  it('classifies 204 as confirmed clear and 404/409 as kept unresolved ratings (ADR 009 R-16b)', () => {
     expect(resolveSeasonRatingDelivery({ status: 204 })).toEqual({
       state: 'confirmed',
       nextQueueStatus: null,
@@ -97,16 +97,16 @@ describe('season rating queue entry helpers', () => {
 
     expect(resolveSeasonRatingDelivery({ status: 404 })).toEqual({
       state: 'failed',
-      nextQueueStatus: null,
-      shouldKeepEntry: false,
+      nextQueueStatus: 'failed',
+      shouldKeepEntry: true,
       shouldRetry: false,
       failureKind: 'not_found',
     });
 
     expect(resolveSeasonRatingDelivery({ status: 409 })).toEqual({
       state: 'failed',
-      nextQueueStatus: null,
-      shouldKeepEntry: false,
+      nextQueueStatus: 'failed',
+      shouldKeepEntry: true,
       shouldRetry: false,
       failureKind: 'conflict',
     });

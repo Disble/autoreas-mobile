@@ -158,13 +158,19 @@ describe('chained sends per key (ADR 009 R-14)', () => {
     fakeBridge.queueResponse(respondWith({ applied: false, reason: 'unsupported_operation' }));
     fakeBridge.queueResponse(respondWith({ modified_at: 14 }));
 
+    jest.spyOn(console, 'info').mockImplementation(() => undefined);
+
     await syncPendingOperations(adapter);
+    expect(await readRows(adapter)).toEqual([
+      expect.objectContaining({ id: 1, status: 'dead_letter' }),
+      expect.objectContaining({ id: 2, ...UNCLAIMED_PENDING }),
+    ]);
     await syncPendingOperations(adapter);
 
     expect(fakeBridge.requests).toHaveLength(2);
     expect(sentOperations(fakeBridge, 1)).toEqual([expect.objectContaining({ anime_id: 'anime-1', base: 7 })]);
+    // The confirmed later row supersedes the given-up one, which is resolved (ADR 009 R-16b).
     expect(await readRows(adapter)).toEqual([
-      expect.objectContaining({ id: 1, status: 'dead_letter' }),
       expect.objectContaining({ id: 2, status: 'synced', claim_owner: null, claimed_at: null }),
     ]);
   });

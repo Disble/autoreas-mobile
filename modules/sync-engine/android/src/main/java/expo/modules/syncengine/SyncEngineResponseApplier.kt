@@ -106,6 +106,12 @@ internal class SyncEngineResponseApplier(
     if (deadLetterIds.isNotEmpty()) updateOperationStatus(deadLetterIds, "dead_letter")
     if (confirmedIds.isNotEmpty()) updateOperationStatus(confirmedIds, "synced")
     if (pendingIds.isNotEmpty()) updateOperationStatus(pendingIds, "pending")
+    // A confirmed later edit supersedes the edits of its key given up before it (ADR 009 R-16b),
+    // resolved in this same transaction, only for rows this claim still held.
+    UnresolvedResolution.resolveSupersededGivenUpRows(
+      appDb,
+      backlog.filter { it.id in confirmedIdSet && it.id in heldIds },
+    )
 
     val nextLastChangelogId = parsed.lastChangelogId ?: lastChangelogId
     if (nextLastChangelogId > lastChangelogId) {

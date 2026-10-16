@@ -29,6 +29,13 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () => ({
 }));
 
 // Fetch-first (ADR 009 R-3) has its own behaviour suite; here every held row passes through as sendable.
+// Every read of the mocked `rawDb` answers with the backlog, so the automatic-resolution SQL
+// (pinned against real SQLite in `tests/behaviour/sync/unresolved-auto-resolution.behaviour.test.ts`)
+// resolves nothing here.
+jest.mock('../../../src/features/sync/unresolved-supersede.helpers', () => ({
+  resolveSupersededOperations: jest.fn(async () => []),
+  logAutomaticResolutions: jest.fn(),
+}));
 jest.mock('../../../src/features/sync/missing-token.helpers', () => ({
   resolveMissingTokens: jest.fn(async (...args: unknown[]) => [...(args[3] as unknown[])]),
 }));

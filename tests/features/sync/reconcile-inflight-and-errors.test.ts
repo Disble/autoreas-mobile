@@ -55,7 +55,7 @@ const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Moc
  */
 const mockWithLocalWrite = dbClient.withLocalWrite as jest.Mock;
 /** What a round's response transaction answers when it confirmed nothing and claims no successor. */
-const NO_CHAIN_ROUND = { heldConfirmedCount: 0, successors: [] };
+const NO_CHAIN_ROUND = { heldConfirmedCount: 0, successors: [], resolutions: [] };
 /** Mocked bridge endpoint the suite drives per test. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
 /** Mocked backlog read; empty by default (the module mock's own default). */
