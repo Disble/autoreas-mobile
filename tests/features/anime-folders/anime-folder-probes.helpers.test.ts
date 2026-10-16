@@ -73,6 +73,12 @@ describe('findFolderProbes', () => {
     expect(probes).toEqual([]);
   });
 
+  it('skips an anime whose folder would sit below the deepest level the index walks', () => {
+    const probes = findFolderProbes(indexOf('A', 'A/B', 'A/B/C'), [anime('deep', 'A/B/C/D')]);
+
+    expect(probes).toEqual([]);
+  });
+
   it('skips an anime whose parent matches more than one indexed folder', () => {
     const probes = findFolderProbes(indexOf('A/Extras', 'B/Extras'), [anime('x', 'Extras/Movie')]);
 

@@ -346,7 +346,11 @@ function findExpectedFolder(
   for (let depth = segments.length - 1; depth >= 1; depth -= 1) {
     const parents = matchByPath(index, segments.slice(0, depth).join('/'));
     if (parents) {
-      return parents.length === 1
+      // A parent at the deepest walked level can hold the folder, but the walk would never index
+      // it: a hit there would re-walk the whole tree on every event and still find nothing.
+      const isParentWalkable =
+        parents.length === 1 && toSegments(parents[0].relativePath).length < ANIME_FOLDERS_MAX_DEPTH;
+      return isParentWalkable
         ? { parentRelativePath: parents[0].relativePath, expectedKey: toExactKey(segments[depth]) }
         : null;
     }
