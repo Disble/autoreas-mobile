@@ -46,13 +46,13 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun appliesConfirmationTokenAndNormalizedBridgeChange() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-b","operation":"update","applied":false,"reason":"unsupported_operation"}],"bridge_changes":[{"record_id":"remote-b","change_type":"update","changed_fields":["name","episodesWatched","unmapped"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":999}}],"last_changelog_id":16}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals(1, confirmed)
@@ -77,13 +77,13 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun writesZeroAppliedOperationTokenAsARealToken() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":0}]}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals(1, confirmed)
@@ -93,13 +93,13 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun lastAppliedOperationTokenWinsForRepeatedAnime() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":52}]}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals(1, confirmed)
@@ -109,7 +109,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun cursorDoesNotRegressAndAdvancesWhenResponseIsAhead() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
 
     inImmediateTransaction(database) {
       applier.apply(
@@ -117,6 +117,7 @@ class SyncEngineResponseApplierTest {
         ParsedReconcileResponse(emptyList(), emptyList(), lastChangelogId = 7),
         emptyList(),
         lastChangelogId = 10,
+        storedTokens = emptyMap(),
       )
     }
     assertEquals(10L, changelogCursor())
@@ -127,6 +128,7 @@ class SyncEngineResponseApplierTest {
         ParsedReconcileResponse(emptyList(), emptyList(), lastChangelogId = 14),
         emptyList(),
         lastChangelogId = 10,
+        storedTokens = emptyMap(),
       )
     }
     assertEquals(14L, changelogCursor())
@@ -134,7 +136,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun cursorNeverMovesBelowAValueTheOtherRuntimeStoredDuringTheRequest() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // JS confirmed changelog 20 while this cycle's request (read at 10) was in flight.
     database.execSQL("UPDATE bridge_config SET last_changelog_id = 20 WHERE id = 1")
 
@@ -144,6 +146,7 @@ class SyncEngineResponseApplierTest {
         ParsedReconcileResponse(emptyList(), emptyList(), lastChangelogId = 14),
         emptyList(),
         lastChangelogId = 10,
+        storedTokens = emptyMap(),
       )
     }
 
@@ -152,17 +155,21 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun failureInSuppliedStatusBoundaryRollsBackAllResponseWrites() {
-    val applier = SyncEngineResponseApplier(database) { ids, status ->
-      updateOperationStatus(ids, status)
-      if (status == "synced") error("status persistence failed")
-    }
+    val applier = SyncEngineResponseApplier(
+      database,
+      { ids, status ->
+        updateOperationStatus(ids, status)
+        if (status == "synced") error("status persistence failed")
+      },
+      ::writeConflictOutcome,
+    )
     val parsed = ReconcileResponseParser.parse(
       """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["name"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":16}""",
     )
 
     assertThrows(IllegalStateException::class.java) {
       inImmediateTransaction(database) {
-        applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+        applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
       }
     }
 
@@ -174,7 +181,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun anAppliedOperationWithoutAModifiedAtWritesNoToken() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // applied=true but modified_at is ABSENT: the `entry.applied && entry.modifiedAt != null`
     // guard's second operand must short-circuit to false, never crash on the null token.
     val parsed = ReconcileResponseParser.parse(
@@ -182,7 +189,7 @@ class SyncEngineResponseApplierTest {
     )
 
     inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     // The stored token (from setUp's own INSERT) is untouched -- no UPDATE was ever issued.
@@ -191,7 +198,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aRejectedOperationWithAnUnrecognizedReasonResetsToPendingNotDeadLetter() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // Only "unsupported_operation" dead-letters; every other rejection reason (even a known,
     // non-null one) resets to pending -- the deferred conflict-exhaustion policy.
     val parsed = ReconcileResponseParser.parse(
@@ -199,7 +206,7 @@ class SyncEngineResponseApplierTest {
     )
 
     inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals("pending", operationStatus(12))
@@ -207,7 +214,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aRejectedOperationWithNoReasonAtAllResetsToPendingNotDeadLetter() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // rejected is non-null but its `reason` field itself is null (never set), not merely a
     // different string -- a distinct path through the `rejected?.reason == ...` comparison.
     val parsed = ReconcileResponseParser.parse(
@@ -215,7 +222,7 @@ class SyncEngineResponseApplierTest {
     )
 
     inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals("pending", operationStatus(12))
@@ -223,7 +230,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aRejectedEntryForTheSameAnimeButADifferentOperationNeverMatchesResetsToPending() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // anime_id matches row 13 ("anime-c"), but the operation does not ("delete" vs the row's
     // "update"): the rejected-entry lookup's `it.operation == row.operation` conjunct must be
     // what excludes it, not the anime_id check alone.
@@ -232,7 +239,7 @@ class SyncEngineResponseApplierTest {
     )
 
     inImmediateTransaction(database) {
-      applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+      applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     assertEquals("pending", operationStatus(13))
@@ -240,7 +247,7 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aNonStringGenresElementRejectsTheResponseWithoutLeavingPartialWrites() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     // The wire→legacy mapping runs BEFORE the first staging insert, so a rejected genres element
     // aborts step 8's transaction with nothing written yet: no staged row, no OCC token move,
     // no cursor advance. Together with the cycle's own claimed-batch revert (`run()`'s catch),
@@ -251,7 +258,7 @@ class SyncEngineResponseApplierTest {
 
     assertThrows(ReconcileParseException::class.java) {
       inImmediateTransaction(database) {
-        applier.apply(1, parsed, backlog(), lastChangelogId = 10)
+        applier.apply(1, parsed, backlog(), lastChangelogId = 10, storedTokens = emptyMap())
       }
     }
 
@@ -263,19 +270,26 @@ class SyncEngineResponseApplierTest {
 
   @Test
   fun aBridgeChangeWithNoSnapshotStagesANullSnapshotColumn() {
-    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome)
     val parsed = ReconcileResponseParser.parse(
       """{"bridge_changes":[{"record_id":"remote-c","change_type":"delete","changed_fields":[],"timestamp":5}]}""",
     )
 
     inImmediateTransaction(database) {
-      applier.apply(1, parsed, emptyList(), lastChangelogId = 10)
+      applier.apply(1, parsed, emptyList(), lastChangelogId = 10, storedTokens = emptyMap())
     }
 
     val staged = stagedChanges().single()
     assertEquals("remote-c", staged.recordId)
     assertEquals(null, staged.snapshot)
   }
+
+  /**
+   * No response here carries a conflict; the conflict writes are pinned end to end through the
+   * real cycle in [SyncEngineConflictRuleTest].
+   */
+  @Suppress("UNUSED_PARAMETER")
+  private fun writeConflictOutcome(id: Long, status: String, attemptCount: Long) = Unit
 
   private fun updateOperationStatus(ids: List<Long>, status: String) {
     statusUpdates.add(ids.toList() to status)

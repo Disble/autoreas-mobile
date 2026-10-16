@@ -2,8 +2,6 @@ package expo.modules.syncengine
 
 import android.database.sqlite.SQLiteDatabase
 
-private const val UNSUPPORTED_OPERATION_REASON = "unsupported_operation"
-
 /**
  * Applies one parsed reconcile response, all inside the ONE transaction the caller opened
  * (step 8), in the exact order the JS `applyReconcileResponseWrites` uses: staging first (it
@@ -22,13 +20,23 @@ internal class SyncEngineResponseApplier(
   private val appDb: SQLiteDatabase,
   /** Bulk status update over `operation_log`; the owning cycle supplies its implementation. */
   private val updateOperationStatus: (ids: List<Long>, status: String) -> Unit,
+  /**
+   * One conflicted row's status and attempt count (ADR 009 R-15); the owning cycle supplies the
+   * same claim-guarded implementation it uses for [updateOperationStatus].
+   */
+  private val writeConflictOutcome: (id: Long, status: String, attemptCount: Long) -> Unit,
 ) {
-  /** Applies every write the response produced; returns the number of confirmed operations. */
+  /**
+   * Applies every write the response produced; returns the number of confirmed operations.
+   * [storedTokens] is each anime's token as sent in this attempt's request (its `base`): the
+   * conflict rule compares the bridge's token against it.
+   */
   fun apply(
     configId: Long,
     parsed: ParsedReconcileResponse,
     backlog: List<BacklogRow>,
     lastChangelogId: Long,
+    storedTokens: Map<String, Long?>,
   ): Int {
     val normalizedChanges = parsed.bridgeChanges.map { WireAnimeMapper.normalize(it) }
     val createdAt = System.currentTimeMillis()
@@ -55,20 +63,15 @@ internal class SyncEngineResponseApplier(
       }
     }
     for ((animeId, bridgeModifiedAt) in tokenByAnimeId) {
-      appDb.compileStatement(
-        "UPDATE animes SET bridge_modified_at = ? WHERE _id = ?",
-      ).apply {
-        bindLong(1, bridgeModifiedAt)
-        bindString(2, animeId)
-        executeUpdateDelete()
-      }
+      writeAnimeToken(animeId, bridgeModifiedAt)
     }
 
     val confirmedIds = ReconcileConfirmation.getConfirmedOperationIds(backlog, parsed)
     val confirmedIdSet = confirmedIds.toSet()
 
-    // Conflict-exhaustion policy is DEFERRED: only `unsupported_operation` reaches
-    // `dead_letter`; every other unconfirmed operation resets to `pending`.
+    // The conflict rule (ADR 009 R-15), shared with JS: `unsupported_operation` dead-letters, a
+    // conflict re-bases the anime on the bridge's token and counts the attempt, and anything else
+    // (no rejection, a conflict without a token, an unknown reason) goes back to `pending`.
     val deadLetterIds = mutableListOf<Long>()
     val pendingIds = mutableListOf<Long>()
     for (row in backlog) {
@@ -76,10 +79,18 @@ internal class SyncEngineResponseApplier(
       val rejected = parsed.appliedOperations.firstOrNull {
         it.animeId == row.animeId && it.operation == row.operation && !it.applied
       }
-      if (rejected?.reason == UNSUPPORTED_OPERATION_REASON) {
-        deadLetterIds.add(row.id)
+      val outcome = if (rejected == null) {
+        RejectedOperationOutcome.StaysPending
       } else {
-        pendingIds.add(row.id)
+        classifyRejectedOperation(rejected, storedTokens[row.animeId], row.conflictAttemptCount)
+      }
+      when (outcome) {
+        is RejectedOperationOutcome.DeadLetter -> deadLetterIds.add(row.id)
+        is RejectedOperationOutcome.StaysPending -> pendingIds.add(row.id)
+        is RejectedOperationOutcome.Conflict -> {
+          writeAnimeToken(row.animeId, outcome.bridgeModifiedAt)
+          writeConflictOutcome(row.id, outcome.status, outcome.attemptCount)
+        }
       }
     }
 
@@ -101,5 +112,16 @@ internal class SyncEngineResponseApplier(
     }
 
     return confirmedIds.size
+  }
+
+  /** Stores one bridge-authored OCC token on its anime row. */
+  private fun writeAnimeToken(animeId: String, bridgeModifiedAt: Long) {
+    appDb.compileStatement(
+      "UPDATE animes SET bridge_modified_at = ? WHERE _id = ?",
+    ).apply {
+      bindLong(1, bridgeModifiedAt)
+      bindString(2, animeId)
+      executeUpdateDelete()
+    }
   }
 }

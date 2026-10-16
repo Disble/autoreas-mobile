@@ -73,7 +73,7 @@ class SyncEngineCycle(
    * parsed response through it, so the two paths cannot drift.
    */
   private val responseApplier =
-    SyncEngineResponseApplier(appDb, this::updateOperationStatus)
+    SyncEngineResponseApplier(appDb, this::updateOperationStatus, this::writeConflictOutcome)
   private var cycleId: String = ""
   private var lastState: String = "idle"
   private var claimedRows: List<BacklogRow> = emptyList()
@@ -274,7 +274,7 @@ class SyncEngineCycle(
     val syncedCount = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, requireOwned())
       ensureStagingTable()
-      responseApplier.apply(config.id, parsed, backlog, lastChangelogId)
+      responseApplier.apply(config.id, parsed, backlog, lastChangelogId, tokensByAnimeId)
     }
 
     // Prune failure must not fail the attempt (step 9), but lease loss during the prune must
@@ -359,7 +359,7 @@ class SyncEngineCycle(
     val syncedCount = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, requireOwned())
       ensureStagingTable()
-      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId)
+      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId, emptyMap())
     }
 
     // Prune failure must not fail the attempt (step 9); fence check inside the prune's own
@@ -459,6 +459,29 @@ class SyncEngineCycle(
       bindLong(ids.size + 3, heldClaim.claimedAt)
       bindString(ids.size + 4, fence.owner)
       bindString(ids.size + 5, fence.fence)
+      executeUpdateDelete()
+    }
+  }
+
+  /**
+   * Writes one conflicted row's status and attempt count and releases the claim (ADR 009 R-15),
+   * fenced on the lease and compare-and-set on the claim exactly like [updateOperationStatus].
+   */
+  private fun writeConflictOutcome(id: Long, status: String, attemptCount: Long) {
+    val fence = requireOwned()
+    requireLeaseOwnership(appDb, fence)
+    appDb.compileStatement(
+      "UPDATE operation_log SET status = ?, conflict_attempt_count = ?, claim_owner = NULL, " +
+        "claimed_at = NULL WHERE id = ? AND status = 'processing' AND claim_owner = ? " +
+        "AND claimed_at = ? AND $LEASE_OWNERSHIP_GUARD_SQL",
+    ).run {
+      bindString(1, status)
+      bindLong(2, attemptCount)
+      bindLong(3, id)
+      bindString(4, claim.owner)
+      bindLong(5, claim.claimedAt)
+      bindString(6, fence.owner)
+      bindString(7, fence.fence)
       executeUpdateDelete()
     }
   }

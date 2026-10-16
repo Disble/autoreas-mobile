@@ -103,8 +103,8 @@ High-risk tasks get an independent verifier after their own checks.
 | T1 | S15 | inline | none (docs) | done | 36ee0d9 |
 | T2 | S1 | inline | 6 | done | fb2acab |
 | T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | done | 751d3f1 |
-| T4 | S2 | inline + verifier | 4 (concurrency) | verifying | (see L8) |
-| T5 | S3 | inline | 3 | pending | |
+| T4 | S2 | inline + verifier | 4 (concurrency) | verifying | 3a040d3 |
+| T5 | S3 | inline | 3 | done | (see L9) |
 | T6 | S4 | inline + verifier | 4 | pending | |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
 | T8 | S6 | inline | 4 | pending | |
@@ -150,4 +150,10 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - GREEN: JS behaviour + sync + infrastructure 1125/1125; Kotlin 325/325. Mock-heavy reconcile unit tests use the pass-through `tests/support/outbox-claim-mock.helpers.ts`; the claim SQL is pinned against real SQLite only.
   - `SyncEngineCycle.kt` shrank from 513 lines (claim SQL moved out to `OutboxClaim.kt`).
   - Kotlin's pre-send re-check is the claim's read-back inside the same transaction, right before the single send. A second read after commit added only unreachable branches and broke the Kover CORE branch floor (83.9% < 87%). Per-send re-checks inside a chain land with T6. Unclaimed state is `UNCLAIMED` (matches no row) instead of a nullable claim.
-- **Next:** gate and commit T4, then the independent verifier (high risk: concurrency).
+  - Commit `3a040d3`; the gate was green after fixing lint (unused import, single-pass loop), typecheck (mock type), fallow (support file reached only through `jest.requireActual`, switched to `require`) and Kover.
+- **L9 (T5):** the conflict rule in Kotlin, mirroring JS `classifyRejectedOperation`.
+  - `ReconcileConflict.kt` classifies a rejected entry: `unsupported_operation` dead-letters; a conflict with a token re-bases (the anime gets the bridge token), resets the count to 0 when the token differs from the `base` this attempt sent, otherwise increments it, and the third non-advancing conflict becomes `conflict_exhausted`; a conflict without a token or an unknown reason goes back to `pending` (never guessed).
+  - The applier now receives the sent tokens (`storedTokens`) and a claim-guarded `writeConflictOutcome` (status + `conflict_attempt_count`, compare-and-set like every other status write since T4).
+  - JS already implemented the rule (`reconcile-conflict.helpers.ts`, pinned by `reconcile-conflict*.test.ts`); its conflict write became compare-and-set in T4.
+  - RED: `SyncEngineConflictRuleTest` 4 of 6 (the 2 passing are regression guards: token missing, unsupported). GREEN: Kotlin gate green, including Kover CORE 100% branch on the applier (an `?.let ?:` with an unreachable null branch was rewritten as an `if`).
+- **Next:** T4 verifier still running; then T6 (S4, R-14 chaining).
