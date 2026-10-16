@@ -19,11 +19,6 @@ export type OperationLogBacklogStatus =
 export type OperationLogBacklogOrder = 'oldest_first';
 
 /**
- * Names the terminal operation-log statuses eligible for retention pruning.
- */
-export type OperationLogTerminalStatus = 'synced' | 'dead_letter' | 'conflict_exhausted';
-
-/**
  * Defines one bounded operation-log backlog read request.
  *
  * `limit` bounds ROWS when `dedupeBy` is absent (today's byte-identical query), but bounds
@@ -51,32 +46,27 @@ export interface OperationLogQueryParams {
 }
 
 /**
- * Defines one retention rule for a terminal operation-log status.
+ * Defines the retention rule for `synced` operation-log rows: TTL first, then max-count.
  */
 export interface OperationLogRetentionRule {
-  readonly status: OperationLogTerminalStatus;
   readonly ttlDays: number;
   readonly maxCount: number;
 }
 
 /**
- * Defines the full terminal-status retention policy used for pruning.
+ * Defines the retention policy used for pruning. Only `synced` rows are pruned; given-up rows
+ * are unresolved keys and are never pruned (ADR 009 R-16b).
  */
 export interface OperationLogRetentionPolicy {
   readonly synced: OperationLogRetentionRule;
-  readonly deadLetter: OperationLogRetentionRule;
-  readonly conflictExhausted: OperationLogRetentionRule;
   readonly now: () => number;
 }
 
 /**
- * Defines the observable result returned after pruning terminal operation-log rows.
+ * Defines the observable result returned after pruning `synced` operation-log rows.
  */
 export interface OperationLogPruneResult {
-  readonly prunedCount: number;
   readonly deletedSyncedCount: number;
-  readonly deletedDeadLetterCount: number;
-  readonly deletedConflictExhaustedCount: number;
 }
 
 /**

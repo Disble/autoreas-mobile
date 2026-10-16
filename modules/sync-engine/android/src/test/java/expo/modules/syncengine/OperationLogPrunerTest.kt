@@ -13,10 +13,12 @@ import org.robolectric.annotation.SQLiteMode
  * only indirect coverage through [SyncEngineCycleTest]'s end-to-end attempts. Every case here
  * mirrors a behavioural case of its JS twin, `pruneOperationLog`
  * (`operation-log-retention.helpers.ts`), tested in
- * `tests/features/sync/__tests__/operation-log-retention.helpers.test.ts`: TTL first, then
- * max-count, per terminal status, oldest first -- so the two engines prune identically.
+ * `tests/features/sync/__tests__/operation-log-retention.helpers.test.ts` and
+ * `tests/behaviour/sync/given-up-retention.behaviour.test.ts`: TTL first, then max-count,
+ * oldest first -- so the two engines prune identically.
  *
- * Retention values (7 days/1000 rows `synced`, 30 days/500 `dead_letter`/`conflict_exhausted`)
+ * Only `synced` rows are retained-and-pruned (7 days/1000 rows). Given-up rows (`dead_letter`,
+ * `conflict_exhausted`) are unresolved keys and are never pruned (ADR 009 R-16b). The values
  * are `private const val` in `OperationLogPruner.kt` (file-private, invisible even from this same-
  * package test) and are hardcoded here from the class's own doc comment, which names them
  * explicitly.
@@ -42,40 +44,19 @@ class OperationLogPrunerTest {
   }
 
   @Test
-  fun deletesDeadLetterRowsPastThe30DayTtlButKeepsRowsWithinIt() {
+  fun keepsGivenUpRowsOlderThanThirtyDaysBecauseAnUnresolvedKeyIsNeverPruned() {
     SyncEngineTestDatabase().use { fixture ->
-      val lease = claimLease(fixture, "cycle-ttl-dead-letter")
-      val now = System.currentTimeMillis()
-      insertOperation(fixture, id = 1, status = "dead_letter", createdAt = now - 31 * retentionDayMs)
-      insertOperation(fixture, id = 2, status = "dead_letter", createdAt = now - 29 * retentionDayMs)
+      val lease = claimLease(fixture, "cycle-old-given-up")
+      val monthAgo = System.currentTimeMillis() - 31 * retentionDayMs
+      insertOperation(fixture, id = 1, status = "dead_letter", createdAt = monthAgo)
+      insertOperation(fixture, id = 2, status = "conflict_exhausted", createdAt = monthAgo)
 
       OperationLogPruner.pruneSafely(fixture.appDatabase, lease)
 
-      assertEquals(listOf(2L to "dead_letter"), fixture.operationStatuses())
-    }
-  }
-
-  @Test
-  fun deletesConflictExhaustedRowsPastThe30DayTtlButKeepsRowsWithinIt() {
-    SyncEngineTestDatabase().use { fixture ->
-      val lease = claimLease(fixture, "cycle-ttl-conflict-exhausted")
-      val now = System.currentTimeMillis()
-      insertOperation(
-        fixture,
-        id = 1,
-        status = "conflict_exhausted",
-        createdAt = now - 31 * retentionDayMs,
+      assertEquals(
+        listOf(1L to "dead_letter", 2L to "conflict_exhausted"),
+        fixture.operationStatuses(),
       )
-      insertOperation(
-        fixture,
-        id = 2,
-        status = "conflict_exhausted",
-        createdAt = now - 29 * retentionDayMs,
-      )
-
-      OperationLogPruner.pruneSafely(fixture.appDatabase, lease)
-
-      assertEquals(listOf(2L to "conflict_exhausted"), fixture.operationStatuses())
     }
   }
 
@@ -115,32 +96,20 @@ class OperationLogPrunerTest {
   }
 
   @Test
-  fun enforcesTheDeadLetterMaxCountOfFiveHundredAfterTtlDeletingOldestFirst() {
+  fun keepsMoreThanFiveHundredGivenUpRowsBecauseAnUnresolvedKeyIsNeverPruned() {
     SyncEngineTestDatabase().use { fixture ->
-      val lease = claimLease(fixture, "cycle-maxcount-dead-letter")
+      val lease = claimLease(fixture, "cycle-many-given-up")
       val now = System.currentTimeMillis()
-      insertOperations(fixture, count = 503, status = "dead_letter") { id -> now + id }
+      insertOperations(fixture, count = 501, status = "dead_letter") { id -> now + id }
+      insertOperations(fixture, count = 501, firstId = 502, status = "conflict_exhausted") { id ->
+        now + id
+      }
 
       OperationLogPruner.pruneSafely(fixture.appDatabase, lease)
 
       val remaining = fixture.operationStatuses()
-      assertEquals(500, remaining.size)
-      assertTrue(remaining.none { (id, _) -> id in 1L..3L })
-    }
-  }
-
-  @Test
-  fun enforcesTheConflictExhaustedMaxCountOfFiveHundredAfterTtlDeletingOldestFirst() {
-    SyncEngineTestDatabase().use { fixture ->
-      val lease = claimLease(fixture, "cycle-maxcount-conflict-exhausted")
-      val now = System.currentTimeMillis()
-      insertOperations(fixture, count = 501, status = "conflict_exhausted") { id -> now + id }
-
-      OperationLogPruner.pruneSafely(fixture.appDatabase, lease)
-
-      val remaining = fixture.operationStatuses()
-      assertEquals(500, remaining.size)
-      assertTrue(remaining.none { (id, _) -> id == 1L })
+      assertEquals(501, remaining.count { (_, status) -> status == "dead_letter" })
+      assertEquals(501, remaining.count { (_, status) -> status == "conflict_exhausted" })
     }
   }
 
@@ -195,11 +164,12 @@ class OperationLogPrunerTest {
     )
   }
 
-  /** Bulk-inserts [count] rows of [status] (ids 1..count) inside one transaction for speed. */
+  /** Bulk-inserts [count] rows of [status] (ids firstId..) inside one transaction for speed. */
   private fun insertOperations(
     fixture: SyncEngineTestDatabase,
     count: Int,
     status: String,
+    firstId: Int = 1,
     createdAtForId: (Long) -> Long,
   ) {
     fixture.appDatabase.execSQL("BEGIN IMMEDIATE")
@@ -207,7 +177,7 @@ class OperationLogPrunerTest {
       val statement = fixture.appDatabase.compileStatement(
         "INSERT INTO operation_log (id, status, created_at) VALUES (?, ?, ?)",
       )
-      for (id in 1..count) {
+      for (id in firstId until firstId + count) {
         statement.bindLong(1, id.toLong())
         statement.bindString(2, status)
         statement.bindLong(3, createdAtForId(id.toLong()))

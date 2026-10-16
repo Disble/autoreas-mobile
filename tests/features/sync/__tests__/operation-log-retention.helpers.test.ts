@@ -101,39 +101,21 @@ describe('operation log retention helpers', () => {
     );
   });
 
-  it('prunes only terminal statuses using ttl first and max-count second', async () => {
+  it('prunes only synced rows using ttl first and max-count second', async () => {
     // Fixture is derived from the DEFAULT policy so this stays correct as the
     // policy's ttlDays/maxCount values evolve: overflow only fires strictly
     // above maxCount (`Math.max(0, currentCount - maxCount)`).
     const now = 1_000_000;
     const syncedCount = DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.maxCount + 1;
-    const deadLetterCount = DEFAULT_OPERATION_LOG_RETENTION_POLICY.deadLetter.maxCount + 3;
-    const conflictExhaustedCount =
-      DEFAULT_OPERATION_LOG_RETENTION_POLICY.conflictExhausted.maxCount + 2;
     const syncedCutoff =
       now - DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.ttlDays * OPERATION_LOG_RETENTION_DAY_IN_MS;
-    const deadLetterCutoff =
-      now -
-      DEFAULT_OPERATION_LOG_RETENTION_POLICY.deadLetter.ttlDays * OPERATION_LOG_RETENTION_DAY_IN_MS;
-    const conflictExhaustedCutoff =
-      now -
-      DEFAULT_OPERATION_LOG_RETENTION_POLICY.conflictExhausted.ttlDays *
-        OPERATION_LOG_RETENTION_DAY_IN_MS;
 
     const rawDb = buildRawDb({
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValueOnce({ count: syncedCount })
-        .mockResolvedValueOnce({ count: deadLetterCount })
-        .mockResolvedValueOnce({ count: conflictExhaustedCount }),
+      getFirstAsync: jest.fn().mockResolvedValueOnce({ count: syncedCount }),
       runAsync: jest
         .fn()
         .mockResolvedValueOnce({ changes: 2 })
-        .mockResolvedValueOnce({ changes: 0 })
-        .mockResolvedValueOnce({ changes: 0 })
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ changes: 3 })
-        .mockResolvedValueOnce({ changes: 2 }),
+        .mockResolvedValueOnce({ changes: 1 }),
     });
 
     const result = await pruneOperationLog(rawDb, {
@@ -141,84 +123,42 @@ describe('operation log retention helpers', () => {
       now: () => now,
     });
 
-    // All six deletes must route through the file-keyed write door, not raw `rawDb.runAsync`
+    // Both deletes must route through the file-keyed write door, not raw `rawDb.runAsync`
     // called outside it -- a write bypassing the door is a defect (local-write-serialization spec).
     expect(withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
 
-    expect(result).toEqual({
-      prunedCount: 8,
-      deletedSyncedCount: 3,
-      deletedDeadLetterCount: 3,
-      deletedConflictExhaustedCount: 2,
-    });
+    expect(result).toEqual({ deletedSyncedCount: 3 });
+    expect(rawDb.getFirstAsync).toHaveBeenCalledWith(
+      'SELECT COUNT(*) AS count FROM operation_log WHERE status = ?',
+      'synced',
+    );
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(2);
     expect(rawDb.runAsync).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('WHERE status = ? AND created_at < ?'),
-      'synced',
+      expect.stringContaining("WHERE status = 'synced' AND created_at < ?"),
       syncedCutoff,
     );
     expect(rawDb.runAsync).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('WHERE status = ? AND created_at < ?'),
-      'dead_letter',
-      deadLetterCutoff,
-    );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      3,
-      expect.stringContaining('WHERE status = ? AND created_at < ?'),
-      'conflict_exhausted',
-      conflictExhaustedCutoff,
-    );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      4,
-      expect.stringMatching(/ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
-      'synced',
+      expect.stringMatching(/WHERE status = 'synced'\s+ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
       1,
-    );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      5,
-      expect.stringMatching(/ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
-      'dead_letter',
-      3,
-    );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      6,
-      expect.stringMatching(/ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
-      'conflict_exhausted',
-      2,
     );
   });
 
-  it('skips the max-count delete for a status still under its cap after ttl pruning', async () => {
-    const now = 1_000_000;
+  it('skips the max-count delete when synced rows are still under the cap after ttl pruning', async () => {
     const rawDb = buildRawDb({
-      // Every status is under maxCount after the TTL pass -- `overflowCount` is 0 for all three,
-      // so `pruneRowsByMaxCount` must return early without a second DELETE per status.
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValueOnce({ count: 1 })
-        .mockResolvedValueOnce({ count: 1 })
-        .mockResolvedValueOnce({ count: 1 }),
-      runAsync: jest
-        .fn()
-        .mockResolvedValueOnce({ changes: 0 })
-        .mockResolvedValueOnce({ changes: 0 })
-        .mockResolvedValueOnce({ changes: 0 }),
+      getFirstAsync: jest.fn().mockResolvedValueOnce({ count: 1 }),
+      runAsync: jest.fn().mockResolvedValueOnce({ changes: 0 }),
     });
 
     const result = await pruneOperationLog(rawDb, {
       ...DEFAULT_OPERATION_LOG_RETENTION_POLICY,
-      now: () => now,
+      now: () => 1_000_000,
     });
 
-    expect(result).toEqual({
-      prunedCount: 0,
-      deletedSyncedCount: 0,
-      deletedDeadLetterCount: 0,
-      deletedConflictExhaustedCount: 0,
-    });
-    // Only the 3 TTL deletes ran; no max-count delete fired for any status.
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ deletedSyncedCount: 0 });
+    // Only the TTL delete ran; the max-count delete did not fire.
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
   });
 
   it('defaults to DEFAULT_OPERATION_LOG_RETENTION_POLICY when the caller omits one', async () => {
@@ -226,16 +166,10 @@ describe('operation log retention helpers', () => {
 
     const result = await pruneOperationLog(rawDb);
 
-    expect(result).toEqual({
-      prunedCount: 0,
-      deletedSyncedCount: 0,
-      deletedDeadLetterCount: 0,
-      deletedConflictExhaustedCount: 0,
-    });
+    expect(result).toEqual({ deletedSyncedCount: 0 });
     expect(rawDb.runAsync).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('WHERE status = ? AND created_at < ?'),
-      DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.status,
+      expect.stringContaining("WHERE status = 'synced' AND created_at < ?"),
       expect.any(Number),
     );
   });

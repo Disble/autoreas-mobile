@@ -1,25 +1,14 @@
 import type { OperationLogRetentionPolicy } from './operation-log-retention.types';
 
 /**
- * Defines the default retention policy that bounds synced and dead-letter history growth.
+ * Defines the default retention policy that bounds synced history growth. Given-up rows
+ * (`dead_letter`, `conflict_exhausted`) have no retention: they are unresolved keys and stay
+ * until resolved (ADR 009 R-16b).
  */
 export const DEFAULT_OPERATION_LOG_RETENTION_POLICY: OperationLogRetentionPolicy = {
   synced: {
-    status: 'synced',
     ttlDays: 7,
     maxCount: 1000,
-  },
-  deadLetter: {
-    status: 'dead_letter',
-    ttlDays: 30,
-    maxCount: 500,
-  },
-  // Same cadence as dead_letter: both are "something went permanently wrong" terminal states,
-  // and a row here is at least as worth keeping around for diagnosis (design.md Decision 6).
-  conflictExhausted: {
-    status: 'conflict_exhausted',
-    ttlDays: 30,
-    maxCount: 500,
   },
   now: () => Date.now(),
 };

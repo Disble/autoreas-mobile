@@ -38,35 +38,26 @@ export async function countRowsForStatus(rawDb: SQLiteDatabase, status: string) 
   return Number(row?.count ?? 0);
 }
 
-/** Deletes rows of one terminal status older than the given cutoff, oldest first. */
-async function pruneRowsByTtl(
-  tx: SQLiteDatabase,
-  status: string,
-  cutoffTimestamp: number,
-) {
+/** Deletes `synced` rows older than the given cutoff, oldest first. */
+async function pruneSyncedRowsByTtl(tx: SQLiteDatabase, cutoffTimestamp: number) {
   const result = await tx.runAsync(
     [
       'DELETE FROM operation_log',
       'WHERE id IN (',
       '  SELECT id FROM operation_log',
-      '  WHERE status = ? AND created_at < ?',
+      "  WHERE status = 'synced' AND created_at < ?",
       '  ORDER BY created_at ASC, id ASC',
       ')',
     ].join(' '),
-    status,
     cutoffTimestamp,
   );
 
   return result.changes;
 }
 
-/** Deletes the oldest rows of one terminal status once its count exceeds `maxCount`. */
-async function pruneRowsByMaxCount(
-  tx: SQLiteDatabase,
-  status: string,
-  maxCount: number,
-) {
-  const currentCount = await countRowsForStatus(tx, status);
+/** Deletes the oldest `synced` rows once their count exceeds `maxCount`. */
+async function pruneSyncedRowsByMaxCount(tx: SQLiteDatabase, maxCount: number) {
+  const currentCount = await countRowsForStatus(tx, 'synced');
   const overflowCount = Math.max(0, currentCount - maxCount);
 
   if (overflowCount === 0) {
@@ -78,12 +69,11 @@ async function pruneRowsByMaxCount(
       'DELETE FROM operation_log',
       'WHERE id IN (',
       '  SELECT id FROM operation_log',
-      '  WHERE status = ?',
+      "  WHERE status = 'synced'",
       '  ORDER BY created_at ASC, id ASC',
       '  LIMIT ?',
       ')',
     ].join(' '),
-    status,
     overflowCount,
   );
 
@@ -198,54 +188,21 @@ export async function countOperationLogBacklogRows(
 }
 
 /**
- * Prunes terminal operation-log history using TTL first and max-count second.
- * Active statuses remain untouched because deletion only targets synced and dead-letter rows.
+ * Prunes `synced` operation-log history using TTL first and max-count second. Every other
+ * status is untouched: active rows are still in flight, and given-up rows (`dead_letter`,
+ * `conflict_exhausted`) are unresolved keys that stay until resolved (ADR 009 R-16b).
  */
 export async function pruneOperationLog(
   rawDb: SQLiteDatabase,
   policy: OperationLogRetentionPolicy = DEFAULT_OPERATION_LOG_RETENTION_POLICY,
 ): Promise<OperationLogPruneResult> {
-  const now = policy.now();
-  const syncedCutoff = buildRetentionCutoffTimestamp(now, policy.synced.ttlDays);
-  const deadLetterCutoff = buildRetentionCutoffTimestamp(now, policy.deadLetter.ttlDays);
-  const conflictExhaustedCutoff = buildRetentionCutoffTimestamp(
-    now,
-    policy.conflictExhausted.ttlDays,
-  );
+  const syncedCutoff = buildRetentionCutoffTimestamp(policy.now(), policy.synced.ttlDays);
 
   return withLocalWrite(rawDb, async (_db, tx) => {
-    const [deletedSyncedByTtl, deletedDeadLetterByTtl, deletedConflictExhaustedByTtl] =
-      await Promise.all([
-        pruneRowsByTtl(tx, policy.synced.status, syncedCutoff),
-        pruneRowsByTtl(tx, policy.deadLetter.status, deadLetterCutoff),
-        pruneRowsByTtl(tx, policy.conflictExhausted.status, conflictExhaustedCutoff),
-      ]);
-    // eslint-disable-next-line react-doctor/server-sequential-independent-await -- sequential by design: pruneRowsByMaxCount re-counts rows per status, so it must run after the TTL prune above completes or it would compute overflow against a stale (pre-TTL-deletion) count.
-    const [deletedSyncedByOverflow, deletedDeadLetterByOverflow, deletedConflictExhaustedByOverflow] =
-      await Promise.all([
-        pruneRowsByMaxCount(tx, policy.synced.status, policy.synced.maxCount),
-        pruneRowsByMaxCount(
-          tx,
-          policy.deadLetter.status,
-          policy.deadLetter.maxCount,
-        ),
-        pruneRowsByMaxCount(
-          tx,
-          policy.conflictExhausted.status,
-          policy.conflictExhausted.maxCount,
-        ),
-      ]);
+    const deletedByTtl = await pruneSyncedRowsByTtl(tx, syncedCutoff);
+    // eslint-disable-next-line react-doctor/server-sequential-independent-await -- sequential by design: the max-count pass re-counts rows, so it must run after the TTL delete or it would compute overflow against a stale count.
+    const deletedByOverflow = await pruneSyncedRowsByMaxCount(tx, policy.synced.maxCount);
 
-    const deletedSyncedCount = deletedSyncedByTtl + deletedSyncedByOverflow;
-    const deletedDeadLetterCount = deletedDeadLetterByTtl + deletedDeadLetterByOverflow;
-    const deletedConflictExhaustedCount =
-      deletedConflictExhaustedByTtl + deletedConflictExhaustedByOverflow;
-
-    return {
-      prunedCount: deletedSyncedCount + deletedDeadLetterCount + deletedConflictExhaustedCount,
-      deletedSyncedCount,
-      deletedDeadLetterCount,
-      deletedConflictExhaustedCount,
-    };
+    return { deletedSyncedCount: deletedByTtl + deletedByOverflow };
   });
 }

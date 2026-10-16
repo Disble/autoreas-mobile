@@ -223,7 +223,7 @@ sequenceDiagram
 | `useReconcile` | `use-reconcile.ts:6` |
 | `useIncrementalSyncHandler` | referenced by tests only |
 | `initialSync`, `persistInitialSyncSnapshot` | `use-initial-sync.ts:9`, `initial-sync.helpers.ts:42`; pairing uses `fetchInitialSyncSnapshot` + `persistPairedBridgeConfiguration` |
-| JS `pruneOperationLog` (prune is Kotlin-only) | `operation-log-retention.helpers.ts:198` |
+| JS `pruneOperationLog` (prune is Kotlin-only) | `operation-log-retention.helpers.ts:195` |
 | `recordBacklogReadCount`, `recordCycleActive`, `readOperationLogConvergence`, `countPendingOperationLog` | `sync-runtime-status.helpers.ts:382,393`, `operation-log-convergence.helpers.ts:31` |
 | `registerPreferredStrategy` | `sync-execution-facade.helpers.ts:96` |
 | `bridgeClient.getStatus` (JS), `ticker.isRunning` | `bridge-client.helpers.ts:247`, `native-foreground-sync-ticker.helpers.ts:58` |
