@@ -15,7 +15,6 @@ import type {
   DrainSeasonRatingQueueResult,
   ResolveSeasonRatingDeliveryInput,
   SeasonRatingDeliveryResolution,
-  SeasonRatingDeliveryAttempt,
   SeasonRatingQueueClock,
   SeasonRatingQueueEntry,
 } from './season-rating-queue.types';
@@ -85,9 +84,9 @@ export function markSeasonRatingQueueEntrySyncing(
 
 /**
  * Classifies one season-rating delivery attempt into retryable, confirmed, or terminal semantics.
- * The branch table keeps season ratings independent from anime reconcile status handling.
- * A 404 or 409 is kept as an unresolved rating (`failed` with its failure kind, ADR 009 R-16b),
- * never dropped: the backlog skips it until its key is resolved.
+ * Every 4xx is terminal and kept as an unresolved rating (`failed` with its failure kind, ADR 009
+ * R-5 and R-16b), never dropped: the backlog skips it until its key is resolved. A transport
+ * failure, a 5xx, or any other answer stays `pending` for the next drain.
  */
 export function resolveSeasonRatingDelivery(
   input: ResolveSeasonRatingDeliveryInput,
@@ -139,6 +138,18 @@ export function resolveSeasonRatingDelivery(
       shouldKeepEntry: true,
       shouldRetry: false,
       failureKind: 'auth_repair',
+    };
+  }
+
+  // Any other 4xx: the bridge rejected this message, so retrying it can never succeed. It is
+  // kept as unresolved, the fate a 4xx has in the anime outbox (ADR 009 R-5).
+  if (input.status !== undefined && input.status >= 400 && input.status < 500) {
+    return {
+      state: 'failed',
+      nextQueueStatus: 'failed',
+      shouldKeepEntry: true,
+      shouldRetry: false,
+      failureKind: 'rejected',
     };
   }
 
@@ -290,27 +301,66 @@ async function deleteSeasonRatingQueueEntry(
 async function deliverQueuedSeasonRating(
   connection: BridgeConnection,
   queuedEntry: SeasonRatingQueueEntry,
-): Promise<SeasonRatingDeliveryAttempt> {
+): Promise<SeasonRatingDeliveryResolution> {
   try {
     const result = await bridgeClient.postActiveSeasonRating(connection, {
       animeId: queuedEntry.animeId,
       nota: queuedEntry.nota,
       ratedAt: queuedEntry.ratedAt,
     });
-    const resolution = resolveSeasonRatingDelivery({ status: result.status });
 
-    return {
-      resolution,
-      failure: resolution.state !== 'confirmed'
-        ? new Error(`Season rating delivery incomplete: ${resolution.failureKind ?? result.status}`)
-        : null,
-    };
+    return resolveSeasonRatingDelivery({ status: result.status });
   } catch (error) {
-    return {
-      resolution: resolveSeasonRatingDelivery({ error }),
-      failure: error instanceof Error ? error : new Error('Season rating delivery failed'),
-    };
+    return resolveSeasonRatingDelivery({ error });
   }
+}
+
+/**
+ * Claims, delivers and settles ONE queued rating. Returns its delivery resolution, or `null` when
+ * the season belongs to whoever holds a live claim on it (R-13: skip it, never wait).
+ */
+async function drainOneSeasonRating(
+  rawDb: SQLiteDatabase,
+  connection: BridgeConnection,
+  queuedEntry: SeasonRatingQueueEntry & { readonly id: number },
+  clock: SeasonRatingQueueClock,
+): Promise<SeasonRatingDeliveryResolution | null> {
+  const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
+  const claim: OutboxClaim = { owner: JS_OUTBOX_CLAIM_OWNER, claimedAt: clock.now() };
+  const claimed = await withLocalWrite(rawDb, (_db, tx) =>
+    claimSeasonRatingQueueEntry(tx, queuedEntry.id, syncingEntry, claim),
+  );
+
+  if (!claimed) {
+    return null;
+  }
+
+  const resolution = await deliverQueuedSeasonRating(connection, queuedEntry);
+  // A null `nextQueueStatus` is the confirmation signal: `resolveSeasonRatingDelivery` pairs it
+  // with `shouldKeepEntry: false` only for a 204. Branching on the status itself lets the type
+  // narrow, so the kept branch needs no cast and no unreachable guard.
+  const { nextQueueStatus } = resolution;
+
+  if (nextQueueStatus === null) {
+    const resolutions = await withLocalWrite(rawDb, async (_db, tx) => {
+      await deleteSeasonRatingQueueEntry(tx, queuedEntry.id, claim);
+      // The confirmed rating supersedes the given-up ratings of its key (ADR 009 R-16b).
+      return resolveSupersededRatings(tx, queuedEntry);
+    });
+    logAutomaticResolutions(resolutions);
+  } else {
+    await withLocalWrite(rawDb, async (_db, tx) => {
+      await updateSeasonRatingQueueEntry(tx, queuedEntry.id, {
+        ...syncingEntry,
+        status: nextQueueStatus,
+        updatedAt: clock.now(),
+        lastAttemptAt: syncingEntry.lastAttemptAt,
+        lastFailureKind: resolution.failureKind,
+      }, claim);
+    });
+  }
+
+  return resolution;
 }
 
 /** Decides whether a delivery outcome should trigger an active-season refresh. */
@@ -324,7 +374,11 @@ function shouldRefreshAfterSeasonRatingDelivery(
 
 /**
  * Drains durable season-rating intent through the bridge adapter while preserving pending-vs-confirmed truth.
- * Retryable failures remain queued, a 404/409 stays as an unresolved rating, and only bridge-confirmed delivery clears the row.
+ * Each rating is its own message (ADR 009 R-5): one that fails never stops the next one and never
+ * fails the caller's cycle. A 4xx stays as an unresolved rating, a retryable failure or a failed
+ * local write leaves the rating queued (`hasMorePending`), and only bridge-confirmed delivery
+ * clears the row. A rating whose write failed while it was claimed is retaken once its claim
+ * expires.
  */
 export async function drainSeasonRatingQueue(
   rawDb: SQLiteDatabase,
@@ -337,78 +391,53 @@ export async function drainSeasonRatingQueue(
       deliveredCount: 0,
       backlogReadCount: 0,
       shouldRefreshActiveSeason: false,
-      failure: null,
+      hasMorePending: false,
     };
   }
 
+  const connection = { ip: config.ip, port: config.port, token: config.token };
   const backlog = await readSeasonRatingQueueBacklog(rawDb);
   let deliveredCount = 0;
   let shouldRefreshActiveSeason = false;
-  let firstFailure: Error | null = null;
+  let hasMorePending = false;
 
   for (const queuedEntry of backlog) {
     if (!queuedEntry.id) {
       continue;
     }
 
-    const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
-    const claim: OutboxClaim = { owner: JS_OUTBOX_CLAIM_OWNER, claimedAt: clock.now() };
+    let resolution: SeasonRatingDeliveryResolution | null;
 
-    // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (claim -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
-    const claimed = await withLocalWrite(rawDb, (_db, tx) =>
-      claimSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry, claim),
-    );
-
-    // A season with a live claim belongs to whoever holds it: skip it, never wait (R-13).
-    if (!claimed) {
+    try {
+      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (claim -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
+      resolution = await drainOneSeasonRating(rawDb, connection, { ...queuedEntry, id: queuedEntry.id }, clock);
+    } catch (error) {
+      console.warn('[drainSeasonRatingQueue] Season rating left queued after a local write failed', error);
+      hasMorePending = true;
       continue;
     }
 
-    const { resolution: deliveryResolution, failure: deliveryFailure } =
-      await deliverQueuedSeasonRating(
-        { ip: config.ip, port: config.port, token: config.token },
-        queuedEntry,
-      );
-
-    // A null `nextQueueStatus` is the confirmation signal: `resolveSeasonRatingDelivery` pairs it
-    // with `shouldKeepEntry: false` only for a 204. Branching on the status itself lets the type
-    // narrow, so the kept branch needs no cast and no unreachable guard.
-    const { nextQueueStatus } = deliveryResolution;
-
-    if (nextQueueStatus === null) {
-      const resolutions = await withLocalWrite(rawDb, async (_db, tx) => {
-        await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!, claim);
-        // The confirmed rating supersedes the given-up ratings of its key (ADR 009 R-16b).
-        return resolveSupersededRatings(tx, { ...queuedEntry, id: queuedEntry.id! });
-      });
-      logAutomaticResolutions(resolutions);
-    } else {
-      await withLocalWrite(rawDb, async (_db, tx) => {
-        await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, {
-          ...syncingEntry,
-          status: nextQueueStatus,
-          updatedAt: clock.now(),
-          lastAttemptAt: syncingEntry.lastAttemptAt,
-          lastFailureKind: deliveryResolution.failureKind,
-        }, claim);
-      });
+    if (resolution === null) {
+      continue;
     }
 
-    if (deliveryResolution.state === 'confirmed') {
+    if (resolution.state === 'confirmed') {
       deliveredCount += 1;
     }
 
-    if (shouldRefreshAfterSeasonRatingDelivery(deliveryResolution)) {
-      shouldRefreshActiveSeason = true;
+    if (resolution.state === 'pending') {
+      hasMorePending = true;
     }
 
-    firstFailure ??= deliveryFailure;
+    if (shouldRefreshAfterSeasonRatingDelivery(resolution)) {
+      shouldRefreshActiveSeason = true;
+    }
   }
 
   return {
     deliveredCount,
     backlogReadCount: backlog.length,
     shouldRefreshActiveSeason,
-    failure: firstFailure,
+    hasMorePending,
   };
 }

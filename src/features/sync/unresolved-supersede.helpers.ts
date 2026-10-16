@@ -63,7 +63,7 @@ export async function resolveSupersededOperations(
 /**
  * Resolves, inside the caller's open write door, the unresolved rating key a confirmed rating
  * supersedes: the same anime in the same season, rated again later and accepted by the bridge.
- * Its given-up rows (404/409, queued before the confirmed one) are deleted.
+ * Its given-up rows (any 4xx, queued before the confirmed one) are deleted.
  */
 export async function resolveSupersededRatings(
   tx: SQLiteDatabase,

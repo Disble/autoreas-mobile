@@ -91,7 +91,8 @@ async function persistSyncFailureTelemetrySafely(
 
 /**
  * Runs every step owned by one foreground sync cycle and publishes exactly one terminal outcome.
- * Reconcile alone is not success: season-rating delivery and telemetry must complete first.
+ * Reconcile alone is not success: a season rating still queued for retry keeps the cycle pending,
+ * and telemetry must complete first. A failing rating never fails the cycle (ADR 009 R-5).
  *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
@@ -123,17 +124,15 @@ export async function runCoordinatedForegroundSyncCycle({
       publishConnection: () => undefined,
     });
     const result = await syncPendingOperations(rawDb);
+    // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
+    // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
     const seasonDrainResult = await drainSeasonRatingQueue(rawDb);
-
-    if (seasonDrainResult.failure) {
-      throw seasonDrainResult.failure;
-    }
 
     if (seasonDrainResult.shouldRefreshActiveSeason) {
       setActiveSeasonSnapshot(await fetchActiveSeasonFromBridge(rawDb));
     }
 
-    if (result.hasMorePending) {
+    if (result.hasMorePending || seasonDrainResult.hasMorePending) {
       markSyncConnectionPending(attempt);
       triggerCoverSweepForSource(rawDb, source);
       return result.syncedCount;
@@ -189,7 +188,7 @@ export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizz
 
 /**
  * Builds the live query for every durable season-rating row that is still pending work.
- * A retryable `failed` row (for example `auth_repair`) still counts; an unresolved rating
+ * Every `pending` or `syncing` row counts; an unresolved rating
  * (`failed` with a failure kind in `UNRESOLVED_RATING_FAILURE_KINDS`, ADR 009 R-16b) is never
  * sent again, so it is excluded with the same predicate `readSeasonRatingQueueBacklog` uses.
  */

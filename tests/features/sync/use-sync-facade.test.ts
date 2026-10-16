@@ -272,11 +272,7 @@ describe('useSyncFacade', () => {
     expect(secondFacade.result.current.connectionStatus).toBe('online');
   });
 
-  it('never publishes online when season rating delivery remains unreachable', async () => {
-    const unreachableError = new BridgeUnreachableError(
-      'http://bridge.test/api/seasons/active/rating',
-      'offline',
-    );
+  it('never publishes online, and never fails, while a season rating stays queued for retry', async () => {
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 0,
       backlogReadCount: 0,
@@ -286,47 +282,41 @@ describe('useSyncFacade', () => {
       deliveredCount: 0,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: false,
-      failure: unreachableError,
+      hasMorePending: true,
     });
 
     const { result } = renderHook(() => useSyncFacade());
 
     await act(async () => {
-      await expect(result.current.manualSync()).rejects.toBe(unreachableError);
+      await expect(result.current.manualSync()).resolves.toBe(0);
     });
 
-    expect(result.current.connectionStatus).toBe('unreachable');
+    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
     expect(result.current.connectionStatus).not.toBe('online');
   });
 
-  it.each(['not_found', 'conflict'])(
-    'publishes sync_error when a deleted season rating resolves as %s',
-    async (failureKind) => {
-      const terminalError = new Error(
-        `Season rating delivery incomplete: ${failureKind}`,
-      );
-      (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-        syncedCount: 0,
-        backlogReadCount: 0,
-        hasMorePending: false,
-      });
-      (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
-        deliveredCount: 0,
-        backlogReadCount: 1,
-        shouldRefreshActiveSeason: false,
-        failure: terminalError,
-      });
+  it('never fails the cycle over a season rating kept as unresolved (ADR 009 R-5)', async () => {
+    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
+      syncedCount: 0,
+      backlogReadCount: 0,
+      hasMorePending: false,
+    });
+    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
+      deliveredCount: 0,
+      backlogReadCount: 1,
+      shouldRefreshActiveSeason: false,
+      hasMorePending: false,
+    });
 
-      const { result } = renderHook(() => useSyncFacade());
+    const { result } = renderHook(() => useSyncFacade());
 
-      await act(async () => {
-        await expect(result.current.manualSync()).rejects.toBe(terminalError);
-      });
+    await act(async () => {
+      await expect(result.current.manualSync()).resolves.toBe(0);
+    });
 
-      expect(result.current.connectionStatus).toBe('sync_error');
-      expect(result.current.connectionStatus).not.toBe('online');
-    },
-  );
+    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe('online');
+  });
 
   it('publishes unreachable when active-season refresh fails after confirmed delivery', async () => {
     const unreachableError = new BridgeUnreachableError(
@@ -342,7 +332,7 @@ describe('useSyncFacade', () => {
       deliveredCount: 1,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
-      failure: null,
+      hasMorePending: false,
     });
     (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValueOnce(
       unreachableError,
@@ -410,7 +400,7 @@ describe('useSyncFacade', () => {
       deliveredCount: number;
       backlogReadCount: number;
       shouldRefreshActiveSeason: boolean;
-      failure: Error | null;
+      hasMorePending: boolean;
     }) => void;
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 0,
@@ -444,7 +434,7 @@ describe('useSyncFacade', () => {
         deliveredCount: 0,
         backlogReadCount: 0,
         shouldRefreshActiveSeason: false,
-        failure: null,
+        hasMorePending: false,
       });
       await olderFacadePromise;
     });
@@ -463,7 +453,7 @@ describe('useSyncFacade', () => {
       deliveredCount: 1,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: false,
-      failure: null,
+      hasMorePending: false,
     });
     const { result } = renderHook(() => useSyncFacade());
 

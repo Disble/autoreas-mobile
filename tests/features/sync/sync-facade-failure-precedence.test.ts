@@ -54,8 +54,7 @@ describe('foreground sync failure precedence', () => {
     (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('keeps a terminal rating rejection authoritative when refresh would be unreachable', async () => {
-    const ratingFailure = new Error('Season rating delivery incomplete: conflict');
+  it('fails on the refresh, never on the rating, when an unresolved rating triggers an unreachable refresh', async () => {
     const refreshFailure = new BridgeUnreachableError(
       'http://127.0.0.1:9876/api/seasons/active',
       'offline',
@@ -70,7 +69,7 @@ describe('foreground sync failure precedence', () => {
       deliveredCount: 0,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
-      failure: ratingFailure,
+      hasMorePending: false,
     });
     (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(refreshFailure);
 
@@ -80,20 +79,17 @@ describe('foreground sync failure precedence', () => {
         source: 'manual',
         setActiveSeasonSnapshot: jest.fn(),
       }),
-    ).rejects.toBe(ratingFailure);
+    ).rejects.toBe(refreshFailure);
 
-    expect(fetchActiveSeasonFromBridge).not.toHaveBeenCalled();
+    expect(fetchActiveSeasonFromBridge).toHaveBeenCalledTimes(1);
     expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
     expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
       { id: 'raw-db' },
       'manual',
       expect.any(Number),
-      ratingFailure.message,
+      refreshFailure.message,
     );
-    expect(getSyncConnectionSnapshot()).toMatchObject({
-      kind: 'sync_error',
-      message: ratingFailure.message,
-    });
+    expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'unreachable' });
   });
 
   it('publishes sync_error when a reachable active-season response is invalid', async () => {
@@ -112,7 +108,7 @@ describe('foreground sync failure precedence', () => {
       deliveredCount: 1,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
-      failure: null,
+      hasMorePending: false,
     });
     (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(activeSeasonFailure);
 

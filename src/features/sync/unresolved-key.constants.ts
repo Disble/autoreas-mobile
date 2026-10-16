@@ -13,10 +13,12 @@ export const GIVEN_UP_OPERATION_STATUSES = ['dead_letter', 'conflict_exhausted']
 export const KEEP_BRIDGE_ONLY_OPERATION_REASONS: readonly string[] = ['bridge_404', 'token_missing'];
 
 /**
- * The `season_rating_queue.last_failure_kind` values of a given-up rating (status `failed`):
- * the bridge answered 404 or 409. Such a row is never sent again until its key is resolved.
+ * The `season_rating_queue.last_failure_kind` values of a given-up rating (status `failed`): the
+ * bridge answered 4xx -- 404, 409, 401 (`auth_repair`) or any other 4xx (`rejected`), the same
+ * fate a 4xx has in the anime outbox (ADR 009 R-5). Such a row is never sent again until its key
+ * is resolved.
  */
-export const UNRESOLVED_RATING_FAILURE_KINDS = ['not_found', 'conflict'] as const;
+export const UNRESOLVED_RATING_FAILURE_KINDS = ['not_found', 'conflict', 'auth_repair', 'rejected'] as const;
 
 /** The rating failure kind that leaves only `keep_bridge` on offer: the bridge has no such target. */
 export const KEEP_BRIDGE_ONLY_RATING_FAILURE_KIND = 'not_found';

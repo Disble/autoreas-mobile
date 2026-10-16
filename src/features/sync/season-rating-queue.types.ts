@@ -6,6 +6,7 @@ export type SeasonRatingFailureKind =
   | 'auth_repair'
   | 'conflict'
   | 'not_found'
+  | 'rejected'
   | 'unexpected_response'
   | 'unreachable';
 
@@ -54,16 +55,14 @@ export interface SeasonRatingDeliveryResolution {
   readonly failureKind: SeasonRatingFailureKind | null;
 }
 
-/** Defines the data contract for drain season rating queue result. */
+/**
+ * What one drain did. A failing rating never fails the caller's cycle (ADR 009 R-5): a terminal
+ * one is kept as unresolved, and a retryable one only sets `hasMorePending`.
+ */
 export interface DrainSeasonRatingQueueResult {
   readonly deliveredCount: number;
   readonly backlogReadCount: number;
   readonly shouldRefreshActiveSeason: boolean;
-  readonly failure: Error | null;
-}
-
-/** Defines the outcome of attempting delivery for one queued season rating. */
-export interface SeasonRatingDeliveryAttempt {
-  readonly resolution: SeasonRatingDeliveryResolution;
-  readonly failure: Error | null;
+  /** A rating was left queued for retry: a retryable delivery failure or a failed local write. */
+  readonly hasMorePending: boolean;
 }

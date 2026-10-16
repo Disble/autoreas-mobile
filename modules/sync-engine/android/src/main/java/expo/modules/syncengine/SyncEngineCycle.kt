@@ -72,8 +72,8 @@ class SyncEngineCycle(
   private val lease = SyncCycleLease(appDb)
 
   /**
-   * Shared response-apply step: the claimed path and the pull-only empty path both stage the
-   * parsed response through it, so the two paths cannot drift.
+   * Shared response-apply step: every round, the pull-only first round included, stages the
+   * parsed response through it.
    */
   private val heldRows = HeldRowWriter(appDb, { requireOwned() }, { claim })
   private val missingTokens = MissingTokenResolver(appDb, heldRows) { requireOwned() }
@@ -215,101 +215,33 @@ class SyncEngineCycle(
     }
     claim = cycleClaim
 
-    if (backlog.isEmpty()) {
-      // Nothing to claim, but the attempt must still PULL: the JS no-op attempt always issues
-      // the reconcile request, so remote changes reach the device even with nothing to push.
-      return runPullOnlyAttempt(config, deviceId, ip, port, token, triggerSource, 0)
-    }
-
-    transition("claimed", null)
+    // The first round always goes out, even with nothing claimed: it is also this attempt's pull,
+    // exactly like the JS no-op attempt, so remote changes reach the device with nothing to push.
+    if (backlog.isNotEmpty()) transition("claimed", null)
     // The chain (ADR 009 R-14): each round sends the held rows, waits for their confirmation and
     // tokens, and the transaction that applies the response claims the next row of every key it
     // confirmed. A rejected key claims nothing; a failed round ends the chain; past the budget no
     // successor is claimed. Earlier rounds stay committed whatever a later round does.
-    val chainDeadline = cycleClaim.claimedAt + OUTBOX_CHAIN_BUDGET_MS
+    val target = RoundTarget(deviceId, ip, port, token, triggerSource, config.id, cycleClaim.claimedAt + OUTBOX_CHAIN_BUDGET_MS)
     var round = backlog
     var lastChangelogId = getLastChangelogId(config.lastChangelogId)
     var syncedCount = 0
     var backlogReadCount = 0
     var firstRound = true
-    while (round.isNotEmpty()) {
-      claimedRows = round
+    do {
       backlogReadCount += round.size
-      val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId }).toMutableMap()
-      // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
-      val sendable = missingTokens.resolve(round, tokensByAnimeId) { animeId ->
-        SyncEngineHttp.get("http://$ip:$port/api/animes/${Uri.encode(animeId)}", token, BRIDGE_REQUEST_TIMEOUT_MS)
-      }
-      claimedRows = sendable
-      val requestBody = ReconcileRequestBody.build(
-        deviceId = deviceId,
-        lastChangelogId = lastChangelogId,
-        rows = sendable,
-        tokensByAnimeId = tokensByAnimeId,
-        cycleId = cycleId,
-        triggerSource = triggerSource,
-        includeTelemetry = firstRound,
-      )
+      val sent = sendRound(target, round, lastChangelogId, includeTelemetry = firstRound)
       firstRound = false
-
-      // Intent before effect, THEN the request (step 6).
-      transition("sent", null)
-      val response = try {
-        SyncEngineHttp.postJson(
-          url = "http://$ip:$port/api/sync/reconcile",
-          token = token,
-          body = requestBody.toString(),
-          timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
-        )
-      } catch (error: Throwable) {
-        // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
-        revertClaimedRows(deadLetter = false)
-        transition("failed", error.message ?: error.javaClass.simpleName)
-        return outcome("failed", lastState, syncedCount, backlogReadCount, error.javaClass.simpleName)
+      val result = if (sent is RoundResult.Rejected) settleRejection(target, sent, lastChangelogId) else sent
+      if (result is RoundResult.Failed) {
+        return outcome("failed", lastState, syncedCount + result.confirmedCount, backlogReadCount, result.errorName)
       }
-
-      if (response.code !in 200..299) {
-        // The bridge rejected this exchange: a 4xx means the batch's CONTENT was rejected, so
-        // those rows go to `dead_letter`; anything else goes back to `pending` for retry.
-        revertClaimedRows(deadLetter = response.code in 400..499)
-        transition("failed", "bridge responded ${response.code}")
-        return outcome("failed", lastState, syncedCount, backlogReadCount, "ReconcileHttpError")
-      }
-
-      val parsed = try {
-        ReconcileResponseParser.parse(response.body)
-      } catch (error: ReconcileParseException) {
-        // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
-        revertClaimedRows(deadLetter = false)
-        // `error.message` bare: ReconcileParseException requires a non-null message.
-        transition("failed", error.message)
-        return outcome("failed", lastState, syncedCount, backlogReadCount, "ReconcileParseException")
-      }
-
-      // Intent before effect, THEN every response write in ONE transaction (step 8). The fence
-      // check is the FIRST statement inside the transaction: the write lock pins the lease for the
-      // whole transaction (a reclaim is itself a write), so the cursor advance and status updates
-      // below cannot interleave with a reclaim. Staging stays unfenced (append-only, idempotent
-      // under the merge boundary); token writes are limited to keys this claim still holds.
-      transition("applied", null)
-      val roundRows = sendable
-      val roundCursor = lastChangelogId
-      val (confirmedIds, successors) = inImmediateTransaction(appDb) {
-        requireLeaseOwnership(appDb, requireOwned())
-        ensureStagingTable()
-        val confirmed = responseApplier.apply(config.id, parsed, roundRows, roundCursor, tokensByAnimeId)
-        val confirmedSet = confirmed.toSet()
-        val next = if (clock() >= chainDeadline) {
-          emptyList()
-        } else {
-          claimChainSuccessors(appDb, claim, roundRows.filter { it.id in confirmedSet }.map { it.animeId })
-        }
-        confirmed to next
-      }
-      syncedCount += confirmedIds.size
-      lastChangelogId = maxOf(lastChangelogId, parsed.lastChangelogId ?: lastChangelogId)
-      round = successors
-    }
+      // A settled round is applied: `settleRejection` never answers a rejection.
+      val applied = result as RoundResult.Applied
+      syncedCount += applied.confirmedCount
+      lastChangelogId = applied.cursor
+      round = applied.successors
+    } while (round.isNotEmpty())
     claimedRows = emptyList()
 
     // Prune failure must not fail the attempt (step 9), but lease loss during the prune must
@@ -322,87 +254,126 @@ class SyncEngineCycle(
     return outcome("closed", lastState, syncedCount, backlogReadCount, null)
   }
 
+  /** What every round of one attempt sends to, and under which chain budget. */
+  private data class RoundTarget(
+    val deviceId: String,
+    val ip: String,
+    val port: String,
+    val token: String,
+    val triggerSource: String,
+    val bridgeConfigId: Long,
+    val chainDeadline: Long,
+  )
+
   /**
-   * Runs the attempt to a terminal outcome for an EMPTY backlog: nothing to claim or send,
-   * but the reconcile request is still issued — the JS cycle's no-op attempt always runs
-   * `syncPendingOperations`, so pulled `bridge_changes` reach the device even when there is
-   * nothing to push. The request is the claimed path's shape with an empty
-   * `pending_operations` array, and the response is parsed and staged by the exact same
-   * pipeline (`ReconcileResponseParser` + [SyncEngineResponseApplier]).
-   *
-   * Journal sequence mirrors the claimed path minus `claimed` (no rows exist to claim):
-   * `sent` before the POST, `applied` before the one response-write transaction, `closed`
-   * after pruning — or `failed` with the claimed path's error taxonomy (`ReconcileHttpError`,
-   * `ReconcileParseException`, or the transport error's class name). No rows were ever
-   * claimed, so the failure paths skip the batch revert ([revertClaimedRows] no-ops on an
-   * empty batch anyway).
+   * Sends ONE reconcile round for [round] and applies its response (steps 6-8). Every failure
+   * gives the round's rows their fate and journals `failed`, except a message rejection (a 4xx
+   * other than 401, ADR 009 R-5), which is returned untouched for [settleRejection]. An empty
+   * round is the pull-only exchange: nothing to claim, revert or confirm.
    */
-  private fun runPullOnlyAttempt(
-    config: BridgeConfigRow,
-    deviceId: String,
-    ip: String,
-    port: String,
-    token: String,
-    triggerSource: String,
-    backlogReadCount: Int,
-  ): CycleOutcome {
-    val lastChangelogId = getLastChangelogId(config.lastChangelogId)
+  private fun sendRound(target: RoundTarget, round: List<BacklogRow>, cursor: Long, includeTelemetry: Boolean): RoundResult {
+    claimedRows = round
+    val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId }).toMutableMap()
+    // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
+    val sendable = missingTokens.resolve(round, tokensByAnimeId) { animeId ->
+      SyncEngineHttp.get("http://${target.ip}:${target.port}/api/animes/${Uri.encode(animeId)}", target.token, BRIDGE_REQUEST_TIMEOUT_MS)
+    }
+    claimedRows = sendable
     val requestBody = ReconcileRequestBody.build(
-      deviceId = deviceId,
-      lastChangelogId = lastChangelogId,
-      rows = emptyList(),
-      tokensByAnimeId = emptyMap(),
+      deviceId = target.deviceId,
+      lastChangelogId = cursor,
+      rows = sendable,
+      tokensByAnimeId = tokensByAnimeId,
       cycleId = cycleId,
-      triggerSource = triggerSource,
+      triggerSource = target.triggerSource,
+      includeTelemetry = includeTelemetry,
     )
 
-    // Intent before effect, THEN the pull request (step 6; no claim step without rows).
+    // Intent before effect, THEN the request (step 6).
     transition("sent", null)
     val response = try {
       SyncEngineHttp.postJson(
-        url = "http://$ip:$port/api/sync/reconcile",
-        token = token,
+        url = "http://${target.ip}:${target.port}/api/sync/reconcile",
+        token = target.token,
         body = requestBody.toString(),
         timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
       )
     } catch (error: Throwable) {
       // Transport failure: retryable, never dead-lettered (step 7's sibling rule).
-      transition("failed", error.message ?: error.javaClass.simpleName)
-      return outcome("failed", lastState, 0, backlogReadCount, error.javaClass.simpleName)
+      return fail(deadLetter = false, error.message ?: error.javaClass.simpleName, error.javaClass.simpleName)
     }
 
     if (response.code !in 200..299) {
-      // The bridge rejected this exchange; nothing was claimed, so nothing to revert.
-      transition("failed", "bridge responded ${response.code}")
-      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileHttpError")
+      val rejected = response.code in 400..499
+      if (rejected && response.code != RECONCILE_UNAUTHORIZED_STATUS) return RoundResult.Rejected(response.code, sendable)
+      // A 401 rejects the pairing: terminal for the whole round. Anything else is retryable.
+      return fail(deadLetter = rejected, "bridge responded ${response.code}", "ReconcileHttpError")
     }
 
     val parsed = try {
       ReconcileResponseParser.parse(response.body)
     } catch (error: ReconcileParseException) {
-      // Parse failure is retryable, never dead-lettered (step 7).
-      // `error.message` bare -- see the claimed path's identical catch above for why the
-      // `?: "invalid reconcile response"` fallback was dead code.
-      transition("failed", error.message)
-      return outcome("failed", lastState, 0, backlogReadCount, "ReconcileParseException")
+      // Parse failure is retryable: rows back to `pending`, never dead-lettered (step 7).
+      // `error.message` bare: ReconcileParseException requires a non-null message.
+      return fail(deadLetter = false, error.message, "ReconcileParseException")
     }
 
-    // Intent before effect, THEN every response write in ONE transaction (step 8): the staging
-    // inserts and the cursor advance run even with zero claimed rows; the confirmation and
-    // status passes no-op over the empty backlog. Fence check first -- see the claimed path.
+    // Intent before effect, THEN every response write in ONE transaction (step 8). The fence
+    // check is the FIRST statement inside the transaction: the write lock pins the lease for the
+    // whole transaction (a reclaim is itself a write), so the cursor advance and status updates
+    // below cannot interleave with a reclaim. Staging stays unfenced (append-only, idempotent
+    // under the merge boundary); token writes are limited to keys this claim still holds.
     transition("applied", null)
-    val syncedCount = inImmediateTransaction(appDb) {
+    val (confirmedIds, successors) = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, requireOwned())
       ensureStagingTable()
-      responseApplier.apply(config.id, parsed, emptyList(), lastChangelogId, emptyMap()).size
+      val confirmed = responseApplier.apply(target.bridgeConfigId, parsed, sendable, cursor, tokensByAnimeId)
+      val confirmedSet = confirmed.toSet()
+      val next = if (clock() >= target.chainDeadline) {
+        emptyList()
+      } else {
+        claimChainSuccessors(appDb, claim, sendable.filter { it.id in confirmedSet }.map { it.animeId })
+      }
+      confirmed to next
     }
+    return RoundResult.Applied(confirmedIds.size, successors, maxOf(cursor, parsed.lastChangelogId ?: cursor))
+  }
 
-    // Prune failure must not fail the attempt (step 9); fence check inside the prune's own
-    // transaction -- see the claimed path and OperationLogPruner.pruneSafely.
-    OperationLogPruner.pruneSafely(appDb, requireOwned())
+  /** Gives the round's rows their failure fate and journals the failure that ends the attempt. */
+  private fun fail(deadLetter: Boolean, reason: String?, errorName: String): RoundResult.Failed {
+    revertClaimedRows(deadLetter)
+    transition("failed", reason)
+    return RoundResult.Failed(errorName)
+  }
 
-    transition("closed", null)
-    return outcome("closed", lastState, syncedCount, backlogReadCount, null)
+  /**
+   * Settles a message rejection (ADR 009 R-5): a round of several messages is re-sent one message
+   * per request ([isolateMessages]), so only the one that caused it is dead-lettered; a lone
+   * message is dead-lettered and ends the attempt, as nothing got through.
+   */
+  private fun settleRejection(target: RoundTarget, rejection: RoundResult.Rejected, cursor: Long): RoundResult {
+    if (rejection.sent.size <= 1) return fail(deadLetter = true, "bridge responded ${rejection.code}", "ReconcileHttpError")
+
+    return isolateMessages(rejection, cursor, object : MessageIsolationPort {
+      override fun isHeld(row: BacklogRow) = heldRows.heldOperationIds(listOf(row.id)).isNotEmpty()
+
+      override fun send(row: BacklogRow, cursor: Long) = sendRound(target, listOf(row), cursor, includeTelemetry = false)
+
+      override fun deadLetter(row: BacklogRow) = inImmediateTransaction(appDb) {
+        heldRows.updateOperationStatus(listOf(row.id), "dead_letter")
+      }
+
+      override fun release(rows: List<BacklogRow>) {
+        claimedRows = rows
+        revertClaimedRows(deadLetter = false)
+      }
+
+      override fun noneDelivered(rejection: RoundResult.Rejected): RoundResult.Failed {
+        // Every isolated message is already dead-lettered: nothing is left to revert.
+        claimedRows = emptyList()
+        return fail(deadLetter = true, "bridge responded ${rejection.code}", "ReconcileHttpError")
+      }
+    })
   }
 
   /**

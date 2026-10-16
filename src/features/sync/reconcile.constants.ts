@@ -15,6 +15,12 @@ export const RECONCILE_BACKLOG_BATCH_LIMIT = 200;
  */
 export const PENDING_OPERATIONS_LIVE_QUERY_LIMIT = 200;
 
+/**
+ * The status that rejects the pairing, never a message (ADR 009 R-5): a 401 is not isolated per
+ * message, it dead-letters every row of its round.
+ */
+export const RECONCILE_UNAUTHORIZED_STATUS = 401;
+
 /** Provides the shared sync state by database value. */
 
 export const syncStateByDatabase = new WeakMap<object, {

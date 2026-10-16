@@ -176,8 +176,8 @@ export async function keepLocalForRating(rawDb: SQLiteDatabase, key: RatingKey):
 
 /**
  * Keep bridge for a rating key: every queued rating of the key is dropped. The bridge's rating is
- * already what the active-season snapshot shows, refreshed after the 404/409; with no local intent
- * left, nothing overrides it.
+ * what the active-season snapshot shows (refreshed right after a 404/409, on the next refresh after
+ * any other 4xx); with no local intent left, nothing overrides it.
  */
 export async function keepBridgeForRating(rawDb: SQLiteDatabase, key: RatingKey): Promise<void> {
   await writeUnclaimedKey(rawDb, key, async (_db, tx) => {

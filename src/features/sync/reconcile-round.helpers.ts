@@ -25,6 +25,7 @@ import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
 import { classifyUnconfirmedOperations } from './reconcile-conflict.helpers';
 import { buildReconcileRequestBody } from './reconcile-request.helpers';
+import { RECONCILE_UNAUTHORIZED_STATUS } from './reconcile.constants';
 import { ReconcileHttpError } from './reconcile.errors';
 import { ReconcileResponseSchema } from './reconcile.schema';
 import type {
@@ -47,6 +48,15 @@ import { logAutomaticResolutions, resolveSupersededOperations } from './unresolv
  */
 function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {
   return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
+}
+
+/**
+ * Whether a whole-request failure is the bridge rejecting a MESSAGE (ADR 009 R-5): any 4xx but
+ * 401. Retrying it never succeeds, and in a request carrying several messages nobody can tell
+ * which one caused it. A 401 rejects the pairing, never a message, so it is not one.
+ */
+function isMessageRejection(error: unknown): error is ReconcileHttpError {
+  return isPermanentReconcileError(error) && error.status !== RECONCILE_UNAUTHORIZED_STATUS;
 }
 
 /** Publishes one ENTRY checkpoint; missing recorder no-ops, raising recorder is swallowed. */
@@ -165,28 +175,113 @@ async function applyReconcileResponseWrites(
 }
 
 /**
- * Reverts a batch claimed `'processing'` back to a retry-eligible state after this cycle failed,
- * or moves it to `dead_letter` when the bridge's own 4xx response says the batch's CONTENT was
- * rejected (see `isPermanentReconcileError`). No-ops for an empty batch. Extracted out of
- * `performSyncPendingOperations`'s `catch` block to keep that function's cognitive complexity
- * under threshold (constraint: "Complexity Budget Note").
+ * Moves rows this claim still holds to `status` and releases them. No-ops for an empty list.
+ * Compare-and-set on the claim: a row the other runtime took over is never touched.
  */
-async function revertPendingOperationsOnFailure(
+async function releaseHeldOperations(
   rawDb: SQLiteDatabase,
-  pendingOps: readonly OperationLogRow[],
+  operations: readonly OperationLogRow[],
   claim: OutboxClaim,
-  error: unknown,
+  status: 'pending' | 'dead_letter',
 ): Promise<void> {
-  if (pendingOps.length === 0) {
+  if (operations.length === 0) {
     return;
   }
 
   await withLocalWrite(rawDb, async (writeDb) => {
     await writeDb
       .update(operationLog)
-      .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending', ...RELEASED_CLAIM })
-      .where(heldOperationsWhere(pendingOps.map((operation) => operation.id), claim));
+      .set({ status, ...RELEASED_CLAIM })
+      .where(heldOperationsWhere(operations.map((operation) => operation.id), claim));
   });
+}
+
+/**
+ * Reverts a batch claimed `'processing'` back to a retry-eligible state after this cycle failed,
+ * or moves it to `dead_letter` when the bridge's own 4xx response says the batch's CONTENT was
+ * rejected (see `isPermanentReconcileError`). No-ops for an empty batch. Extracted out of
+ * `performSyncPendingOperations`'s `catch` block to keep that function's cognitive complexity
+ * under threshold (constraint: "Complexity Budget Note").
+ */
+function revertPendingOperationsOnFailure(
+  rawDb: SQLiteDatabase,
+  pendingOps: readonly OperationLogRow[],
+  claim: OutboxClaim,
+  error: unknown,
+): Promise<void> {
+  return releaseHeldOperations(rawDb, pendingOps, claim, isPermanentReconcileError(error) ? 'dead_letter' : 'pending');
+}
+
+/** Adds one round's outcome to the outcome of the rounds before it. */
+function addRoundOutcome(total: ReconcileRoundOutcome, round: ReconcileRoundOutcome): ReconcileRoundOutcome {
+  return {
+    sentCount: total.sentCount + round.sentCount,
+    confirmedCount: total.confirmedCount + round.confirmedCount,
+    unconfirmedCount: total.unconfirmedCount + round.unconfirmedCount,
+    nextLastChangelogId: round.nextLastChangelogId,
+    successors: [...total.successors, ...round.successors],
+  };
+}
+
+/**
+ * Re-sends a rejected round one message per request (ADR 009 R-5), so a 4xx lands on the one
+ * message that caused it: that message is dead-lettered and its key stops, while every other key
+ * is confirmed and chained as usual. Only messages this claim still holds go out, without the
+ * telemetry piggyback, each on the cursor the previous one reached.
+ *
+ * Any other failure on the way (network, 5xx, 401, a malformed answer, a failed local write) ends
+ * it like a failed round: the failing message takes that failure's fate, every unsent message and
+ * every successor already chained is released to `pending`, and the error is rethrown. When no
+ * message got through, the last rejection is rethrown, so a round nobody accepted still fails.
+ */
+async function sendOneMessagePerRequest(
+  rawDb: SQLiteDatabase,
+  context: ReconcileRoundContext,
+  operations: readonly OperationLogRow[],
+  rejection: ReconcileHttpError,
+): Promise<ReconcileRoundOutcome> {
+  let total: ReconcileRoundOutcome = {
+    sentCount: 0,
+    confirmedCount: 0,
+    unconfirmedCount: 0,
+    nextLastChangelogId: context.lastChangelogId,
+    successors: [],
+  };
+  let lastRejection = rejection;
+  let delivered = false;
+
+  // Sequential by design: each message waits for the previous answer and the cursor it reached.
+  for (const [index, operation] of operations.entries()) {
+    const held = await readHeldOperationIds(rawDb, [operation.id], context.claim);
+
+    if (held.length === 0) {
+      continue;
+    }
+
+    try {
+      const single = await sendReconcileRound(
+        rawDb,
+        { ...context, clientTelemetry: null, lastChangelogId: total.nextLastChangelogId },
+        [operation],
+      );
+      total = addRoundOutcome(total, single);
+      delivered = true;
+    } catch (error) {
+      if (!isMessageRejection(error)) {
+        await releaseHeldOperations(rawDb, [...operations.slice(index + 1), ...total.successors], context.claim, 'pending');
+        throw error;
+      }
+
+      lastRejection = error;
+      total = { ...total, sentCount: total.sentCount + 1, unconfirmedCount: total.unconfirmedCount + 1 };
+    }
+  }
+
+  if (!delivered) {
+    throw lastRejection;
+  }
+
+  return total;
 }
 
 /**
@@ -195,7 +290,8 @@ async function revertPendingOperationsOnFailure(
  * confirmed, already claimed, and the caller sends them as the next round.
  *
  * On any failure the round's rows are released (`revertPendingOperationsOnFailure`) and the
- * error is rethrown, which also ends the chain; earlier rounds stay committed.
+ * error is rethrown, which also ends the chain; earlier rounds stay committed. A message
+ * rejection in a round of several messages is first isolated (`sendOneMessagePerRequest`).
  */
 export async function sendReconcileRound(
   rawDb: SQLiteDatabase,
@@ -356,6 +452,12 @@ export async function sendReconcileRound(
       successors,
     };
   } catch (error) {
+    // A message rejection in a round of several messages cannot be pinned on one of them: send
+    // each alone, so only the message that caused it takes its fate (ADR 009 R-5).
+    if (isMessageRejection(error) && pendingOps.length > 1) {
+      return sendOneMessagePerRequest(rawDb, context, pendingOps, error);
+    }
+
     await revertPendingOperationsOnFailure(rawDb, pendingOps, claim, error);
     throw error;
   }

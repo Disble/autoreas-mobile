@@ -170,7 +170,7 @@ describe('anime mutation connection truth', () => {
       deliveredCount: 0,
       backlogReadCount: 0,
       shouldRefreshActiveSeason: false,
-      failure: null,
+      hasMorePending: false,
     });
     (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
     (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);

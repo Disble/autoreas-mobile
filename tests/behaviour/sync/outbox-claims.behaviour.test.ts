@@ -300,7 +300,11 @@ describe('per-key outbox claims between the two runtimes (ADR 009 R-13)', () => 
     const takenOverAt = Date.now();
     await takeOverAnime2(adapter, takenOverAt);
     held.release({ status: 400, body: { error: 'bad batch' } });
+    // The rejection is isolated per message (ADR 009 R-5): only the still-held row is re-sent.
+    fakeBridge.queueResponse({ status: 400, body: { error: 'bad operation' } });
     await expect(cycle).rejects.toThrow();
+
+    expect(sentAnimeIds(fakeBridge, 1)).toEqual(['anime-1']);
 
     expect(await readRows(adapter)).toEqual([
       expect.objectContaining({ id: 1, status: 'dead_letter', claim_owner: null, claimed_at: null }),

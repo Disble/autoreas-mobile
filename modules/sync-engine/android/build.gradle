@@ -151,6 +151,8 @@ def CORE_CLASSES = [
   // MissingTokenResolver.kt (ADR 009 R-3: fetch-first)
   'MissingTokenResolver', 'MissingTokenResolver$*', 'MissingTokenResolverKt', 'MissingTokenResolverKt$*',
   'MissingTokenOutcome', 'MissingTokenOutcome$*',
+  // MessageIsolation.kt (ADR 009 R-5: a message rejection is isolated per message)
+  'MessageIsolationKt', 'MessageIsolationKt$*', 'RoundResult', 'RoundResult$*',
   // UnresolvedResolution.kt (ADR 009 R-16b: automatic resolution)
   'UnresolvedResolution', 'UnresolvedResolution$*',
   // SyncCycleLease.kt

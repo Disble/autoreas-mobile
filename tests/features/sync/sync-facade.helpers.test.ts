@@ -43,7 +43,7 @@ describe('sync facade helpers', () => {
     });
   });
 
-  it('counts pending, syncing, and retryable failed season ratings, never an unresolved one', () => {
+  it('counts pending and syncing season ratings, never an unresolved one', () => {
     const limit = jest.fn().mockReturnValue({ query: 'season-rating-queue' });
     const where = jest.fn(() => ({ limit }));
     const from = jest.fn(() => ({ where }));
@@ -57,7 +57,7 @@ describe('sync facade helpers', () => {
       'syncing',
       'failed',
     ]);
-    expect(inArray).toHaveBeenCalledWith(seasonRatingQueue.lastFailureKind, ['not_found', 'conflict']);
+    expect(inArray).toHaveBeenCalledWith(seasonRatingQueue.lastFailureKind, ['not_found', 'conflict', 'auth_repair', 'rejected']);
     expect(where).toHaveBeenCalledWith({
       and: [
         { column: seasonRatingQueue.status, values: ['pending', 'syncing', 'failed'] },
@@ -65,7 +65,7 @@ describe('sync facade helpers', () => {
           not: {
             and: [
               { column: seasonRatingQueue.status, value: 'failed' },
-              { column: seasonRatingQueue.lastFailureKind, values: ['not_found', 'conflict'] },
+              { column: seasonRatingQueue.lastFailureKind, values: ['not_found', 'conflict', 'auth_repair', 'rejected'] },
             ],
           },
         },

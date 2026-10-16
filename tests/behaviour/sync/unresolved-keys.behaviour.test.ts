@@ -167,22 +167,20 @@ describe('an unresolved rating is never counted as pending work (B1)', () => {
     fakeBridge.restore();
   });
 
-  it.each([404, 409])('drops a rating the bridge answered %i from the pending count', async (status) => {
+  // Every 4xx is unresolved since ADR 009 R-5 gave 401 and any other 4xx a terminal fate.
+  it.each([404, 409, 401, 422])('drops a rating the bridge answered %i from the pending count', async (status) => {
     const adapter = await openPairedDatabase({ episodes: [] });
     await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
 
     expect(await buildUnresolvedSeasonRatingQuery(adapter)).toHaveLength(0);
   });
 
-  it.each([
-    [401, 'failed', 'auth_repair'],
-    [500, 'pending', 'unexpected_response'],
-  ])('still counts a rating the bridge answered %i (%s, %s)', async (status, rowStatus, kind) => {
+  it('still counts a rating the bridge answered 500 (pending, unexpected_response)', async () => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
+    await rateAndDrain(adapter, fakeBridge, 'anime-1', 500);
 
     expect(await readRatingRows(adapter)).toEqual([
-      { id: 1, anime_id: 'anime-1', status: rowStatus, last_failure_kind: kind },
+      { id: 1, anime_id: 'anime-1', status: 'pending', last_failure_kind: 'unexpected_response' },
     ]);
     expect(await buildUnresolvedSeasonRatingQuery(adapter)).toEqual([{ id: 1 }]);
   });

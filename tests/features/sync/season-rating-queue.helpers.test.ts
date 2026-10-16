@@ -99,7 +99,7 @@ describe('drainSeasonRatingQueue', () => {
     expect(getSyncConnectionSnapshot().kind).toBe('idle');
   });
 
-  it('exposes the unreachable failure while keeping the rating queued', async () => {
+  it('reports more pending work while keeping an unreachable rating queued', async () => {
     const unreachableError = new BridgeUnreachableError(
       'http://127.0.0.1:9876/api/seasons/active/rating',
       'offline',
@@ -114,8 +114,10 @@ describe('drainSeasonRatingQueue', () => {
       expect.stringContaining("WHERE status IN ('pending', 'syncing', 'failed')"),
       'not_found',
       'conflict',
+      'auth_repair',
+      'rejected',
     );
-    expect(result.failure).toBe(unreachableError);
+    expect(result.hasMorePending).toBe(true);
     expect(rawDb.runAsync).toHaveBeenLastCalledWith(
       expect.stringContaining('UPDATE season_rating_queue'),
       'pending',
@@ -181,7 +183,7 @@ describe('drainSeasonRatingQueue', () => {
       deliveredCount: 0,
       backlogReadCount: 0,
       shouldRefreshActiveSeason: false,
-      failure: null,
+      hasMorePending: false,
     });
     expect(rawDb.getAllAsync).not.toHaveBeenCalled();
   });
@@ -210,30 +212,31 @@ describe('drainSeasonRatingQueue', () => {
     expect(syncingAttemptAt).toBe(syncingUpdatedAt);
   });
 
-  it('reports the raw status in the failure message when the bridge returns an unrecognized, falsy status', async () => {
-    (bridgeClient.postActiveSeasonRating as jest.Mock).mockResolvedValue({
+  it.each([
+    ['an unrecognized, falsy status', () => (bridgeClient.postActiveSeasonRating as jest.Mock).mockResolvedValue({
       ok: true,
       status: undefined,
       data: null,
       rawBody: null,
       url: 'http://127.0.0.1:9876/api/seasons/active/rating',
-    });
+    })],
+    ['a rejection with a non-Error value', () => (bridgeClient.postActiveSeasonRating as jest.Mock).mockRejectedValue('offline')],
+  ])('keeps a rating queued for retry after %s', async (_label, answer) => {
+    answer();
 
     const result = await drainSeasonRatingQueue(rawDb, { now: () => 1_752_100_200_000 });
 
-    // `resolution.failureKind` is null here (no recognized status), so the message falls back to
-    // the raw status instead of leaking "undefined" as a fabricated reason string.
-    expect(result.failure).toEqual(
-      new Error('Season rating delivery incomplete: undefined'),
+    expect(result.hasMorePending).toBe(true);
+    expect(rawDb.runAsync).toHaveBeenLastCalledWith(
+      expect.stringContaining('claim_owner = NULL'),
+      'pending',
+      1_752_100_200_000,
+      1_752_100_200_000,
+      null,
+      9,
+      'js',
+      1_752_100_200_000,
     );
-  });
-
-  it('falls back to a generic delivery-failed error when the bridge call rejects with a non-Error value', async () => {
-    (bridgeClient.postActiveSeasonRating as jest.Mock).mockRejectedValue('offline');
-
-    const result = await drainSeasonRatingQueue(rawDb, { now: () => 1_752_100_200_000 });
-
-    expect(result.failure).toEqual(new Error('Season rating delivery failed'));
   });
 
   it('skips a corrupted row with no id instead of attempting delivery against it', async () => {
@@ -260,11 +263,11 @@ describe('drainSeasonRatingQueue', () => {
       deliveredCount: 0,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: false,
-      failure: null,
+      hasMorePending: false,
     });
   });
 
-  it('reports a reachable auth rejection as incomplete sync_error work', async () => {
+  it('keeps a reachable auth rejection as an unresolved rating, never as more pending work', async () => {
     (bridgeClient.postActiveSeasonRating as jest.Mock).mockResolvedValue({
       ok: false,
       status: 401,
@@ -277,10 +280,12 @@ describe('drainSeasonRatingQueue', () => {
       now: () => 1_752_100_200_000,
     });
 
-    expect(result.failure).toEqual(
-      new Error('Season rating delivery incomplete: auth_repair'),
-    );
-    expect(result.failure).not.toBeInstanceOf(BridgeUnreachableError);
+    expect(result).toEqual({
+      deliveredCount: 0,
+      backlogReadCount: 1,
+      shouldRefreshActiveSeason: false,
+      hasMorePending: false,
+    });
     expect(rawDb.runAsync).toHaveBeenLastCalledWith(
       expect.stringContaining('UPDATE season_rating_queue'),
       'failed',
@@ -293,7 +298,7 @@ describe('drainSeasonRatingQueue', () => {
     );
   });
 
-  it('preserves the first delivery failure while resolving later queue entries', async () => {
+  it('keeps resolving later queue entries after one delivery fails', async () => {
     const firstFailure = new BridgeUnreachableError(
       'http://127.0.0.1:9876/api/seasons/active/rating',
       'offline',
@@ -342,7 +347,7 @@ describe('drainSeasonRatingQueue', () => {
       deliveredCount: 0,
       backlogReadCount: 2,
       shouldRefreshActiveSeason: true,
-      failure: firstFailure,
+      hasMorePending: true,
     });
     // The 409 is kept as an unresolved rating (ADR 009 R-16b), released from the claim.
     expect(rawDb.runAsync).toHaveBeenCalledWith(
@@ -361,7 +366,7 @@ describe('drainSeasonRatingQueue', () => {
     [404, 'not_found'],
     [409, 'conflict'],
   ])(
-    'keeps a terminal %s rating as unresolved and returns reachable %s failure truth',
+    'keeps a terminal %s rating as unresolved (%s), never as more pending work',
     async (status, failureKind) => {
       (bridgeClient.postActiveSeasonRating as jest.Mock).mockResolvedValue({
         ok: false,
@@ -389,9 +394,8 @@ describe('drainSeasonRatingQueue', () => {
         deliveredCount: 0,
         backlogReadCount: 1,
         shouldRefreshActiveSeason: true,
-        failure: new Error(`Season rating delivery incomplete: ${failureKind}`),
+        hasMorePending: false,
       });
-      expect(result.failure).not.toBeInstanceOf(BridgeUnreachableError);
     },
   );
 });

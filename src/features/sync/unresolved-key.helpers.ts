@@ -61,7 +61,7 @@ async function readUnresolvedAnimeKeys(rawDb: SQLiteDatabase): Promise<Unresolve
   }));
 }
 
-/** Reads the unresolved rating keys: every anime and season with a rating the bridge answered 404/409. */
+/** Reads the unresolved rating keys: every anime and season with a rating the bridge answered 4xx. */
 async function readUnresolvedRatingKeys(rawDb: SQLiteDatabase): Promise<UnresolvedKey[]> {
   const rows = await rawDb.getAllAsync<{ id: number; season_id: string; anime_id: string; last_failure_kind: string }>(
     [

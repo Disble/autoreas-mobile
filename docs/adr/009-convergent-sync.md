@@ -72,6 +72,22 @@ The architecture is named **convergent sync**. It combines five standard pattern
 | Token returned | The row is sent. |
 | Anime returned with no token | The key becomes unresolved, and the event is logged. |
 
+**R-5: one fate per failure class**
+
+Both runtimes apply the same fate to the anime outbox; JS applies it to season ratings too, since only JS sends them. Added 2026-10-16 with task T10.
+
+| Failure class | Fate |
+|---------------|------|
+| Network error or timeout | The rows stay `pending`; the attempt fails. |
+| 5xx | The rows stay `pending`; the attempt fails. |
+| Malformed response | The rows stay `pending`; the attempt fails. |
+| Local write failure | The rows stay `pending`, released or retaken when their claim expires; the attempt fails. |
+| 401 | Terminal (I3): every row of the request becomes unresolved (`dead_letter`; a rating `failed` with `auth_repair`). A 401 rejects the pairing, never a message, so it is never isolated. The attempt fails. |
+| Any other 4xx (400, 403, 404, 409, 422, ...) | The message is rejected, so it becomes unresolved (`dead_letter`; a rating `failed` with `not_found`, `conflict` or `rejected`). When the request carried several messages, they are re-sent one per request first, so only the message that caused it takes this fate. |
+| A message rejected inside a 2xx (`applied: false`) | The conflict rule (R-15), or `dead_letter` for an unsupported operation; only that key stops. |
+
+When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating never fails the foreground cycle (I4): a rating left `pending` only keeps the cycle from reporting success.
+
 **R-7: bounds on the reconnect catch-up**
 
 - It is single-flight.
