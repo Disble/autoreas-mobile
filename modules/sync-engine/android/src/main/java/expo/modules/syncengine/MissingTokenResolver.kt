@@ -82,32 +82,24 @@ internal class MissingTokenResolver(
     if (missing.isEmpty()) return round
 
     val outcomes = missing.associateWith { fetchMissingTokenOutcome(it, fetch) }
-    inImmediateTransaction(appDb) {
+    // The fetches ran outside any transaction, so the app may have unpaired or the JS runtime
+    // taken a key over meanwhile (ADR 009 R-13): only rows this claim still holds are sent.
+    val stillHeld = inImmediateTransaction(appDb) {
       requireLeaseOwnership(appDb, fence())
       for ((animeId, outcome) in outcomes) {
         val heldIds = round.filter { it.animeId == animeId }.map { it.id }
         when (outcome) {
-          is MissingTokenOutcome.Token -> storeMissingToken(animeId, outcome.token)
+          is MissingTokenOutcome.Token -> heldRows.storeMissingToken(animeId, outcome.token)
           MissingTokenOutcome.Unreachable -> heldRows.updateOperationStatus(heldIds, "pending")
           is MissingTokenOutcome.Unresolved -> heldRows.giveKeyUp(animeId, heldIds, outcome.reason)
         }
       }
+      heldRows.heldOperationIds(round.map { it.id })
     }
 
     for ((animeId, outcome) in outcomes) {
       if (outcome is MissingTokenOutcome.Token) tokensByAnimeId[animeId] = outcome.token
     }
-    return round.filter { outcomes[it.animeId].let { outcome -> outcome == null || outcome is MissingTokenOutcome.Token } }
-  }
-
-  /** Only the token, and only while none is stored: the fetched fields never touch the row. */
-  private fun storeMissingToken(animeId: String, token: Long) {
-    appDb.compileStatement(
-      "UPDATE animes SET bridge_modified_at = ? WHERE _id = ? AND bridge_modified_at IS NULL",
-    ).run {
-      bindLong(1, token)
-      bindString(2, animeId)
-      executeUpdateDelete()
-    }
+    return round.filter { it.id in stillHeld }
   }
 }

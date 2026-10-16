@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, exists, isNull, sql } from 'drizzle-orm';
 import { bridgeClient } from '../../infrastructure/api';
 import type { BridgeConnection } from '../../infrastructure/api';
 import { withLocalWrite } from '../../infrastructure/db/client/client.helpers';
@@ -9,7 +9,7 @@ import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { UNRESOLVED_REASON } from './missing-token.constants';
 import type { MissingTokenOutcome, UnresolvedReason } from './missing-token.types';
 import { RELEASED_CLAIM } from './outbox-claim.constants';
-import { heldOperationsWhere } from './outbox-claim.helpers';
+import { heldOperationsWhere, readHeldOperationIds } from './outbox-claim.helpers';
 import type { OutboxClaim } from './outbox-claim.types';
 
 /** Reads the `modified_at` token of a fetched `MobileAnime`, or `null` when it carries none. */
@@ -75,6 +75,23 @@ async function giveKeyUp(
     .where(and(eq(operationLog.animeId, animeId), eq(operationLog.status, 'pending'), isNull(operationLog.claimedAt)));
 }
 
+/** True while `claim` still holds a `processing` row of the `animes` row being updated. */
+function claimHoldsAnimeRow(db: AppDatabase, claim: OutboxClaim) {
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(operationLog)
+      .where(
+        and(
+          eq(operationLog.animeId, animes._id),
+          eq(operationLog.status, 'processing'),
+          eq(operationLog.claimOwner, claim.owner),
+          eq(operationLog.claimedAt, claim.claimedAt),
+        ),
+      ),
+  );
+}
+
 /** Writes one fetch-first outcome for `animeId` inside the caller's open write door. */
 async function applyMissingTokenOutcome(
   db: AppDatabase,
@@ -84,11 +101,13 @@ async function applyMissingTokenOutcome(
   outcome: MissingTokenOutcome,
 ): Promise<void> {
   if (outcome.kind === 'token') {
-    // Only the token, and only while none is stored: the fetched fields never touch the row.
+    // Only the token, and only while none is stored: the fetched fields never touch the row. And
+    // only while this claim still holds a row of the anime: an unpair during the fetch deleted the
+    // outbox, so the old pairing's token must not come back (ADR 009 R-11).
     await db
       .update(animes)
       .set({ bridgeModifiedAt: outcome.token })
-      .where(and(eq(animes._id, animeId), isNull(animes.bridgeModifiedAt)));
+      .where(and(eq(animes._id, animeId), isNull(animes.bridgeModifiedAt), claimHoldsAnimeRow(db, claim)));
     return;
   }
 
@@ -103,7 +122,8 @@ async function applyMissingTokenOutcome(
 /**
  * The claim holder's fetch-first step (ADR 009 R-3): a held row whose anime has no stored token is
  * never sent without a base. Each such anime is fetched once; its outcome is written, the token is
- * added to `tokensByAnimeId`, and only the rows that can now carry a base are returned.
+ * added to `tokensByAnimeId`, and only the rows that can now carry a base and that this claim
+ * still holds are returned.
  */
 export async function resolveMissingTokens(
   rawDb: SQLiteDatabase,
@@ -126,28 +146,25 @@ export async function resolveMissingTokens(
     outcomes.set(animeId, await fetchMissingTokenOutcome(connection, animeId));
   }
 
-  const heldIdsByAnimeId = new Map<string, number[]>();
-  for (const operation of heldOps) {
-    heldIdsByAnimeId.set(operation.animeId, [...(heldIdsByAnimeId.get(operation.animeId) ?? []), operation.id]);
-  }
-
-  await withLocalWrite(rawDb, async (db) => {
+  // The fetches were network calls: a claim can have expired and been taken over meanwhile
+  // (ADR 009 R-13), so the rows still held are re-read in the same door that wrote the outcomes.
+  let stillHeldIds = new Set<number>();
+  await withLocalWrite(rawDb, async (db, tx) => {
     for (const [animeId, outcome] of outcomes) {
+      const heldIds = heldOps.flatMap((operation) => (operation.animeId === animeId ? [operation.id] : []));
       // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: every write shares the one write-door transaction.
-      await applyMissingTokenOutcome(db, animeId, heldIdsByAnimeId.get(animeId) ?? [], claim, outcome);
+      await applyMissingTokenOutcome(db, animeId, heldIds, claim, outcome);
     }
+
+    stillHeldIds = new Set(await readHeldOperationIds(tx, heldOps.map((operation) => operation.id), claim));
   });
 
-  const sendable: OperationLogRow[] = [];
-  for (const operation of heldOps) {
-    const outcome = outcomes.get(operation.animeId);
-    if (outcome?.kind === 'token') {
-      tokensByAnimeId.set(operation.animeId, outcome.token);
-    }
-    if (outcome === undefined || outcome.kind === 'token') {
-      sendable.push(operation);
+  for (const [animeId, outcome] of outcomes) {
+    if (outcome.kind === 'token') {
+      tokensByAnimeId.set(animeId, outcome.token);
     }
   }
 
-  return sendable;
+  // A released or given-up row is no longer `processing`, so only rows that can carry a base remain.
+  return heldOps.filter((operation) => stillHeldIds.has(operation.id));
 }

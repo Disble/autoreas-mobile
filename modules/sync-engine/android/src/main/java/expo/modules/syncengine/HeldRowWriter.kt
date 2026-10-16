@@ -90,6 +90,26 @@ internal class HeldRowWriter(
   }
 
   /**
+   * Stores a fetched token (ADR 009 R-3): only the token, only while none is stored, and only
+   * while this claim still holds a row of [animeId]. An unpair or a JS takeover during the fetch
+   * leaves no held row, so the old pairing's token is never written back.
+   */
+  fun storeMissingToken(animeId: String, token: Long) {
+    val heldClaim = claim()
+    appDb.compileStatement(
+      "UPDATE animes SET bridge_modified_at = ? WHERE _id = ? AND bridge_modified_at IS NULL " +
+        "AND EXISTS (SELECT 1 FROM operation_log WHERE anime_id = animes._id " +
+        "AND status = 'processing' AND claim_owner = ? AND claimed_at = ?)",
+    ).run {
+      bindLong(1, token)
+      bindString(2, animeId)
+      bindString(3, heldClaim.owner)
+      bindLong(4, heldClaim.claimedAt)
+      executeUpdateDelete()
+    }
+  }
+
+  /**
    * The ids among [ids] this claim still holds, read inside the caller's transaction: a key the
    * JS runtime took over mid-request is not ours to write, not even its token.
    */
