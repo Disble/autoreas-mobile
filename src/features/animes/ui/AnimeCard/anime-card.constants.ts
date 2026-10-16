@@ -15,3 +15,10 @@ export const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescrip
   2: { label: 'No me gustó', tone: 'danger', isDefault: false },
   3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
+
+/**
+ * How long the folder button shows that it is opening. Measured on the tablet: My Files shows the
+ * folder's files about 1.3 s after the tap (docs/anime-folders.md), and nothing else tells the user
+ * the tap worked in between.
+ */
+export const FOLDER_OPENING_FEEDBACK_MS = 1500;

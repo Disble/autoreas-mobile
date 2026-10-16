@@ -82,6 +82,10 @@ export function AnimeFoldersSettingsCardContent(
 export function AnimeFoldersSettingsCard() {
   const { view, handleOpenDetail, handleReindex, handleChooseRoot } = useAnimeFoldersSettingsCard();
 
+  if (!view) {
+    return null;
+  }
+
   return (
     <AnimeFoldersSettingsCardContent
       view={view}

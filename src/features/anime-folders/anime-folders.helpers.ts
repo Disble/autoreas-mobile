@@ -22,7 +22,6 @@ import type {
   FolderTreeLister,
   IndexedFolder,
   ResolvedAnimeFolder,
-  YieldToUi,
 } from './anime-folders.types';
 
 /** Splits a path on `/` or `\`, dropping empty and blank segments. */
@@ -118,7 +117,6 @@ function toNormalizedKey(name: string): string {
 export async function walkFolderTree(
   rootUri: string,
   listChildren: FolderTreeLister,
-  yieldToUi: YieldToUi,
 ): Promise<FolderTreeEntry[]> {
   const found: FolderTreeEntry[] = [];
   let level: { uri: string; relativePath: string }[] = [{ uri: rootUri, relativePath: '' }];
@@ -127,10 +125,10 @@ export async function walkFolderTree(
     const nextLevel: { uri: string; relativePath: string }[] = [];
 
     for (const parent of level) {
-      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: each yield lets the UI run between two blocking native listings.
-      await yieldToUi();
+      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: one provider query at a time keeps the SD card reads ordered and the walk's cost predictable.
+      const children = await listChildren(parent.uri);
 
-      for (const child of listChildren(parent.uri)) {
+      for (const child of children) {
         const documentId = getSafDocumentId(child.uri);
         const name = toSegments(documentId?.slice(documentId.indexOf(':') + 1)).at(-1);
         if (!child.isDirectory || !documentId || !name || name.startsWith('.')) {

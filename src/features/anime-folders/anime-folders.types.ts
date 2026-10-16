@@ -4,11 +4,9 @@ export interface FolderTreeChild {
   readonly isDirectory: boolean;
 }
 
-/** Lists the direct children of a SAF folder uri; throws when the folder cannot be read. */
-export type FolderTreeLister = (uri: string) => readonly FolderTreeChild[];
+/** Lists the direct children of a folder; rejects when access was lost. */
+export type FolderTreeLister = (uri: string) => Promise<readonly FolderTreeChild[]>;
 
-/** Lets the UI thread run between two folder listings. */
-export type YieldToUi = () => Promise<void>;
 
 /** A folder found while walking the anime root. */
 export interface FolderTreeEntry {
@@ -105,4 +103,9 @@ export interface AnimeFoldersView extends AnimeFoldersIndexState {
   readonly chooseRoot: () => Promise<string | null>;
   /** Hides the hint banner for good. */
   readonly dismissHint: () => void;
+}
+
+/** The native `SafLister` module (modules/saf-lister). */
+export interface SafListerModule {
+  readonly listChildren: (uri: string) => Promise<FolderTreeChild[]>;
 }

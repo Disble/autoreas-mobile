@@ -1,5 +1,6 @@
 import { Directory } from 'expo-file-system';
 import { startActivityAsync } from 'expo-intent-launcher';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Alert, Linking } from 'react-native';
 import {
   FLAG_ACTIVITY_LAUNCH_ADJACENT,
@@ -7,16 +8,22 @@ import {
   OPEN_FOLDER_FAILED_TITLE,
   OPEN_PAGE_FAILED_TITLE,
   SAMSUNG_MY_FILES_LAUNCH_ACTION,
+  SAF_LISTER_MODULE_NAME,
   SAMSUNG_MY_FILES_START_PATH_EXTRA,
 } from './anime-folders.constants';
-import type { FolderTreeChild } from './anime-folders.types';
+import type { FolderTreeChild, SafListerModule } from './anime-folders.types';
 
-/** Lists the direct children of a SAF folder; throws when access was lost. */
-export function listSafChildren(uri: string): FolderTreeChild[] {
-  return new Directory(uri).list().map((entry) => ({
-    uri: entry.uri,
-    isDirectory: entry instanceof Directory,
-  }));
+/**
+ * Lists the direct children of a SAF folder with one provider query, off the JS thread (see
+ * modules/saf-lister). Rejects when access was lost or the native lister is missing.
+ */
+export async function listSafChildren(uri: string): Promise<FolderTreeChild[]> {
+  const safLister = requireOptionalNativeModule<SafListerModule>(SAF_LISTER_MODULE_NAME);
+  if (!safLister) {
+    throw new Error(`${SAF_LISTER_MODULE_NAME} is not in this build`);
+  }
+
+  return safLister.listChildren(uri);
 }
 
 /** True when the persisted SAF root still exists and is readable (SD card present, grant kept). */
@@ -26,13 +33,6 @@ export function isSafRootReadable(uri: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** Waits one macrotask so pending touches and frames run before the next blocking listing. */
-export function yieldToUi(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
 }
 
 /**

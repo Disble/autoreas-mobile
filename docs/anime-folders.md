@@ -34,6 +34,7 @@ The folder index walks the chosen root up to 3 levels, skipping hidden folders a
 | Root and hint preferences (`app_preferences`) | `src/features/anime-folders/anime-folders-preferences.helpers.ts` |
 | Index, resolution, summary (pure) | `src/features/anime-folders/anime-folders.helpers.ts` |
 | SAF, My Files and browser seam | `src/features/anime-folders/anime-folders-io.helpers.ts` |
+| Native folder lister (one query per folder) | `modules/saf-lister/` |
 | Shared index state (one walk at a time, last index kept while refreshing) | `src/features/anime-folders/anime-folders.store.ts` |
 | Hooks | `use-anime-folders.ts`, `use-anime-folder-resolution.ts` |
 | UI | `src/features/anime-folders/ui/` (banner, setup sheet, Settings card, detail screen) |
@@ -41,6 +42,7 @@ The folder index walks the chosen root up to 3 levels, skipping hidden folders a
 
 ## Device notes
 
-- The SAF listing is synchronous; the walk yields to the UI before every folder listing. A cold walk right after a reboot took about 15 s in the proof of concept, so the index lives in memory and the list renders with the last known index while a refresh runs. Cold start shows no folder buttons until the first walk finishes.
+- Folders are listed by the local native module `modules/saf-lister`: one `DocumentsContract` children query per folder (name and MIME type together), run off the JS thread. expo-file-system's `Directory.list()` is not used for the walk: it is a synchronous JS-thread call with one provider query per child, which on the tablet meant 558 queries, 5.7 s, and a frozen UI. The index lives in memory and the list renders with the last known index while a refresh runs. Cold start shows no folder buttons until the first walk finishes.
+- My Files shows the folder's files about 1.3 s after the tap (our part ends ~120 ms after it), so the folder button shows a spinner for 1.5 s and ignores taps meanwhile.
 - My Files is opened with `samsung.myfiles.intent.action.LAUNCH_MY_FILES` and `START_PATH`, flags `NEW_TASK | LAUNCH_ADJACENT`. This is Samsung-only; on another launcher the button shows an error alert.
 - `folderRelative` is optional on the bridge contract. A bridge that does not send it still works through name matching.

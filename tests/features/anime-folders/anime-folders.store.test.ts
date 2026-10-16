@@ -2,7 +2,7 @@ import type * as StoreModule from '../../../src/features/anime-folders/anime-fol
 import type { FolderTreeChild } from '../../../src/features/anime-folders/anime-folders.types';
 
 /** Stands in for the SAF folder listing. */
-const mockListSafChildren = jest.fn<FolderTreeChild[], [string]>();
+const mockListSafChildren = jest.fn<Promise<FolderTreeChild[]>, [string]>();
 /** Stands in for the SAF root access check. */
 const mockIsSafRootReadable = jest.fn<boolean, [string]>();
 
@@ -10,7 +10,6 @@ const mockIsSafRootReadable = jest.fn<boolean, [string]>();
 jest.mock('../../../src/features/anime-folders/anime-folders-io.helpers', () => ({
   listSafChildren: (uri: string) => mockListSafChildren(uri),
   isSafRootReadable: (uri: string) => mockIsSafRootReadable(uri),
-  yieldToUi: () => Promise.resolve(),
 }));
 
 /** Tree uri the picker returns for the SD card anime root. */
@@ -42,7 +41,7 @@ beforeEach(() => {
   jest.spyOn(console, 'info').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   mockIsSafRootReadable.mockReturnValue(true);
-  mockListSafChildren.mockImplementation((uri) => (uri === ROOT_URI ? rootWith('Bleach', 'Date a Live') : []));
+  mockListSafChildren.mockImplementation(async (uri) => (uri === ROOT_URI ? rootWith('Bleach', 'Date a Live') : []));
 });
 
 describe('indexAnimeFolders', () => {

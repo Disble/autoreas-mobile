@@ -1,6 +1,6 @@
 import { INITIAL_ANIME_FOLDERS_INDEX_STATE } from './anime-folders.constants';
 import { buildFolderIndex, walkFolderTree } from './anime-folders.helpers';
-import { isSafRootReadable, listSafChildren, yieldToUi } from './anime-folders-io.helpers';
+import { isSafRootReadable, listSafChildren } from './anime-folders-io.helpers';
 import type { AnimeFoldersIndexState } from './anime-folders.types';
 
 /** Current index state; replaced on every change so `useSyncExternalStore` sees new snapshots. */
@@ -41,7 +41,7 @@ async function runIndex(rootUri: string): Promise<void> {
     }
 
     const startedAt = Date.now();
-    const entries = await walkFolderTree(rootUri, listSafChildren, yieldToUi);
+    const entries = await walkFolderTree(rootUri, listSafChildren);
     if (state.rootUri === rootUri) {
       setState({ status: 'ready', index: buildFolderIndex(entries), indexedAt: Date.now() });
       console.info('[anime-folders] indexed', { folders: entries.length, ms: Date.now() - startedAt });

@@ -1,7 +1,9 @@
 import { Directory } from 'expo-file-system';
 import { startActivityAsync } from 'expo-intent-launcher';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Alert, Linking } from 'react-native';
 import {
+  listSafChildren,
   openDeviceFolder,
   openPageUrl,
   pickSafRoot,
@@ -14,6 +16,13 @@ jest.mock('expo-file-system', () => ({
 jest.mock('expo-intent-launcher', () => ({
   startActivityAsync: jest.fn(),
 }));
+
+jest.mock('expo-modules-core', () => ({
+  requireOptionalNativeModule: jest.fn(),
+}));
+
+/** Stands in for the native `SafLister.listChildren`. */
+const mockListChildren = jest.fn();
 
 /** Picker start location used by these tests. */
 const INITIAL_URI =
@@ -29,6 +38,35 @@ function flushPromises(): Promise<void> {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+});
+
+describe('listSafChildren', () => {
+  /** A child folder uri inside the SD card anime root tree. */
+  const CHILD_URI =
+    'content://com.android.externalstorage.documents/tree/0123-4567%3AVideos%2FAnime/document/0123-4567%3AVideos%2FAnime%2FBleach';
+
+  it('lists the folder through the native lister, one call per folder', async () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue({ listChildren: mockListChildren });
+    mockListChildren.mockResolvedValue([{ uri: CHILD_URI, isDirectory: true }]);
+
+    await expect(listSafChildren(INITIAL_URI)).resolves.toEqual([{ uri: CHILD_URI, isDirectory: true }]);
+    expect(requireOptionalNativeModule).toHaveBeenCalledWith('SafLister');
+    expect(mockListChildren).toHaveBeenCalledTimes(1);
+    expect(mockListChildren).toHaveBeenCalledWith(INITIAL_URI);
+  });
+
+  it('rejects when access to the folder was lost', async () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue({ listChildren: mockListChildren });
+    mockListChildren.mockRejectedValue(new Error('permission revoked'));
+
+    await expect(listSafChildren(INITIAL_URI)).rejects.toThrow('permission revoked');
+  });
+
+  it('rejects when the native lister is not in this build', async () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue(null);
+
+    await expect(listSafChildren(INITIAL_URI)).rejects.toThrow('SafLister');
+  });
 });
 
 describe('pickSafRoot', () => {

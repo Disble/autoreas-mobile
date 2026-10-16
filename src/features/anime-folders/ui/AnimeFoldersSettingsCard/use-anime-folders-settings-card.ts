@@ -12,7 +12,8 @@ import type { AnimeFoldersConfirmationRequest } from './anime-folders-settings-c
 
 /**
  * Wires the "Carpetas de anime" Settings card: its copy, reindex, choosing a folder, and the
- * confirmation once the chosen folder is indexed.
+ * confirmation once the chosen folder is indexed. `view` stays `null` until the saved folder is
+ * loaded, so the card never flashes the no-folder state on the way in.
  */
 export function useAnimeFoldersSettingsCard() {
   // 1. Refs
@@ -26,7 +27,7 @@ export function useAnimeFoldersSettingsCard() {
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const { toast } = useToast();
-  const { rootUri, status, rootLabel, indexedAt, reindex, chooseRoot } = useAnimeFolders();
+  const { rootUri, status, rootLabel, indexedAt, isLoaded, reindex, chooseRoot } = useAnimeFolders();
   const resolution = useAnimeFolderResolution();
 
   // 4. Queries/Mutations
@@ -35,8 +36,10 @@ export function useAnimeFoldersSettingsCard() {
   const summary = resolution?.summary ?? null;
   const view = useMemo(
     () =>
-      buildAnimeFoldersSettingsCardView({ status, rootLabel, summary, indexedAt, now: new Date() }),
-    [status, rootLabel, summary, indexedAt],
+      isLoaded
+        ? buildAnimeFoldersSettingsCardView({ status, rootLabel, summary, indexedAt, now: new Date() })
+        : null,
+    [isLoaded, status, rootLabel, summary, indexedAt],
   );
 
   // 6. Callbacks

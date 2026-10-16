@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyledIonicons } from '../../../../components/theme-toggle.constants';
-import { Button } from 'heroui-native';
+import { Button, Spinner } from 'heroui-native';
 import { View } from 'react-native';
 import { AnimeCardChapterControls } from './AnimeCardChapterControls';
 import type { AnimeCardActionsProps } from './anime-card.types';
@@ -16,6 +16,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
     onOpenSeasonRatingSheet,
     hasPageLink,
     hasFolder,
+    isOpeningFolder,
     onOpenPage,
     onOpenFolder,
     onReanudarPress,
@@ -40,13 +41,18 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
       ) : null}
       {hasFolder ? (
         <Button
-          accessibilityLabel="Abrir carpeta del anime"
+          accessibilityLabel={isOpeningFolder ? 'Abriendo carpeta' : 'Abrir carpeta del anime'}
           isIconOnly
           size="sm"
           variant="tertiary"
+          isDisabled={isOpeningFolder}
           onPress={onOpenFolder}
         >
-          <StyledIonicons name="folder-open" size={18} className="text-foreground" />
+          {isOpeningFolder ? (
+            <Spinner size="sm" />
+          ) : (
+            <StyledIonicons name="folder-open" size={18} className="text-foreground" />
+          )}
         </Button>
       ) : null}
       <View className="flex-1" />

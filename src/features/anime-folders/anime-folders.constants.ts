@@ -77,3 +77,6 @@ export const OPEN_PAGE_FAILED_TITLE = 'No se pudo abrir la página';
 
 /** Stable empty fallback for the anime live query, so the resolution memo is not rebuilt each render. */
 export const EMPTY_ANIME_FOLDER_SOURCES: readonly AnimeFolderSource[] = [];
+
+/** Name of the native folder lister in modules/saf-lister. */
+export const SAF_LISTER_MODULE_NAME = 'SafLister';

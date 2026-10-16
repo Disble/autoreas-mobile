@@ -23,7 +23,7 @@ function childUri(relativePath: string): string {
 /** In-memory SAF tree keyed by folder uri; `null` relative path is the root. */
 function makeLister(tree: Record<string, readonly (string | { file: string })[]>) {
   const listed: string[] = [];
-  const lister = (uri: string): FolderTreeChild[] => {
+  const lister = async (uri: string): Promise<FolderTreeChild[]> => {
     listed.push(uri);
     const relative = uri === ROOT_URI ? '' : decodeURIComponent(uri.split('/document/')[1] ?? '').replace('0123-4567:Videos/Anime/', '');
     return (tree[relative] ?? []).map((child) =>
@@ -86,7 +86,7 @@ describe('walkFolderTree', () => {
       'One Pace - Whole Cake Island/One Pace - Wano/Level 3': ['Level 4'],
     });
 
-    const entries = await walkFolderTree(ROOT_URI, lister, async () => undefined);
+    const entries = await walkFolderTree(ROOT_URI, lister);
 
     expect(entries.map((entry) => entry.relativePath)).toEqual([
       'Bleach',
@@ -96,25 +96,19 @@ describe('walkFolderTree', () => {
     ]);
   });
 
-  it('yields to the UI before every folder listing', async () => {
-    const { lister, listed } = makeLister({ '': ['A', 'B'] });
-    const yieldsBeforeListing: number[] = [];
-    const yieldToUi = jest.fn(async () => {
-      yieldsBeforeListing.push(listed.length);
-    });
+  it('lists each folder once, waiting for each listing before going deeper', async () => {
+    const { lister, listed } = makeLister({ '': ['A', 'B'], A: ['A1'] });
 
-    await walkFolderTree(ROOT_URI, lister, yieldToUi);
+    const entries = await walkFolderTree(ROOT_URI, lister);
 
-    expect(listed).toHaveLength(3);
-    expect(yieldsBeforeListing).toEqual([0, 1, 2]);
+    expect(listed).toEqual([ROOT_URI, childUri('A'), childUri('B'), childUri('A/A1')]);
+    expect(entries.map((entry) => entry.relativePath)).toEqual(['A', 'B', 'A/A1']);
   });
 
   it('fails when the root can no longer be listed', async () => {
-    const lister = () => {
-      throw new Error('permission revoked');
-    };
+    const lister = () => Promise.reject(new Error('permission revoked'));
 
-    await expect(walkFolderTree(ROOT_URI, lister, async () => undefined)).rejects.toThrow('permission revoked');
+    await expect(walkFolderTree(ROOT_URI, lister)).rejects.toThrow('permission revoked');
   });
 });
 

@@ -71,6 +71,23 @@ beforeEach(() => {
 });
 
 describe('useAnimeFoldersSettingsCard', () => {
+  it('has no card view while the saved folder is still loading, so it never flashes "Sin elegir"', () => {
+    jest.mocked(useAnimeFolders).mockReturnValue(view({ isLoaded: false, rootUri: null, rootLabel: null }));
+
+    const { result } = renderHook(() => useAnimeFoldersSettingsCard());
+
+    expect(result.current.view).toBeNull();
+  });
+
+  it('shows the no-folder state once preferences loaded without a folder', () => {
+    jest.mocked(useAnimeFolders).mockReturnValue(view({ rootUri: null, rootLabel: null, status: 'idle' }));
+
+    const { result } = renderHook(() => useAnimeFoldersSettingsCard());
+
+    expect(result.current.view?.hasRoot).toBe(false);
+    expect(result.current.view?.rootLabel).toBe('Sin elegir');
+  });
+
   it('confirms once, with the count, after the chosen folder is indexed', async () => {
     let folders = view({ status: 'indexing' });
     jest.mocked(useAnimeFolders).mockImplementation(() => folders);
