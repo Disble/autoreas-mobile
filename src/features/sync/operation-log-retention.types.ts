@@ -45,8 +45,6 @@ export interface OperationLogQueryParams {
    * Epoch-ms liveness floor for per-key claims (ADR 009 R-13). When set, every anime with ANY
    * row whose `claimed_at` is above this floor is left out entirely, before the dedup ranks
    * rows: excluding only the claimed row would let a newer row of the same anime rank first.
-   * Every anime with a row that was given up (`dead_letter`, `conflict_exhausted`) is left out
-   * the same way: the rows behind it are held (ADR 009 R-14).
    * Only honoured together with `dedupeBy: 'anime_id'`.
    */
   readonly skipKeysClaimedAfter?: number;

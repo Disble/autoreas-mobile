@@ -32,7 +32,7 @@ Every rule below quotes the approved proposal (v8). ADR 009 holds the full text 
 - **S4 (R-14) Chaining.**
   - The claim holder sends the oldest row, waits for its confirmation and new token, and then sends the next row.
   - The chain stops on any of these:
-    - a rejection. If that row is given up, the rows behind it are held.
+    - a rejection. The rest of that key waits for the next cycle. A given-up row never holds the rows behind it (L14).
     - a network error or timeout. The row stays pending and is not counted as a conflict.
     - 20 s of chaining in one cycle.
   - The claim is released when the chain stops.
@@ -105,7 +105,7 @@ High-risk tasks get an independent verifier after their own checks.
 | T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | done | 751d3f1 |
 | T4 | S2 | inline + verifier | 4 (concurrency) | done | 3a040d3 |
 | T5 | S3 | inline | 3 | done | 7ad484c |
-| T6 | S4 | inline + verifier | 4 | done | b48ddca, 8acbc94 + correction (see L13) |
+| T6 | S4 | inline + verifier | 4 | done | b48ddca, 8acbc94, 6300955 + hold removal (see L14) |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
 | T8 | S6 | inline | 4 | pending | |
 | T9 | S7 | inline + verifier | 1 | pending | |
@@ -181,4 +181,9 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - A3 (Kotlin outcome on lease loss / catch-all reporting 0): tried, but an existing test pins `0, 0` there and nobody asked to change it; reverted, and L12's wording corrected.
   - Still open: A2 (a whole-batch 4xx, including 401, dead-letters and then holds every key in the round) for T9/T10; A4 (JS per-round cursor without `max`; the stored cursor is forward-only); A5 (Kotlin's per-send re-check is the in-transaction successor claim, as in T4).
   - Verifier probes V1-V6, V7b, V8 committed as `tests/behaviour/sync/outbox-chain-edges.behaviour.test.ts` (V7b and V8 failed at `8acbc94`); V7 is P4 in `outbox-claims`. JS 1143/1143, Kotlin gate green (`SyncFloorSchedulerTest` "Invalid window pointer" failed once under memory pressure and passed on rerun; unrelated to this change).
+- **L14 (2026-10-16, requirement change, S4):** the maintainer removed the hold behind a given-up row. Verbatim:
+  - "Sí, a mí me parece mejor quitar la retención. Es que te lo digo, todo depende del contexto. No sé bajo qué contexto se pensó la política que estabas aplicando, pero es que realmente nosotros no hacemos un más uno más uno más uno, sino que mandamos directamente el número 7, 8, 9. y perder un número sí puede ser problemático a nivel de histórico, pero tampoco tanto porque se supone que nosotros tenemos una arquitectura que permite, entre comillas, reintentar por dos fuentes diferentes dentro del mismo mobile."
+  - Earlier in the same exchange: "Tiene que ser general, porque si no creamos casuísticas que después van a ser difíciles de seguir." and "Yo prefiero una política de retención." (superseded by the removal above).
+  - Rationale, verified in `anime-mutation.helpers.ts`: every event is an `update` with absolute values (`episodesWatched`, `lastWatchedAt`, optional `status`/`premieredAt`/`firstCycle`). A given-up event is never applied with or without a hold, so the hold only froze the later, valid events, and nothing could release it (the R-16(b) UI is out of scope, C6) except retention pruning after 30 days. Residual risk, unchanged by a hold: an optional field carried only by the given-up event does not reach the bridge; R-16(b) records it as unresolved.
+  - Change: both backlog queries drop the given-up exclusion (live-claim exclusion stays); `countSendableBacklogRows` is deleted (its only purpose was the hold); S4 and ADR 009 R-14 rewritten. Within a cycle a rejection still stops its key.
 - **Next:** T7.

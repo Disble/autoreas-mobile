@@ -90,7 +90,7 @@ The architecture is named **convergent sync**. It combines five standard pattern
 
 **R-14: the chain stops when**
 
-- **a row is rejected.** If that row is given up, the rows queued behind it are held.
+- **a row is rejected.** The rest of that key waits for the next cycle. A row that is given up never holds the rows queued behind it: every event is an absolute `update` (it sends `episodesWatched: 7`, never "+1"), so a later event never depends on an earlier one. Holding them would lose the later events too and freeze the anime with no way out. The given-up row itself becomes unresolved (R-16(b)). Amended 2026-10-16 by the maintainer.
 - **there is a network error or timeout.** The row stays pending, and the error is not counted as a conflict.
 - **20 s have been spent chaining in one cycle.**
 

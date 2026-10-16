@@ -151,22 +151,21 @@ describe('chained sends per key (ADR 009 R-14)', () => {
     ]);
   });
 
-  it('holds the rows behind a row that was given up, in this cycle and the next', async () => {
+  it('never holds the rows behind a given-up row: the next one goes out in the next cycle', async () => {
+    // Events carry absolute values (`episodesWatched: 7`, never "+1"), so a later event never
+    // depends on an earlier one; a given-up row holds nothing behind it (L14).
     const adapter = await openDatabaseWithTwoRows();
     fakeBridge.queueResponse(respondWith({ applied: false, reason: 'unsupported_operation' }));
-    fakeBridge.queueResponse({
-      status: 202,
-      body: buildReconcileResponseBody({ appliedOperations: [], lastChangelogId: 1 }),
-    });
+    fakeBridge.queueResponse(respondWith({ modified_at: 14 }));
 
     await syncPendingOperations(adapter);
     await syncPendingOperations(adapter);
 
     expect(fakeBridge.requests).toHaveLength(2);
-    expect(sentOperations(fakeBridge, 1)).toEqual([]);
+    expect(sentOperations(fakeBridge, 1)).toEqual([expect.objectContaining({ anime_id: 'anime-1', base: 7 })]);
     expect(await readRows(adapter)).toEqual([
       expect.objectContaining({ id: 1, status: 'dead_letter' }),
-      expect.objectContaining({ id: 2, ...UNCLAIMED_PENDING }),
+      expect.objectContaining({ id: 2, status: 'synced', claim_owner: null, claimed_at: null }),
     ]);
   });
 

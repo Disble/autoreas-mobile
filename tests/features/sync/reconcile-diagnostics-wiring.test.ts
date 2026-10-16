@@ -51,7 +51,7 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
 );
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
-  countSendableBacklogRows: jest.fn().mockResolvedValue(0),
+  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 /** Builds a neutral runtime snapshot so each test only states the fields it actually exercises. */
@@ -99,7 +99,7 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
-  const mockCountBacklogRows = operationLogRetention.countSendableBacklogRows as jest.Mock;
+  const mockCountBacklogRows = operationLogRetention.countOperationLogBacklogRows as jest.Mock;
   const mockCapture = syncDiagnosticsFlushModule.captureSyncDiagnosticsEnvelope as jest.Mock;
   const mockFlush = syncDiagnosticsFlushModule.flushSyncDiagnosticsOutbox as jest.Mock;
 

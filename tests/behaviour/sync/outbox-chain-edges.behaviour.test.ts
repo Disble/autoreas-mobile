@@ -198,7 +198,7 @@ describe('chained sends per key, edge cases (ADR 009 R-14)', () => {
     expect((await readRows(adapter)).map((row) => row.status)).toEqual(['synced', 'synced']);
   });
 
-  it('keeps round 1 synced and holds the rest when round 2 is rejected with a 400', async () => {
+  it('keeps round 1 synced, dead-letters round 2 and sends the next row next cycle on a 400', async () => {
     const adapter = await openDatabase({ 'anime-a': 7 });
     await queueRow(adapter, 'anime-a');
     await queueRow(adapter, 'anime-a');
@@ -210,7 +210,9 @@ describe('chained sends per key, edge cases (ADR 009 R-14)', () => {
     await expect(syncPendingOperations(adapter)).rejects.toThrow();
     await syncPendingOperations(adapter);
 
-    expect(sentBodies(fakeBridge)[2].pending_operations).toEqual([]);
+    expect(sentBodies(fakeBridge)[2].pending_operations).toEqual([
+      expect.objectContaining({ anime_id: 'anime-a', base: 14 }),
+    ]);
     expect(await readRows(adapter)).toEqual([
       expect.objectContaining({ id: 1, status: 'synced' }),
       expect.objectContaining({ id: 2, status: 'dead_letter', claim_owner: null }),
@@ -278,17 +280,5 @@ describe('chained sends per key, edge cases (ADR 009 R-14)', () => {
     expect(result.syncedCount).toBe(0);
     expect(fakeBridge.requests).toHaveLength(1);
     expect((await readRows(adapter))[1]).toEqual(expect.objectContaining({ id: 2, ...UNCLAIMED_PENDING }));
-  });
-
-  it('does not report more pending work because of a key held behind a given-up row', async () => {
-    const adapter = await openDatabase({ 'anime-a': 7, 'anime-held': 1 });
-    await queueRow(adapter, 'anime-held', 'dead_letter');
-    await queueRow(adapter, 'anime-held');
-    await queueRow(adapter, 'anime-a');
-    fakeBridge.queueResponse(respond([{ anime_id: 'anime-a', modified_at: 14 }], 1));
-
-    const result = await syncPendingOperations(adapter);
-
-    expect(result).toEqual(expect.objectContaining({ syncedCount: 1, hasMorePending: false }));
   });
 });

@@ -60,9 +60,9 @@ class SyncEngineChainTest {
   }
 
   @Test
-  fun theRowsBehindAGivenUpRowAreHeldInThisCycleAndTheNext() {
+  fun aGivenUpRowNeverHoldsTheRowsBehindItTheNextOneGoesOutInTheNextCycle() {
     SyncEngineTestDatabase().use { fixture ->
-      val responses = listOf(rejected(""""reason":"unsupported_operation""""), emptyResponse())
+      val responses = listOf(rejected(""""reason":"unsupported_operation""""), confirmed(14))
       SyncEngineTestHttpServer.scripted(responses).use { server ->
         seed(fixture, server)
 
@@ -71,9 +71,9 @@ class SyncEngineChainTest {
 
         val requests = reconcileRequests(server)
         assertEquals(2, requests.size)
-        assertEquals(0, JSONObject(requests[1].body).getJSONArray("pending_operations").length())
+        assertEquals(listOf(7L, 7L), sentBases(server))
         assertEquals(
-          listOf(RowState(1, "dead_letter", null, 0), RowState(2, "pending", null, 0)),
+          listOf(RowState(1, "dead_letter", null, 0), RowState(2, "synced", null, 0)),
           rows(fixture),
         )
       }
@@ -173,8 +173,6 @@ class SyncEngineChainTest {
   private fun rejected(reasonFields: String) = response(
     """{"anime_id":"anime-1","operation":"update","applied":false,$reasonFields}""",
   )
-
-  private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[],"last_changelog_id":1}""")
 
   private fun response(appliedOperation: String) = SyncEngineTestHttpServer.Response(
     200,

@@ -49,7 +49,7 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
 );
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
-  countSendableBacklogRows: jest.fn().mockResolvedValue(0),
+  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 describe('reconcile helpers', () => {
@@ -191,7 +191,7 @@ describe('syncPendingOperations applyMode routing', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
-  const mockCountBacklogRows = operationLogRetention.countSendableBacklogRows as jest.Mock;
+  const mockCountBacklogRows = operationLogRetention.countOperationLogBacklogRows as jest.Mock;
   const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
   const mockLoadGuardMap = mergeContextModule.loadGuardMap as jest.Mock;
   const mockLoadPendingOutboxRecordIds =

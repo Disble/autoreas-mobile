@@ -29,10 +29,7 @@ val UNCLAIMED = OutboxClaim(owner = "", claimedAt = 0L)
 /** The epoch-ms floor above which a `claimed_at` is still live at [now]. */
 fun liveClaimFloor(now: Long): Long = now - OUTBOX_CLAIM_TTL_MS
 
-/**
- * Mirrors `buildDedupedBacklogQuery` with its key exclusion: a key with a live claim (R-13) or
- * with a row that was given up (R-14: the rows behind it are held).
- */
+/** Mirrors `buildDedupedBacklogQuery` with the live-claim key exclusion (R-13). */
 private const val BACKLOG_QUERY =
   "SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (" +
     "  SELECT" +
@@ -48,8 +45,7 @@ private const val BACKLOG_QUERY =
     "    ) AS animeRank" +
     "  FROM operation_log" +
     "  WHERE status IN (?, ?)" +
-    "  AND anime_id NOT IN (SELECT anime_id FROM operation_log" +
-    "    WHERE claimed_at > ? OR status IN ('dead_letter', 'conflict_exhausted'))" +
+    "  AND anime_id NOT IN (SELECT anime_id FROM operation_log WHERE claimed_at > ?)" +
     ")" +
     "WHERE animeRank = 1" +
     " ORDER BY createdAt ASC, id ASC" +
