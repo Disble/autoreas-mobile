@@ -30,6 +30,8 @@ interface StoredRow {
 
 /** The part of a recorded reconcile request body these tests read. */
 interface SentReconcileBody {
+  last_changelog_id: number;
+  client_telemetry?: unknown;
   pending_operations: readonly { anime_id: string }[];
 }
 
@@ -87,6 +89,24 @@ function confirming(...animeIds: string[]) {
   };
 }
 
+/** A 202 confirming one row of `animeId` and reaching changelog `lastChangelogId`. */
+function confirmingAt(animeId: string, lastChangelogId: number) {
+  return {
+    status: 202,
+    body: buildReconcileResponseBody({
+      appliedOperations: [
+        buildAppliedOperation({ anime_id: animeId, operation: 'update', applied: true, modified_at: 14 }),
+      ],
+      lastChangelogId,
+    }),
+  };
+}
+
+/** Lets the cycle reach its pending request before the test acts on the database. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 /** A whole-request rejection with `status`. */
 function rejecting(status: number) {
   return { status, body: { error: 'rejected' } };
@@ -103,6 +123,11 @@ function readRows(adapter: SQLiteDatabase): Promise<StoredRow[]> {
 function sentAnimeIds(fakeBridge: FakeBridge): string[][] {
   return fakeBridge.requests.map((request) =>
     (request.body as SentReconcileBody).pending_operations.map((operation) => operation.anime_id));
+}
+
+/** Every recorded reconcile request body, in send order. */
+function sentBodies(fakeBridge: FakeBridge): SentReconcileBody[] {
+  return fakeBridge.requests.map((request) => request.body as SentReconcileBody);
 }
 
 describe('per-message failure in the anime outbox (ADR 009 R-5)', () => {
@@ -213,6 +238,104 @@ describe('per-message failure in the anime outbox (ADR 009 R-5)', () => {
     expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
       ['pending', null],
       ['pending', null],
+    ]);
+  });
+
+  it('sends each isolated message on the cursor the previous one reached, and stores the last', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b', 'anime-c']);
+    fakeBridge.queueResponse(rejecting(422));
+    fakeBridge.queueResponse(confirmingAt('anime-a', 5));
+    fakeBridge.queueResponse(rejecting(422));
+    fakeBridge.queueResponse(confirmingAt('anime-c', 9));
+
+    await syncPendingOperations(adapter);
+
+    expect(sentBodies(fakeBridge).map((body) => body.last_changelog_id)).toEqual([0, 0, 5, 5]);
+    expect(sentAnimeIds(fakeBridge)).toEqual([['anime-a', 'anime-b', 'anime-c'], ['anime-a'], ['anime-b'], ['anime-c']]);
+    const config = await adapter.getFirstAsync<{ last_changelog_id: number }>(
+      'SELECT last_changelog_id FROM bridge_config WHERE id = 1',
+    );
+    expect(config?.last_changelog_id).toBe(9);
+    expect((await readRows(adapter)).map((row) => row.status)).toEqual(['synced', 'dead_letter', 'synced']);
+  });
+
+  it('never re-sends a row the other runtime took over between the rejection and its isolated send', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b']);
+    const firstRound = fakeBridge.queueDeferredResponse();
+    fakeBridge.queueResponse(confirmingAt('anime-a', 3));
+
+    const cycle = syncPendingOperations(adapter);
+    await settle();
+    await adapter.runAsync(
+      "UPDATE operation_log SET claim_owner = 'native', claimed_at = 999 WHERE anime_id = 'anime-b'",
+    );
+    firstRound.release(rejecting(422));
+    await cycle;
+
+    expect(sentAnimeIds(fakeBridge)).toEqual([['anime-a', 'anime-b'], ['anime-a']]);
+    expect(await readRows(adapter)).toEqual([
+      { id: 1, anime_id: 'anime-a', status: 'synced', claim_owner: null },
+      { id: 2, anime_id: 'anime-b', status: 'processing', claim_owner: 'native' },
+    ]);
+  });
+
+  it('leaves no row processing and no successor claimed when an isolated send fails in transport', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b', 'anime-a', 'anime-c']);
+    fakeBridge.queueResponse(rejecting(400));
+    fakeBridge.queueResponse(confirmingAt('anime-a', 2));
+    const transport = fakeBridge.queueDeferredResponse();
+
+    const cycle = syncPendingOperations(adapter);
+    await settle();
+    transport.reject(new TypeError('Network request failed'));
+    await expect(cycle).rejects.toThrow();
+
+    expect((await readRows(adapter)).map((row) => [row.anime_id, row.status, row.claim_owner])).toEqual([
+      ['anime-a', 'synced', null],
+      ['anime-b', 'pending', null],
+      ['anime-a', 'pending', null],
+      ['anime-c', 'pending', null],
+    ]);
+  });
+
+  it('sends the isolated messages without the telemetry piggyback', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b']);
+    fakeBridge.queueResponse(rejecting(422));
+    fakeBridge.queueResponse(confirmingAt('anime-a', 1));
+    fakeBridge.queueResponse(confirmingAt('anime-b', 2));
+
+    await syncPendingOperations(adapter);
+
+    expect(sentBodies(fakeBridge).slice(1).map((body) => body.client_telemetry)).toEqual([undefined, undefined]);
+  });
+
+  it('dead-letters the message a 401 lands on during isolation and releases the rest', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b']);
+    fakeBridge.queueResponse(rejecting(422));
+    fakeBridge.queueResponse(rejecting(401));
+
+    await expect(syncPendingOperations(adapter)).rejects.toThrow();
+
+    expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
+      ['dead_letter', null],
+      ['pending', null],
+    ]);
+  });
+
+  it('releases the in-flight message and every unsent one when a local write fails during an isolated send', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b']);
+    fakeBridge.queueResponse(rejecting(422));
+    const isolatedSend = fakeBridge.queueDeferredResponse();
+
+    const cycle = syncPendingOperations(adapter);
+    await settle();
+    await adapter.runAsync('ALTER TABLE animes RENAME TO animes_gone');
+    isolatedSend.release(confirmingAt('anime-a', 3));
+    await expect(cycle).rejects.toThrow();
+
+    expect((await readRows(adapter)).map((row) => [row.anime_id, row.status, row.claim_owner])).toEqual([
+      ['anime-a', 'pending', null],
+      ['anime-b', 'pending', null],
     ]);
   });
 });

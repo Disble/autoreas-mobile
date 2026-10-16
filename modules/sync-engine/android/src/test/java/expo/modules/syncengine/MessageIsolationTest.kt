@@ -92,7 +92,7 @@ class MessageIsolationTest {
   }
 
   @Test
-  fun releasesTheUnsentRowsAndTheChainedSuccessorsWhenALocalWriteThrows() {
+  fun releasesTheThrowingRowTheUnsentRowsAndTheChainedSuccessorsWhenALocalWriteThrows() {
     val failure = IllegalStateException("disk I/O error")
     val port = ScriptedPort(
       held = setOf(rowA.id, rowB.id),
@@ -107,7 +107,7 @@ class MessageIsolationTest {
     }
 
     assertSame(failure, thrown)
-    assertEquals(listOf(listOf(successor.id)), port.released)
+    assertEquals(listOf(listOf(rowB.id, successor.id)), port.released)
   }
 
   private fun row(id: Long, animeId: String) = BacklogRow(id, animeId, "update", "{}", "processing", id, 0)

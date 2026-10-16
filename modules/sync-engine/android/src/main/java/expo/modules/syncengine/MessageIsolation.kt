@@ -45,10 +45,10 @@ internal interface MessageIsolationPort {
  * dead-lettered and its key stops, while every other key is confirmed and chained as usual. Only
  * rows this claim still holds go out, each on the cursor the previous one reached.
  *
- * Any other failure on the way ends it: the failing message already took that failure's fate,
- * and every unsent row and every successor already chained is released to `pending`. When no
- * message got through, [MessageIsolationPort.noneDelivered] ends the attempt, so a round nobody
- * accepted still fails.
+ * Any other failure on the way ends it: a failed exchange already gave the failing message that
+ * failure's fate, a local failure releases it, and every unsent row and every successor already
+ * chained is released to `pending`. When no message got through,
+ * [MessageIsolationPort.noneDelivered] ends the attempt, so a round nobody accepted still fails.
  */
 internal fun isolateMessages(rejection: RoundResult.Rejected, cursor: Long, port: MessageIsolationPort): RoundResult {
   var reached = cursor
@@ -57,11 +57,14 @@ internal fun isolateMessages(rejection: RoundResult.Rejected, cursor: Long, port
   var lastRejection = rejection
   var delivered = false
   var unsent = rejection.sent
+  // The row in flight: when a local write throws while it is out, it still needs releasing.
+  var inFlight = emptyList<BacklogRow>()
 
   try {
     while (unsent.isNotEmpty()) {
       val row = unsent.first()
       unsent = unsent.drop(1)
+      inFlight = listOf(row)
       if (!port.isHeld(row)) continue
 
       when (val result = port.send(row, reached)) {
@@ -82,7 +85,7 @@ internal fun isolateMessages(rejection: RoundResult.Rejected, cursor: Long, port
       }
     }
   } catch (error: Throwable) {
-    port.release(unsent + successors)
+    port.release(inFlight + unsent + successors)
     throw error
   }
 
