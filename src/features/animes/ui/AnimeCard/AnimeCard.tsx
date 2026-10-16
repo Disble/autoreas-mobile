@@ -25,7 +25,6 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     handleOpenSeasonRatingSheet,
     hasPageLink,
     hasFolder,
-    isOpeningFolder,
     handleOpenPage,
     handleOpenFolder,
   } = useAnimeCard(props);
@@ -57,7 +56,6 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           onOpenSeasonRatingSheet={handleOpenSeasonRatingSheet}
           hasPageLink={hasPageLink}
           hasFolder={hasFolder}
-          isOpeningFolder={isOpeningFolder}
           onOpenPage={handleOpenPage}
           onOpenFolder={handleOpenFolder}
           onCapMinusPress={handleCapMinusPress}

@@ -82,8 +82,6 @@ export interface AnimeCardActionsProps {
   readonly hasPageLink: boolean;
   /** Shows the folder shortcut; only when the anime resolved to exactly one folder. */
   readonly hasFolder: boolean;
-  /** True while the folder button waits for My Files to come up. */
-  readonly isOpeningFolder: boolean;
   readonly onOpenPage: () => void;
   readonly onOpenFolder: () => void;
   readonly onReanudarPress: () => void;
@@ -122,8 +120,6 @@ export interface AnimeCardContentProps {
   readonly hasPageLink: boolean;
   /** Shows the folder shortcut; only when the anime resolved to exactly one folder. */
   readonly hasFolder: boolean;
-  /** True while the folder button waits for My Files to come up. */
-  readonly isOpeningFolder: boolean;
   readonly onOpenPage: () => void;
   readonly onOpenFolder: () => void;
   readonly onCapMinusPress: () => void;

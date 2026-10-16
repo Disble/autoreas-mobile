@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { getOpenablePageUrl } from '../../../anime-folders/anime-folders.helpers';
 import { openDeviceFolder, openPageUrl } from '../../../anime-folders/anime-folders-io.helpers';
-import { FOLDER_OPENING_FEEDBACK_MS } from './anime-card.constants';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
@@ -18,11 +17,7 @@ export function useAnimeCard(props: AnimeCardProps) {
   // 1. Refs
 
   // 2. State
-  /** Timer that ends the folder opening state. */
-  const folderOpeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [restantesShown, setRestantesShown] = useState(false);
-  /** True from a folder tap until My Files is expected to be up; there is no signal from My Files. */
-  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
 
   // 3. Third-party/Context hooks
   // 4. Mutations/Queries
@@ -82,26 +77,12 @@ export function useAnimeCard(props: AnimeCardProps) {
   };
 
   const handleOpenFolder = () => {
-    if (!folderPath) {
-      return;
+    if (folderPath) {
+      openDeviceFolder(folderPath);
     }
-
-    setIsOpeningFolder(true);
-    openDeviceFolder(folderPath);
-    folderOpeningTimerRef.current = setTimeout(() => {
-      setIsOpeningFolder(false);
-    }, FOLDER_OPENING_FEEDBACK_MS);
   };
 
   // 7. Effects
-  useEffect(
-    () => () => {
-      if (folderOpeningTimerRef.current) {
-        clearTimeout(folderOpeningTimerRef.current);
-      }
-    },
-    [],
-  );
 
   return {
     isMutationLocked,
@@ -121,7 +102,6 @@ export function useAnimeCard(props: AnimeCardProps) {
     handleOpenSeasonRatingSheet,
     hasPageLink: pageUrl !== null,
     hasFolder: folderPath !== null,
-    isOpeningFolder,
     handleOpenPage,
     handleOpenFolder,
   };

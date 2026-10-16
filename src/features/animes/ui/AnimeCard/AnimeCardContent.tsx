@@ -21,7 +21,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     onOpenSeasonRatingSheet,
     hasPageLink,
     hasFolder,
-    isOpeningFolder,
     onOpenPage,
     onOpenFolder,
     onCapMinusPress,
@@ -51,7 +50,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
         onOpenSeasonRatingSheet={onOpenSeasonRatingSheet}
         hasPageLink={hasPageLink}
         hasFolder={hasFolder}
-        isOpeningFolder={isOpeningFolder}
         onOpenPage={onOpenPage}
         onOpenFolder={onOpenFolder}
         onReanudarPress={onStateBadgePress}

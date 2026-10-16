@@ -1,12 +1,11 @@
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import {
   openDeviceFolder,
   openPageUrl,
 } from '../../../../src/features/anime-folders/anime-folders-io.helpers';
 import { LOCAL_ACTIVE_SEASON_ID } from '../../../../src/features/animes/anime-season.constants';
 import { AnimeCard } from '../../../../src/features/animes/ui/AnimeCard/AnimeCard';
-import { FOLDER_OPENING_FEEDBACK_MS } from '../../../../src/features/animes/ui/AnimeCard/anime-card.constants';
 import {
   buildAnimeCardAnime,
   buildAnimeCardProps,
@@ -152,33 +151,6 @@ describe('AnimeCard', () => {
 
     expect(openPageUrl).toHaveBeenCalledWith('https://jkanime.net/dandadan/');
     expect(openDeviceFolder).toHaveBeenCalledWith('/storage/0123-4567/Videos/Anime/Dandadan');
-  });
-
-  it('shows that the folder is opening until My Files is up, ignoring repeated taps', () => {
-    jest.mocked(openDeviceFolder).mockClear();
-    jest.useFakeTimers();
-    try {
-      const { getByLabelText, queryByLabelText } = render(
-        <AnimeCard
-          {...buildAnimeCardProps({ folderPath: '/storage/0123-4567/Videos/Anime/Dandadan' })}
-        />,
-      );
-
-      fireEvent.press(getByLabelText('Abrir carpeta del anime'));
-      fireEvent.press(getByLabelText('Abriendo carpeta'));
-
-      expect(openDeviceFolder).toHaveBeenCalledTimes(1);
-
-      act(() => {
-        jest.advanceTimersByTime(FOLDER_OPENING_FEEDBACK_MS);
-      });
-
-      expect(queryByLabelText('Abriendo carpeta')).toBeNull();
-      fireEvent.press(getByLabelText('Abrir carpeta del anime'));
-      expect(openDeviceFolder).toHaveBeenCalledTimes(2);
-    } finally {
-      jest.useRealTimers();
-    }
   });
 
   it('shows no page shortcut without an http(s) page, and no folder shortcut without a folder', () => {
