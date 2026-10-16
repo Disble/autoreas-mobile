@@ -4,6 +4,7 @@ import { applyRemoteChanges } from '../../../src/features/sync/merge/apply-remot
 import type { MergeContext, RemoteAnimeChange } from '../../../src/features/sync/merge/merge.types';
 import * as schema from '../../../src/infrastructure/db/schema';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
+import { normalizeWireAnimeChangedFields } from '../../../src/infrastructure/validation/anime-schema/anime-wire.helpers';
 import { createSqliteProxyCallback } from '../../support/drizzle-test-factory.helpers';
 import { applyMigrationFiles, createTestSqliteAdapter } from '../../support/sqlite-adapter.helpers';
 
@@ -122,6 +123,38 @@ describe('inbound remote changes land in the database', () => {
     expect(stored).not.toBeNull();
     expect(stored?.nrocapvisto).toBe(7);
     expect(result.applied).toBe(1);
+  });
+
+  it('keeps the folder path of an anime created from Season, which arrives as an update', async () => {
+    // Bridge changelog 2494 (Ranma 1/2 (2024) 3rd Season): a Season create is served as an
+    // `update` carrying every field, and later rows never name `folder` again, so this first
+    // write is the only one that can store the folder path.
+    const { adapter, db } = await openDatabase();
+    const change: RemoteAnimeChange = {
+      recordId: 'anime-from-season',
+      changeType: 'update',
+      changedFields: normalizeWireAnimeChangedFields([
+        'active', 'cover', 'createdAt', 'days', 'durationMinutes', 'episodesWatched', 'firstCycle',
+        'folder', 'genres', 'kind', 'name', 'origin', 'sourceUrl', 'status', 'studios',
+      ]),
+      snapshot: remoteSnapshot({
+        _id: 'anime-from-season',
+        carpeta: 'D:\\Anime\\Ranma 1 2 (2024) 3rd Season',
+        folderRelative: 'Ranma 1 2 (2024) 3rd Season',
+      }),
+      timestamp: 1_700_000_000_000,
+    };
+
+    await applyRemoteChanges(db as never, [change], emptyMergeContext());
+
+    const stored = await adapter.getFirstAsync<{ carpeta: string | null; folder_relative: string | null }>(
+      'SELECT carpeta, folder_relative FROM animes WHERE _id = ?',
+      'anime-from-season',
+    );
+    expect(stored).toEqual({
+      carpeta: 'D:\\Anime\\Ranma 1 2 (2024) 3rd Season',
+      folder_relative: 'Ranma 1 2 (2024) 3rd Season',
+    });
   });
 
   it('upserts an update for an unknown _id when changed_fields is empty', async () => {
