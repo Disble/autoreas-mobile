@@ -16,6 +16,7 @@ import { bridgeConfig, operationLog } from '../../infrastructure/db/schema';
 import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { collectConfirmedAnimeTokens } from './applied-operation-token.helpers';
 import {
+  forwardOnlyChangelogCursor,
   getLastChangelogId,
   shouldPersistLastChangelogId,
 } from './last-changelog.helpers';
@@ -252,7 +253,7 @@ async function applyReconcileResponseWrites(
   if (shouldPersistLastChangelogId(lastChangelogId, nextLastChangelogId)) {
     await writeDb
       .update(bridgeConfig)
-      .set({ lastChangelogId: nextLastChangelogId })
+      .set({ lastChangelogId: forwardOnlyChangelogCursor(nextLastChangelogId) })
       .where(eq(bridgeConfig.id, bridgeConfigId));
   }
 }

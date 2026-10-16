@@ -89,8 +89,10 @@ internal class SyncEngineResponseApplier(
 
     val nextLastChangelogId = parsed.lastChangelogId ?: lastChangelogId
     if (nextLastChangelogId > lastChangelogId) {
+      // Forward-only against the STORED value (ADR 009, R-6): JS may have advanced the cursor past
+      // this cycle's snapshot while the request was in flight.
       appDb.compileStatement(
-        "UPDATE bridge_config SET last_changelog_id = ? WHERE id = ?",
+        "UPDATE bridge_config SET last_changelog_id = MAX(COALESCE(last_changelog_id, 0), ?) WHERE id = ?",
       ).apply {
         bindLong(1, nextLastChangelogId)
         bindLong(2, configId)

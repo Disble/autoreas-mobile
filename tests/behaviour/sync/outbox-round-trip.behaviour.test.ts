@@ -33,6 +33,13 @@ interface StoredBridgeConfigRow {
   last_changelog_id: number | null;
 }
 
+/** Yields to the event loop until the fake bridge has received `count` requests. */
+async function waitForRequestCount(fakeBridge: FakeBridge, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 200 && fakeBridge.requests.length < count; attempt += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 /** Opens a migrated database wired to a paired bridge and one pending outbox operation. */
 async function openPairedDatabase() {
   const adapter: SQLiteDatabase = createTestSqliteAdapter();
@@ -105,6 +112,29 @@ describe('outbox round trip against a real database and a faked wire', () => {
       { id: 1, anime_id: 'anime-1', status: 'synced' },
     ]);
     expect(config?.last_changelog_id).toBe(41);
+  });
+
+  it('never moves the cursor back when the other runtime advanced it during the request (R-6)', async () => {
+    const adapter = await openPairedDatabase();
+    const held = fakeBridge.queueDeferredResponse();
+    const cycle = syncPendingOperations(adapter);
+    await waitForRequestCount(fakeBridge, 1);
+
+    // Kotlin's cycle confirms a later changelog while this request is in flight.
+    await adapter.runAsync('UPDATE bridge_config SET last_changelog_id = 60 WHERE id = 1');
+    held.release({
+      status: 202,
+      body: buildReconcileResponseBody({
+        appliedOperations: [buildAppliedOperation({ anime_id: 'anime-1', operation: 'update' })],
+        lastChangelogId: 41,
+      }),
+    });
+    await cycle;
+
+    const config = await adapter.getFirstAsync<StoredBridgeConfigRow>(
+      'SELECT last_changelog_id FROM bridge_config WHERE id = 1',
+    );
+    expect(config?.last_changelog_id).toBe(60);
   });
 
   it('leaves the operation unconfirmed when the bridge does not confirm it', async () => {

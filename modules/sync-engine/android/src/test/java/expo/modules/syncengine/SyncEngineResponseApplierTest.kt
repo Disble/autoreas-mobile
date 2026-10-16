@@ -133,6 +133,24 @@ class SyncEngineResponseApplierTest {
   }
 
   @Test
+  fun cursorNeverMovesBelowAValueTheOtherRuntimeStoredDuringTheRequest() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus)
+    // JS confirmed changelog 20 while this cycle's request (read at 10) was in flight.
+    database.execSQL("UPDATE bridge_config SET last_changelog_id = 20 WHERE id = 1")
+
+    inImmediateTransaction(database) {
+      applier.apply(
+        1,
+        ParsedReconcileResponse(emptyList(), emptyList(), lastChangelogId = 14),
+        emptyList(),
+        lastChangelogId = 10,
+      )
+    }
+
+    assertEquals(20L, changelogCursor())
+  }
+
+  @Test
   fun failureInSuppliedStatusBoundaryRollsBackAllResponseWrites() {
     val applier = SyncEngineResponseApplier(database) { ids, status ->
       updateOperationStatus(ids, status)

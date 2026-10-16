@@ -1,4 +1,5 @@
 import { bridgeClient } from '../../../src/infrastructure/api';
+import { forwardOnlyChangelogCursor } from '../../../src/features/sync/last-changelog.helpers';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 
@@ -388,7 +389,10 @@ describe('syncPendingOperations', () => {
       (call) => typeof call[0] === 'object' && 'lastChangelogId' in call[0],
     );
 
-    expect(lastChangelogIdUpdate?.[0]).toEqual({ lastChangelogId: 10 });
+    // The value is the forward-only expression for the RESPONSE cursor (10), not a bridge change
+    // timestamp; the behaviour suite proves the expression against a real database (R-6).
+    expect(lastChangelogIdUpdate?.[0].lastChangelogId).toEqual(forwardOnlyChangelogCursor(10));
+    expect(lastChangelogIdUpdate?.[0].lastChangelogId).not.toEqual(forwardOnlyChangelogCursor(1_710_000_001_000));
   });
 
   it('does not mark synced when applied_operations rejects the operation even if bridge_changes exist', async () => {

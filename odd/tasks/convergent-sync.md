@@ -100,8 +100,8 @@ High-risk tasks get an independent verifier after their own checks.
 
 | ID | Specs | Route | Risk | Status | Commit |
 |----|-------|-------|------|--------|--------|
-| T1 | S15 | inline | none (docs) | pending | |
-| T2 | S1 | inline | 6 | pending | |
+| T1 | S15 | inline | none (docs) | done | 36ee0d9 |
+| T2 | S1 | inline | 6 | done | see L5 |
 | T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | pending | |
 | T4 | S2 | inline + verifier | 4 (concurrency) | pending | |
 | T5 | S3 | inline | 3 | pending | |
@@ -124,4 +124,13 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
 - **L1 (2026-10-16, user):** "Ya, si es que todo está aprobado y bien atado, iniciamos desarrollo oficialmente. Haz los preparativos, la previa que tengas que hacer, y después de eso inicia el ODD."
 - **L2:** Branched from `dev` (`78daa13`), not from `fix/anime-card-layout`. That branch has 5 unmerged commits that are waiting on the T3 device check for anime folders, and this feature does not depend on them.
 - **L3:** Proposal v8 was approved after two Judgment Day rounds. The ledgers are in the session scratchpad (`jd-target-v6`, `jd-target-v7`, `jd-target-v8`), and ADR 009 carries the final text.
-- **Next:** T1.
+- **L4 (T1):**
+  - ADR 009 written, and ADR 008 status amended.
+  - The audit was corrected. I7 was withdrawn: `SyncEngineRuntimeStatus.kt:14-28`. The sixth drainer (`drainPendingRemoteChanges`) was drawn. The presence probe now comes before the lease (`SyncEngineRunner.kt:61-63`). The Kotlin token writer was added. The I6 citation was fixed.
+  - Commit `36ee0d9`; the gate was green.
+- **L5 (T2):** RED was observed in both runtimes, using a cursor that the other runtime advanced while the request was in flight.
+  - JS: the behaviour test expected 60 and received 41.
+  - Kotlin: `cursorNeverMovesBelowAValueTheOtherRuntimeStoredDuringTheRequest` expected 20 and got 14.
+  - GREEN: both writes now use `MAX(COALESCE(last_changelog_id,0), next)` against the stored value.
+  - Mutation evidence: removing `MAX` is exactly the observed RED state.
+- **Next:** T3 (schema).
