@@ -42,6 +42,7 @@ object ReconcileRequestBody {
     tokensByAnimeId: Map<String, Long?>,
     cycleId: String,
     triggerSource: String,
+    includeTelemetry: Boolean = true,
   ): JSONObject {
     val body = JSONObject()
     body.put("device_id", deviceId)
@@ -62,12 +63,16 @@ object ReconcileRequestBody {
     }
     body.put("pending_operations", operations)
 
-    val counters = JSONObject().put("pending_ops_count", rows.size)
-    val telemetry = JSONObject()
-      .put("cycle_id", cycleId)
-      .put("trigger_source", triggerSource)
-      .put("counters", counters)
-    body.put("client_telemetry", telemetry)
+    // A chained cycle sends several requests; like JS, only its first one carries the telemetry,
+    // so the bridge sees one envelope per cycle (ADR 009 R-14).
+    if (includeTelemetry) {
+      val counters = JSONObject().put("pending_ops_count", rows.size)
+      val telemetry = JSONObject()
+        .put("cycle_id", cycleId)
+        .put("trigger_source", triggerSource)
+        .put("counters", counters)
+      body.put("client_telemetry", telemetry)
+    }
 
     return body
   }

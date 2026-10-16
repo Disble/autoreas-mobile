@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { getLastChangelogId } from './last-changelog.helpers';
-import { countOperationLogBacklogRows } from './operation-log-retention.helpers';
+import { countSendableBacklogRows } from './operation-log-retention.helpers';
 import { JS_OUTBOX_CLAIM_OWNER, OUTBOX_CHAIN_BUDGET_MS } from './outbox-claim.constants';
 import { claimOperationLogBatch } from './outbox-claim.helpers';
 import { publishCheckpoint, sendReconcileRound } from './reconcile-round.helpers';
@@ -145,7 +145,7 @@ async function performSyncPendingOperations(
   // behind the ones this batch suppressed. This total is read once per cycle purely so
   // `hasMorePending` stays truthful; it never drives the rerun loop.
   const totalBacklogRowCount = claimedOps.length > 0
-    ? await countOperationLogBacklogRows(rawDb, ['pending', 'processing'])
+    ? await countSendableBacklogRows(rawDb)
     : 0;
 
   const connection = { ip: config.ip, port: config.port, token: config.token };

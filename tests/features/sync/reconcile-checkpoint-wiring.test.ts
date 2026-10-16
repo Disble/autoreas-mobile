@@ -44,13 +44,15 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
 );
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
-  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
+  countSendableBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 /** Mocked `getBridgeConfigSnapshot` the suite drives per test. */
 const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
 /** Mocked `withLocalWrite`, resolved to no chain successors without running its callback. */
 const mockWithLocalWrite = dbClient.withLocalWrite as jest.Mock;
+/** What a round's response transaction answers when it confirmed nothing and claims no successor. */
+const NO_CHAIN_ROUND = { heldConfirmedCount: 0, successors: [] };
 /** Mocked bridge endpoint whose rejection shapes the failure tests. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
 /** Mocked backlog read returning one pending operation per test. */
@@ -85,7 +87,7 @@ describe('syncPendingOperations checkpoint wiring (T1)', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue([]);
+    mockWithLocalWrite.mockResolvedValue(NO_CHAIN_ROUND);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,

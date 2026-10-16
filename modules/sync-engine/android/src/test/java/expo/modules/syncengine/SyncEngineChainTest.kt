@@ -29,6 +29,11 @@ class SyncEngineChainTest {
         assertEquals("closed", outcome.outcome)
         assertEquals(2, outcome.syncedCount)
         assertEquals(listOf(7L, 14L), sentBases(server))
+        // One telemetry envelope per cycle, like JS: only the first round carries it.
+        assertEquals(
+          listOf(true, false),
+          reconcileRequests(server).map { JSONObject(it.body).has("client_telemetry") },
+        )
         assertEquals(listOf("synced", "synced"), rows(fixture).map { it.status })
         assertEquals(15L, token(fixture))
       }

@@ -201,6 +201,24 @@ export async function countOperationLogBacklogRows(
 }
 
 /**
+ * Counts the `pending`/`processing` rows a later cycle can still send: rows of a key with a
+ * given-up row (`dead_letter`, `conflict_exhausted`) are held (ADR 009 R-14) and never claimed,
+ * so counting them would keep `hasMorePending` true for as long as that row is retained.
+ */
+export async function countSendableBacklogRows(rawDb: SQLiteDatabase): Promise<number> {
+  const row = await rawDb.getFirstAsync<OperationLogCountRow>(
+    [
+      'SELECT COUNT(*) AS count FROM operation_log',
+      "WHERE status IN ('pending', 'processing')",
+      'AND anime_id NOT IN (SELECT anime_id FROM operation_log',
+      "  WHERE status IN ('dead_letter', 'conflict_exhausted'))",
+    ].join(' '),
+  );
+
+  return Number(row?.count ?? 0);
+}
+
+/**
  * Prunes terminal operation-log history using TTL first and max-count second.
  * Active statuses remain untouched because deletion only targets synced and dead-letter rows.
  */

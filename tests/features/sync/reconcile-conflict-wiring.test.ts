@@ -43,7 +43,7 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
 );
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
-  countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
+  countSendableBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
 jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({

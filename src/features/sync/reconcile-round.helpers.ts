@@ -302,7 +302,7 @@ export async function sendReconcileRound(
     // Op-log status writes and the changelog cursor advance stay in the same transaction in
     // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
     publishCheckpoint(checkpointRecorder, 'apply_write');
-    const successors = await withLocalWrite(rawDb, async (writeDb, tx) => {
+    const { heldConfirmedCount, successors } = await withLocalWrite(rawDb, async (writeDb, tx) => {
       // Re-read inside the door: a key the other runtime took over mid-request is not ours to
       // write, not even its token (ADR 009 R-13); its status writes already miss by CAS.
       const stillHeld = new Set(
@@ -337,16 +337,18 @@ export async function sendReconcileRound(
 
       // The chain (ADR 009 R-14): every key whose row was just confirmed keeps its claim on its
       // next row, in this same transaction, until the cycle's chain budget runs out.
-      if (Date.now() >= context.chainDeadline) {
-        return [];
-      }
+      const next = Date.now() >= context.chainDeadline
+        ? []
+        : await claimChainSuccessors(tx, confirmedAnimeIds, claim);
 
-      return claimChainSuccessors(tx, confirmedAnimeIds, claim);
+      // Only the confirmations this claim wrote count as synced here: a row the other runtime
+      // took over mid-request is that runtime's to report (mirrors the Kotlin applier).
+      return { heldConfirmedCount: confirmedAnimeIds.length, successors: next };
     });
 
     return {
       sentCount: pendingOps.length,
-      confirmedCount: confirmedIds.length,
+      confirmedCount: heldConfirmedCount,
       unconfirmedCount: unconfirmedIds.length,
       nextLastChangelogId,
       successors,

@@ -7,6 +7,7 @@ import {
 import {
   countOperationLogBacklogRows,
   countPendingOperationLog,
+  countSendableBacklogRows,
   pruneOperationLog,
   readOperationLogBacklog,
 } from '../../../../src/features/sync/operation-log-retention.helpers';
@@ -356,3 +357,24 @@ function buildRawDb(
     runAsync: jest.Mock<Promise<{ changes: number }>, [string, ...unknown[]]>;
   };
 }
+
+describe('countSendableBacklogRows', () => {
+  it('counts pending and processing rows, leaving out every key held behind a given-up row', async () => {
+    const rawDb = {
+      getFirstAsync: jest.fn().mockResolvedValue({ count: 3 }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(countSendableBacklogRows(rawDb)).resolves.toBe(3);
+    expect(rawDb.getFirstAsync).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /status IN \('pending', 'processing'\) AND anime_id NOT IN \(SELECT anime_id FROM operation_log\s+WHERE status IN \('dead_letter', 'conflict_exhausted'\)\)/,
+      ),
+    );
+  });
+
+  it('counts as 0 when the COUNT query returns no row', async () => {
+    const rawDb = { getFirstAsync: jest.fn().mockResolvedValue(null) } as unknown as SQLiteDatabase;
+
+    await expect(countSendableBacklogRows(rawDb)).resolves.toBe(0);
+  });
+});

@@ -229,6 +229,7 @@ class SyncEngineCycle(
     var lastChangelogId = getLastChangelogId(config.lastChangelogId)
     var syncedCount = 0
     var backlogReadCount = 0
+    var firstRound = true
     while (round.isNotEmpty()) {
       claimedRows = round
       backlogReadCount += round.size
@@ -240,7 +241,9 @@ class SyncEngineCycle(
         tokensByAnimeId = tokensByAnimeId,
         cycleId = cycleId,
         triggerSource = triggerSource,
+        includeTelemetry = firstRound,
       )
+      firstRound = false
 
       // Intent before effect, THEN the request (step 6).
       transition("sent", null)

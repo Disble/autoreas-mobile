@@ -54,6 +54,8 @@ const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Moc
  * a test overrides it.
  */
 const mockWithLocalWrite = dbClient.withLocalWrite as jest.Mock;
+/** What a round's response transaction answers when it confirmed nothing and claims no successor. */
+const NO_CHAIN_ROUND = { heldConfirmedCount: 0, successors: [] };
 /** Mocked bridge endpoint the suite drives per test. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
 /** Mocked backlog read; empty by default (the module mock's own default). */
@@ -80,7 +82,7 @@ describe('syncPendingOperations in-flight guard', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue([]);
+    mockWithLocalWrite.mockResolvedValue(NO_CHAIN_ROUND);
     mockReconcile.mockResolvedValue(SUCCESS_RESPONSE);
   });
 
@@ -127,7 +129,7 @@ describe('syncPendingOperations response and revert error paths', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue([]);
+    mockWithLocalWrite.mockResolvedValue(NO_CHAIN_ROUND);
   });
 
   it('rejects with a parse error when the bridge response fails ReconcileResponseSchema', async () => {
