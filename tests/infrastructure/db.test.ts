@@ -253,6 +253,15 @@ describe("db client tracer helpers", () => {
             { name: "last_applied_change_ms" },
             { name: "bridge_modified_at" },
             { name: "episodes" },
+            { name: "folder_relative" },
+          ];
+        }
+
+        if (query === "PRAGMA table_info(app_preferences)") {
+          return [
+            { name: "id" },
+            { name: "anime_folders_root_uri" },
+            { name: "anime_folders_hint_dismissed_at" },
           ];
         }
 

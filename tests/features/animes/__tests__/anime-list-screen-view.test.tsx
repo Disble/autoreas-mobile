@@ -49,6 +49,10 @@ const mockAnimeCard = jest.requireMock(
   '../../../../src/features/animes/ui/AnimeCard/AnimeCard',
 ).AnimeCard as jest.Mock;
 
+jest.mock('../../../../src/features/anime-folders/ui/AnimeFolderBanner', () => ({
+  AnimeFolderBanner: () => null,
+}));
+
 jest.mock('../../../../src/features/animes/ui/AnimeEmptyState', () => ({
   AnimeEmptyState: () => null,
 }));

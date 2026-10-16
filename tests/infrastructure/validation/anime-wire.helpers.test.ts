@@ -44,7 +44,18 @@ describe('anime wire helpers', () => {
       fechaCreacion: 1710000002000, fechaEliminacion: null, portada: 'cover.jpg',
       pagina: 'https://example.com/anime-1', carpeta: 'anime-1', estudios: 'Bones', origen: 'Manga', duracion: 24,
       episodes: null,
+      folderRelative: null,
     });
+  });
+
+  it('maps the bridge folder path below its library root into the domain shape', () => {
+    const mapped = mapWireAnimeToLegacyAnime(makeWireAnime({ folderRelative: 'Anime/One Piece' }) as never);
+
+    expect(mapped.folderRelative).toBe('Anime/One Piece');
+  });
+
+  it('drops folderRelative from changed_fields, since the bridge only sends it alongside folder', () => {
+    expect(normalizeWireAnimeChangedFields(['folder', 'folderRelative'])).toEqual(['carpeta']);
   });
 
   it('normaliza changed_fields en inglés exactamente una vez y descarta campos no soportados', () => {

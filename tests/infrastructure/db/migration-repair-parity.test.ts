@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   ANIMES_COLUMN_DEFINITIONS,
+  APP_PREFERENCES_COLUMN_DEFINITIONS,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   OPERATION_LOG_COLUMN_DEFINITIONS,
   SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
@@ -30,6 +31,7 @@ const BESPOKE_REPAIR_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 /** Every repair definition, keyed by the table it repairs. */
 const REPAIR_DEFINITIONS_BY_TABLE: Readonly<Record<string, readonly { columnName: string }[]>> = {
   animes: ANIMES_COLUMN_DEFINITIONS,
+  app_preferences: APP_PREFERENCES_COLUMN_DEFINITIONS,
   bridge_config: BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   operation_log: OPERATION_LOG_COLUMN_DEFINITIONS,
   sync_cycle_lock: SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,

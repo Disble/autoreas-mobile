@@ -120,6 +120,13 @@
       "when": 1789224000000,
       "tag": "0016_add_animes_episodes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789310400000,
+      "tag": "0017_add_animes_folder_relative",
+      "breakpoints": true
     }
   ]
 }

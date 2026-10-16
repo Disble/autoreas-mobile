@@ -6,6 +6,7 @@
 import { Alert as HeroAlert, cn } from 'heroui-native';
 import { View } from 'react-native';
 import { ScreenScrollView } from '../../../../components/screen-scroll-view';
+import { AnimeFoldersSettingsCard } from '../../../anime-folders/ui/AnimeFoldersSettingsCard';
 import { SettingsBackgroundCard } from './SettingsBackgroundCard';
 import { SettingsConnectionCard } from './SettingsConnectionCard';
 import { SettingsPrivacyCard } from './SettingsPrivacyCard';
@@ -67,15 +68,16 @@ export function SettingsScreen(props: Readonly<SettingsScreenProps>) {
         />
 
         <View className={cn('gap-4', isWide && 'flex-row items-start')}>
-          {connection ? (
-            <View className={cn(isWide && 'flex-1')}>
+          <View className={cn('gap-4', isWide && 'flex-1')}>
+            {connection ? (
               <SettingsConnectionCard
                 connection={connection}
                 handleRePair={handleRePair}
                 isUnpairing={isUnpairing}
               />
-            </View>
-          ) : null}
+            ) : null}
+            <AnimeFoldersSettingsCard />
+          </View>
           <View className={cn('gap-4', isWide && 'flex-1')}>
             <SettingsBackgroundCard
               backgroundIssueActionHandlers={backgroundIssueActionHandlers}

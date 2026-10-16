@@ -67,6 +67,7 @@ export function parseAnimeRow(row: AnimeRow): Anime {
     portada: row.portada,
     pagina: row.pagina,
     carpeta: row.carpeta,
+    folderRelative: row.folderRelative,
     estudios: row.estudios,
     origen: row.origen,
     duracion: row.duracion,

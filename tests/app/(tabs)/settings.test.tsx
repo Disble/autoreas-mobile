@@ -21,6 +21,10 @@ jest.mock('expo-network', () => ({
   useNetworkState: jest.fn(),
 }));
 
+jest.mock('../../../src/features/anime-folders/ui/AnimeFoldersSettingsCard', () => ({
+  AnimeFoldersSettingsCard: () => null,
+}));
+
 jest.mock('../../../src/features/settings/use-bridge-config', () => ({
   useBridgeConfig: jest.fn(),
 }));

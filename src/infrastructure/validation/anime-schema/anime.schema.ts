@@ -112,6 +112,7 @@ export const AnimeSchema = z.object({
   portada: z.string().nullable().optional(),
   pagina: z.string().nullable().optional(),
   carpeta: z.string().nullable().optional(),
+  folderRelative: z.string().nullable().optional(),
   estudios: z.string().nullable().optional(),
   origen: z.string().nullable().optional(),
   duracion: z.number().int().nullable().optional(),
@@ -140,6 +141,9 @@ export const WireAnimeSchema = z.object({
   cover: z.string().nullable().optional(),
   sourceUrl: z.string().nullable().optional(),
   folder: z.string().nullable().optional(),
+  // `/`-separated path below the bridge's library root. Sent only together with `folder`: a change
+  // naming `folder` carries it in the snapshot, and no change ever names it on its own.
+  folderRelative: z.string().nullable().optional(),
   studios: z.string().nullable().optional(),
   origin: z.string().nullable().optional(),
   durationMinutes: z.number().int().nullable().optional(),

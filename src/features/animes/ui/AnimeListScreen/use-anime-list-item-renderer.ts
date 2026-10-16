@@ -1,3 +1,4 @@
+import { useAnimeFolderResolution } from "../../../anime-folders/use-anime-folder-resolution";
 import { useCoverUriStore } from "../../../../infrastructure/store/cover-uri-store/cover-uri-store.constants";
 import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
 import type { AnimeListScreenViewModel } from "./anime-list-screen.types";
@@ -14,6 +15,7 @@ export function useAnimeListItemRenderer(
 ) {
   // 3. Context/3rd Party Hooks
   const coverUriByAnimeId = useCoverUriStore((state) => state.coverUriByAnimeId);
+  const folderResolution = useAnimeFolderResolution();
 
   // 6. Callbacks (calling pure helpers)
   const getAnimeCardProps = (
@@ -22,6 +24,7 @@ export function useAnimeListItemRenderer(
     anime: item,
     isMutating: !!isMutatingAnimeById[item._id],
     coverUri: coverUriByAnimeId[item._id] ?? null,
+    folderPath: folderResolution?.byAnimeId.get(item._id)?.folder.devicePath ?? null,
     onCapMinus: () => {
       void handleCapMinus(item._id);
     },

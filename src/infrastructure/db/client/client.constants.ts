@@ -165,7 +165,7 @@ export const BRIDGE_CONFIG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
  * `BRIDGE_CONFIG_COLUMN_DEFINITIONS`. Every column is intentionally nullable with no default and
  * no backfill: NULL carries its own meaning for each ("older than any remote change" for the
  * staleness guard, "no bridge token known yet" for the OCC token, "no durations known" for
- * `episodes`, filled by the next foreground resync), so every pre-existing row must
+ * `episodes`, "no bridge path" for `folder_relative`, both filled by the next foreground resync), so every pre-existing row must
  * read back NULL, never a fabricated value that could be mistaken for a real one.
  */
 export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
@@ -180,6 +180,27 @@ export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
   {
     columnName: 'episodes',
     sql: 'ALTER TABLE animes ADD COLUMN episodes TEXT',
+  },
+  {
+    columnName: 'folder_relative',
+    sql: 'ALTER TABLE animes ADD COLUMN folder_relative TEXT',
+  },
+];
+
+/**
+ * Lists the `app_preferences` columns added after the table first shipped. The table exists only
+ * as a repair step, so `CREATE TABLE IF NOT EXISTS` is a no-op on an installed device and this list
+ * is the only route for these columns there. Both are nullable with no default: NULL means "no
+ * anime root chosen" and "hint never dismissed", the state of every device before the feature.
+ */
+export const APP_PREFERENCES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
+  {
+    columnName: 'anime_folders_root_uri',
+    sql: 'ALTER TABLE app_preferences ADD COLUMN anime_folders_root_uri TEXT',
+  },
+  {
+    columnName: 'anime_folders_hint_dismissed_at',
+    sql: 'ALTER TABLE app_preferences ADD COLUMN anime_folders_hint_dismissed_at INTEGER',
   },
 ];
 
@@ -258,3 +279,35 @@ export const MIGRATION_LEDGER_PIN_SQL =
  * jammed door is attributed to the write layer rather than to the cycle.
  */
 export const LOCAL_WRITE_DEADLINE_MS = 20_000;
+
+/** Creates the remote-change staging table the background engine writes and the foreground drains. */
+export const PENDING_REMOTE_CHANGES_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS pending_remote_changes (' +
+  'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+  'record_id TEXT NOT NULL, ' +
+  'change_type TEXT NOT NULL, ' +
+  'changed_fields TEXT NOT NULL, ' +
+  'snapshot TEXT, ' +
+  'timestamp INTEGER NOT NULL, ' +
+  'created_at INTEGER NOT NULL)';
+
+/** Creates the durable season-rating queue for installs that predate it. */
+export const SEASON_RATING_QUEUE_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
+  'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+  'season_id TEXT NOT NULL, ' +
+  'anime_id TEXT NOT NULL, ' +
+  'nota INTEGER NOT NULL, ' +
+  'rated_at INTEGER NOT NULL, ' +
+  "status TEXT NOT NULL DEFAULT 'pending', " +
+  'created_at INTEGER NOT NULL, ' +
+  'updated_at INTEGER NOT NULL, ' +
+  'last_attempt_at INTEGER, ' +
+  'last_failure_kind TEXT)';
+
+/** Creates the single-row active-season cache. Exists in no migration file; only as a repair step. */
+export const ACTIVE_SEASON_CACHE_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS active_season_cache (' +
+  'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
+  'season_id TEXT NOT NULL, ' +
+  'candidates_json TEXT NOT NULL)';

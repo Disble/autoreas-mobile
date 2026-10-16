@@ -1,10 +1,12 @@
+/* eslint-disable react-doctor/jsx-max-depth -- HeroUI Alert compound shape (Alert > Alert.Content > chip row > Chip > Chip.Label) sets the depth; flattening would leave the Alert API. */
 import { Alert as HeroAlert, Button, Chip } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
+import { AnimeFolderBanner } from '../../../anime-folders/ui/AnimeFolderBanner';
 import { ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE } from './anime-list-screen.constants';
 import type { AnimeListScreenStatusSectionProps } from './anime-list-screen.types';
 
-/** Renders contextual list copy and the visible offline-first sync status. */
+/** Renders contextual list copy, the visible offline-first sync status, and the anime folder banner. */
 export function AnimeListScreenStatusSection(
   props: Readonly<AnimeListScreenStatusSectionProps>,
 ) {
@@ -45,6 +47,8 @@ export function AnimeListScreenStatusSection(
           ) : null}
         </HeroAlert>
       </View>
+
+      <AnimeFolderBanner />
     </View>
   );
 }

@@ -144,6 +144,7 @@ describe("deriveChangedFields", () => {
       origen: null,
       duracion: null,
       episodes: null,
+      folderRelative: null,
       lastAppliedChangeMs: null,
     };
 
@@ -174,6 +175,7 @@ describe("deriveChangedFields", () => {
       origen: null,
       duracion: null,
       episodes: null,
+      folderRelative: null,
       lastAppliedChangeMs: 123,
     };
 
@@ -204,6 +206,7 @@ describe("deriveChangedFields", () => {
       origen: null,
       duracion: null,
       episodes: null,
+      folderRelative: null,
       lastAppliedChangeMs: null,
     };
 
@@ -267,5 +270,57 @@ describe("episodes merge", () => {
 
     expect(deriveChangedFields(snapshot, rowFor(null))).toEqual(["episodes"]);
     expect(deriveChangedFields(snapshot, rowFor(EPISODES_TEXT))).toEqual([]);
+  });
+});
+
+describe("folderRelative merge (coupled to carpeta)", () => {
+  const PATH = "Anime/Frieren";
+
+  it("writes folderRelative together with carpeta when the folder changes", () => {
+    const { columns, skippedFields } = buildPartialUpdate(
+      ["carpeta"],
+      makeSnapshot({ carpeta: "D:/Anime/Frieren", folderRelative: PATH }),
+    );
+
+    expect(columns).toEqual({ carpeta: "D:/Anime/Frieren", folderRelative: PATH });
+    expect(skippedFields).toEqual([]);
+  });
+
+  it("clears folderRelative when the folder changes and the snapshot carries no path", () => {
+    const { columns } = buildPartialUpdate(["carpeta"], makeSnapshot({ carpeta: "D:/Anime/Frieren" }));
+
+    expect(columns).toEqual({ carpeta: "D:/Anime/Frieren", folderRelative: null });
+  });
+
+  it("leaves folderRelative untouched when the folder is not named", () => {
+    const { columns } = buildPartialUpdate(["estado"], makeSnapshot({ folderRelative: PATH }));
+
+    expect(columns).toEqual({ estado: 2 });
+  });
+
+  it("skips folderRelative named on its own, since the bridge never sends it apart from folder", () => {
+    const { columns, skippedFields } = buildPartialUpdate(
+      ["folderRelative"],
+      makeSnapshot({ folderRelative: PATH }),
+    );
+
+    expect(columns).toEqual({});
+    expect(skippedFields).toEqual(["folderRelative"]);
+  });
+
+  it("resync reports carpeta as changed when only the stored path differs", () => {
+    const snapshot = makeSnapshot({ carpeta: "D:/Anime/Frieren", folderRelative: PATH });
+    const rowFor = (folderRelative: string | null) => ({
+      ...buildPartialUpdate(
+        ["nombre", "estado", "nrocapvisto", "totalcap", "activo", "primeravez", "dias", "generos",
+          "tipo", "fechaUltCapVisto", "fechaEstreno", "fechaCreacion", "fechaEliminacion",
+          "portada", "pagina", "carpeta", "estudios", "origen", "duracion", "episodes"],
+        snapshot,
+      ).columns,
+      folderRelative,
+    });
+
+    expect(deriveChangedFields(snapshot, rowFor(null))).toEqual(["carpeta"]);
+    expect(deriveChangedFields(snapshot, rowFor(PATH))).toEqual([]);
   });
 });

@@ -55,8 +55,11 @@ describe('startup integrity classification', () => {
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
         { name: 'episodes' },
+        { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
+        { name: 'anime_folders_root_uri' },
+        { name: 'anime_folders_hint_dismissed_at' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
@@ -90,8 +93,11 @@ describe('startup integrity classification', () => {
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
         { name: 'episodes' },
+        { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
+        { name: 'anime_folders_root_uri' },
+        { name: 'anime_folders_hint_dismissed_at' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
@@ -129,8 +135,11 @@ describe('startup integrity classification', () => {
         { name: 'last_applied_change_ms' },
         { name: 'bridge_modified_at' },
         { name: 'episodes' },
+        { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
         { name: 'fence' },
+        { name: 'anime_folders_root_uri' },
+        { name: 'anime_folders_hint_dismissed_at' },
       ]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();

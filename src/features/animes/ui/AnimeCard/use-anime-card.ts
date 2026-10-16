@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { getOpenablePageUrl } from '../../../anime-folders/anime-folders.helpers';
+import { openDeviceFolder, openPageUrl } from '../../../anime-folders/anime-folders-io.helpers';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
@@ -36,6 +38,8 @@ export function useAnimeCard(props: AnimeCardProps) {
   const restantesLabel = getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap);
   const seasonStatus = getAnimeSeasonStatus(props.anime.seasonProjection);
   const longEpisodeLabel = getLongEpisodeLabel(props.anime.episodes, props.anime.nrocapvisto);
+  const pageUrl = getOpenablePageUrl(props.anime.pagina);
+  const folderPath = props.folderPath ?? null;
 
   // 6. Callbacks
   const toggleRestantesShown = () => {
@@ -66,6 +70,18 @@ export function useAnimeCard(props: AnimeCardProps) {
     props.onOpenSeasonRatingSheet?.(props.anime._id);
   };
 
+  const handleOpenPage = () => {
+    if (pageUrl) {
+      openPageUrl(pageUrl);
+    }
+  };
+
+  const handleOpenFolder = () => {
+    if (folderPath) {
+      openDeviceFolder(folderPath);
+    }
+  };
+
   // 7. Effects
 
   return {
@@ -84,5 +100,9 @@ export function useAnimeCard(props: AnimeCardProps) {
     handleCapPlusLongPress,
     handleCapMinusLongPress,
     handleOpenSeasonRatingSheet,
+    hasPageLink: pageUrl !== null,
+    hasFolder: folderPath !== null,
+    handleOpenPage,
+    handleOpenFolder,
   };
 }

@@ -87,6 +87,29 @@ describe("upsertAnime", () => {
     expect(values.mock.calls[1][0].episodes).toBeNull();
   });
 
+  it("persists folderRelative on insert and on conflict, and NULL when the bridge sent no path", async () => {
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const db = { insert: jest.fn().mockReturnValue({ values }) } as never;
+    const anime = {
+      _id: "anime-1",
+      nombre: "Frieren",
+      estado: 1,
+      nrocapvisto: 6,
+      activo: 1,
+      primeravez: 0,
+      dias: [],
+      generos: [],
+    };
+
+    await upsertAnime(db, { ...anime, folderRelative: "Anime/Frieren" });
+    await upsertAnime(db, anime);
+
+    expect(values.mock.calls[0][0].folderRelative).toBe("Anime/Frieren");
+    expect(onConflictDoUpdate.mock.calls[0][0].set.folderRelative).toBe("Anime/Frieren");
+    expect(values.mock.calls[1][0].folderRelative).toBeNull();
+  });
+
   it("persiste únicamente el modelo legacy normalizado en español", async () => {
     const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });

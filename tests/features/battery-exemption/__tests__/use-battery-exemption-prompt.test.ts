@@ -58,7 +58,11 @@ interface MockWorld {
   isConfigured: boolean;
   configStatus: string;
   preferencesStatus: string;
-  preferencesRow: AppPreferencesRow | null;
+  /** Only the battery columns matter to this hook; the anime-folders columns stay out of the fixture. */
+  preferencesRow: Pick<
+    AppPreferencesRow,
+    'id' | 'batteryPromptShownAt' | 'batteryReminderShownAt'
+  > | null;
   lastAttemptAt: number | null;
 }
 

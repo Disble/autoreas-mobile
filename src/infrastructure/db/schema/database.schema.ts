@@ -28,6 +28,9 @@ export const animes = sqliteTable("animes", {
   portada: text("portada"),
   pagina: text("pagina"),
   carpeta: text("carpeta"),
+  // Bridge folder path below its library root (`folderRelative` on the wire, `/`-separated);
+  // NULL = no path sent, so the device falls back to matching the folder by name.
+  folderRelative: text("folder_relative"),
   estudios: text("estudios"),
   origen: text("origen"),
   duracion: integer("duracion"),
@@ -111,6 +114,8 @@ export const appPreferences = sqliteTable('app_preferences', {
   id: integer('id').primaryKey().default(1),
   batteryPromptShownAt: integer('battery_prompt_shown_at'),
   batteryReminderShownAt: integer('battery_reminder_shown_at'),
+  animeFoldersRootUri: text('anime_folders_root_uri'),
+  animeFoldersHintDismissedAt: integer('anime_folders_hint_dismissed_at'),
 });
 
 /** Provides the shared bridge config value. */

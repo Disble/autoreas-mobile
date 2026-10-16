@@ -39,7 +39,6 @@ async function readPreferences(rawDb: SQLiteDatabase) {
   return toBatteryExemptionPreferences(
     row
       ? {
-          id: 1,
           batteryPromptShownAt: row.battery_prompt_shown_at,
           batteryReminderShownAt: row.battery_reminder_shown_at,
         }
@@ -62,7 +61,6 @@ describe('toBatteryExemptionPreferences', () => {
   it('projects the stored timestamps', () => {
     expect(
       toBatteryExemptionPreferences({
-        id: 1,
         batteryPromptShownAt: 100,
         batteryReminderShownAt: 200,
       }),

@@ -363,6 +363,8 @@ autoreas-mobile://pair?v=1&ip=192.168.1.5&port=9876&token=abc123def456
 
 > **Update 2026-10-08:** the wireframe below is the original design and is kept as history. The current Settings screen is a status page: one status card with a single contextual action, a connection card (re-pair is a secondary action there), a background card that only lists items to fix, and a privacy card. It shows no runtime counters. See [`mobile-sync-status-ux.md`](./mobile-sync-status-ux.md).
 
+> **Update 2026-10-15:** Settings also has a "Carpetas de anime" card, and the anime card gained page and folder buttons. See [`anime-folders.md`](./anime-folders.md).
+
 ```
 ┌─────────────────────────────┐
 │ ← Configuración             │

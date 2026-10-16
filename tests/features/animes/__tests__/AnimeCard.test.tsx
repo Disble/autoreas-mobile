@@ -1,5 +1,9 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import {
+  openDeviceFolder,
+  openPageUrl,
+} from '../../../../src/features/anime-folders/anime-folders-io.helpers';
 import { LOCAL_ACTIVE_SEASON_ID } from '../../../../src/features/animes/anime-season.constants';
 import { AnimeCard } from '../../../../src/features/animes/ui/AnimeCard/AnimeCard';
 import {
@@ -9,6 +13,11 @@ import {
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
+}));
+
+jest.mock('../../../../src/features/anime-folders/anime-folders-io.helpers', () => ({
+  openDeviceFolder: jest.fn(),
+  openPageUrl: jest.fn(),
 }));
 
 describe('AnimeCard', () => {
@@ -125,5 +134,51 @@ describe('AnimeCard', () => {
     expect(getByText('Sin nota de temporada')).toBeTruthy();
     expect(getByText('Disponible para calificar')).toBeTruthy();
     expect(getByText('Temporada')).toBeTruthy();
+  });
+
+  it('opens the anime page and its folder from the shortcuts', () => {
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), pagina: 'https://jkanime.net/dandadan/' },
+          folderPath: '/storage/0123-4567/Videos/Anime/Dandadan',
+        })}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('Abrir página del anime'));
+    fireEvent.press(getByLabelText('Abrir carpeta del anime'));
+
+    expect(openPageUrl).toHaveBeenCalledWith('https://jkanime.net/dandadan/');
+    expect(openDeviceFolder).toHaveBeenCalledWith('/storage/0123-4567/Videos/Anime/Dandadan');
+  });
+
+  it('shows no page shortcut without an http(s) page, and no folder shortcut without a folder', () => {
+    const { queryByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), pagina: 'descargado' },
+          folderPath: null,
+        })}
+      />,
+    );
+
+    expect(queryByLabelText('Abrir página del anime')).toBeNull();
+    expect(queryByLabelText('Abrir carpeta del anime')).toBeNull();
+  });
+
+  it('keeps the shortcuts while the anime is paused, next to Reanudar', () => {
+    const { getByLabelText, getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), estado: 2, pagina: 'https://jkanime.net/dandadan/' },
+          folderPath: '/storage/0123-4567/Videos/Anime/Dandadan',
+        })}
+      />,
+    );
+
+    expect(getByText('Reanudar')).toBeTruthy();
+    expect(getByLabelText('Abrir página del anime')).toBeTruthy();
+    expect(getByLabelText('Abrir carpeta del anime')).toBeTruthy();
   });
 });

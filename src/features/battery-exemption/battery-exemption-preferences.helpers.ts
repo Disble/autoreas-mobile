@@ -9,7 +9,7 @@ import type { BatteryExemptionPreferences } from './battery-exemption-preference
  * the state of every device before the first dialog, so it reads as "never shown" for both.
  */
 export function toBatteryExemptionPreferences(
-  row: AppPreferencesRow | null | undefined,
+  row: Pick<AppPreferencesRow, 'batteryPromptShownAt' | 'batteryReminderShownAt'> | null | undefined,
 ): BatteryExemptionPreferences {
   return {
     promptShownAt: row?.batteryPromptShownAt ?? null,
