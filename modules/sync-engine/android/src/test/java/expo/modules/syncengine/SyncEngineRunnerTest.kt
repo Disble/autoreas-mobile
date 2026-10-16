@@ -153,7 +153,7 @@ class SyncEngineRunnerTest {
             "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, anime_id TEXT NOT NULL, " +
             "operation TEXT NOT NULL, payload TEXT NOT NULL, " +
             "status TEXT DEFAULT 'pending' NOT NULL, created_at INTEGER NOT NULL, " +
-            "conflict_attempt_count INTEGER DEFAULT 0 NOT NULL)",
+            "conflict_attempt_count INTEGER DEFAULT 0 NOT NULL, claim_owner TEXT, claimed_at INTEGER)",
         )
       }
       if (ip != null) {

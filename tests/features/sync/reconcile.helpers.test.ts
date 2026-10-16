@@ -43,6 +43,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -247,7 +251,7 @@ describe('syncPendingOperations applyMode routing', () => {
   it('foreground default mode applies via withLocalWrite + applyRemoteChanges(deferred), never stages', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     const rawDb = { name: 'deferred-reconcile-db' };
@@ -276,7 +280,7 @@ describe('syncPendingOperations applyMode routing', () => {
   it('explicit deferred mode behaves the same as the default', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     const rawDb = { name: 'deferred-reconcile-db-explicit' };
@@ -294,7 +298,7 @@ describe('syncPendingOperations applyMode routing', () => {
   it('staged mode stages into pending_remote_changes via the shared write door and never calls applyRemoteChanges', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     const rawDb = { name: 'staged-reconcile-db' };
@@ -319,7 +323,7 @@ describe('syncPendingOperations applyMode routing', () => {
     const updateMock = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
     const writeDb = { update: updateMock };
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     const rawDb = { name: 'staged-reconcile-db-no-animes-write' };
@@ -349,7 +353,7 @@ describe('syncPendingOperations applyMode routing', () => {
     });
     const writeDb = { update: updateMock };
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({

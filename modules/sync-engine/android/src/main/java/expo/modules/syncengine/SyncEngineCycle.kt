@@ -15,26 +15,6 @@ private const val BRIDGE_REQUEST_TIMEOUT_MS = 10_000
 /** Cursor sanity bound, mirroring `MAX_REASONABLE_CHANGELOG_ID`. */
 private const val MAX_REASONABLE_CHANGELOG_ID = 1_000_000_000_000L
 
-private const val BACKLOG_QUERY =
-  "SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (" +
-    "  SELECT" +
-    "    id," +
-    "    anime_id AS animeId," +
-    "    operation," +
-    "    payload," +
-    "    status," +
-    "    created_at AS createdAt," +
-    "    conflict_attempt_count AS conflictAttemptCount," +
-    "    ROW_NUMBER() OVER (" +
-    "      PARTITION BY anime_id ORDER BY created_at ASC, id ASC" +
-    "    ) AS animeRank" +
-    "  FROM operation_log" +
-    "  WHERE status IN (?, ?)" +
-    ")" +
-    "WHERE animeRank = 1" +
-    " ORDER BY createdAt ASC, id ASC" +
-    " LIMIT ?"
-
 /** One terminal attempt result the module maps onto the JS-facing result dictionary. */
 data class CycleOutcome(
   val outcome: String,
@@ -98,6 +78,13 @@ class SyncEngineCycle(
   private var lastState: String = "idle"
   private var claimedRows: List<BacklogRow> = emptyList()
   private var onState: (String) -> Unit = {}
+
+  /**
+   * The per-key outbox claim this attempt took (ADR 009 R-13); every status write after the
+   * claim is compare-and-set on it. Until the backlog is claimed it is [UNCLAIMED], which no row
+   * carries, so a guarded write before the claim touches nothing.
+   */
+  private var claim: OutboxClaim = UNCLAIMED
 
   /**
    * The owner/fence pair this attempt writes under, set by a successful claim and cleared when
@@ -207,7 +194,17 @@ class SyncEngineCycle(
       connection = SyncDiagnosticsConnection(ip = ip, port = port, token = token),
     )
 
-    val backlog = readBacklog()
+    // Read and claim in ONE transaction (ADR 009 R-13): a key with a live claim, ours or the JS
+    // runtime's, is skipped, and the claim cannot be raced between the read and the write. The
+    // claim time is taken inside the transaction, so a wait for the write lock never shortens it.
+    // The claim reads its rows back inside the same transaction: that read-back is this single
+    // send's re-check (R-13), immediately before the request.
+    val (cycleClaim, backlog) = inImmediateTransaction(appDb) {
+      requireLeaseOwnership(appDb, fence)
+      val taken = OutboxClaim(NATIVE_OUTBOX_CLAIM_OWNER, System.currentTimeMillis())
+      taken to claimOperationLogBacklog(appDb, taken, BACKLOG_BATCH_LIMIT)
+    }
+    claim = cycleClaim
     val backlogReadCount = backlog.size
 
     if (backlog.isEmpty()) {
@@ -216,11 +213,7 @@ class SyncEngineCycle(
       return runPullOnlyAttempt(config, deviceId, ip, port, token, triggerSource, backlogReadCount)
     }
 
-    // Intent before effect, THEN the claim in one transaction (step 5).
     transition("claimed", null)
-    inImmediateTransaction(appDb) {
-      claimRows(backlog)
-    }
     claimedRows = backlog
 
     val lastChangelogId = getLastChangelogId(config.lastChangelogId)
@@ -419,33 +412,6 @@ class SyncEngineCycle(
     }
   }
 
-  /** Reads the deduped backlog verbatim from `buildDedupedBacklogQuery` (step 4). */
-  private fun readBacklog(): List<BacklogRow> {
-    val rows = mutableListOf<BacklogRow>()
-    appDb.rawQuery(BACKLOG_QUERY, arrayOf("pending", "processing", BACKLOG_BATCH_LIMIT.toString()))
-      .use { cursor ->
-        while (cursor.moveToNext()) {
-          rows.add(
-            BacklogRow(
-              id = cursor.getLong(0),
-              animeId = cursor.getString(1),
-              operation = cursor.getString(2),
-              payload = cursor.getString(3),
-              status = cursor.getString(4),
-              createdAt = cursor.getLong(5),
-              conflictAttemptCount = cursor.getLong(6),
-            ),
-          )
-        }
-      }
-    return rows
-  }
-
-  /** Marks the batch `processing` inside the caller's already-open transaction (step 5). */
-  private fun claimRows(rows: List<BacklogRow>) {
-    updateOperationStatus(rows.map { it.id }, "processing")
-  }
-
   /**
    * Reads the stored OCC token per anime, mirroring `readAnimeBridgeTokens`: an absent map
    * entry means the row was not found; a present `null` entry means the row exists but no
@@ -467,31 +433,33 @@ class SyncEngineCycle(
   }
 
   /**
-   * Bulk status update over `operation_log`, FENCED: the statement only affects rows while the
-   * lease still names this attempt's owner and fence, so a reclaimed lease cannot clobber the
-   * new owner's claims (and a zero-row result on a non-empty batch is ownership loss, never
-   * silence). Covers every `operation_log` status transition of the attempt: the claim, the
-   * failure revert, and the response applier's confirmation/dead-letter/pending passes. The
-   * response applier receives this as a bound reference, so the claimed path and the pull-only
-   * path share one writer implementation.
+   * Bulk status update over `operation_log` that releases the claim, FENCED twice:
+   * - on the lease: [requireLeaseOwnership] throws [LeaseLostException] when the lease no
+   *   longer names this attempt, so the caller's transaction rolls back and the attempt abandons;
+   * - on the claim (ADR 009 R-13): the statement is compare-and-set, so a row the JS runtime
+   *   confirmed or took over after this claim expired is never touched. Zero rows here is
+   *   therefore a lost KEY, not a lost lease, and is not an error.
+   * Covers the failure revert and the response applier's confirmation/dead-letter/pending
+   * passes. The response applier receives this as a bound reference, so the claimed path and
+   * the pull-only path share one writer implementation.
    */
   private fun updateOperationStatus(ids: List<Long>, status: String) {
     val fence = requireOwned()
+    requireLeaseOwnership(appDb, fence)
+    val heldClaim = claim
     val placeholders = ids.joinToString(", ") { "?" }
-    val affected = appDb.compileStatement(
-      "UPDATE operation_log SET status = ? WHERE id IN ($placeholders) AND $LEASE_OWNERSHIP_GUARD_SQL",
+    appDb.compileStatement(
+      "UPDATE operation_log SET status = ?, claim_owner = NULL, claimed_at = NULL " +
+        "WHERE id IN ($placeholders) AND status = 'processing' AND claim_owner = ? " +
+        "AND claimed_at = ? AND $LEASE_OWNERSHIP_GUARD_SQL",
     ).run {
       bindString(1, status)
       ids.forEachIndexed { index, id -> bindLong(index + 2, id) }
-      bindString(ids.size + 2, fence.owner)
-      bindString(ids.size + 3, fence.fence)
+      bindString(ids.size + 2, heldClaim.owner)
+      bindLong(ids.size + 3, heldClaim.claimedAt)
+      bindString(ids.size + 4, fence.owner)
+      bindString(ids.size + 5, fence.fence)
       executeUpdateDelete()
-    }
-    if (affected == 0 && ids.isNotEmpty()) {
-      // Fence contract: zero rows on a non-empty batch means the lease row no longer names us
-      // (or the batch vanished, which only a reclaimed owner cannot distinguish). Either way the
-      // attempt must not write on: the caller's transaction rolls back and the attempt abandons.
-      throw LeaseLostException("status update to '$status' affected 0 rows")
     }
   }
 

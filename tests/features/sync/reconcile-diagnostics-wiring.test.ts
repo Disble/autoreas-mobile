@@ -45,6 +45,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -165,8 +169,9 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
 
     // The flush sits BEFORE the try, so a rejecting flush must stop the cycle before reconcile
     // is ever reached, and it must never trigger the operation_log revert write that follows a
-    // genuine reconcile failure.
+    // genuine reconcile failure. The claim owns its own door (`claimOperationLogBatch`, stubbed
+    // here), so any `withLocalWrite` call at all would be that revert.
     expect(mockReconcile).not.toHaveBeenCalled();
-    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(1);
+    expect(dbClient.withLocalWrite).not.toHaveBeenCalled();
   });
 });

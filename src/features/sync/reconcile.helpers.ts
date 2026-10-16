@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { bridgeClient } from '../../infrastructure/api';
 import {
@@ -22,10 +22,7 @@ import {
 } from './last-changelog.helpers';
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
-import {
-  countOperationLogBacklogRows,
-  readOperationLogBacklog,
-} from './operation-log-retention.helpers';
+import { countOperationLogBacklogRows } from './operation-log-retention.helpers';
 import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
 import { classifyUnconfirmedOperations } from './reconcile-conflict.helpers';
@@ -36,6 +33,13 @@ import {
 } from './reconcile.constants';
 import { ReconcileHttpError } from './reconcile.errors';
 import { normalizeBridgeChange } from './bridge-change.helpers';
+import { JS_OUTBOX_CLAIM_OWNER, RELEASED_CLAIM } from './outbox-claim.constants';
+import {
+  claimOperationLogBatch,
+  heldOperationsWhere,
+  readHeldOperationIds,
+} from './outbox-claim.helpers';
+import type { OutboxClaim } from './outbox-claim.types';
 import { ReconcileResponseSchema } from './reconcile.schema';
 import type {
   ApplyReconcileResponseWritesParams,
@@ -194,6 +198,7 @@ async function applyReconcileResponseWrites(
     lastChangelogId,
     nextLastChangelogId,
     bridgeConfigId,
+    claim,
   } = params;
 
   if (applyMode === 'staged') {
@@ -225,29 +230,33 @@ async function applyReconcileResponseWrites(
     await applyAnimeBridgeToken(writeDb, outcome.animeId, outcome.bridgeModifiedAt);
     await writeDb
       .update(operationLog)
-      .set({ status: outcome.status, conflictAttemptCount: outcome.conflictAttemptCount })
-      .where(eq(operationLog.id, outcome.operationId));
+      .set({
+        status: outcome.status,
+        conflictAttemptCount: outcome.conflictAttemptCount,
+        ...RELEASED_CLAIM,
+      })
+      .where(heldOperationsWhere([outcome.operationId], claim));
   }
 
   if (deadLetterIds.length > 0) {
     await writeDb
       .update(operationLog)
-      .set({ status: 'dead_letter' })
-      .where(inArray(operationLog.id, deadLetterIds as number[]));
+      .set({ status: 'dead_letter', ...RELEASED_CLAIM })
+      .where(heldOperationsWhere(deadLetterIds, claim));
   }
 
   if (confirmedIds.length > 0) {
     await writeDb
       .update(operationLog)
-      .set({ status: 'synced' })
-      .where(inArray(operationLog.id, confirmedIds as number[]));
+      .set({ status: 'synced', ...RELEASED_CLAIM })
+      .where(heldOperationsWhere(confirmedIds, claim));
   }
 
   if (remainingUnconfirmedIds.length > 0) {
     await writeDb
       .update(operationLog)
-      .set({ status: 'pending' })
-      .where(inArray(operationLog.id, remainingUnconfirmedIds as number[]));
+      .set({ status: 'pending', ...RELEASED_CLAIM })
+      .where(heldOperationsWhere(remainingUnconfirmedIds, claim));
   }
 
   if (shouldPersistLastChangelogId(lastChangelogId, nextLastChangelogId)) {
@@ -268,6 +277,7 @@ async function applyReconcileResponseWrites(
 async function revertPendingOperationsOnFailure(
   rawDb: SQLiteDatabase,
   pendingOps: readonly OperationLogRow[],
+  claim: OutboxClaim,
   error: unknown,
 ): Promise<void> {
   if (pendingOps.length === 0) {
@@ -277,8 +287,8 @@ async function revertPendingOperationsOnFailure(
   await withLocalWrite(rawDb, async (writeDb) => {
     await writeDb
       .update(operationLog)
-      .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending' })
-      .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
+      .set({ status: isPermanentReconcileError(error) ? 'dead_letter' : 'pending', ...RELEASED_CLAIM })
+      .where(heldOperationsWhere(pendingOps.map((operation) => operation.id), claim));
   });
 }
 
@@ -303,41 +313,29 @@ async function performSyncPendingOperations(
   }
 
   // Include 'processing' so operations orphaned by a cycle that died mid-flight (crash, app
-  // kill, an earlier transport failure) are recovered: they get re-sent and confirmed instead
-  // of staying stuck in 'processing' forever. A stuck 'processing' op is poisonous because
-  // `loadPendingOutboxRecordIds` treats it as un-acked local intent and `defer_outbox` then
-  // drops EVERY remote change for that anime, freezing it permanently out of sync. Re-sending
-  // is safe: cycles are serialized per connection and the patches are absolute/idempotent.
+  // kill, an earlier transport failure) are recovered once their claim expires: they get
+  // re-sent and confirmed instead of staying stuck in 'processing' forever. A stuck 'processing'
+  // op is poisonous because `loadPendingOutboxRecordIds` treats it as un-acked local intent and
+  // `defer_outbox` then drops EVERY remote change for that anime, freezing it out of sync.
   // `dedupeBy: 'anime_id'` (design.md Decision 9, Requirement 10) caps the batch at one queued
-  // operation per anime -- the oldest by `created_at`/`id` -- so `limit` bounds distinct animes
-  // rather than rows here.
+  // operation per anime -- the oldest by `created_at`/`id` -- so `limit` bounds distinct animes.
+  // The read and the claim share ONE write door (ADR 009 R-13): a key with a live claim, ours
+  // or Kotlin's, is skipped, and the claim cannot be raced between the read and the write.
   // ENTRY semantics: published BEFORE the step is awaited, so a hang reports THAT step.
   publishCheckpoint(checkpointRecorder, 'backlog_read');
-  const pendingOps = await readOperationLogBacklog(rawDb, {
-    status: ['pending', 'processing'],
+  const { claim, rows: claimedOps } = await claimOperationLogBatch(rawDb, {
+    owner: JS_OUTBOX_CLAIM_OWNER,
     limit: RECONCILE_BACKLOG_BATCH_LIMIT,
-    orderBy: 'oldest_first',
-    dedupeBy: 'anime_id',
+    onClaim: () => publishCheckpoint(checkpointRecorder, 'claim_ops'),
   });
 
-  // Reported-value only (design.md Decision 9): under `dedupeBy: 'anime_id'`, `pendingOps.length`
-  // counts distinct animes batched, not rows queued, so it alone cannot tell whether more rows
-  // are waiting behind the ones this batch suppressed. This total is read once per cycle purely
-  // so `hasMorePending` stays truthful; it never drives the rerun loop, which is
-  // `syncState.rerunRequested` alone.
-  const totalBacklogRowCount = pendingOps.length > 0
+  // Reported-value only (design.md Decision 9): under `dedupeBy: 'anime_id'`, the batch counts
+  // distinct animes, not rows queued, so it alone cannot tell whether more rows are waiting
+  // behind the ones this batch suppressed. This total is read once per cycle purely so
+  // `hasMorePending` stays truthful; it never drives the rerun loop.
+  const totalBacklogRowCount = claimedOps.length > 0
     ? await countOperationLogBacklogRows(rawDb, ['pending', 'processing'])
     : 0;
-
-  if (pendingOps.length > 0) {
-    publishCheckpoint(checkpointRecorder, 'claim_ops');
-    await withLocalWrite(rawDb, async (writeDb) => {
-      await writeDb
-        .update(operationLog)
-        .set({ status: 'processing' })
-        .where(inArray(operationLog.id, pendingOps.map((operation) => operation.id)));
-    });
-  }
 
   const connection = { ip: config.ip, port: config.port, token: config.token };
   const lastChangelogId = getLastChangelogId(config);
@@ -351,7 +349,7 @@ async function performSyncPendingOperations(
           triggerSource: telemetryContext.triggerSource,
           appState: telemetryContext.appState,
           snapshot: telemetryContext.snapshot,
-          pendingOpsCount: pendingOps.length,
+          pendingOpsCount: claimedOps.length,
           cursor: lastChangelogId,
           now: Date.now(),
           recentEvents: telemetryContext.recentEvents,
@@ -359,6 +357,23 @@ async function performSyncPendingOperations(
         config,
       )
     : null;
+  // Both calls sit here, lexically BEFORE the `try` below and outside any `withLocalWrite`
+  // callback (design.md Decision 5). `captureSyncDiagnosticsEnvelope` is synchronous and
+  // swallows by contract; `flushSyncDiagnosticsOutbox` never rejects. Placement, not the
+  // never-rejecting contract alone, is what makes a diagnostics-delivery failure unreachable
+  // from the `catch` below: that `catch` calls `revertPendingOperationsOnFailure`, which would
+  // otherwise dead-letter or requeue the user's own pending mutations over a diagnostics POST.
+  captureSyncDiagnosticsEnvelope(clientTelemetry);
+  // The SAME `config` row this cycle already read, so ONE read gates capture AND drain.
+  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection, config });
+
+  // The holder re-checks its claim right before the send (ADR 009 R-13): the diagnostics flush
+  // above is a network call, and a key whose claim expired and was taken over meanwhile belongs
+  // to the other runtime now. Only rows still held under this exact claim go on the wire.
+  const heldIds = new Set(
+    await readHeldOperationIds(rawDb, claimedOps.map((operation) => operation.id), claim),
+  );
+  const pendingOps = claimedOps.filter((operation) => heldIds.has(operation.id));
   // Read-only, outside any write door: the SAME shape `getBridgeConfigSnapshot` uses for its own
   // read. This is the value each operation's `base` is built from (Requirement 9) -- read here,
   // before the request goes out, so it reflects the token as of the moment this batch was sent.
@@ -373,16 +388,6 @@ async function performSyncPendingOperations(
     clientTelemetry,
     bridgeTokensByAnimeId,
   );
-
-  // Both calls sit here, lexically BEFORE the `try` below and outside any `withLocalWrite`
-  // callback (design.md Decision 5). `captureSyncDiagnosticsEnvelope` is synchronous and
-  // swallows by contract; `flushSyncDiagnosticsOutbox` never rejects. Placement, not the
-  // never-rejecting contract alone, is what makes a diagnostics-delivery failure unreachable
-  // from the `catch` below: that `catch` calls `revertPendingOperationsOnFailure`, which would
-  // otherwise dead-letter or requeue the user's own pending mutations over a diagnostics POST.
-  captureSyncDiagnosticsEnvelope(clientTelemetry);
-  // The SAME `config` row this cycle already read, so ONE read gates capture AND drain.
-  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection, config });
 
   try {
     publishCheckpoint(checkpointRecorder, 'http');
@@ -466,6 +471,7 @@ async function performSyncPendingOperations(
         lastChangelogId,
         nextLastChangelogId,
         bridgeConfigId: config.id,
+        claim,
       }),
     );
 
@@ -476,7 +482,7 @@ async function performSyncPendingOperations(
       diagnosticsFlush,
     };
   } catch (error) {
-    await revertPendingOperationsOnFailure(rawDb, pendingOps, error);
+    await revertPendingOperationsOnFailure(rawDb, pendingOps, claim, error);
     throw error;
   }
 }

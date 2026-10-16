@@ -63,7 +63,7 @@ internal class SyncEngineTestDatabase(private val appDatabaseIsFile: Boolean = f
     appDatabase.execSQL(
       "CREATE TABLE operation_log (id INTEGER PRIMARY KEY, anime_id TEXT, operation TEXT, " +
         "payload TEXT, status TEXT NOT NULL, created_at INTEGER, " +
-        "conflict_attempt_count INTEGER NOT NULL DEFAULT 0)",
+        "conflict_attempt_count INTEGER NOT NULL DEFAULT 0, claim_owner TEXT, claimed_at INTEGER)",
     )
   }
 

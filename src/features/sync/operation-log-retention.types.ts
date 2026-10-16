@@ -41,6 +41,13 @@ export interface OperationLogQueryParams {
    * dedup runs BEFORE `LIMIT` rather than after.
    */
   readonly dedupeBy?: 'anime_id';
+  /**
+   * Epoch-ms liveness floor for per-key claims (ADR 009 R-13). When set, every anime with ANY
+   * row whose `claimed_at` is above this floor is left out entirely, before the dedup ranks
+   * rows: excluding only the claimed row would let a newer row of the same anime rank first.
+   * Only honoured together with `dedupeBy: 'anime_id'`.
+   */
+  readonly skipKeysClaimedAfter?: number;
 }
 
 /**

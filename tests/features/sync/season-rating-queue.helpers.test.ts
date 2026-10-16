@@ -35,7 +35,8 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
 describe('drainSeasonRatingQueue', () => {
   const rawDb = {
     getAllAsync: jest.fn(),
-    runAsync: jest.fn(),
+    // Every write reports one changed row, so each per-season claim (ADR 009 R-13) is won.
+    runAsync: jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 }),
   } as unknown as SQLiteDatabase;
 
   beforeEach(() => {
@@ -113,6 +114,8 @@ describe('drainSeasonRatingQueue', () => {
       1_752_100_200_000,
       'unreachable',
       9,
+      'js',
+      1_752_100_200_000,
     );
   });
 
@@ -152,7 +155,11 @@ describe('drainSeasonRatingQueue', () => {
       1_752_100_200_000,
       1_752_100_200_000,
       null,
+      'js',
+      1_752_100_200_000,
       9,
+      // The liveness floor: claims taken in the last 60 s keep the season held.
+      1_752_100_140_000,
     );
   });
 
@@ -272,6 +279,8 @@ describe('drainSeasonRatingQueue', () => {
       1_752_100_200_000,
       'auth_repair',
       9,
+      'js',
+      1_752_100_200_000,
     );
   });
 
@@ -329,6 +338,8 @@ describe('drainSeasonRatingQueue', () => {
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       expect.stringContaining('DELETE FROM season_rating_queue'),
       10,
+      'js',
+      1_752_100_200_000,
     );
   });
 
@@ -353,6 +364,8 @@ describe('drainSeasonRatingQueue', () => {
       expect(rawDb.runAsync).toHaveBeenLastCalledWith(
         expect.stringContaining('DELETE FROM season_rating_queue'),
         9,
+        'js',
+        1_752_100_200_000,
       );
       expect(result).toEqual({
         deliveredCount: 0,

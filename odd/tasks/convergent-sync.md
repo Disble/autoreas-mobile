@@ -101,9 +101,9 @@ High-risk tasks get an independent verifier after their own checks.
 | ID | Specs | Route | Risk | Status | Commit |
 |----|-------|-------|------|--------|--------|
 | T1 | S15 | inline | none (docs) | done | 36ee0d9 |
-| T2 | S1 | inline | 6 | done | see L5 |
-| T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | pending | |
-| T4 | S2 | inline + verifier | 4 (concurrency) | pending | |
+| T2 | S1 | inline | 6 | done | fb2acab |
+| T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | done | 751d3f1 |
+| T4 | S2 | inline + verifier | 4 (concurrency) | verifying | (see L8) |
 | T5 | S3 | inline | 3 | pending | |
 | T6 | S4 | inline + verifier | 4 | pending | |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
@@ -133,4 +133,21 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - Kotlin: `cursorNeverMovesBelowAValueTheOtherRuntimeStoredDuringTheRequest` expected 20 and got 14.
   - GREEN: both writes now use `MAX(COALESCE(last_changelog_id,0), next)` against the stored value.
   - Mutation evidence: removing `MAX` is exactly the observed RED state.
-- **Next:** T3 (schema).
+- **L6 (T3):** migration 0018 adds `operation_log.claim_owner`, `claimed_at` and `unresolved_reason`, plus `season_rating_queue.claim_owner` and `claimed_at`.
+  - Each column has a repair twin, and both tables are listed in `REQUIRED_SCHEMA_COLUMNS`.
+  - The readiness version is now 19 in both TS and Kotlin, so Kotlin waits for the JS repair.
+  - The `season_rating_queue` CREATE keeps its 0009 shape, so a fresh install never collides with 0018.
+  - RED: the parity and readiness contracts failed (4 tests). Mutation: removing the 0018 SQL fails all 3 tests in `outbox-claim-columns.test.ts`.
+  - The new `buildOperationLogEntity` fixture centralizes row defaults.
+  - Commit `751d3f1`; the gate was green.
+  - Independent verifier: PASS on all 6 scenarios, no blockers (fresh install, upgrade at 18, partial columns, readiness ordering, season-queue CREATE, column types). Probe sanity: deleting a repair twin fails 3 probes. Advisory carried to T4: the Kotlin test fixtures lacked the new columns.
+- **L7 (T4 map):** no status write was compare-and-set in either runtime; both backlogs selected `IN ('pending','processing')`; Kotlin recovery reset every `processing` row; the read and the claim were separate steps in both runtimes; Kotlin's `updateOperationStatus` treated 0 rows as lease loss.
+- **L8 (T4):** per-key claims with compare-and-set in both runtimes.
+  - JS: `outbox-claim.helpers.ts` owns its write door (`claimOperationLogBatch`): the read and the claim share one `BEGIN IMMEDIATE`. Keys with a live claim (any owner) are excluded at the anime level, before the dedup ranks rows. The holder re-checks its claim after the diagnostics flush, right before the send. Every status write (confirm, dead-letter, pending, conflict outcome, failure revert) is compare-and-set on `status='processing' AND claim_owner AND claimed_at`, and releases the claim.
+  - Season queue: the key is `season_id`. The claim is a compare-and-set that matches nothing while any row of the season holds a live claim. The resolve update and the delete are compare-and-set on the claim.
+  - Kotlin: `OutboxClaim.kt` holds the backlog query (same key exclusion) and the claim. `updateOperationStatus` is compare-and-set on the claim and checks the lease explicitly with `requireLeaseOwnership`, so zero rows now means a lost key, not a lost lease. Recovery resets only `processing` rows whose claim expired or predates claims.
+  - RED: JS operation_log 5 of 6 and season queue 4 of 5 (the passing ones are regression guards); Kotlin 6 of 6 (one failed on a fixture bug: a 2023 `created_at` let the pruner delete the synced row; fixed to `now`).
+  - GREEN: JS behaviour + sync + infrastructure 1125/1125; Kotlin 325/325. Mock-heavy reconcile unit tests use the pass-through `tests/support/outbox-claim-mock.helpers.ts`; the claim SQL is pinned against real SQLite only.
+  - `SyncEngineCycle.kt` shrank from 513 lines (claim SQL moved out to `OutboxClaim.kt`).
+  - Kotlin's pre-send re-check is the claim's read-back inside the same transaction, right before the single send. A second read after commit added only unreachable branches and broke the Kover CORE branch floor (83.9% < 87%). Per-send re-checks inside a chain land with T6. Unclaimed state is `UNCLAIMED` (matches no row) instead of a nullable claim.
+- **Next:** gate and commit T4, then the independent verifier (high risk: concurrency).

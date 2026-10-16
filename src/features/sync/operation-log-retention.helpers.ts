@@ -98,7 +98,7 @@ async function pruneRowsByMaxCount(
  * and running `LIMIT` outside the filtered subquery is what stops dedup from shrinking the
  * batch below its bound -- the window scans every matching row before either applies.
  */
-function buildDedupedBacklogQuery(statusCount: number): string {
+function buildDedupedBacklogQuery(statusCount: number, skipClaimedKeys: boolean): string {
   return [
     'SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (',
     '  SELECT',
@@ -114,6 +114,9 @@ function buildDedupedBacklogQuery(statusCount: number): string {
     '    ) AS animeRank',
     '  FROM operation_log',
     `  WHERE status IN (${buildStatusPlaceholders(statusCount)})`,
+    ...(skipClaimedKeys
+      ? ['  AND anime_id NOT IN (SELECT anime_id FROM operation_log WHERE claimed_at > ?)']
+      : []),
     ')',
     'WHERE animeRank = 1',
     'ORDER BY createdAt ASC, id ASC',
@@ -139,9 +142,12 @@ export async function readOperationLogBacklog(
   const statuses = [...params.status];
 
   if (params.dedupeBy === 'anime_id') {
+    const claimFloor = params.skipKeysClaimedAfter;
+
     return rawDb.getAllAsync<OperationLogRow>(
-      buildDedupedBacklogQuery(statuses.length),
+      buildDedupedBacklogQuery(statuses.length, claimFloor !== undefined),
       ...statuses,
+      ...(claimFloor === undefined ? [] : [claimFloor]),
       params.limit,
     );
   }

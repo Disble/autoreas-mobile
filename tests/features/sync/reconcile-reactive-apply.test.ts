@@ -38,6 +38,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -68,7 +72,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     const writeDb = {};
 
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -113,7 +117,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     const writeDb = {};
 
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -164,7 +168,7 @@ describe('reconcile applies remote bridge changes reactively', () => {
     const writeDb = {};
 
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({

@@ -3,6 +3,9 @@ import { bridgeClient, BridgeUnreachableError } from '../../infrastructure/api';
 import type { BridgeConnection } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { seasonRatingQueue } from '../../infrastructure/db/schema';
+import { JS_OUTBOX_CLAIM_OWNER } from './outbox-claim.constants';
+import { liveClaimFloor } from './outbox-claim.helpers';
+import type { OutboxClaim } from './outbox-claim.types';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
 import type {
@@ -200,29 +203,80 @@ async function readSeasonRatingQueueBacklog(
 // `tx` (not `rawDb`) because these two are only ever called from inside an already-open
 // `withLocalWrite` door in `drainSeasonRatingQueue` -- never call the door again here, an
 // already-open door is exactly the no-nested-doors case (design.md Regression Guard).
-/** Persists one season-rating queue row's status/attempt/failure-kind columns. */
+/**
+ * Claims one queued row for this drain and marks it `syncing` (ADR 009 R-13). The key is the
+ * season: the write is compare-and-set, and matches nothing while ANY row of the same season
+ * carries a live claim, whoever holds it. Returns whether the claim was won.
+ */
+async function claimSeasonRatingQueueEntry(
+  tx: SQLiteDatabase,
+  entryId: number,
+  entry: SeasonRatingQueueEntry,
+  claim: OutboxClaim,
+): Promise<boolean> {
+  const result = await tx.runAsync(
+    [
+      'UPDATE season_rating_queue',
+      'SET status = ?, updated_at = ?, last_attempt_at = ?, last_failure_kind = ?,',
+      '  claim_owner = ?, claimed_at = ?',
+      "WHERE id = ? AND status IN ('pending', 'syncing', 'failed')",
+      'AND NOT EXISTS (',
+      '  SELECT 1 FROM season_rating_queue AS sibling',
+      '  WHERE sibling.season_id = season_rating_queue.season_id AND sibling.claimed_at > ?',
+      ')',
+    ].join(' '),
+    entry.status,
+    entry.updatedAt,
+    entry.lastAttemptAt,
+    entry.lastFailureKind,
+    claim.owner,
+    claim.claimedAt,
+    entryId,
+    liveClaimFloor(claim.claimedAt),
+  );
+
+  return result.changes === 1;
+}
+
+/**
+ * Persists one claimed row's status/attempt/failure-kind columns and releases the claim. The
+ * write is compare-and-set on the claim: a row the other runtime took over is never touched.
+ */
 async function updateSeasonRatingQueueEntry(
   tx: SQLiteDatabase,
   entryId: number,
   entry: SeasonRatingQueueEntry,
+  claim: OutboxClaim,
 ) {
   await tx.runAsync(
     [
       'UPDATE season_rating_queue',
-      'SET status = ?, updated_at = ?, last_attempt_at = ?, last_failure_kind = ?',
-      'WHERE id = ?',
+      'SET status = ?, updated_at = ?, last_attempt_at = ?, last_failure_kind = ?,',
+      '  claim_owner = NULL, claimed_at = NULL',
+      'WHERE id = ? AND claim_owner = ? AND claimed_at = ?',
     ].join(' '),
     entry.status,
     entry.updatedAt,
     entry.lastAttemptAt,
     entry.lastFailureKind,
     entryId,
+    claim.owner,
+    claim.claimedAt,
   );
 }
 
-/** Deletes one confirmed or terminally-dropped season-rating queue row. */
-async function deleteSeasonRatingQueueEntry(tx: SQLiteDatabase, entryId: number) {
-  await tx.runAsync('DELETE FROM season_rating_queue WHERE id = ?', entryId);
+/** Deletes one confirmed or terminally-dropped row, only while this claim still holds it. */
+async function deleteSeasonRatingQueueEntry(
+  tx: SQLiteDatabase,
+  entryId: number,
+  claim: OutboxClaim,
+) {
+  await tx.runAsync(
+    'DELETE FROM season_rating_queue WHERE id = ? AND claim_owner = ? AND claimed_at = ?',
+    entryId,
+    claim.owner,
+    claim.claimedAt,
+  );
 }
 
 /** Posts one queued season rating to the bridge and classifies the outcome. */
@@ -291,11 +345,17 @@ export async function drainSeasonRatingQueue(
     }
 
     const syncingEntry = markSeasonRatingQueueEntrySyncing(queuedEntry, clock);
+    const claim: OutboxClaim = { owner: JS_OUTBOX_CLAIM_OWNER, claimedAt: clock.now() };
 
-    // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (mark syncing -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
-    await withLocalWrite(rawDb, async (_db, tx) => {
-      await updateSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry);
-    });
+    // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: this drains an ordered outbox queue against the bridge (claim -> deliver -> resolve) per entry; parallelizing would fire concurrent network deliveries out of FIFO order.
+    const claimed = await withLocalWrite(rawDb, (_db, tx) =>
+      claimSeasonRatingQueueEntry(tx, queuedEntry.id!, syncingEntry, claim),
+    );
+
+    // A season with a live claim belongs to whoever holds it: skip it, never wait (R-13).
+    if (!claimed) {
+      continue;
+    }
 
     const { resolution: deliveryResolution, failure: deliveryFailure } =
       await deliverQueuedSeasonRating(
@@ -310,7 +370,7 @@ export async function drainSeasonRatingQueue(
 
     if (nextQueueStatus === null) {
       await withLocalWrite(rawDb, async (_db, tx) => {
-        await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!);
+        await deleteSeasonRatingQueueEntry(tx, queuedEntry.id!, claim);
       });
     } else {
       await withLocalWrite(rawDb, async (_db, tx) => {
@@ -320,7 +380,7 @@ export async function drainSeasonRatingQueue(
           updatedAt: clock.now(),
           lastAttemptAt: syncingEntry.lastAttemptAt,
           lastFailureKind: deliveryResolution.failureKind,
-        });
+        }, claim);
       });
     }
 

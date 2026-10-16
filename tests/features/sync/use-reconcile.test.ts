@@ -40,6 +40,7 @@ describe('syncPendingOperations', () => {
   let rawDb: {
     getAllAsync: jest.Mock<Promise<unknown[]>, [string, ...unknown[]]>;
     getFirstAsync: jest.Mock<Promise<{ count: number }>, [string, ...unknown[]]>;
+    runAsync: jest.Mock<Promise<{ changes: number; lastInsertRowId: number }>, [string, ...unknown[]]>;
   };
   let mockDb: {
     update: jest.Mock;
@@ -83,6 +84,9 @@ describe('syncPendingOperations', () => {
   beforeEach(() => {
     rawDb = {
       getAllAsync: jest.fn().mockResolvedValue([]),
+      // Backs the claim write (ADR 009 R-13). The held-claim re-check reads `getAllAsync`, which
+      // answers with the same backlog rows, so every claimed row stays held.
+      runAsync: jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 }),
       // Backs `countOperationLogBacklogRows` (Part 2 `hasMorePending` fix): a fixed 0 keeps
       // every existing assertion in this file unaffected by the new suppressed-rows check.
       getFirstAsync: jest.fn().mockResolvedValue({ count: 0 }),
@@ -150,6 +154,7 @@ describe('syncPendingOperations', () => {
       expect.stringContaining('WHERE animeRank = 1 ORDER BY createdAt ASC, id ASC LIMIT ?'),
       'pending',
       'processing',
+      expect.any(Number),
       200,
     );
     expect(reconcileMock).toHaveBeenCalledWith(
@@ -177,7 +182,7 @@ describe('syncPendingOperations', () => {
       'Network Error',
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
-    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
+    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending', claimOwner: null, claimedAt: null });
   });
 
   it('reverts processing rows to pending on server HTTP error and propagates the error', async () => {
@@ -197,7 +202,7 @@ describe('syncPendingOperations', () => {
       'Reconcile failed: 500',
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
-    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending' });
+    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'pending', claimOwner: null, claimedAt: null });
   });
 
   it('moves processing rows to dead_letter on client HTTP error and logs the rejected payload', async () => {
@@ -223,7 +228,7 @@ describe('syncPendingOperations', () => {
       'Reconcile failed: 400',
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
-    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter' });
+    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: 'dead_letter', claimOwner: null, claimedAt: null });
     expect(warnSpy).toHaveBeenCalledWith(
       '[syncPendingOperations] Reconcile request failed',
       expect.objectContaining({
@@ -344,7 +349,7 @@ describe('syncPendingOperations', () => {
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockDb.update).toHaveBeenCalled();
-    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced' });
+    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'synced', claimOwner: null, claimedAt: null });
   });
 
   it('advances lastChangelogId from the response cursor, not from bridge change timestamps', async () => {
@@ -434,7 +439,7 @@ describe('syncPendingOperations', () => {
 
     expect(result.syncedCount).toBe(0);
     expect(result.hasMorePending).toBe(true);
-    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
+    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending', claimOwner: null, claimedAt: null });
   });
 
   it('does not mark synced when the bridge returns no application evidence', async () => {
@@ -452,6 +457,6 @@ describe('syncPendingOperations', () => {
     const result = await syncPendingOperations(rawDb as unknown as Parameters<typeof syncPendingOperations>[0]);
 
     expect(result.syncedCount).toBe(0);
-    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending' });
+    expect(mockUpdateSet).toHaveBeenCalledWith({ status: 'pending', claimOwner: null, claimedAt: null });
   });
 });

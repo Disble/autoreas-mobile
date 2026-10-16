@@ -1,3 +1,4 @@
+import type { OutboxClaim } from './outbox-claim.types';
 import type { SyncDiagnosticEvent } from './sync-diagnostic-events.types';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
 import type {
@@ -60,6 +61,8 @@ export interface ApplyReconcileResponseWritesParams {
   readonly lastChangelogId: number;
   readonly nextLastChangelogId: number;
   readonly bridgeConfigId: number;
+  /** The claim this cycle holds; every status write is compare-and-set on it (ADR 009 R-13). */
+  readonly claim: OutboxClaim;
 }
 
 /**

@@ -35,6 +35,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -89,7 +93,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
 
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -127,7 +131,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
 
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -157,7 +161,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
   it('never reads bridge_changes[].snapshot.modified_at as a token source (invariant 1)', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -202,7 +206,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
   it('an applied_operations entry whose anime_id is absent from animes writes nothing and throws nothing', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
     // Simulates the real repository's behavior against a row that does not exist yet: an UPDATE
     // matching zero rows resolves normally, it never rejects.
