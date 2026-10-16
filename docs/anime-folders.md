@@ -27,6 +27,17 @@ The folder index walks the chosen root up to 3 levels, skipping hidden folders a
 - Inactive animes (`activo = 0`) stay rows on mobile. They mark the folder they use as used (it is not listed as without anime), but they never get a button, never make a folder shared, and do not count in the Settings totals.
 - Subfolders of a matched folder are its content, not findings.
 
+## Folders that arrive after their anime
+
+An anime can reach the tablet before its folder does: a Season create arrives before its first episode makes the folder on the PC, and the copy to the SD card comes later still. The full walk runs once per launch, so the app checks again in two moments, with no timers or delays:
+
+- **An incoming event of that anime.** When a remote change is applied to an anime (its `last_applied_change_ms` changes), and that anime is active, has a `folderRelative`, and its folder name is not in the index.
+- **Returning to the app.** Every such pending anime is checked.
+
+A check lists only the folder where the anime's folder is expected (its deepest indexed parent, usually the root): one provider query per parent, shared by every pending anime in it. Only when an expected folder is there does the full walk run again. Animes whose folder never reaches the tablet stay pending and cost that one query per own event. "Volver a buscar" in Settings remains the manual fallback.
+
+Limitation: when the tablet root sits above the bridge library root (for example `Videos` instead of `Videos/Anime`), a one-segment `folderRelative` is expected directly in the root and the check never finds it; "Volver a buscar" does.
+
 ## Where the code lives
 
 | Concern | Path |
@@ -36,7 +47,7 @@ The folder index walks the chosen root up to 3 levels, skipping hidden folders a
 | SAF, My Files and browser seam | `src/features/anime-folders/anime-folders-io.helpers.ts` |
 | Native folder lister (one query per folder) | `modules/saf-lister/` |
 | Shared index state (one walk at a time, last index kept while refreshing) | `src/features/anime-folders/anime-folders.store.ts` |
-| Hooks | `use-anime-folders.ts`, `use-anime-folder-resolution.ts` |
+| Hooks | `use-anime-folders.ts`, `use-anime-folder-resolution.ts`, `use-anime-folder-arrival.ts` (late folders, mounted by the anime list) |
 | UI | `src/features/anime-folders/ui/` (banner, setup sheet, Settings card, detail screen) |
 | Detail route | `src/app/(tabs)/anime-folders.tsx` |
 
