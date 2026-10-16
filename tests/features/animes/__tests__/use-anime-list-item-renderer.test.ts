@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react-native";
+import { useAnimeFolderArrival } from "../../../../src/features/anime-folders/use-anime-folder-arrival";
 import { useAnimeFolderResolution } from "../../../../src/features/anime-folders/use-anime-folder-resolution";
 import { useAnimeListItemRenderer } from "../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-item-renderer";
 import { useCoverUriStore } from "../../../../src/infrastructure/store/cover-uri-store";
@@ -8,11 +9,23 @@ jest.mock("../../../../src/features/anime-folders/use-anime-folder-resolution", 
   useAnimeFolderResolution: jest.fn(() => null),
 }));
 
+jest.mock("../../../../src/features/anime-folders/use-anime-folder-arrival", () => ({
+  useAnimeFolderArrival: jest.fn(),
+}));
+
 describe("useAnimeListItemRenderer", () => {
   afterEach(() => {
     act(() => {
       useCoverUriStore.setState({ coverUriByAnimeId: {} });
     });
+  });
+
+  it("watches for anime folders that reach the tablet late while the list is mounted", () => {
+    renderHook(() =>
+      useAnimeListItemRenderer({}, jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn()),
+    );
+
+    expect(useAnimeFolderArrival).toHaveBeenCalled();
   });
 
   it("builds AnimeCard props and forwards mutation state", () => {

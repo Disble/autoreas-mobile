@@ -1,6 +1,7 @@
 import {
   buildFolderIndex,
   buildFolderUri,
+  findArrivedAnimes,
   findFolderProbes,
   hasFolderProbeHit,
 } from '../../../src/features/anime-folders/anime-folders.helpers';
@@ -105,5 +106,21 @@ describe('hasFolderProbeHit', () => {
     const file = { uri: childUri('Ranma 1 2 (2024) 3rd Season'), isDirectory: false };
 
     expect(hasFolderProbeHit(probe, [file, folder('Bleach')])).toBe(false);
+  });
+});
+
+describe('findArrivedAnimes', () => {
+  /** Anime row with the stamp of its last applied remote change. */
+  const row = (id: string, lastAppliedChangeMs: number | null) => ({
+    ...anime(id, id),
+    lastAppliedChangeMs,
+  });
+
+  it('returns the animes that are new or got a remote change since the previous read', () => {
+    const previous = new Map<string, number | null>([['same', 1], ['changed', 1], ['stamped', null]]);
+
+    const arrived = findArrivedAnimes(previous, [row('same', 1), row('changed', 2), row('stamped', 5), row('new', null)]);
+
+    expect(arrived.map((source) => source.id)).toEqual(['changed', 'stamped', 'new']);
   });
 });

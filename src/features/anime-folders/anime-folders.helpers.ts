@@ -13,6 +13,7 @@ import {
   TREE_SEGMENT,
 } from './anime-folders.constants';
 import type {
+  AnimeFolderArrivalSource,
   AnimeFolderSource,
   FolderClaim,
   FolderIndex,
@@ -399,6 +400,18 @@ export function hasFolderProbeHit(probe: FolderProbe, children: readonly FolderT
     const folder = readChildFolder(child);
     return folder !== null && expectedKeys.has(toExactKey(folder.name));
   });
+}
+
+/**
+ * Returns the animes that got an incoming event since the previous read: new rows, and rows whose
+ * last applied remote change differs from the one read before.
+ */
+export function findArrivedAnimes(
+  previous: ReadonlyMap<string, number | null>,
+  sources: readonly AnimeFolderArrivalSource[],
+): AnimeFolderArrivalSource[] {
+  // A new row reads `undefined` from the map, which never equals a stored stamp or `null`.
+  return sources.filter((source) => previous.get(source.id) !== source.lastAppliedChangeMs);
 }
 
 /** Returns the anime page url when it is an http(s) url with a host, else `null` (no page button). */

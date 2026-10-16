@@ -1,3 +1,4 @@
+import { useAnimeFolderArrival } from "../../../anime-folders/use-anime-folder-arrival";
 import { useAnimeFolderResolution } from "../../../anime-folders/use-anime-folder-resolution";
 import { useCoverUriStore } from "../../../../infrastructure/store/cover-uri-store/cover-uri-store.constants";
 import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
@@ -16,6 +17,8 @@ export function useAnimeListItemRenderer(
   // 3. Context/3rd Party Hooks
   const coverUriByAnimeId = useCoverUriStore((state) => state.coverUriByAnimeId);
   const folderResolution = useAnimeFolderResolution();
+  // The list stays mounted while the app is open, so folders that arrive late are found here.
+  useAnimeFolderArrival();
 
   // 6. Callbacks (calling pure helpers)
   const getAnimeCardProps = (

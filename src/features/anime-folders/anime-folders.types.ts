@@ -25,6 +25,12 @@ export interface IndexedFolder {
 }
 
 /** Folders of the anime root with the lookups the resolution steps use. */
+/** An anime folder source with the stamp of its last remote change, so a new incoming event is visible. */
+export interface AnimeFolderArrivalSource extends AnimeFolderSource {
+  /** `last_applied_change_ms`: changes every time a remote change of this anime is applied. */
+  readonly lastAppliedChangeMs: number | null;
+}
+
 /**
  * Where the folders of pending animes are expected: the indexed folder to list (`''` is the root)
  * and the exact-match keys of the folder names that would appear in it.
