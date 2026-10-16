@@ -106,7 +106,7 @@ High-risk tasks get an independent verifier after their own checks.
 | T4 | S2 | inline + verifier | 4 (concurrency) | done | 3a040d3 |
 | T5 | S3 | inline | 3 | done | 7ad484c |
 | T6 | S4 | inline + verifier | 4 | done | b48ddca, 8acbc94, 6300955 + hold removal (see L14) |
-| T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
+| T7 | S5 | inline + verifier | 1 (clears data on unpair) | verifying | abd64c8, 04e2fe1, f5b4ae6 |
 | T8 | S6 | inline | 4 | pending | |
 | T9 | S7 | inline + verifier | 1 | pending | |
 | T10 | S8 | inline | 3 | pending | |
@@ -186,4 +186,9 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - Earlier in the same exchange: "Tiene que ser general, porque si no creamos casuísticas que después van a ser difíciles de seguir." and "Yo prefiero una política de retención." (superseded by the removal above).
   - Rationale, verified in `anime-mutation.helpers.ts`: every event is an `update` with absolute values (`episodesWatched`, `lastWatchedAt`, optional `status`/`premieredAt`/`firstCycle`). A given-up event is never applied with or without a hold, so the hold only froze the later, valid events, and nothing could release it (the R-16(b) UI is out of scope, C6) except retention pruning after 30 days. Residual risk, unchanged by a hold: an optional field carried only by the given-up event does not reach the bridge; R-16(b) records it as unresolved.
   - Change: both backlog queries drop the given-up exclusion (live-claim exclusion stays); `countSendableBacklogRows` is deleted (its only purpose was the hold); S4 and ADR 009 R-14 rewritten. Within a cycle a rejection still stops its key.
-- **Next:** T7.
+- **L15 (T7, S5):** three commits, gate green on each.
+  - `abd64c8`: the snapshot heal stores each anime's token with the fields it writes (new row via `upsertAnime`'s token slot, existing row via `applyAnimeBridgeToken` when it differs; never for a key with an unconfirmed outbox op). Unpair (`clearBridgeConfig`) deletes `bridge_config`, `operation_log`, `season_rating_queue`, `pending_remote_changes` and nulls every `animes.bridge_modified_at` in one write-door transaction.
+  - `04e2fe1` (JS) and `f5b4ae6` (Kotlin): fetch-first via `GET /api/animes/{id}` (already served by the bridge, returns the live `modified_at`, 404 when missing). Token: stored alone, only while NULL, then sent as base. 404 / no token: the whole key becomes `dead_letter` with `unresolved_reason` `bridge_404` / `token_missing` (held rows CAS on the claim, plus unclaimed pending rows of the key); no-token is logged. Transport failure or any status other than 2xx/404: held rows back to `pending`, released.
+  - Assumptions: the diagnostics outbox (separate file `autoreas-telemetry.db`) and the Kotlin journal are device telemetry, not pairing queues, so unpair leaves them. The merge and the staged drain still store no token: `bridge_changes[].snapshot.modified_at` is hardcoded 0 by the bridge, and a stale token is corrected by the R-15 conflict re-base.
+  - Tests that pinned a send without base (JS behaviour seeds, Kotlin `SyncEngineCyclePullOnlyAndFenceTest` x2, `SyncEngineConflictRuleTest` null-token case) now seed a token or assert the R-3 rule. `reconcile.helpers.test.ts` split (pure cases to `reconcile-confirmation-schema.test.ts`) to stay under 500 lines.
+- **Next:** T7 independent verifier, then T8.
