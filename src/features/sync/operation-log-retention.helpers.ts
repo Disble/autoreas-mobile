@@ -115,7 +115,10 @@ function buildDedupedBacklogQuery(statusCount: number, skipClaimedKeys: boolean)
     '  FROM operation_log',
     `  WHERE status IN (${buildStatusPlaceholders(statusCount)})`,
     ...(skipClaimedKeys
-      ? ['  AND anime_id NOT IN (SELECT anime_id FROM operation_log WHERE claimed_at > ?)']
+      ? [
+          '  AND anime_id NOT IN (SELECT anime_id FROM operation_log',
+          "    WHERE claimed_at > ? OR status IN ('dead_letter', 'conflict_exhausted'))",
+        ]
       : []),
     ')',
     'WHERE animeRank = 1',

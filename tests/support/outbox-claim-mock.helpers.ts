@@ -4,9 +4,10 @@ import type * as OperationLogRetentionHelpers from '../../src/features/sync/oper
 /**
  * Builds a pass-through `outbox-claim.helpers` module for unit tests that already mock
  * `readOperationLogBacklog` and stub the write door. The claim skips the door and is read from
- * that mocked backlog and every claimed row stays held, so those tests keep asserting what they
- * own. The claim SQL itself is pinned against real SQLite in
- * `tests/behaviour/sync/outbox-claims.behaviour.test.ts`.
+ * that mocked backlog, every claimed row stays held, and no chain successor is ever claimed, so
+ * those tests keep asserting what they own. The claim SQL itself is pinned against real SQLite
+ * in `tests/behaviour/sync/outbox-claims.behaviour.test.ts` and
+ * `tests/behaviour/sync/outbox-chain.behaviour.test.ts`.
  */
 export function buildPassThroughOutboxClaimModule(): typeof OutboxClaimHelpers {
   const actual = jest.requireActual<typeof OutboxClaimHelpers>(
@@ -33,5 +34,6 @@ export function buildPassThroughOutboxClaimModule(): typeof OutboxClaimHelpers {
       return { claim: { owner: params.owner, claimedAt: 0 }, rows };
     }),
     readHeldOperationIds: jest.fn(async (_db, ids) => [...ids]),
+    claimChainSuccessors: jest.fn(async () => []),
   };
 }

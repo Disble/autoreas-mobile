@@ -103,9 +103,9 @@ High-risk tasks get an independent verifier after their own checks.
 | T1 | S15 | inline | none (docs) | done | 36ee0d9 |
 | T2 | S1 | inline | 6 | done | fb2acab |
 | T3 | S2 (schema), S3 (schema), S7 (schema) | inline + verifier | 1 (migration) | done | 751d3f1 |
-| T4 | S2 | inline + verifier | 4 (concurrency) | verifying | 3a040d3 |
-| T5 | S3 | inline | 3 | done | (see L9) |
-| T6 | S4 | inline + verifier | 4 | pending | |
+| T4 | S2 | inline + verifier | 4 (concurrency) | done | 3a040d3 |
+| T5 | S3 | inline | 3 | done | 7ad484c |
+| T6 | S4 | inline + verifier | 4 | in progress (JS done, Kotlin next) | (see L11) |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | pending | |
 | T8 | S6 | inline | 4 | pending | |
 | T9 | S7 | inline + verifier | 1 | pending | |
@@ -156,4 +156,15 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - The applier now receives the sent tokens (`storedTokens`) and a claim-guarded `writeConflictOutcome` (status + `conflict_attempt_count`, compare-and-set like every other status write since T4).
   - JS already implemented the rule (`reconcile-conflict.helpers.ts`, pinned by `reconcile-conflict*.test.ts`); its conflict write became compare-and-set in T4.
   - RED: `SyncEngineConflictRuleTest` 4 of 6 (the 2 passing are regression guards: token missing, unsupported). GREEN: Kotlin gate green, including Kover CORE 100% branch on the applier (an `?.let ?:` with an unreachable null branch was rewritten as an `if`).
-- **Next:** T4 verifier still running; then T6 (S4, R-14 chaining).
+  - Commit `7ad484c`; gate green. Two earlier commit attempts were killed by the host for low memory, not by the gate.
+- **L10 (T4 verifier):** PASS on all five S2 clauses, no blockers. 8 JS probes pass at `3a040d3` and fail at `751d3f1`. Kotlin was judged by reading (its scratch build failed for environment reasons). Advisories:
+  - token writes (`bridge_modified_at`) from a response are not claim-guarded (pre-existing); decide in T6;
+  - nothing pins the JS and Kotlin backlog SQL to the same text (T15);
+  - Kotlin has no "newer row of a claimed anime" test; the verifier's probes (P1-P6b, P8) are still to be committed as regression tests.
+- **L11 (T6, JS):** the JS cycle chains per key.
+  - `reconcile-round.helpers.ts` (new) owns one round: re-check the claim, send, apply. In the same transaction that confirms a row, `claimChainSuccessors` claims the key's next `pending` row under the same claim, so the other runtime cannot slip in between. The loop in `performSyncPendingOperations` sends rounds until none is claimed.
+  - Stops: a rejected row claims no successor (its key stops); a failed round releases its rows to `pending` and rethrows (earlier rounds stay committed; not counted as a conflict); past `OUTBOX_CHAIN_BUDGET_MS` (20 s from the claim) no successor is claimed. Telemetry rides the first round only; each round sends the previous round's cursor.
+  - Rows behind a given-up row are held: the claimed backlog skips every anime with a `dead_letter` or `conflict_exhausted` row. Existing dead-lettered animes are held too until R-16(b) resolves them or retention prunes the row.
+  - T4 verifier advisory 1 closed for JS: response tokens are written only for keys still held, re-read inside the write door.
+  - RED: 4 of 6 in `outbox-chain.behaviour.test.ts`; GREEN 6/6; mutation: removing the 20 s check or the given-up exclusion each fails its test. Unit tests: 3 mocks now return the write door's result, and the token write-back tests send the operation they confirm. JS suites 1131/1131.
+- **Next:** T6 Kotlin (same chain in `SyncEngineCycle`, plus the token guard; move code out, the file is at 504 lines), the T4 verifier probes as regression tests, then the T6 verifier.

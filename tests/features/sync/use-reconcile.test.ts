@@ -20,6 +20,14 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withLocalWrite: jest.fn(),
 }));
 
+// The claim SQL runs for real against the mocked `rawDb`, whose `getAllAsync` answers every read
+// with the same rows; a chain successor read would then never run dry. The chain itself is pinned
+// against real SQLite in `tests/behaviour/sync/outbox-chain.behaviour.test.ts`.
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () => ({
+  ...jest.requireActual('../../../src/features/sync/outbox-claim.helpers'),
+  claimChainSuccessors: jest.fn(async () => []),
+}));
+
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
 }));

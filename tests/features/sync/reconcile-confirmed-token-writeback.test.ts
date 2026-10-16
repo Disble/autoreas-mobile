@@ -50,6 +50,27 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
  * no-throw case. Split out of `reconcile.helpers.test.ts` to keep that file under the 500-line
  * ceiling (constraint 5).
  */
+/** A write handle whose status writes (`update().set().where()`) resolve and record nothing. */
+function buildStatusWriteStub() {
+  return { update: () => ({ set: () => ({ where: () => Promise.resolve() }) }) };
+}
+
+/**
+ * One backlog row this cycle sends. A token is only written for a key the cycle still holds
+ * (ADR 009 R-13), so every response below confirms an operation that was actually sent.
+ */
+function sentOperation(animeId: string, operation: string) {
+  return {
+    id: 1,
+    animeId,
+    operation,
+    payload: '{}',
+    status: 'pending',
+    createdAt: 1,
+    conflictAttemptCount: 0,
+  };
+}
+
 describe('syncPendingOperations confirmed token write-back', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
@@ -91,11 +112,12 @@ describe('syncPendingOperations confirmed token write-back', () => {
       callOrder.push('persistConfirmedAnimeTokens');
     });
 
-    const writeDb = {};
+    const writeDb = buildStatusWriteStub();
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       return task(writeDb, {});
     });
 
+    mockReadBacklog.mockResolvedValue([sentOperation('anime-1', 'update')]);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
@@ -129,11 +151,12 @@ describe('syncPendingOperations confirmed token write-back', () => {
       callOrder.push('persistConfirmedAnimeTokens');
     });
 
-    const writeDb = {};
+    const writeDb = buildStatusWriteStub();
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       return task(writeDb, {});
     });
 
+    mockReadBacklog.mockResolvedValue([sentOperation('anime-1', 'update')]);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
@@ -204,7 +227,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
   });
 
   it('an applied_operations entry whose anime_id is absent from animes writes nothing and throws nothing', async () => {
-    const writeDb = {};
+    const writeDb = buildStatusWriteStub();
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       return task(writeDb, {});
     });
@@ -212,6 +235,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
     // matching zero rows resolves normally, it never rejects.
     mockPersistConfirmedAnimeTokens.mockResolvedValue(undefined);
 
+    mockReadBacklog.mockResolvedValue([sentOperation('anime-not-yet-applied', 'create')]);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,

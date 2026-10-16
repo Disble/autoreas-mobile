@@ -49,7 +49,10 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
 
 /** Mocked `getBridgeConfigSnapshot` the suite drives per test. */
 const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
-/** Mocked `withLocalWrite`, resolved without running its callback unless a test overrides it. */
+/**
+ * Mocked `withLocalWrite`, resolved to no chain successors without running its callback unless
+ * a test overrides it.
+ */
 const mockWithLocalWrite = dbClient.withLocalWrite as jest.Mock;
 /** Mocked bridge endpoint the suite drives per test. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
@@ -77,7 +80,7 @@ describe('syncPendingOperations in-flight guard', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue(undefined);
+    mockWithLocalWrite.mockResolvedValue([]);
     mockReconcile.mockResolvedValue(SUCCESS_RESPONSE);
   });
 
@@ -124,7 +127,7 @@ describe('syncPendingOperations response and revert error paths', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue(undefined);
+    mockWithLocalWrite.mockResolvedValue([]);
   });
 
   it('rejects with a parse error when the bridge response fails ReconcileResponseSchema', async () => {

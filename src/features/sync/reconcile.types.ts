@@ -1,3 +1,5 @@
+import type { BridgeConnection } from '../../infrastructure/api';
+import type { OperationLogRow } from '../../infrastructure/db/schema';
 import type { OutboxClaim } from './outbox-claim.types';
 import type { SyncDiagnosticEvent } from './sync-diagnostic-events.types';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
@@ -6,7 +8,7 @@ import type {
   SyncRuntimeStatusSnapshot,
   SyncRuntimeTriggerSource,
 } from './sync-runtime-status.types';
-import type { SyncCycleAppState } from './sync-telemetry.types';
+import type { SyncCycleAppState, WireSyncCycleTelemetry } from './sync-telemetry.types';
 import type { ConfirmedAnimeToken } from './applied-operation-token.helpers';
 import type { ConflictOutcome } from './reconcile-conflict.helpers';
 import type { RemoteAnimeChange } from './merge/merge.types';
@@ -80,4 +82,30 @@ export interface SyncPendingOperationsResult {
   readonly hasMorePending: boolean;
   /** The diagnostics-outbox flush outcome for this cycle (design.md Decision 2/3). */
   readonly diagnosticsFlush: SyncDiagnosticsFlushResult;
+}
+
+/** What one reconcile round needs that stays fixed, or is carried forward, across a chain. */
+export interface ReconcileRoundContext {
+  readonly applyMode: ReconcileApplyMode;
+  readonly connection: BridgeConnection;
+  readonly deviceId: string | undefined;
+  readonly bridgeConfigId: number;
+  /** The cursor this round sends; each round carries the previous round's cursor forward. */
+  readonly lastChangelogId: number;
+  /** Piggybacked on the first round only, so one cycle reports its telemetry once. */
+  readonly clientTelemetry: WireSyncCycleTelemetry | null;
+  readonly claim: OutboxClaim;
+  /** Epoch ms after which no further row is claimed for the chain (ADR 009 R-14). */
+  readonly chainDeadline: number;
+  readonly checkpointRecorder?: SyncCycleCheckpointRecorder;
+}
+
+/** What one reconcile round produced, and the rows the chain sends next. */
+export interface ReconcileRoundOutcome {
+  readonly sentCount: number;
+  readonly confirmedCount: number;
+  readonly unconfirmedCount: number;
+  readonly nextLastChangelogId: number;
+  /** The next row of every key this round confirmed, already claimed; empty ends the chain. */
+  readonly successors: readonly OperationLogRow[];
 }

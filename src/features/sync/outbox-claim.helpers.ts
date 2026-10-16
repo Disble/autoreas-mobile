@@ -127,3 +127,64 @@ export function heldOperationsWhere(ids: readonly number[], claim: OutboxClaim):
     eq(operationLog.claimedAt, claim.claimedAt),
   );
 }
+
+/**
+ * Claims, under the SAME claim, the next row of every key in `animeIds` (ADR 009 R-14): the
+ * holder keeps a key it just confirmed, so the other runtime cannot slip between two sends.
+ * Runs inside the caller's open write door, in the transaction that confirmed the previous row.
+ *
+ * Only a key's oldest queued row is a candidate, and only while it is `pending` and unclaimed;
+ * the update is compare-and-set on exactly that, and the rows it did not win are dropped.
+ */
+export async function claimChainSuccessors(
+  tx: SQLiteDatabase,
+  animeIds: readonly string[],
+  claim: OutboxClaim,
+): Promise<OperationLogRow[]> {
+  if (animeIds.length === 0) {
+    return [];
+  }
+
+  const candidates = await tx.getAllAsync<OperationLogRow>(
+    [
+      'SELECT id, animeId, operation, payload, status, createdAt, conflictAttemptCount FROM (',
+      '  SELECT id, anime_id AS animeId, operation, payload, status, claimed_at AS claimedAt,',
+      '    created_at AS createdAt, conflict_attempt_count AS conflictAttemptCount,',
+      '    ROW_NUMBER() OVER (PARTITION BY anime_id ORDER BY created_at ASC, id ASC) AS animeRank',
+      '  FROM operation_log',
+      `  WHERE anime_id IN (${animeIds.map(() => '?').join(', ')})`,
+      "  AND status IN ('pending', 'processing')",
+      ')',
+      "WHERE animeRank = 1 AND status = 'pending' AND claimedAt IS NULL",
+      'ORDER BY createdAt ASC, id ASC',
+    ].join(' '),
+    ...animeIds,
+  );
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  await tx.runAsync(
+    [
+      "UPDATE operation_log SET status = 'processing', claim_owner = ?, claimed_at = ?",
+      `WHERE id IN (${candidates.map(() => '?').join(', ')})`,
+      "AND status = 'pending' AND claimed_at IS NULL",
+    ].join(' '),
+    claim.owner,
+    claim.claimedAt,
+    ...candidates.map((row) => row.id),
+  );
+
+  const heldIds = new Set(await readHeldOperationIds(tx, candidates.map((row) => row.id), claim));
+
+  const claimed: OperationLogRow[] = [];
+
+  for (const row of candidates) {
+    if (heldIds.has(row.id)) {
+      claimed.push({ ...row, status: 'processing' });
+    }
+  }
+
+  return claimed;
+}

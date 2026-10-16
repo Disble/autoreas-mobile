@@ -9,3 +9,9 @@ export const JS_OUTBOX_CLAIM_OWNER = 'js';
 
 /** The column values that release a claim; spread into every guarded status write. */
 export const RELEASED_CLAIM = { claimOwner: null, claimedAt: null } as const;
+
+/**
+ * How long one cycle keeps chaining sends per key (ADR 009 R-14). Past it, no further row of a
+ * key is claimed; the rows left behind stay `pending` for the next cycle.
+ */
+export const OUTBOX_CHAIN_BUDGET_MS = 20_000;
