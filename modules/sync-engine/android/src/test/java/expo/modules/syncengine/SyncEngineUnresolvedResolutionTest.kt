@@ -69,7 +69,6 @@ class SyncEngineUnresolvedResolutionTest {
       SyncEngineTestHttpServer.scripted(listOf(confirmed(14))).use { server ->
         seed(fixture, server)
         fixture.appDatabase.execSQL("UPDATE operation_log SET status = 'dead_letter' WHERE id = 2")
-        // A recent `created_at`: retention prunes given-up rows older than 30 days.
         fixture.appDatabase.execSQL(
           "INSERT INTO operation_log (id, anime_id, operation, payload, status, created_at) " +
             "VALUES (3, 'anime-2', 'update', '{}', 'dead_letter', ?)",

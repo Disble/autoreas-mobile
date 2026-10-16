@@ -14,7 +14,7 @@ Every rule below quotes the approved proposal (v8). ADR 009 holds the full text 
 - C2: JS has no background responsibility. Kotlin runs always, including while the app is open. There are two dispatchers, one per process.
 - C3: There is one exit per runtime. The maintainer's model is an HTTP interceptor: "hay un solo lugar de donde sale".
 - C4: Events are never coalesced. Each event reaches the bridge, in order. The maintainer's reason: "Bridge funciona esperando cada uno de los eventos para generar el historial".
-- C5: Polish, don't rebuild. The three queue tables stay (`operation_log`, `season_rating_queue`, and the diagnostics outbox in `telemetry.db`).
+- C5: Polish, don't rebuild. The diagnostics outbox in `telemetry.db` stays its own queue. Season ratings move into the anime queue (`operation_log`), amended by L20; `season_rating_queue` is retired.
 - C6: The R-16(b) UI is a separate track and is out of scope here. The maintainer said: "nos estamos distrayendo con temas de UI".
 
 ### Rules
@@ -108,7 +108,7 @@ High-risk tasks get an independent verifier after their own checks.
 | T6 | S4 | inline + verifier | 4 | done | b48ddca, 8acbc94, 6300955 + hold removal (see L14) |
 | T7 | S5 | inline + verifier | 1 (clears data on unpair) | done | abd64c8, 04e2fe1, f5b4ae6, c80821a (see L16) |
 | T8 | S6 | delegated writer + verifier | 4 | done | 46ac414 + probes (see L17) |
-| T9 | S7 | inline + verifier | 1 | pending | |
+| T9 | S7 | delegated writer + verifier | 1 | done | 27d4579, 481c121, 1ebf20a (see L21) |
 | T10 | S8 | inline | 3 | pending | |
 | T11 | S9 | inline | 3 | pending | |
 | T12 | S10 | inline | none | pending | |
@@ -116,6 +116,7 @@ High-risk tasks get an independent verifier after their own checks.
 | T14 | S12 | inline | 5 | pending | |
 | T15 | S13 | inline | none | pending | |
 | T16 | S14 | inline | 6 | pending | |
+| T17 | S7, S9 (L20) | delegated writer + verifier | 1 (migration moves stored ratings) | pending | |
 
 All tasks route inline. No writer is delegated, because none of the Writer-trigger reasons applies: the tasks are sequential and share the sync core files.
 
@@ -201,3 +202,6 @@ All tasks route inline. No writer is delegated, because none of the Writer-trigg
   - Rationale: holding inbound changes and skipping the heal for an unresolved key would freeze that anime with no way out while the R-16(b) UI is out of scope (C6), the same freeze L14 rejected for the outbound direction. Events are absolute, so a later confirmed local edit supersedes the given-up one.
   - Change: S7's merge/heal line rewritten; ADR 009 R-16(b) amended. T8 advisory A1 (a PC change overwrites a given-up local value) is the intended behaviour now, recorded as unresolved, not a defect.
 - **Next:** T9 (S7).
+- **L19 (2026-10-16, T9 retention):** The maintainer, after learning that retention only covers anime edits (diagnostics have their own store, reconcile checks store nothing), answered: "Sí, visto así, pues la política no favorece mucho en el contexto actual." Decision: unresolved anime edits and unresolved ratings are exempt from retention; they stay until resolved (automatically or by the entry point). Synced rows keep their 7-day cleanup. Pending implementation inside T9.
+- **L20 (2026-10-16, season ratings join the anime queue):** The maintainer, verbatim: "Para mí, todo lo que respecta a seasons es parte del mismo contexto semántico de anime. Un contexto diferente sería, por ejemplo, logs. Eso sí es diferente y necesita posiblemente un tratamiento aparte. y esta decisión es independiente de si tiene su propio endpoint." Decision: season ratings become an event kind in `operation_log` with the anime as key, keeping their own bridge endpoint; a migration moves queued ratings and retires `season_rating_queue`. Diagnostics stay a separate queue. C5 amended; new task T17, after T11 (the single exit).
+- **L21 (2026-10-16, T9 closed):** `27d4579` unresolved contract (anime keys = dead_letter/conflict_exhausted rows; rating keys = failed not_found/conflict; resolved = given-up rows deleted; auto-resolution by a later confirmed edit of the key, logged with key, rows and reason in JS after commit and Kotlin inside the transaction; `readUnresolvedKeyCount`, `listUnresolvedKeys`, `resolveUnresolvedKey` keep_local/keep_bridge with typed refusals). Verifier: B1 (an unresolved rating counted as pending forever) fixed in `481c121` with its probe as regression test. `1ebf20a` implements L19 (no retention for given-up rows; synced cleanup unchanged); verifier PASS, synced pruning byte-identical to baseline. Advisories: Kotlin log written before commit; no-token keep_bridge refuses with remote_state_unavailable; unresolved files not in jest.coverage-tiers.js; JS `pruneOperationLog` has no production caller (for T16, S14); unresolved rows can grow unbounded (accepted by L19). Next: T10 (S8).
