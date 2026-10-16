@@ -124,11 +124,11 @@ export async function walkFolderTree(
   for (let depth = 1; depth <= ANIME_FOLDERS_MAX_DEPTH; depth += 1) {
     const nextLevel: { uri: string; relativePath: string }[] = [];
 
-    for (const parent of level) {
-      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: one provider query at a time keeps the SD card reads ordered and the walk's cost predictable.
-      const children = await listChildren(parent.uri);
+    // One level at a time: a level's folders are only known once the level above is listed.
+    const listings = await Promise.all(level.map((parent) => listChildren(parent.uri)));
 
-      for (const child of children) {
+    for (const [parentIndex, parent] of level.entries()) {
+      for (const child of listings[parentIndex]) {
         const documentId = getSafDocumentId(child.uri);
         const name = toSegments(documentId?.slice(documentId.indexOf(':') + 1)).at(-1);
         if (!child.isDirectory || !documentId || !name || name.startsWith('.')) {

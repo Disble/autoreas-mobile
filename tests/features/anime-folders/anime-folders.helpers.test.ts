@@ -105,6 +105,37 @@ describe('walkFolderTree', () => {
     expect(entries.map((entry) => entry.relativePath)).toEqual(['A', 'B', 'A/A1']);
   });
 
+  it('lists every folder of one level together instead of one after another', async () => {
+    const pending = new Map<string, (children: FolderTreeChild[]) => void>();
+    const lister = (uri: string) =>
+      new Promise<FolderTreeChild[]>((resolve) => {
+        pending.set(uri, resolve);
+      });
+
+    const walk = walkFolderTree(ROOT_URI, lister);
+    await Promise.resolve();
+    pending.get(ROOT_URI)?.([
+      { uri: childUri('A'), isDirectory: true },
+      { uri: childUri('B'), isDirectory: true },
+    ]);
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+
+    expect([...pending.keys()]).toEqual([ROOT_URI, childUri('A'), childUri('B')]);
+    pending.get(childUri('B'))?.([{ uri: childUri('B/B1'), isDirectory: true }]);
+    pending.get(childUri('A'))?.([]);
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    pending.get(childUri('B/B1'))?.([]);
+    await expect(walk).resolves.toEqual([
+      { relativePath: 'A', documentId: '0123-4567:Videos/Anime/A' },
+      { relativePath: 'B', documentId: '0123-4567:Videos/Anime/B' },
+      { relativePath: 'B/B1', documentId: '0123-4567:Videos/Anime/B/B1' },
+    ]);
+  });
+
   it('fails when the root can no longer be listed', async () => {
     const lister = () => Promise.reject(new Error('permission revoked'));
 
