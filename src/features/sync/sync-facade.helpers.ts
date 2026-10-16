@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, not } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import { operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
@@ -8,6 +8,7 @@ import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
 import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
+import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -187,8 +188,10 @@ export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizz
 }
 
 /**
- * Builds the live query for every durable season-rating row that still requires resolution.
- * Failed rows remain unresolved because they need explicit repair and retry before current truth is safe.
+ * Builds the live query for every durable season-rating row that is still pending work.
+ * A retryable `failed` row (for example `auth_repair`) still counts; an unresolved rating
+ * (`failed` with a failure kind in `UNRESOLVED_RATING_FAILURE_KINDS`, ADR 009 R-16b) is never
+ * sent again, so it is excluded with the same predicate `readSeasonRatingQueueBacklog` uses.
  */
 export function buildUnresolvedSeasonRatingQuery(
   rawDb: Parameters<typeof createDrizzleDb>[0],
@@ -196,6 +199,16 @@ export function buildUnresolvedSeasonRatingQuery(
   return createDrizzleDb(rawDb)
     .select({ id: seasonRatingQueue.id })
     .from(seasonRatingQueue)
-    .where(inArray(seasonRatingQueue.status, ['pending', 'syncing', 'failed']))
+    .where(
+      and(
+        inArray(seasonRatingQueue.status, ['pending', 'syncing', 'failed']),
+        not(
+          and(
+            eq(seasonRatingQueue.status, 'failed'),
+            inArray(seasonRatingQueue.lastFailureKind, [...UNRESOLVED_RATING_FAILURE_KINDS]),
+          )!,
+        ),
+      ),
+    )
     .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
 }

@@ -6,6 +6,7 @@ import {
   drainSeasonRatingQueue,
   enqueueSeasonRatingIntent,
 } from '../../../src/features/sync/season-rating-queue.helpers';
+import { buildUnresolvedSeasonRatingQuery } from '../../../src/features/sync/sync-facade.helpers';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { buildReconcileResponseBody } from '../../support/sync-fixtures.helpers';
@@ -152,6 +153,38 @@ describe('every covered failure becomes a durable, counted unresolved key (ADR 0
     await rateAndDrain(adapter, fakeBridge, 'anime-1', 500);
 
     expect(await readUnresolvedKeyCount(adapter)).toBe(0);
+  });
+});
+
+describe('an unresolved rating is never counted as pending work (B1)', () => {
+  let fakeBridge: FakeBridge;
+
+  beforeEach(() => {
+    fakeBridge = installFakeBridge();
+  });
+
+  afterEach(() => {
+    fakeBridge.restore();
+  });
+
+  it.each([404, 409])('drops a rating the bridge answered %i from the pending count', async (status) => {
+    const adapter = await openPairedDatabase({ episodes: [] });
+    await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
+
+    expect(await buildUnresolvedSeasonRatingQuery(adapter)).toHaveLength(0);
+  });
+
+  it.each([
+    [401, 'failed', 'auth_repair'],
+    [500, 'pending', 'unexpected_response'],
+  ])('still counts a rating the bridge answered %i (%s, %s)', async (status, rowStatus, kind) => {
+    const adapter = await openPairedDatabase({ episodes: [] });
+    await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
+
+    expect(await readRatingRows(adapter)).toEqual([
+      { id: 1, anime_id: 'anime-1', status: rowStatus, last_failure_kind: kind },
+    ]);
+    expect(await buildUnresolvedSeasonRatingQuery(adapter)).toEqual([{ id: 1 }]);
   });
 });
 

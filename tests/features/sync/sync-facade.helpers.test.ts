@@ -8,6 +8,8 @@ import {
 } from '../../../src/features/sync/sync-facade.helpers';
 
 jest.mock('drizzle-orm', () => ({
+  and: jest.fn((...conditions) => ({ and: conditions })),
+  not: jest.fn((condition) => ({ not: condition })),
   eq: jest.fn((column, value) => ({ column, value })),
   inArray: jest.fn((column, values) => ({ column, values })),
 }));
@@ -41,7 +43,7 @@ describe('sync facade helpers', () => {
     });
   });
 
-  it('counts pending, syncing, and failed season ratings as unresolved work', () => {
+  it('counts pending, syncing, and retryable failed season ratings, never an unresolved one', () => {
     const limit = jest.fn().mockReturnValue({ query: 'season-rating-queue' });
     const where = jest.fn(() => ({ limit }));
     const from = jest.fn(() => ({ where }));
@@ -55,6 +57,20 @@ describe('sync facade helpers', () => {
       'syncing',
       'failed',
     ]);
+    expect(inArray).toHaveBeenCalledWith(seasonRatingQueue.lastFailureKind, ['not_found', 'conflict']);
+    expect(where).toHaveBeenCalledWith({
+      and: [
+        { column: seasonRatingQueue.status, values: ['pending', 'syncing', 'failed'] },
+        {
+          not: {
+            and: [
+              { column: seasonRatingQueue.status, value: 'failed' },
+              { column: seasonRatingQueue.lastFailureKind, values: ['not_found', 'conflict'] },
+            ],
+          },
+        },
+      ],
+    });
   });
 });
 
