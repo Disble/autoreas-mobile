@@ -5,6 +5,7 @@ import {
   selectLatestSeasonRatingIntent,
 } from "../../../../src/features/animes/anime-season.helpers";
 
+/** Builds one `season_rating_queue` entity with every column defaulted, so each test states only what it varies. */
 function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRatingQueueRow {
   return {
     id: 1,
@@ -17,6 +18,8 @@ function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRat
     updatedAt: 1_752_000_100_000,
     lastAttemptAt: null,
     lastFailureKind: null,
+    claimOwner: null,
+    claimedAt: null,
     ...overrides,
   };
 }

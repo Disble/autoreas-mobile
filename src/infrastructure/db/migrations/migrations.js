@@ -19,6 +19,7 @@ import m0014 from './0014_add_diagnostics_disposition_counters.sql';
 import m0015 from './0015_add_diagnostics_reaped_counter.sql';
 import m0016 from './0016_add_animes_episodes.sql';
 import m0017 from './0017_add_animes_folder_relative.sql';
+import m0018 from './0018_add_outbox_claims_and_unresolved.sql';
 
   export default {
     journal,
@@ -40,7 +41,8 @@ m0013,
 m0014,
 m0015,
 m0016,
-m0017
+m0017,
+m0018
     }
   }
   

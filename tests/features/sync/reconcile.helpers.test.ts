@@ -8,6 +8,7 @@ import * as mergeContextModule from '../../../src/features/sync/merge/merge-cont
 import * as pendingRemoteChangesModule from '../../../src/features/sync/pending-remote-changes.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
+import { buildOperationLogEntity } from '../../support/sync-fixtures.helpers';
 
 jest.mock('../../../src/infrastructure/api', () => ({
   bridgeClient: { reconcile: jest.fn() },
@@ -48,15 +49,11 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
 }));
 
 describe('reconcile helpers', () => {
-  const baseOperation = {
-    id: 1,
-    animeId: 'anime-1',
-    operation: 'update',
+  const baseOperation = buildOperationLogEntity({
     payload: JSON.stringify({ episodesWatched: 5, lastWatchedAt: 1710000000000 }),
     status: 'processing',
     createdAt: 1710000000000,
-    conflictAttemptCount: 0,
-  };
+  });
 
   it('getConfirmedOperationIds confirma updates cuando bridge refleja los campos aplicados', () => {
     expect(

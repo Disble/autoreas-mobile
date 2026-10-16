@@ -127,6 +127,13 @@
       "when": 1789310400000,
       "tag": "0017_add_animes_folder_relative",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792108800000,
+      "tag": "0018_add_outbox_claims_and_unresolved",
+      "breakpoints": true
     }
   ]
 }

@@ -63,6 +63,13 @@ export const operationLog = sqliteTable(
     // increments only when it repeats the same token. NOT NULL with a default of 0 -- unlike the
     // OCC token columns, a freshly queued row has definitely made zero attempts, never "unknown".
     conflictAttemptCount: integer("conflict_attempt_count").notNull().default(0),
+    // ADR 009 R-13 per-key claim: the runtime holding this anime ('js' | 'native') and when it
+    // took the claim. NULL means unclaimed; a claim older than 60 s is expired.
+    claimOwner: text("claim_owner"),
+    claimedAt: integer("claimed_at"),
+    // ADR 009 R-16(b): why a row was given up when its status alone cannot say (fetch-first
+    // outcomes `bridge_404` and `token_missing`). NULL on every row that is not unresolved.
+    unresolvedReason: text("unresolved_reason"),
   },
   (table) => [
     index('operation_log_status_created_at_idx').on(
@@ -88,6 +95,9 @@ export const seasonRatingQueue = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
     lastAttemptAt: integer('last_attempt_at'),
     lastFailureKind: text('last_failure_kind'),
+    // ADR 009 R-13 per-key claim, keyed by season. NULL means unclaimed.
+    claimOwner: text('claim_owner'),
+    claimedAt: integer('claimed_at'),
   },
   (table) => [
     index('season_rating_queue_status_created_at_idx').on(

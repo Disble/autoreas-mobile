@@ -44,6 +44,9 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'folder_relative' },
           { name: 'conflict_attempt_count' },
+          { name: 'claim_owner' },
+          { name: 'claimed_at' },
+          { name: 'unresolved_reason' },
           { name: 'fence' },
           { name: 'anime_folders_root_uri' },
           { name: 'anime_folders_hint_dismissed_at' },
@@ -68,6 +71,8 @@ describe('database startup helpers', () => {
       'column-check',
       'column-check',
       'column-check',
+      'column-check',
+      // season_rating_queue joined REQUIRED_SCHEMA_COLUMNS with migration 0018 (ADR 009 claims).
       'column-check',
       `PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION};`,
     ]);
@@ -118,6 +123,9 @@ describe('database startup helpers', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -156,6 +164,9 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'folder_relative' },
           { name: 'conflict_attempt_count' },
+          { name: 'claim_owner' },
+          { name: 'claimed_at' },
+          { name: 'unresolved_reason' },
           { name: 'fence' },
           { name: 'anime_folders_root_uri' },
           { name: 'anime_folders_hint_dismissed_at' },
@@ -246,6 +257,9 @@ describe('database startup helpers', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -306,20 +320,20 @@ describe('database startup helpers', () => {
         }
 
         if (query === 'PRAGMA table_info(operation_log)') {
-          return [{ name: 'id' }, { name: 'conflict_attempt_count' }];
+          return [{ name: 'id' }, { name: 'conflict_attempt_count' }, { name: 'claim_owner' }, { name: 'claimed_at' }, { name: 'unresolved_reason' }];
         }
 
-        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }, { name: 'anime_folders_root_uri' }, { name: 'anime_folders_hint_dismissed_at' }];
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }, { name: 'anime_folders_root_uri' }, { name: 'anime_folders_hint_dismissed_at' }, { name: 'claim_owner' }, { name: 'claimed_at' }];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0017`
-    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`. Pinned as a
+    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0018`
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`. Pinned as a
     // literal rather than against the exported constant so a migration that silently fails to
     // register in the journal is caught here instead of agreeing with itself.
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(18);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(19);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });

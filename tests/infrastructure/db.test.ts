@@ -273,7 +273,8 @@ describe("db client tracer helpers", () => {
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(9);
+    // 9 + the five ADR 009 claim/unresolved columns this mock reports missing (migration 0018 twins).
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(14);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );

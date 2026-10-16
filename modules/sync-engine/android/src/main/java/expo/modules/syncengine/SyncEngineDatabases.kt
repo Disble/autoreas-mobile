@@ -239,7 +239,7 @@ const val PENDING_REMOTE_CHANGES_TABLE_SQL =
  * file as text and fails when the literal drifts from the journal length, so a new migration
  * cannot silently block the native owner forever. Bump this value only with that test's help.
  */
-const val EXPECTED_SCHEMA_READINESS_VERSION = 18
+const val EXPECTED_SCHEMA_READINESS_VERSION = 19
 
 /**
  * Explicit verdict of the app database readiness probe. The decision itself ([resolveAppDatabaseReadiness])

@@ -216,6 +216,22 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
     columnName: 'conflict_attempt_count',
     sql: 'ALTER TABLE operation_log ADD COLUMN conflict_attempt_count INTEGER DEFAULT 0 NOT NULL',
   },
+  // ADR 009 R-13 per-key claim: NULL means unclaimed. Repair twin of migration 0018.
+  { columnName: 'claim_owner', sql: 'ALTER TABLE operation_log ADD COLUMN claim_owner TEXT' },
+  { columnName: 'claimed_at', sql: 'ALTER TABLE operation_log ADD COLUMN claimed_at INTEGER' },
+  // ADR 009 R-16(b): why a row with no dedicated status was given up. NULL on every other row.
+  { columnName: 'unresolved_reason', sql: 'ALTER TABLE operation_log ADD COLUMN unresolved_reason TEXT' },
+];
+
+/**
+ * Lists the `season_rating_queue` columns added after the table first shipped (migration 0018):
+ * the ADR 009 R-13 per-key claim, keyed by season. Nullable with no default, because NULL means
+ * unclaimed. The CREATE in `SEASON_RATING_QUEUE_TABLE_SQL` stays at its migration-0009 shape, so a
+ * fresh install's migration 0018 never collides with a column the repair step already created.
+ */
+export const SEASON_RATING_QUEUE_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
+  { columnName: 'claim_owner', sql: 'ALTER TABLE season_rating_queue ADD COLUMN claim_owner TEXT' },
+  { columnName: 'claimed_at', sql: 'ALTER TABLE season_rating_queue ADD COLUMN claimed_at INTEGER' },
 ];
 
 /**

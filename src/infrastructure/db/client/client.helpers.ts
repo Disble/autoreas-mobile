@@ -33,6 +33,7 @@ import {
   MIGRATION_LEDGER_PIN_SQL,
   MIGRATION_LEDGER_SEED_SQL,
   OPERATION_LOG_COLUMN_DEFINITIONS,
+  SEASON_RATING_QUEUE_COLUMN_DEFINITIONS,
   SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
@@ -248,13 +249,16 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(PENDING_REMOTE_CHANGES_TABLE_SQL);
 }
 
-/** Creates the durable season-rating queue for installs that predate it. */
+/** Creates the durable season-rating queue for installs that predate it, then adds later columns. */
 async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(SEASON_RATING_QUEUE_TABLE_SQL);
 
   await rawDb.runAsync(
     'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
   );
+
+  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(season_rating_queue)');
+  await ensureMissingColumns(rawDb, new Set(columns.map((column) => column.name)), SEASON_RATING_QUEUE_COLUMN_DEFINITIONS);
 }
 
 /** Creates the single-row active-season cache. Exists in no migration file; only here. */

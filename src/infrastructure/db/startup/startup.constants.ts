@@ -63,7 +63,9 @@ export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>
   sync_runtime_status: ['last_cycle_id'],
   bridge_config: ['is_sync_telemetry_enabled'],
   animes: ['last_applied_change_ms', 'bridge_modified_at', 'episodes', 'folder_relative'],
-  operation_log: ['conflict_attempt_count'],
+  operation_log: ['conflict_attempt_count', 'claim_owner', 'claimed_at', 'unresolved_reason'],
+  // ADR 009 R-13 claims; the native engine reads them, so readiness must prove them.
+  season_rating_queue: ['claim_owner', 'claimed_at'],
   // The fence token is what makes a reclaimed cycle-lock lease reject the previous owner's
   // release (and the native engine's fenced writes): without it a lease lapse only prevents
   // NEW claims while the stale owner can still delete the current holder's row.
