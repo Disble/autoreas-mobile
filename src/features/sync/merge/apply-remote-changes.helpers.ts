@@ -72,7 +72,8 @@ async function applyAcceptedChange(
  * - 'apply' on a create -> full-row insert via `upsertAnime` (cold create has no prior
  *   columns to preserve).
  * - 'apply' on an update with no known field -> rejected: no write, counted and recorded.
- * - 'drop_stale' / 'defer_outbox' -> no write; counted only.
+ * - 'drop_stale' / 'defer_outbox' -> no write; counted only. A deferred change is NOT discarded:
+ *   `applyStagedAndIncomingRemoteChanges` keeps it staged for a later pass (ADR 009 R-16a).
  *
  * `applyMode` is accepted so callers can express where this coordinator runs (foreground
  * deferred-write vs background staged-write) but it is NOT used to change behavior here:

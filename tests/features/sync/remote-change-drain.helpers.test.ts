@@ -1,4 +1,8 @@
-import { drainPendingRemoteChanges } from '../../../src/features/sync/remote-change-drain.helpers';
+import {
+  applyStagedAndIncomingRemoteChanges,
+  drainPendingRemoteChanges,
+} from '../../../src/features/sync/remote-change-drain.helpers';
+import type { RemoteAnimeChange } from '../../../src/features/sync/merge/merge.types';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
 import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
@@ -21,7 +25,18 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
 jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   loadPendingRemoteChanges: jest.fn(),
   deletePendingRemoteChanges: jest.fn(),
+  stagePendingRemoteChanges: jest.fn(),
 }));
+
+/** Builds one update of `recordId` at `timestamp`. */
+function updateOf(recordId: string, timestamp: number): RemoteAnimeChange {
+  return { recordId, changeType: 'update', changedFields: ['estado'], snapshot: { _id: recordId } as never, timestamp };
+}
+
+/** Builds one delete of `recordId` at `timestamp`. */
+function deleteOf(recordId: string, timestamp: number): RemoteAnimeChange {
+  return { recordId, changeType: 'delete', changedFields: [], timestamp };
+}
 
 describe('drainPendingRemoteChanges', () => {
   const mockCreateDrizzleDb = dbClient.createDrizzleDb as jest.Mock;
@@ -111,7 +126,7 @@ describe('drainPendingRemoteChanges', () => {
     expect(result).toEqual({ applied: 2, dropped: 0, deferred: 0, drainedCount: 2 });
   });
 
-  it('deletes drained staging rows even when applyRemoteChanges drops/defers them (cleanup is unconditional once handled)', async () => {
+  it('deletes drained staging rows even when applyRemoteChanges drops them', async () => {
     const stagedEntries = [
       {
         stagingId: 5,
@@ -135,5 +150,73 @@ describe('drainPendingRemoteChanges', () => {
 
     expect(mockDeletePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [5]);
     expect(result).toEqual({ applied: 0, dropped: 1, deferred: 0, drainedCount: 1 });
+  });
+});
+
+describe('applyStagedAndIncomingRemoteChanges', () => {
+  const mockApplyRemoteChanges = mergeApplyChangesModule.applyRemoteChanges as jest.Mock;
+  const mockLoadPendingOutboxRecordIds =
+    mergeContextModule.loadPendingOutboxRecordIds as jest.Mock;
+  const mockLoadPendingRemoteChanges =
+    pendingRemoteChangesModule.loadPendingRemoteChanges as jest.Mock;
+  const mockDeletePendingRemoteChanges =
+    pendingRemoteChangesModule.deletePendingRemoteChanges as jest.Mock;
+  const mockStagePendingRemoteChanges =
+    pendingRemoteChangesModule.stagePendingRemoteChanges as jest.Mock;
+  const writeDb = { kind: 'write-db' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mergeContextModule.loadGuardMap as jest.Mock).mockResolvedValue(new Map());
+    mockLoadPendingOutboxRecordIds.mockResolvedValue(new Set(['anime-1']));
+    mockApplyRemoteChanges.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0, rejected: 0 });
+  });
+
+  it('merges staged and incoming changes in timestamp order, staged first on a tie', async () => {
+    const staged = updateOf('anime-2', 20);
+    const incomingTie = updateOf('anime-2', 20);
+    const incomingEarlier = updateOf('anime-3', 10);
+    mockLoadPendingRemoteChanges.mockResolvedValue([{ stagingId: 1, change: staged }]);
+
+    await applyStagedAndIncomingRemoteChanges(writeDb as never, [incomingTie, incomingEarlier]);
+
+    const applied = mockApplyRemoteChanges.mock.calls[0][1] as RemoteAnimeChange[];
+    expect(applied).toHaveLength(3);
+    expect(applied[0]).toBe(incomingEarlier);
+    expect(applied[1]).toBe(staged);
+    expect(applied[2]).toBe(incomingTie);
+  });
+
+  it('keeps a deferred staged row and stages a deferred incoming change, and touches nothing else', async () => {
+    const deferredStaged = updateOf('anime-1', 1);
+    const deferredIncoming = updateOf('anime-1', 2);
+    mockLoadPendingRemoteChanges.mockResolvedValue([{ stagingId: 7, change: deferredStaged }]);
+
+    await applyStagedAndIncomingRemoteChanges(writeDb as never, [deferredIncoming]);
+
+    expect(mockDeletePendingRemoteChanges).not.toHaveBeenCalled();
+    expect(mockStagePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [deferredIncoming]);
+  });
+
+  it('keeps a deferred change when the only delete in the pass is of another anime or earlier', async () => {
+    const deferredIncoming = updateOf('anime-1', 5);
+    mockLoadPendingRemoteChanges.mockResolvedValue([]);
+
+    await applyStagedAndIncomingRemoteChanges(writeDb as never, [
+      deleteOf('anime-1', 4),
+      deferredIncoming,
+      deleteOf('anime-2', 6),
+    ]);
+
+    expect(mockStagePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [deferredIncoming]);
+  });
+
+  it('keeps no deferred change that a later delete of the same anime supersedes', async () => {
+    mockLoadPendingRemoteChanges.mockResolvedValue([{ stagingId: 3, change: updateOf('anime-1', 5) }]);
+
+    await applyStagedAndIncomingRemoteChanges(writeDb as never, [deleteOf('anime-1', 5)]);
+
+    expect(mockDeletePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [3]);
+    expect(mockStagePendingRemoteChanges).not.toHaveBeenCalled();
   });
 });

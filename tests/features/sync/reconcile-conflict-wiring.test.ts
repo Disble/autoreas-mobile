@@ -35,6 +35,7 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
 
 jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
+  loadPendingRemoteChanges: jest.fn().mockResolvedValue([]),
 }));
 
 // Fetch-first (ADR 009 R-3) has its own behaviour suite; here every held row passes through as sendable.

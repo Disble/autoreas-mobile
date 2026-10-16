@@ -43,6 +43,7 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
 }));
 
 jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
+  loadPendingRemoteChanges: jest.fn().mockResolvedValue([]),
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 

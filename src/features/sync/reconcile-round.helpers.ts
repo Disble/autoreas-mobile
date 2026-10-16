@@ -13,8 +13,6 @@ import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { collectConfirmedAnimeTokens } from './applied-operation-token.helpers';
 import { normalizeBridgeChange } from './bridge-change.helpers';
 import { forwardOnlyChangelogCursor, shouldPersistLastChangelogId } from './last-changelog.helpers';
-import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
-import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
 import { resolveMissingTokens } from './missing-token.helpers';
 import { RELEASED_CLAIM } from './outbox-claim.constants';
 import {
@@ -35,6 +33,7 @@ import type {
   ReconcileRoundOutcome,
   SyncCycleCheckpointRecorder,
 } from './reconcile.types';
+import { applyStagedAndIncomingRemoteChanges } from './remote-change-drain.helpers';
 import type { SyncCycleStage } from './sync-runtime-status.types';
 
 /**
@@ -108,18 +107,10 @@ async function applyReconcileResponseWrites(
   if (applyMode === 'staged') {
     await stagePendingRemoteChanges(writeDb, normalizedChanges);
   } else {
-    const recordIds = normalizedChanges.map((change) => change.recordId);
-    const [guardByRecordId, pendingOutboxRecordIds] = await Promise.all([
-      loadGuardMap(writeDb, recordIds),
-      loadPendingOutboxRecordIds(writeDb),
-    ]);
-
-    await applyRemoteChanges(
-      writeDb,
-      normalizedChanges,
-      { guardByRecordId, pendingOutboxRecordIds },
-      'deferred',
-    );
+    // Staged changes ride along (ADR 009 R-16a): one the outbox deferred in an earlier round is
+    // re-evaluated here, and one deferred now is kept staged, because the cursor below moves past
+    // it in this same transaction and will never return it again.
+    await applyStagedAndIncomingRemoteChanges(writeDb, normalizedChanges);
   }
 
   // MUST run after the `bridge_changes` apply above: that apply may be what CREATES the row
