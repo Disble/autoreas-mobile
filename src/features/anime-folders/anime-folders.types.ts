@@ -25,6 +25,16 @@ export interface IndexedFolder {
 }
 
 /** Folders of the anime root with the lookups the resolution steps use. */
+/**
+ * Where the folders of pending animes are expected: the indexed folder to list (`''` is the root)
+ * and the exact-match keys of the folder names that would appear in it.
+ */
+export interface FolderProbe {
+  readonly parentRelativePath: string;
+  readonly expectedKeys: readonly string[];
+}
+
+/** The indexed folders below the root, with lookups by exact and by normalized folder name. */
 export interface FolderIndex {
   readonly folders: readonly IndexedFolder[];
   readonly byExactKey: ReadonlyMap<string, readonly IndexedFolder[]>;
