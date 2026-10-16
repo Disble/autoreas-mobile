@@ -99,7 +99,7 @@ The claim is released when the chain stops.
 **R-16(b): the unresolved contract**
 
 - **Which failures:** `dead_letter`, `conflict_exhausted`, rating 404/409, and the R-3 outcomes 404 and no-token.
-- **Merge and heal:** both treat an unresolved key as pending.
+- **Merge and heal:** an unresolved key never blocks; both treat it like any other key. A later local edit of that key confirmed by the bridge resolves it automatically, and every automatic resolution is logged with its reason. Amended 2026-10-16 by the maintainer: holding the key would freeze the anime with no way out while the UI is a separate track.
 - **Status:** status counts unresolved keys.
 - **Resolution:** there is one entry point, and it acts on the whole key.
   - Keep local: release the held rows and re-chain them from a fresh base.
