@@ -148,6 +148,9 @@ def CORE_CLASSES = [
   'HeldRowWriter', 'HeldRowWriter$*', 'OutboxClaimKt', 'OutboxClaimKt$*', 'OutboxClaim',
   'OutboxClaim$*', 'ReconcileConflictKt', 'ReconcileConflictKt$*', 'RejectedOperationOutcome',
   'RejectedOperationOutcome$*',
+  // MissingTokenResolver.kt (ADR 009 R-3: fetch-first)
+  'MissingTokenResolver', 'MissingTokenResolver$*', 'MissingTokenResolverKt', 'MissingTokenResolverKt$*',
+  'MissingTokenOutcome', 'MissingTokenOutcome$*',
   // SyncCycleLease.kt
   'SyncCycleLease', 'SyncCycleLease$*', 'LeaseLostException', 'LeaseLostException$*',
   'LeaseFence', 'LeaseFence$*',

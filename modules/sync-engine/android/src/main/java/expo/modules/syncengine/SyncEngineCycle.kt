@@ -1,6 +1,7 @@
 package expo.modules.syncengine
 
 import android.database.sqlite.SQLiteDatabase
+import android.net.Uri
 import android.util.Log
 import java.util.UUID
 
@@ -75,6 +76,7 @@ class SyncEngineCycle(
    * parsed response through it, so the two paths cannot drift.
    */
   private val heldRows = HeldRowWriter(appDb, { requireOwned() }, { claim })
+  private val missingTokens = MissingTokenResolver(appDb, heldRows) { requireOwned() }
   private val responseApplier = SyncEngineResponseApplier(
     appDb,
     heldRows::updateOperationStatus,
@@ -233,11 +235,16 @@ class SyncEngineCycle(
     while (round.isNotEmpty()) {
       claimedRows = round
       backlogReadCount += round.size
-      val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId })
+      val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId }).toMutableMap()
+      // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
+      val sendable = missingTokens.resolve(round, tokensByAnimeId) { animeId ->
+        SyncEngineHttp.get("http://$ip:$port/api/animes/${Uri.encode(animeId)}", token, BRIDGE_REQUEST_TIMEOUT_MS)
+      }
+      claimedRows = sendable
       val requestBody = ReconcileRequestBody.build(
         deviceId = deviceId,
         lastChangelogId = lastChangelogId,
-        rows = round,
+        rows = sendable,
         tokensByAnimeId = tokensByAnimeId,
         cycleId = cycleId,
         triggerSource = triggerSource,
@@ -285,7 +292,7 @@ class SyncEngineCycle(
       // below cannot interleave with a reclaim. Staging stays unfenced (append-only, idempotent
       // under the merge boundary); token writes are limited to keys this claim still holds.
       transition("applied", null)
-      val roundRows = round
+      val roundRows = sendable
       val roundCursor = lastChangelogId
       val (confirmedIds, successors) = inImmediateTransaction(appDb) {
         requireLeaseOwnership(appDb, requireOwned())

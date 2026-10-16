@@ -39,8 +39,10 @@ class SyncEngineConflictRuleTest {
   }
 
   @Test
-  fun aConflictFromAnAnimeWithNoStoredTokenReBasesOnTheBridgeToken() {
-    val after = runConflictCycle(storedToken = null, attemptCount = 1, conflict = conflictWithToken(5))
+  fun aConflictAfterFetchingAMissingTokenReBasesOnTheBridgeToken() {
+    // No stored token: the row is sent on the fetched token 3 (ADR 009 R-3), and the conflict's
+    // token 5 is newer than that base, so the row is re-based and its count reset.
+    val after = runConflictCycle(storedToken = null, attemptCount = 1, conflict = conflictWithToken(5), fetchedToken = 3)
 
     assertEquals(RowState("pending", 0, 5), after)
   }
@@ -67,14 +69,29 @@ class SyncEngineConflictRuleTest {
     assertEquals(RowState("dead_letter", 0, 7), after)
   }
 
+  @Test
+  fun theClassifierTreatsAnUnknownStoredTokenAsProgress() {
+    // Fetch-first (ADR 009 R-3) means a cycle never sends without a stored token, so only a direct
+    // call reaches the null case; the rule stays total over its input and mirrors the JS one.
+    val entry = AppliedOperationEntry("anime-conflict", "update", applied = false, modifiedAt = 5, reason = "conflict")
+
+    assertEquals(RejectedOperationOutcome.Conflict(5, 0, "pending"), classifyRejectedOperation(entry, null, 2))
+  }
+
   private fun conflictWithToken(token: Long): String =
     """{"anime_id":"anime-conflict","operation":"update","applied":false,"reason":"conflict","modified_at":$token}"""
 
-  /** Runs one real cycle whose bridge rejects the only queued row with [conflict]. */
-  private fun runConflictCycle(storedToken: Long?, attemptCount: Long, conflict: String): RowState {
+  /**
+   * Runs one real cycle whose bridge rejects the only queued row with [conflict]; with no
+   * [storedToken], the bridge first answers the fetch-first read with [fetchedToken].
+   */
+  private fun runConflictCycle(storedToken: Long?, attemptCount: Long, conflict: String, fetchedToken: Long? = null): RowState {
     SyncEngineTestDatabase().use { fixture ->
-      val response = """{"applied_operations":[$conflict],"last_changelog_id":1}"""
-      SyncEngineTestHttpServer(200, response).use { server ->
+      val response = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[$conflict],"last_changelog_id":1}""")
+      val fetched = fetchedToken?.let {
+        SyncEngineTestHttpServer.Response(200, """{"id":"anime-conflict","modified_at":$it}""")
+      }
+      SyncEngineTestHttpServer.scripted(listOfNotNull(fetched, response)).use { server ->
         fixture.appDatabase.execSQL(
           "INSERT INTO bridge_config (id, device_id, ip, port, token, last_changelog_id) VALUES (1, ?, ?, ?, ?, ?)",
           arrayOf<Any>("device-conflict", "127.0.0.1", server.port.toString(), "token-conflict", 0L),

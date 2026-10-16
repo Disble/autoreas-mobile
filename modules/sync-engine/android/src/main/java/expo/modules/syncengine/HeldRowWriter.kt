@@ -64,6 +64,32 @@ internal class HeldRowWriter(
   }
 
   /**
+   * Gives a key up (ADR 009 R-3): its held rows and its unclaimed pending rows become `dead_letter`
+   * with [reason], all released. The whole key goes, since none of its rows can carry a base.
+   */
+  fun giveKeyUp(animeId: String, heldIds: List<Long>, reason: String) {
+    val heldFence = fence()
+    requireLeaseOwnership(appDb, heldFence)
+    val heldClaim = claim()
+    val placeholders = heldIds.joinToString(", ") { "?" }
+    appDb.compileStatement(
+      "UPDATE operation_log SET status = 'dead_letter', unresolved_reason = ?, claim_owner = NULL, " +
+        "claimed_at = NULL WHERE ((id IN ($placeholders) AND status = 'processing' AND claim_owner = ? " +
+        "AND claimed_at = ?) OR (anime_id = ? AND status = 'pending' AND claimed_at IS NULL)) " +
+        "AND $LEASE_OWNERSHIP_GUARD_SQL",
+    ).run {
+      bindString(1, reason)
+      heldIds.forEachIndexed { index, id -> bindLong(index + 2, id) }
+      bindString(heldIds.size + 2, heldClaim.owner)
+      bindLong(heldIds.size + 3, heldClaim.claimedAt)
+      bindString(heldIds.size + 4, animeId)
+      bindString(heldIds.size + 5, heldFence.owner)
+      bindString(heldIds.size + 6, heldFence.fence)
+      executeUpdateDelete()
+    }
+  }
+
+  /**
    * The ids among [ids] this claim still holds, read inside the caller's transaction: a key the
    * JS runtime took over mid-request is not ours to write, not even its token.
    */
