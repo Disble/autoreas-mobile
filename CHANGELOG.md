@@ -16,9 +16,16 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-10-15
+
 ### Added
 
 - Open an anime's folder on the tablet from its card. Choose the folder where you keep your animes once, and each anime with a folder there gets a folder button that opens it in My Files, in the other half of the screen when you are in split screen. A page button opens the anime's page in the browser. Settings shows how many animes found their folder and lists the folders without anime. Works with any PC version; a PC that also sends folder paths matches more animes.
+
+### Internal
+
+- The local database gains an optional column for the folder path the PC sends. Going back to 1.11.0 leaves it unused and keeps your catalogue.
+- Anime folders are read by a small native module that lists each folder in one step, off the main thread. On the test tablet, finding the folders went from about 5.7 s, with the app frozen, to about 0.5 s.
 
 ## [1.11.0] — 2026-10-15
 
