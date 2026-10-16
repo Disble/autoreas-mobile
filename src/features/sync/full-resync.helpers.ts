@@ -1,5 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
+import {
+  applyAnimeBridgeToken,
+  applyAnimePartial,
+  upsertAnime,
+} from '../../infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
 import { animes } from '../../infrastructure/db/schema';
 import type { Anime } from '../../infrastructure/validation/anime-schema';
@@ -56,11 +60,12 @@ export async function resyncFromBridgeSnapshot(
     port: config.port,
     token: config.token,
   });
-  // `remote` is `IngestedAnime[]` (Decision 10) -- unwrap `entry.anime` to keep this heal path
-  // byte-identical to before the token-ingest change. The token itself is intentionally not
-  // threaded through here: this is the heal/diff path, not a confirmed write-back (see
-  // design.md "Migration / Rollout" -- left as a documented, deliberately out-of-scope option).
-  const normalizedRemote = remote.map((entry) => normalizeFetchedAnime(entry.anime));
+  // The heal stores each anime's token with the fields it writes (ADR 009 R-3): both come from the
+  // same `listAnimes` response, so they describe one bridge state and a later send carries a base.
+  const normalizedRemote = remote.map((entry) => ({
+    anime: normalizeFetchedAnime(entry.anime),
+    bridgeModifiedAt: entry.bridgeModifiedAt,
+  }));
 
   if (normalizedRemote.length === 0) {
     return { healed: 0 };
@@ -75,7 +80,7 @@ export async function resyncFromBridgeSnapshot(
     ]);
     const localById = new Map(localRows.map((row) => [row._id, row]));
 
-    for (const anime of normalizedRemote) {
+    for (const { anime, bridgeModifiedAt } of normalizedRemote) {
       if (pendingOutboxRecordIds.has(anime._id)) {
         continue;
       }
@@ -84,9 +89,13 @@ export async function resyncFromBridgeSnapshot(
 
       if (!localRow) {
         // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: writes and the `healed` counter share the single deferred-write transaction; parallelizing rows risks interleaving native SQLite statements on one connection.
-        await upsertAnime(db, anime);
+        await upsertAnime(db, anime, undefined, bridgeModifiedAt);
         healed += 1;
         continue;
+      }
+
+      if (localRow.bridgeModifiedAt !== bridgeModifiedAt) {
+        await applyAnimeBridgeToken(db, anime._id, bridgeModifiedAt);
       }
 
       const changedFields = deriveChangedFields(

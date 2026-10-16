@@ -3,7 +3,13 @@ import {
   clearBridgeConfig,
   withLocalWrite,
 } from "../../src/infrastructure/db/client";
-import { bridgeConfig } from "../../src/infrastructure/db/schema";
+import {
+  animes,
+  bridgeConfig,
+  operationLog,
+  pendingRemoteChanges,
+  seasonRatingQueue,
+} from "../../src/infrastructure/db/schema";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 /**
@@ -22,6 +28,7 @@ jest.mock("drizzle-orm/expo-sqlite", () => ({
       __state?: {
         animes: Record<string, unknown>[];
         deletes?: unknown[];
+        updates?: unknown[];
       };
     }) => ({
       insert: () => ({
@@ -32,6 +39,11 @@ jest.mock("drizzle-orm/expo-sqlite", () => ({
       delete: async (table: unknown) => {
         client.__state?.deletes?.push(table);
       },
+      update: (table: unknown) => ({
+        set: async (values: unknown) => {
+          client.__state?.updates?.push({ table, values });
+        },
+      }),
       select: () => ({
         from: () => client.__state?.animes ?? [],
       }),
@@ -69,6 +81,7 @@ describe("db client write-door helpers", () => {
       __state: {
         animes: [] as Record<string, unknown>[],
         deletes: [] as unknown[],
+        updates: [] as unknown[],
       },
       runAsync: jest.fn(),
       execAsync: jest.fn().mockResolvedValue(undefined),
@@ -78,7 +91,8 @@ describe("db client write-door helpers", () => {
 
     expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
     expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
-    expect(rawDb.__state.deletes).toEqual([bridgeConfig]);
+    expect(rawDb.__state.deletes).toEqual([bridgeConfig, operationLog, seasonRatingQueue, pendingRemoteChanges]);
+    expect(rawDb.__state.updates).toEqual([{ table: animes, values: { bridgeModifiedAt: null } }]);
     expect(rawDb.runAsync).not.toHaveBeenCalled();
   });
 

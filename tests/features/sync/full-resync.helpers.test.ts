@@ -1,5 +1,9 @@
 import { resyncFromBridgeSnapshot } from '../../../src/features/sync/full-resync.helpers';
-import { applyAnimePartial, upsertAnime } from '../../../src/infrastructure/db/anime-repository';
+import {
+  applyAnimeBridgeToken,
+  applyAnimePartial,
+  upsertAnime,
+} from '../../../src/infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withLocalWrite } from '../../../src/infrastructure/db/client/client.helpers';
 import { fetchInitialSyncSnapshot } from '../../../src/features/sync/initial-sync.helpers';
 import { loadPendingOutboxRecordIds } from '../../../src/features/sync/merge/merge-context.helpers';
@@ -14,6 +18,7 @@ jest.mock('../../../src/features/sync/initial-sync.helpers', () => ({
 }));
 
 jest.mock('../../../src/infrastructure/db/anime-repository', () => ({
+  applyAnimeBridgeToken: jest.fn().mockResolvedValue(undefined),
   applyAnimePartial: jest.fn().mockResolvedValue(undefined),
   upsertAnime: jest.fn().mockResolvedValue(undefined),
 }));
@@ -75,8 +80,8 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
  * `entry.anime`, preserving this suite's pre-existing (accidental, documented as drift)
  * exercised behavior byte-for-byte.
  */
-function makeIngestedSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
-  return { anime: makeSnapshot(overrides), bridgeModifiedAt: 0 };
+function makeIngestedSnapshot(overrides: Partial<Record<string, unknown>> = {}, bridgeModifiedAt = 0) {
+  return { anime: makeSnapshot(overrides), bridgeModifiedAt };
 }
 
 /** Builds a fixture persisted `animes` row, as it would come back from a raw SQLite select. */
@@ -189,7 +194,7 @@ describe('resyncFromBridgeSnapshot', () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
-    });
+    }, undefined, 0);
     expect(result.healed).toBe(1);
   });
 
@@ -235,6 +240,54 @@ describe('resyncFromBridgeSnapshot', () => {
 
     expect(applyAnimePartial).not.toHaveBeenCalled();
     expect(result.healed).toBe(0);
+  });
+
+  it('stores the bridge token of a cold-inserted anime, so its first send carries a base (R-3)', async () => {
+    wireWriteWithLocalRows([]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({}, 42)]);
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    expect(upsertAnime).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ _id: 'anime-1' }), undefined, 42);
+  });
+
+  it('stores the bridge token of a healed row together with its fields (R-3)', async () => {
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 5, bridgeModifiedAt: 7 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12 }, 42)]);
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimeBridgeToken).toHaveBeenCalledWith(expect.anything(), 'anime-1', 42);
+  });
+
+  it('stores a missing token on a row already in sync without counting it as healed (R-3)', async () => {
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 12, estado: 1, bridgeModifiedAt: null })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 }, 42)]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimeBridgeToken).toHaveBeenCalledWith(expect.anything(), 'anime-1', 42);
+    expect(applyAnimePartial).not.toHaveBeenCalled();
+    expect(result.healed).toBe(0);
+  });
+
+  it('leaves the token alone when it already matches the bridge', async () => {
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 12, estado: 1, bridgeModifiedAt: 42 })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12, estado: 1 }, 42)]);
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimeBridgeToken).not.toHaveBeenCalled();
+  });
+
+  it('never stores a token for an anime with an unconfirmed local outbox op', async () => {
+    wireWriteWithLocalRows([makeRow({ nrocapvisto: 5, bridgeModifiedAt: null })]);
+    mockFetch.mockResolvedValue([makeIngestedSnapshot({ nrocapvisto: 12 }, 42)]);
+    mockPendingIds.mockResolvedValue(new Set(['anime-1']));
+
+    await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimeBridgeToken).not.toHaveBeenCalled();
   });
 
   it('returns healed:0 without fetching when bridge config is incomplete', async () => {
