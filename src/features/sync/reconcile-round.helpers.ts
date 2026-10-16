@@ -15,6 +15,7 @@ import { normalizeBridgeChange } from './bridge-change.helpers';
 import { forwardOnlyChangelogCursor, shouldPersistLastChangelogId } from './last-changelog.helpers';
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { loadGuardMap, loadPendingOutboxRecordIds } from './merge/merge-context.helpers';
+import { resolveMissingTokens } from './missing-token.helpers';
 import { RELEASED_CLAIM } from './outbox-claim.constants';
 import {
   claimChainSuccessors,
@@ -216,14 +217,16 @@ export async function sendReconcileRound(
   const heldIds = new Set(
     await readHeldOperationIds(rawDb, claimedRows.map((operation) => operation.id), claim),
   );
-  const pendingOps = claimedRows.filter((operation) => heldIds.has(operation.id));
+  const heldOps = claimedRows.filter((operation) => heldIds.has(operation.id));
   // Read-only, outside any write door: the SAME shape `getBridgeConfigSnapshot` uses for its own
   // read. This is the value each operation's `base` is built from (Requirement 9) -- read here,
   // before the request goes out, so it reflects the token as of the moment this batch was sent.
   const bridgeTokensByAnimeId = await readAnimeBridgeTokens(
     createDrizzleDb(rawDb),
-    pendingOps.map((operation) => operation.animeId),
+    heldOps.map((operation) => operation.animeId),
   );
+  // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
+  const pendingOps = await resolveMissingTokens(rawDb, connection, claim, heldOps, bridgeTokensByAnimeId);
   const requestBody = buildReconcileRequestBody(
     context.deviceId,
     lastChangelogId,

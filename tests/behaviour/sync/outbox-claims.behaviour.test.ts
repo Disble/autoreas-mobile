@@ -52,7 +52,7 @@ async function openDatabaseWithRow(row: StoredClaimRow): Promise<SQLiteDatabase>
     0,
   );
   await adapter.runAsync(
-    'INSERT INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez, bridge_modified_at) VALUES (?, ?, ?, ?, ?, ?, 1)',
     'anime-1',
     'Test Anime',
     0,
@@ -91,7 +91,7 @@ function sentAnimeIds(fakeBridge: FakeBridge, index: number): string[] {
 /** Queues one more `pending` outbox row, for `animeId`, behind the rows already there. */
 async function queueRow(adapter: SQLiteDatabase, animeId: string, createdAt: number): Promise<void> {
   await adapter.runAsync(
-    'INSERT OR IGNORE INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT OR IGNORE INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez, bridge_modified_at) VALUES (?, ?, ?, ?, ?, ?, 1)',
     animeId,
     'Test Anime',
     0,

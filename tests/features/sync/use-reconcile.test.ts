@@ -28,6 +28,11 @@ jest.mock('../../../src/features/sync/outbox-claim.helpers', () => ({
   claimChainSuccessors: jest.fn(async () => []),
 }));
 
+// Fetch-first (ADR 009 R-3) has its own behaviour suite; here every held row passes through as sendable.
+jest.mock('../../../src/features/sync/missing-token.helpers', () => ({
+  resolveMissingTokens: jest.fn(async (...args: unknown[]) => [...(args[3] as unknown[])]),
+}));
+
 jest.mock('../../../src/features/sync/merge/apply-remote-changes.helpers', () => ({
   applyRemoteChanges: jest.fn().mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 }),
 }));

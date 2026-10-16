@@ -35,6 +35,11 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Fetch-first (ADR 009 R-3) has its own behaviour suite; here every held row passes through as sendable.
+jest.mock('../../../src/features/sync/missing-token.helpers', () => ({
+  resolveMissingTokens: jest.fn(async (...args: unknown[]) => [...(args[3] as unknown[])]),
+}));
+
 jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
   require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),

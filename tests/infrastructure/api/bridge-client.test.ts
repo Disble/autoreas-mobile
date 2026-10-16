@@ -71,6 +71,22 @@ describe('bridge-client', () => {
     expect(result.data).toEqual({ status: 'accepted' });
   });
 
+  it('fetches one anime by its encoded id with a bearer token on a bodyless GET (ADR 009 R-3)', async () => {
+    const fetchFn = jest.fn(async () =>
+      buildResponse({ body: JSON.stringify({ id: 'a b', modified_at: 42 }) }) as unknown as Response,
+    );
+    const client = createBridgeClient({ fetchFn });
+
+    const result = await client.getAnime(connection, 'a b');
+
+    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/animes/a%20b', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer token123' },
+      signal: expect.any(AbortSignal),
+    });
+    expect(result.data).toEqual({ id: 'a b', modified_at: 42 });
+  });
+
   it('reads the active season with a bearer token and no content-type on a bodyless GET', async () => {
     const fetchFn = jest.fn(async () =>
       buildResponse({

@@ -102,6 +102,11 @@ export interface BridgeClient {
     request: BridgePairDeviceRequest,
   ) => Promise<BridgeHttpResult>;
   readonly listAnimes: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
+  /**
+   * Fetches one anime (`GET /api/animes/{id}`): a `MobileAnime` carrying its live `modified_at`
+   * token, or a 404 when the bridge has no such anime. Sync's fetch-first step (ADR 009 R-3).
+   */
+  readonly getAnime: (connection: BridgeConnection, animeId: string) => Promise<BridgeHttpResult>;
   readonly getActiveSeason: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
     connection: BridgeConnection,

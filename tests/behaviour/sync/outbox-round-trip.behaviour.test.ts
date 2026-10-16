@@ -53,7 +53,7 @@ async function openPairedDatabase() {
     0,
   );
   await adapter.runAsync(
-    'INSERT INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO animes (_id, nombre, estado, nrocapvisto, activo, primeravez, bridge_modified_at) VALUES (?, ?, ?, ?, ?, ?, 1)',
     'anime-1',
     'Test Anime',
     0,
