@@ -180,7 +180,7 @@ export function useSyncRuntime(
 
   // A reconnect is the catch-up (ADR 009 R-7): the dispatched cycle pulls since the cursor, drains
   // the staged changes and heals the snapshot only when the last successful heal is stale. The
-  // socket never reports a session's first open, which the mount or resume flush already covers.
+  // socket never reports a first attempt that succeeds, which the mount or resume flush covers.
   const handleWebSocketReconnected = useCallback(() => {
     requestAutomaticSync("ws_reconnected");
   }, [requestAutomaticSync]);

@@ -112,8 +112,7 @@ async function persistSyncFailureTelemetrySafely(
  * the request demands it (the WebSocket season events, I8); that refresh is best effort and never
  * fails the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
- * best effort too, and a cycle whose sends failed skips it, leaving the last success untouched so
- * the next trigger heals.
+ * best effort too, and it runs even when the sends failed, before the failure is published.
  *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
@@ -186,6 +185,9 @@ export async function runCoordinatedForegroundSyncCycle({
   } catch (error) {
     const failure = error instanceof Error ? error : new Error('Sync failed');
 
+    // The heal demand is served even when the sends failed (ADR 009 R-7): the snapshot is a
+    // separate read, rows that failed stay unconfirmed so the heal skips them, and it never throws.
+    await healSnapshotOnDemand(rawDb, healSnapshot);
     triggerCoverSweep(rawDb, source, healSnapshot);
     await publishSyncConnectionAttempt({
       attempt,

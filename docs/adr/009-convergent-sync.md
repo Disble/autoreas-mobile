@@ -109,9 +109,9 @@ Added 2026-10-16 with task T11.
 How JS implements it (task T12, 2026-10-16):
 
 - Every heal goes through `requestFlush`. Each flush reason carries a snapshot-heal demand (`SNAPSHOT_HEAL_FLUSH_DEMANDS`): `bootstrap` (mount) and `app_active` (resume) always heal, `ws_reconnected` heals only when the last successful heal is stale, and every other reason never heals. A run that absorbs several reasons serves the strongest demand. Single-flight therefore comes from the dispatcher: one cycle runs, plus at most one follow-up.
-- The dispatched cycle sends, refreshes the season when asked, and then heals. The heal is best effort. A cycle whose sends failed skips the heal. A mount or resume cycle starts the cover sweep after its heal; the cover hydrate stays on the mount and resume events.
+- The dispatched cycle sends, refreshes the season when asked, and then heals. The heal is best effort, and it also runs when the sends failed: a row that failed stays unconfirmed, so the heal skips its anime. A failed heal reports `resync_failed`. A mount or resume cycle starts the cover sweep after its heal; the cover hydrate stays on the mount and resume events.
 - The last successful heal is kept in memory, per database. It only has to outlive a resume within one process, and a cold start always heals on mount. A failed heal never writes it.
-- `useWebSocket` reports `onReconnected` only for opens after the first one of a connection session. A session starts on mount or resume, which already flushed.
+- `useWebSocket` reports `onReconnected` for every open of a connection session except a first attempt that succeeds, which the mount or resume flush already covered. An open after failed attempts counts as a reconnect, so a Bridge that was down at mount still gets its catch-up.
 
 **R-13: the claim mechanism**
 

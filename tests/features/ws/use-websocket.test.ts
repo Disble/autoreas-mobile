@@ -325,5 +325,75 @@ describe('useWebSocket', () => {
       expect(global.WebSocket).toHaveBeenCalledTimes(2);
       expect(onReconnected).not.toHaveBeenCalled();
     });
+
+    /** Fires the pending reconnect timer and lets the next connect build its socket. */
+    async function fireReconnectTimer(): Promise<void> {
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    /** Lets the config read and the connect resolve. */
+    async function flush(): Promise<void> {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it('W1 bridge down at mount: the first successful open after failed attempts is a reconnect', async () => {
+      const onReconnected = jest.fn();
+      renderHook(() => useWebSocket({ enabled: true, onReconnected }));
+      await flush();
+
+      // The bridge is off: the socket closes without ever opening, twice.
+      act(() => { mockWs.onclose?.({} as CloseEvent); });
+      await fireReconnectTimer();
+      act(() => { mockWs.onclose?.({} as CloseEvent); });
+      await fireReconnectTimer();
+
+      // The bridge comes up: this open is the reconnect the mount flush could not cover.
+      act(() => { mockWs.onopen?.({} as Event); });
+
+      expect(global.WebSocket).toHaveBeenCalledTimes(3);
+      expect(onReconnected).toHaveBeenCalledTimes(1);
+    });
+
+    it('W2 unmount with a reconnect timer pending: no new socket and no onReconnected afterwards', async () => {
+      const onReconnected = jest.fn();
+      const { unmount } = renderHook(() => useWebSocket({ enabled: true, onReconnected }));
+      await flush();
+      act(() => { mockWs.onopen?.({} as Event); });
+      act(() => { mockWs.onclose?.({} as CloseEvent); });
+
+      unmount();
+      await fireReconnectTimer();
+      await act(async () => { jest.advanceTimersByTime(120_000); });
+
+      expect(global.WebSocket).toHaveBeenCalledTimes(1);
+      expect(onReconnected).not.toHaveBeenCalled();
+    });
+
+    it('W3 unmount while the config read is in flight: no socket is ever opened', async () => {
+      let resolveConfig!: (value: typeof mockConfig) => void;
+      (dbClient.getBridgeConfigSnapshot as jest.Mock).mockReturnValue(new Promise((resolve) => { resolveConfig = resolve; }));
+      const { unmount } = renderHook(() => useWebSocket({ enabled: true, onReconnected: jest.fn() }));
+      unmount();
+      await act(async () => { resolveConfig(mockConfig); await Promise.resolve(); });
+
+      expect(global.WebSocket).not.toHaveBeenCalled();
+    });
+
+    it('W4 the cleanup clears the pending reconnect timer', async () => {
+      const { unmount } = renderHook(() => useWebSocket({ enabled: true }));
+      await flush();
+      const before = jest.getTimerCount();
+      act(() => { mockWs.onclose?.({} as CloseEvent); });
+      expect(jest.getTimerCount()).toBe(before + 1);
+      unmount();
+      expect(jest.getTimerCount()).toBe(before);
+    });
   });
 });

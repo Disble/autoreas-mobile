@@ -71,11 +71,14 @@ export function useWebSocket({
     }
 
     let isMounted = true;
-    // One connection session per effect run: only an open after the session's first one is a
-    // reconnect (ADR 009 R-7), so the first open never repeats the mount or resume flush.
+    // One connection session per effect run (ADR 009 R-7). An open is a reconnect when the session
+    // already opened once, or already failed an attempt: the mount or resume flush covers only a
+    // first attempt that succeeds, so a bridge that was down at mount still gets its catch-up.
     let hasOpenedInSession = false;
+    let hadFailedAttemptInSession = false;
 
     const scheduleReconnect = () => {
+      hadFailedAttemptInSession = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -128,7 +131,7 @@ export function useWebSocket({
           // two look identical until one of them is orphaned.
           recordDiagnosticEvent({ source: 'websocket', event: 'ws_opened', at: Date.now() });
 
-          if (hasOpenedInSession) {
+          if (hasOpenedInSession || hadFailedAttemptInSession) {
             onReconnectedRef.current?.();
           }
 

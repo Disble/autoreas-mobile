@@ -5,8 +5,9 @@ export interface UseWebSocketProps {
   readonly onSyncRequired?: () => void;
   readonly onPreferencesChanged?: (seasonMode: boolean) => void;
   /**
-   * Fires on every open after the first one of a connection session (ADR 009 R-7). The first
-   * open is never a reconnect: the mount or resume flush that enabled the socket already covers it.
+   * Fires on every open of a connection session except a first attempt that succeeds (ADR 009
+   * R-7): the mount or resume flush that enabled the socket already covers that one. An open after
+   * failed attempts (a bridge that was down at mount) is a reconnect.
    */
   readonly onReconnected?: () => void;
 }
