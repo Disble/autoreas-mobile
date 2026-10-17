@@ -7,8 +7,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.SQLiteMode
 
 /**
- * A local write failure around a season rating (T17 verifier B1/B2; ADR 009 R-5 I4, R-13, S8):
- * no row this attempt claimed stays `processing` once the attempt ends, and the outcome matches
+ * A local write failure around a season rating (T17 B1/B2; ADR 009 R-5 I4, R-13, S8): no row this
+ * attempt claimed stays `processing` once the attempt ends, a release never takes back a row another
+ * runtime took over or overwrites a settled one, and the outcome matches
  * the JS runtime (`season-rating-write-failure.behaviour.test.ts`).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -69,11 +70,64 @@ class SyncEngineSeasonRatingWriteFailureTest {
     assertEquals(RowState(1, "synced", null), rows[0])
   }
 
+  @Test
+  fun aRoundRatingTakenOverWhileTheReconcileWasOutStaysWithItsNewOwnerWhenTheReconcileFailsLocally() {
+    val (outcome, paths, rows) = run(
+      listOf(confirmed(14), delivered()),
+      onRequest = { fixture, request ->
+        if (request.path == RECONCILE_PATH) {
+          fixture.appDatabase.execSQL(
+            "UPDATE operation_log SET claim_owner = 'js', claimed_at = ? WHERE id = 2",
+            arrayOf<Any>(System.currentTimeMillis()),
+          )
+        }
+      },
+    ) { fixture ->
+      seedRow(fixture, 1, UPDATE, "anime-1")
+      seedRow(fixture, 2, RATING, "anime-2")
+      failStatusWrite(fixture, "OLD.operation = 'update' AND NEW.status = 'synced'")
+    }
+
+    assertEquals("failed", outcome.outcome)
+    assertEquals(listOf(RECONCILE_PATH), paths)
+    assertEquals(listOf(RowState(1, "pending", null), RowState(2, "processing", "js")), rows)
+  }
+
+  @Test
+  fun rowsSettledEarlierInThePassStaySyncedWhenALaterReconcileFailsLocally() {
+    val (outcome, paths, rows) = run(listOf(pullOnly(), delivered(), delivered(), confirmed(14))) { fixture ->
+      seedRow(fixture, 1, RATING, "anime-1")
+      seedRow(fixture, 2, UPDATE, "anime-1")
+      seedRow(fixture, 3, RATING, "anime-2")
+      failStatusWrite(fixture, "OLD.id = 2 AND NEW.status = 'synced'")
+    }
+
+    assertEquals("failed", outcome.outcome)
+    assertEquals(listOf(RECONCILE_PATH, RATING_PATH, RATING_PATH, RECONCILE_PATH), paths)
+    assertEquals(
+      listOf(RowState(1, "synced", null), RowState(2, "pending", null), RowState(3, "synced", null)),
+      rows,
+    )
+  }
+
+  @Test
+  fun anUpdateTheBridgeRejectedWithA400StaysDeadLetteredAndTheRoundRatingIsReleasedUnsent() {
+    val (outcome, paths, rows) = run(listOf(SyncEngineTestHttpServer.Response(400, """{"error":"bad"}"""))) { fixture ->
+      seedRow(fixture, 1, UPDATE, "anime-1")
+      seedRow(fixture, 2, RATING, "anime-2")
+    }
+
+    assertEquals("failed", outcome.outcome)
+    assertEquals(listOf(RECONCILE_PATH), paths)
+    assertEquals(listOf(RowState(1, "dead_letter", null), RowState(2, "pending", null)), rows)
+  }
+
   private fun run(
     script: List<SyncEngineTestHttpServer.Response>,
+    onRequest: (SyncEngineTestDatabase, SyncEngineTestHttpServer.Request) -> Unit = { _, _ -> },
     setup: (SyncEngineTestDatabase) -> Unit,
   ): Triple<CycleOutcome, List<String>, List<RowState>> = SyncEngineTestDatabase().use { fixture ->
-    SyncEngineTestHttpServer.scripted(script).use { server ->
+    SyncEngineTestHttpServer.scripted(script) { request -> onRequest(fixture, request) }.use { server ->
       fixture.appDatabase.execSQL(
         "INSERT INTO bridge_config (id, device_id, ip, port, token, last_changelog_id) VALUES (1, ?, ?, ?, ?, ?)",
         arrayOf<Any>("device-rating", "127.0.0.1", server.port.toString(), "token-rating", 0L),
