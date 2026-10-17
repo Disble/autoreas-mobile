@@ -130,10 +130,8 @@ export const SYNC_DIAGNOSTICS_OUTBOX_EVICT_TRIGGER_SQL =
   'END;';
 
 /**
- * `DO NOTHING`, not `DO UPDATE`: `syncPendingOperations`'s rerun loop re-enters
- * `performSyncPendingOperations` with the SAME telemetryContext and therefore the same
- * `cycle_id` (`reconcile.helpers.ts:119-126`). The first capture wins, so `created_at` never
- * churns and the FIFO order stays stable across a rerun.
+ * `DO NOTHING`, not `DO UPDATE`: an envelope enqueued again under the same `cycle_id` keeps its
+ * first capture, so `created_at` never churns and the FIFO order stays stable.
  */
 export const SYNC_DIAGNOSTICS_OUTBOX_INSERT_SQL =
   'INSERT INTO sync_diagnostics_outbox (cycle_id, payload, created_at) ' +

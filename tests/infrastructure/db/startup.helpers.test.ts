@@ -1,10 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   prepareForegroundDatabase,
-  prepareHeadlessDatabase,
-  SchemaIncompatibleError,
   EXPECTED_SCHEMA_READINESS_VERSION,
-  SchemaNotReadyError,
   SchemaValidationError,
 } from '../../../src/infrastructure/db/startup';
 import { runMigrations } from '../../../src/infrastructure/db/client/client.helpers';
@@ -211,71 +208,6 @@ describe('database startup helpers', () => {
     expect(runMigrations).toHaveBeenCalledTimes(1);
     expect(rawDb.execAsync).not.toHaveBeenCalledWith(
       `PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION};`,
-    );
-  });
-
-  it('refuses headless access when the stamped version is right but a required column is missing', async () => {
-    // Measured on a real device: the stamped version LIES. A silently skipped migration left
-    // `sync_runtime_status` without `last_cycle_id` while readiness still read 12, so this path
-    // returned clean and the cycle then died writing to a column that does not exist -- reported
-    // as `[resolveBackgroundTaskOutcome] Background sync cycle failed`, one layer too late to be
-    // actionable.
-    //
-    // Headless must NOT repair: migrations are foreground-owned by design, and two writers
-    // racing the schema is the contention this whole boundary exists to prevent. But it CAN
-    // refuse, and `SchemaNotReadyError` is the refusal the caller already handles as a clean
-    // no-op. The next foreground start does the repair.
-    const rawDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION }),
-      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
-        if (query === 'PRAGMA table_info(sync_runtime_status)') {
-          return [{ name: 'id' }];
-        }
-
-        return [{ name: 'is_sync_telemetry_enabled' }, { name: 'last_applied_change_ms' }];
-      }),
-    } as unknown as SQLiteDatabase;
-
-    await expect(prepareHeadlessDatabase(rawDb)).rejects.toBeInstanceOf(SchemaNotReadyError);
-  });
-
-  it('permits headless access only for the exact durable readiness version', async () => {
-    const readyDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      getFirstAsync: jest.fn().mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION }),
-      // Headless now proves the columns exist rather than trusting the stamped version, so a
-      // ready database has to answer the column probe too. The assertion is unchanged.
-      getAllAsync: jest.fn().mockResolvedValue([
-        { name: 'last_cycle_id' },
-        { name: 'is_sync_telemetry_enabled' },
-        { name: 'last_applied_change_ms' },
-        { name: 'bridge_modified_at' },
-        { name: 'episodes' },
-        { name: 'folder_relative' },
-        { name: 'conflict_attempt_count' },
-        { name: 'claim_owner' },
-        { name: 'claimed_at' },
-        { name: 'unresolved_reason' },
-        { name: 'fence' },
-        { name: 'anime_folders_root_uri' },
-        { name: 'anime_folders_hint_dismissed_at' },
-      ]),
-    } as unknown as SQLiteDatabase;
-    const newerDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      // Derived, not a literal: "newer than we understand" has to stay newer as migrations are
-      // added, or this case silently turns into the stale one and stops testing anything.
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION + 1 }),
-    } as unknown as SQLiteDatabase;
-
-    await expect(prepareHeadlessDatabase(readyDb)).resolves.toBeUndefined();
-    await expect(prepareHeadlessDatabase(newerDb)).rejects.toBeInstanceOf(
-      SchemaIncompatibleError,
     );
   });
 

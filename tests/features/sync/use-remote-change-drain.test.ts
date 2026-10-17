@@ -4,6 +4,7 @@ import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/na
 import * as drainHelpers from '../../../src/features/sync/remote-change-drain.helpers';
 import { useRemoteChangeDrain } from '../../../src/features/sync/use-remote-change-drain';
 
+/** The AppState listeners the hook registered, so a test can emit a status change. */
 const appStateListeners: ((status: string) => void)[] = [];
 
 jest.mock('react-native', () => ({
@@ -32,6 +33,7 @@ jest.mock('../../../src/features/sync/remote-change-drain.helpers', () => ({
   drainPendingRemoteChanges: jest.fn(),
 }));
 
+/** Emits one AppState change to every registered listener. */
 function emitAppState(status: string) {
   appStateListeners.forEach((listener) => listener(status));
 }
@@ -44,7 +46,7 @@ describe('useRemoteChangeDrain', () => {
     appStateListeners.length = 0;
     AppState.currentState = 'active';
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue({ id: 'raw-db' });
-    mockDrain.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0, drainedCount: 0 });
+    mockDrain.mockResolvedValue({ applied: 0, dropped: 0, deferred: 0 });
   });
 
   it('drains staged remote changes on mount', async () => {

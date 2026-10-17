@@ -206,41 +206,6 @@ describe('per-message failure in the anime outbox (ADR 009 R-5)', () => {
     ]);
   });
 
-  it('fails the cycle when every isolated message is rejected, each one dead-lettered', async () => {
-    const adapter = await openDatabase(['anime-a', 'anime-b']);
-    fakeBridge.queueResponse(rejecting(400));
-    fakeBridge.queueResponse(rejecting(400));
-    fakeBridge.queueResponse(rejecting(400));
-
-    await expect(syncPendingOperations(adapter)).rejects.toThrow();
-
-    expect(fakeBridge.requests).toHaveLength(3);
-    expect((await readRows(adapter)).map((row) => row.status)).toEqual(['dead_letter', 'dead_letter']);
-  });
-
-  it('still dead-letters a lone message on a 4xx and fails the cycle, sending it once', async () => {
-    const adapter = await openDatabase(['anime-a']);
-    fakeBridge.queueResponse(rejecting(422));
-
-    await expect(syncPendingOperations(adapter)).rejects.toThrow();
-
-    expect(fakeBridge.requests).toHaveLength(1);
-    expect((await readRows(adapter)).map((row) => row.status)).toEqual(['dead_letter']);
-  });
-
-  it('still returns every row of the round to pending on a 5xx, without isolating any', async () => {
-    const adapter = await openDatabase(['anime-a', 'anime-b']);
-    fakeBridge.queueResponse({ status: 500, body: { error: 'boom' } });
-
-    await expect(syncPendingOperations(adapter)).rejects.toThrow();
-
-    expect(fakeBridge.requests).toHaveLength(1);
-    expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
-      ['pending', null],
-      ['pending', null],
-    ]);
-  });
-
   it('sends each isolated message on the cursor the previous one reached, and stores the last', async () => {
     const adapter = await openDatabase(['anime-a', 'anime-b', 'anime-c']);
     fakeBridge.queueResponse(rejecting(422));

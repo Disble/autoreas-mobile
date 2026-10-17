@@ -35,29 +35,6 @@ export async function fetchInitialSyncSnapshot(
 }
 
 /**
- * Persists a fetched anime snapshot using the queued non-exclusive write path.
- * Writing on the shared connection keeps `useLiveQuery` consumers reactive so the list
- * hydrates immediately, while the write queue still preserves per-database ordering.
- */
-export async function persistInitialSyncSnapshot(
-  rawDb: Parameters<typeof withLocalWrite>[0],
-  remoteAnimes: Awaited<ReturnType<typeof fetchInitialSyncSnapshot>>,
-): Promise<number> {
-  if (remoteAnimes.length === 0) {
-    return 0;
-  }
-
-  await withLocalWrite(rawDb, async (db) => {
-    for (const entry of remoteAnimes) {
-      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: all upserts share one deferred-write transaction on a single SQLite connection; parallelizing risks interleaving native statements on the same handle.
-      await upsertAnime(db, entry.anime, undefined, entry.bridgeModifiedAt);
-    }
-  });
-
-  return remoteAnimes.length;
-}
-
-/**
  * Commits bridge credentials and the initial anime snapshot inside one deferred transaction.
  * Using the queued non-exclusive path keeps `useLiveQuery` consumers reactive while still
  * rolling back the whole pairing write if any insert/upsert fails.

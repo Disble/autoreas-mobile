@@ -2,7 +2,6 @@ package expo.modules.syncengine
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -18,23 +17,6 @@ import java.io.IOException
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class SyncEngineFetchFirstTest {
   private data class RowState(val id: Long, val status: String, val claimOwner: String?, val unresolvedReason: String?)
-
-  @Test
-  fun fetchesTheAnimeFirstStoresOnlyItsTokenAndSendsWithThatBase() {
-    SyncEngineTestDatabase().use { fixture ->
-      SyncEngineTestHttpServer.scripted(listOf(anime(""","modified_at":42"""), confirmed(43), confirmed(44))).use { server ->
-        seed(fixture, server)
-
-        cycle(fixture).run("foreground", "cycle-fetch-first") {}
-
-        assertEquals("GET", server.requests[0].method)
-        assertEquals("/api/animes/anime-1", server.requests[0].path)
-        assertEquals(42L, firstSentBase(server))
-        // The fetched token was stored and then advanced by the two confirmations.
-        assertEquals(44L, token(fixture))
-      }
-    }
-  }
 
   @Test
   fun aNotFoundAnimeMakesTheWholeKeyUnresolvedAndSendsNoneOfItsRows() {
@@ -82,21 +64,6 @@ class SyncEngineFetchFirstTest {
           listOf(RowState(1, "pending", null, null), RowState(2, "pending", null, null)),
           rows(fixture),
         )
-      }
-    }
-  }
-
-  @Test
-  fun neverFetchesAnAnimeWhoseTokenIsAlreadyStored() {
-    SyncEngineTestDatabase().use { fixture ->
-      SyncEngineTestHttpServer.scripted(listOf(confirmed(8), confirmed(9))).use { server ->
-        seed(fixture, server)
-        fixture.appDatabase.execSQL("UPDATE animes SET bridge_modified_at = 7 WHERE _id = 'anime-1'")
-
-        cycle(fixture).run("foreground", "cycle-fetch-first") {}
-
-        assertTrue(server.requests.none { it.method == "GET" })
-        assertEquals(7L, firstSentBase(server))
       }
     }
   }
@@ -172,21 +139,12 @@ class SyncEngineFetchFirstTest {
     """{"id":"anime-1","name":"Test","status":0,"episodesWatched":9$tokenField}""",
   )
 
-  private fun confirmed(token: Long) = SyncEngineTestHttpServer.Response(
-    200,
-    """{"status":"accepted","applied_operations":[{"anime_id":"anime-1","operation":"update","applied":true,"modified_at":$token}],""" +
-      """"last_changelog_id":1}""",
-  )
-
   private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"status":"accepted","applied_operations":[],"last_changelog_id":1}""")
 
   private fun reconcileRequests(server: SyncEngineTestHttpServer) = server.requests.filter { it.path == RECONCILE_PATH }
 
   private fun sentOperationCount(server: SyncEngineTestHttpServer): Int =
     reconcileRequests(server).sumOf { JSONObject(it.body).getJSONArray("pending_operations").length() }
-
-  private fun firstSentBase(server: SyncEngineTestHttpServer): Long =
-    JSONObject(reconcileRequests(server).first().body).getJSONArray("pending_operations").getJSONObject(0).getLong("base")
 
   private fun rows(fixture: SyncEngineTestDatabase): List<RowState> = fixture.appDatabase.rawQuery(
     "SELECT id, status, claim_owner, unresolved_reason FROM operation_log ORDER BY id",
@@ -204,14 +162,6 @@ class SyncEngineFetchFirstTest {
         )
       }
     }
-  }
-
-  private fun token(fixture: SyncEngineTestDatabase): Long = fixture.appDatabase.rawQuery(
-    "SELECT bridge_modified_at FROM animes WHERE _id = 'anime-1'",
-    null,
-  ).use { cursor ->
-    check(cursor.moveToFirst())
-    cursor.getLong(0)
   }
 
   private companion object {

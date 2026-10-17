@@ -184,8 +184,8 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   // Decision 6). All eight are additive and NULLABLE with no default: a row that predates this
   // change, or a cycle that never reached the folded bookkeeping write, must read back NULL --
   // never a plausible zero, which would misreport "no lost edits" (Decision 7's false-answer
-  // defect class). They fold into the SAME write `recordBacklogReadCount` already performs, so
-  // this table gains zero new write-door transactions.
+  // defect class). The diagnostics counters fold into the attempt-succeeded write; the others
+  // have no JS writer since convergent-sync T16 (columns kept: dropping one is a migration).
   lastDiagnosticsDiscardedCount: integer('last_diagnostics_discarded_count'),
   // The other diagnostics counters the flush result carries beside `discarded`, persisted here for
   // the same reason it is: a destruction by judgement (`undeliverable`), a park (`unclassified`) and
@@ -202,7 +202,7 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
   lastConflictExhaustedCount: integer('last_conflict_exhausted_count'),
   lastStuckProcessingCount: integer('last_stuck_processing_count'),
   lastOldestPendingAgeMs: integer('last_oldest_pending_age_ms'),
-  // TRUE `operation_log` backlog depth (`OperationLogConvergence.pendingRowCount`), never the
+  // TRUE `operation_log` backlog depth, never the
   // bounded per-cycle batch size. `hasMore` is DERIVED from this at read time (Decision 1),
   // never stored, so it can never go stale against the count beside it.
   lastPendingRowCount: integer('last_pending_row_count'),

@@ -149,7 +149,7 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
     const rawDb = { name: 'diagnostics-throwing-reconcile-db' };
 
     await expect(
-      syncPendingOperations(rawDb as never, 'deferred', telemetryContext),
+      syncPendingOperations(rawDb as never, telemetryContext),
     ).rejects.toThrow('network down');
 
     expect(mockCapture).toHaveBeenCalledTimes(1);
@@ -164,7 +164,7 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
     const rawDb = { name: 'diagnostics-throwing-flush-db' };
 
     await expect(
-      syncPendingOperations(rawDb as never, 'deferred', telemetryContext),
+      syncPendingOperations(rawDb as never, telemetryContext),
     ).rejects.toThrow('diagnostics link down');
 
     // The flush sits BEFORE the try, so a rejecting flush must stop the cycle before reconcile

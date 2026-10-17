@@ -4,7 +4,6 @@ import { bridgeConfig } from '../../../src/infrastructure/db/schema';
 import { bridgeClient } from '../../../src/infrastructure/api';
 import {
   fetchInitialSyncSnapshot,
-  persistInitialSyncSnapshot,
   persistPairedBridgeConfiguration,
 } from '../../../src/features/sync/initial-sync.helpers';
 
@@ -140,30 +139,6 @@ describe('initial-sync helpers', () => {
         token: 'auth-secret',
       })
     ).rejects.toThrow('GET /api/animes failed: 503');
-  });
-
-  it('persists fetched anime rows through the deferred write so live queries can observe it', async () => {
-    (withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task({}, {});
-    });
-
-    const count = await persistInitialSyncSnapshot(rawDb as never, ingestedAnimeSnapshot);
-
-    expect(count).toBe(1);
-    expect(withLocalWrite).toHaveBeenCalledTimes(1);
-    expect(animeRepository.upsertAnime).toHaveBeenCalledWith(
-      {},
-      normalizedAnimeSnapshot[0],
-      undefined,
-      0,
-    );
-  });
-
-  it('returns 0 without opening a write when there is nothing to persist', async () => {
-    const count = await persistInitialSyncSnapshot(rawDb as never, []);
-
-    expect(count).toBe(0);
-    expect(withLocalWrite).not.toHaveBeenCalled();
   });
 
   it('commits bridge config and snapshot together in one deferred write so live queries can observe it', async () => {

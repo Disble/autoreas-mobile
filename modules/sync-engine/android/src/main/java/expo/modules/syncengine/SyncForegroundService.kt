@@ -52,7 +52,7 @@ internal typealias SyncAttemptRunner =
  *
  * **One attempt per (non-coalesced) start command, serialized.** [SyncEngineRunner]'s own single-
  * thread `worker` already serializes every attempt process-wide, so two callers (this service and
- * [SyncEngineModule]) can never run two attempts at once regardless of this class. The
+ * [SyncFloorWorker]) can never run two attempts at once regardless of this class. The
  * [attemptInFlight] guard here exists on top of that for a narrower reason: without it, a burst of
  * start commands (redundant ticks, a system redelivery) would each synchronously acquire its own
  * wake lock and enqueue its own attempt on [SyncEngineRunner]'s queue, piling up queued work and

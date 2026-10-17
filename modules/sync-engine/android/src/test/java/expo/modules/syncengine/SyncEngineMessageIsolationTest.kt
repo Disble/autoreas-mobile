@@ -126,24 +126,6 @@ class SyncEngineMessageIsolationTest {
   }
 
   @Test
-  fun stillReturnsEveryRowOfTheRoundToPendingOnA5xxWithoutIsolatingAny() {
-    SyncEngineTestDatabase().use { fixture ->
-      SyncEngineTestHttpServer.scripted(listOf(rejecting(500))).use { server ->
-        seed(fixture, server, listOf("anime-a", "anime-b"))
-
-        val outcome = cycle(fixture).run("foreground", "cycle-5xx") {}
-
-        assertEquals("failed", outcome.outcome)
-        assertEquals(1, reconcileRequests(server).size)
-        assertEquals(
-          listOf(RowState("anime-a", "pending", null), RowState("anime-b", "pending", null)),
-          rows(fixture),
-        )
-      }
-    }
-  }
-
-  @Test
   fun sendsEachIsolatedMessageOnTheCursorThePreviousOneReachedAndStoresTheLast() {
     SyncEngineTestDatabase().use { fixture ->
       val responses = listOf(rejecting(422), confirmingAt("anime-a", 5), rejecting(422), confirmingAt("anime-c", 9))

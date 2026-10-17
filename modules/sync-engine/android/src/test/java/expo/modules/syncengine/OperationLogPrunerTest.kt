@@ -10,12 +10,9 @@ import org.robolectric.annotation.SQLiteMode
 
 /**
  * [OperationLogPruner] had NO dedicated test before this file (T3, sync-core-test-assurance):
- * only indirect coverage through [SyncEngineCycleTest]'s end-to-end attempts. Every case here
- * mirrors a behavioural case of its JS twin, `pruneOperationLog`
- * (`operation-log-retention.helpers.ts`), tested in
- * `tests/features/sync/__tests__/operation-log-retention.helpers.test.ts` and
- * `tests/behaviour/sync/given-up-retention.behaviour.test.ts`: TTL first, then max-count,
- * oldest first -- so the two engines prune identically.
+ * only indirect coverage through [SyncEngineCycleTest]'s end-to-end attempts. The JS twin was
+ * removed in convergent-sync T16 (JS has no background responsibility), so this file is the only
+ * pin of the retention rule: TTL first, then max-count, oldest first, given-up rows never pruned.
  *
  * Only `synced` rows are retained-and-pruned (7 days/1000 rows). Given-up rows (`dead_letter`,
  * `conflict_exhausted`) are unresolved keys and are never pruned (ADR 009 R-16b). The values

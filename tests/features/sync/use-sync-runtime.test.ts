@@ -124,7 +124,7 @@ function emitNetworkState(isConnected: boolean | null | undefined) {
 /** Builds the execution status the mocked facade reports, with per-test overrides. */
 function buildStatus(
   overrides: Partial<SyncExecutionStatus> = {},
-): Omit<SyncExecutionStatus, "isBatteryOptimizationExempt"> {
+): SyncExecutionStatus {
   return {
     registrationStatus: "registered",
     executionMode: "best_effort_background_task",

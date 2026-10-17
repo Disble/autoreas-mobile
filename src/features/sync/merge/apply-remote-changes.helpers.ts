@@ -74,18 +74,11 @@ async function applyAcceptedChange(
  * - 'apply' on an update with no known field -> rejected: no write, counted and recorded.
  * - 'drop_stale' / 'defer_outbox' -> no write; counted only. A deferred change is NOT discarded:
  *   `applyStagedAndIncomingRemoteChanges` keeps it staged for a later pass (ADR 009 R-16a).
- *
- * `applyMode` is accepted so callers can express where this coordinator runs (foreground
- * deferred-write vs background staged-write) but it is NOT used to change behavior here:
- * the caller is responsible for choosing whether to invoke this against a reactive
- * connection (`withLocalWrite`) or to stage the change instead of calling this at all.
- * Reconcile/WS/drain wiring is out of scope for this coordinator (later phase).
  */
 export async function applyRemoteChanges(
   db: AppDatabase,
   changes: readonly RemoteAnimeChange[],
   ctx: MergeContext,
-  _applyMode: 'deferred' | 'staged' = 'deferred',
 ): Promise<ApplyRemoteChangesResult> {
   let applied = 0;
   let dropped = 0;

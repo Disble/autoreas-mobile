@@ -27,8 +27,6 @@ export function claimOperationLogBatch(
   params: {
     readonly owner: OutboxClaimOwner;
     readonly limit: number;
-    /** Runs once, only when there is something to claim, right before the claim is written. */
-    readonly onClaim?: () => void;
   },
 ): Promise<{ readonly claim: OutboxClaim; readonly rows: OperationLogRow[] }> {
   return withLocalWrite(rawDb, async (_db, tx) => {
@@ -43,9 +41,9 @@ export function claimOperationLogBatch(
 async function claimBacklogRows(
   tx: SQLiteDatabase,
   claim: OutboxClaim,
-  params: { readonly limit: number; readonly onClaim?: () => void },
+  params: { readonly limit: number },
 ): Promise<OperationLogRow[]> {
-  const { limit, onClaim } = params;
+  const { limit } = params;
   const floor = liveClaimFloor(claim.claimedAt);
   const candidates = await readOperationLogBacklog(tx, {
     status: ['pending', 'processing'],
@@ -59,7 +57,6 @@ async function claimBacklogRows(
     return [];
   }
 
-  onClaim?.();
   const placeholders = candidates.map(() => '?').join(', ');
   await tx.runAsync(
     [

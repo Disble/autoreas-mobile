@@ -32,19 +32,6 @@ class SyncEngineSeasonRatingTest {
   }
 
   @Test
-  fun everyRatingRejectionBecomesUnresolvedWithItsReasonAndNeverFailsTheAttempt() {
-    val expected = mapOf(401 to "auth_repair", 404 to "not_found", 409 to "conflict", 422 to "rejected", 403 to "rejected")
-
-    for ((code, reason) in expected) {
-      val (outcome, server, rows) = runRatingFate(SyncEngineTestHttpServer.Response(code, """{"error":"no"}"""))
-
-      assertEquals("$code", "closed", outcome.outcome)
-      assertEquals("$code", 2, server.size)
-      assertEquals("$code", listOf(RowState(1, RATING, "dead_letter", null, reason)), rows)
-    }
-  }
-
-  @Test
   fun aServerErrorOnARatingLeavesItPendingAndUnclaimedWithoutFailingTheAttempt() {
     val (outcome, _, rows) = runRatingFate(SyncEngineTestHttpServer.Response(503, """{"error":"busy"}"""))
 

@@ -32,13 +32,6 @@ class SyncEngineConflictRuleTest {
   }
 
   @Test
-  fun theThirdConflictInARowWithoutTheTokenAdvancingExhaustsTheRow() {
-    val after = runConflictCycle(storedToken = 7, attemptCount = 2, conflict = conflictWithToken(7))
-
-    assertEquals(RowState("conflict_exhausted", 3, 7), after)
-  }
-
-  @Test
   fun aConflictAfterFetchingAMissingTokenReBasesOnTheBridgeToken() {
     // No stored token: the row is sent on the fetched token 3 (ADR 009 R-3), and the conflict's
     // token 5 is newer than that base, so the row is re-based and its count reset.
@@ -56,17 +49,6 @@ class SyncEngineConflictRuleTest {
     )
 
     assertEquals(RowState("pending", 1, 7), after)
-  }
-
-  @Test
-  fun anUnsupportedOperationIsStillDeadLetteredOnTheFirstResponse() {
-    val after = runConflictCycle(
-      storedToken = 7,
-      attemptCount = 0,
-      conflict = """{"anime_id":"anime-conflict","operation":"update","applied":false,"reason":"unsupported_operation"}""",
-    )
-
-    assertEquals(RowState("dead_letter", 0, 7), after)
   }
 
   @Test

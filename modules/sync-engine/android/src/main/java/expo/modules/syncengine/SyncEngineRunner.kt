@@ -16,26 +16,25 @@ private const val LOG_TAG = "SyncEngine"
 
 /**
  * The native background sync engine's attempt runner (ODD mobile-sync-native-engine T7 /
- * architecture doc S6, relocated out of [SyncEngineModule] by ODD native-foreground-sync-service
+ * architecture doc S6, relocated out of the Expo module by ODD native-foreground-sync-service
  * T1). One attempt reads the outbox -> claims -> HTTP -> maps the wire response -> stages into
  * `pending_remote_changes` -> advances the cursor -> prunes -> journals, natively, so no JS timer
  * participates and an attempt can always end.
  *
  * This object needs only an [android.content.Context] (specifically `context.filesDir`), never a
  * React context: T1's whole point is that the attempt itself has no JS dependency, so it can be
- * driven by [SyncEngineModule] (a live React bridge call) today and by a plain foreground
- * service's worker thread (ODD native-foreground-sync-service T3) tomorrow, with neither caller
- * needing to know about the other.
+ * driven by [SyncForegroundService] and [SyncFloorWorker], with neither caller needing to know
+ * about the other.
  *
  * **Process-wide singleton, deliberately.** [worker] and the watchdog thread/handler are declared
- * ONCE here, not per caller, so the module and the future service are serialized through the SAME
+ * ONCE here, not per caller, so the service and the floor worker are serialized through the SAME
  * single-thread executor and the SAME watchdog: two callers can never run two attempts at once,
  * which matters because both share the one SQLite cycle lease ([SyncCycleLease]) -- a second,
  * independent executor per caller would let two attempts race for that lease instead of queuing
  * behind each other. [appDb] and [journal] are opened once and kept for the process's lifetime for
  * the same reason: a foreground service is meant to keep running for hours, and reopening the
  * database or the journal between attempts would cost real time on every tick. Nothing tears these
- * down on a module's `OnDestroy` (see [SyncEngineModule]) -- only process death ends them, which is
+ * down when a caller goes away -- only process death ends them, which is
  * correct for a background attempt runner that must keep working with no Activity attached.
  *
  * The load-bearing guarantee is the BUDGET: [runOnce] always calls [onResult] within
@@ -65,12 +64,8 @@ private const val LOG_TAG = "SyncEngine"
  * exists because the bridge is absent for roughly six hours every night (the device's own Wi-Fi
  * sleeps with it), and a foreground service that runs an attempt every tick regardless would pay a
  * real HTTP connect/lease/claim cost on every one of those ticks; the gate turns that into a
- * bounded probe (see [PRESENCE_PROBE_TIMEOUT_MS]) with no local writes. [SyncEngineModule]'s own
- * `runOnce` call always passes `requirePresence = false`: the existing JS-driven attempt policy
- * (`src/features/sync/attempt-policy.helpers.ts`) already gates in JS before ever reaching the
- * native module, so gating a second time here would only cost time without changing behavior. The
- * gate exists for ODD native-foreground-sync-service T3's service caller, which has no JS attempt
- * policy in front of it.
+ * bounded probe (see [PRESENCE_PROBE_TIMEOUT_MS]) with no local writes. Each caller decides
+ * whether to gate through `requirePresence`.
  *
  * **T3 fix: the probe's HTTP call runs on [worker], never on the caller's thread.**
  * [SyncForegroundService] calls [runOnce] from `onStartCommand`, which Android always invokes on
@@ -89,13 +84,11 @@ private const val LOG_TAG = "SyncEngine"
  * "load-bearing guarantee" paragraph) -- and while parked, [worker] never reaches a SECOND queued
  * attempt's closure AT ALL, so a watchdog armed only inside that closure would never arm, and
  * [onResult] would never fire for it. That breaks the "[onResult] always fires within budget"
- * contract for BOTH of [runOnce]'s current callers: [SyncEngineModule]'s JS promise would never
- * resolve, and [SyncForegroundService]'s in-flight guard would stay true forever, silently
+ * contract for its callers: [SyncForegroundService]'s in-flight guard would stay true forever, silently
  * coalescing every later tick while its notification kept claiming sync was active. So the
  * watchdog is armed HERE, at enqueue, on the CALLER's thread (fast: computing a deadline and
  * calling `Handler.postDelayed` never touches the network or a lock worth worrying about) --
- * its budget covers the FULL span of queue wait + presence probe + cycle, exactly like the
- * design [SyncEngineModule]'s single JS caller already relied on before T1 extracted this class.
+ * its budget covers the FULL span of queue wait + presence probe + cycle.
  * If the watchdog fires while an attempt is still queued, [worker] -- once it finally reaches
  * that attempt's closure -- finds [settled] already `true` and runs NEITHER the probe NOR the
  * cycle: the caller was already told `abandoned`, and starting a cycle afterward would be a
@@ -116,9 +109,7 @@ private const val LOG_TAG = "SyncEngine"
  * Observability contract: a completion `Log.i` line fires on the worker's successful return
  * (naming outcome, stage, and elapsed time), a `Log.w` line fires on abandon/crash/unarmable-
  * watchdog, and a `Log.i` line fires on a presence refusal -- so logcat can always tell how an
- * attempt ended. [SyncEngineModule] itself still owns the very first "runOnce invoked" line: it
- * fires before this object is ever called, on the path where `appContext.reactContext` might be
- * null, so it cannot live here without duplicating it on that early-refusal path too.
+ * attempt ended.
  */
 object SyncEngineRunner {
   private val worker: ExecutorService = Executors.newSingleThreadExecutor()
@@ -150,13 +141,11 @@ object SyncEngineRunner {
   /**
    * Runs one attempt on [worker], with the watchdog armed at the budget, and calls [onResult]
    * exactly once with the terminal outcome. [context] only needs to answer `filesDir`; callers
-   * should pass an application context (see [SyncEngineModule.runAttempt]) so this singleton
-   * never outlives a caller-specific context.
+   * should pass an application context so this singleton never outlives a caller-specific
+   * context.
    *
-   * [cycleId] and [startMs] are minted by the caller (see [SyncEngineModule]) rather than here,
-   * so a caller that needs to report a result BEFORE ever reaching this function (the
-   * `MissingReactContext` refusal) can still use the same identifiers its own log line already
-   * named.
+   * [cycleId] and [startMs] are minted by the caller ([SyncForegroundService], [SyncFloorWorker])
+   * rather than here, so the caller's own log lines name the same identifiers.
    *
    * EVERY settlement path -- presence refused, completed, crashed, and abandoned -- goes through
    * `settled.compareAndSet(false, true)` before calling [onResult], and removes the watchdog
@@ -169,8 +158,8 @@ object SyncEngineRunner {
    * cleanup and leave its own callback uncalled past its budget. [worker] being a single-thread
    * executor is what keeps [SyncEngineCycle.run] calls from ever running concurrently against the
    * shared lease; it does NOT, by itself, keep two watchdogs from being armed back to back --
-   * exactly the property two independent callers (the module today, the foreground service from
-   * T3) need, since each caller's own budget must cover its own full queue wait.
+   * exactly the property two independent callers (the foreground service and the floor worker)
+   * need, since each caller's own budget must cover its own full queue wait.
    */
   fun runOnce(
     context: Context,

@@ -12,9 +12,9 @@ The bar this feature is held to comes from the request that prompted it: **a goo
 
 **A cycle killed by the host cannot report its own death.** The process is gone before any reporting code runs. Telemetry sent "at the end of the cycle" is precisely the telemetry that is never seen.
 
-So the report travels at the **start of the next cycle**, describing the previous one from what it managed to persist. The signal that a cycle was killed is an `isCycleActive` flag that was never released, because `recordCycleActive(false)` lives in a `finally` that never executed.
+So the report travels at the **start of the next cycle**, describing the previous one from what it managed to persist. The signal that a cycle was killed is an `isCycleActive` flag that was never released, because its terminal write never executed. Since convergent-sync T16 no JS writer sets that flag (the headless cycle that did, `recordCycleActive`, is gone), so this signal is pending the telemetry delete-or-wire decision.
 
-This is also why the snapshot is captured in `runCycleBody` *before* `recordSyncAttemptStarted` and `recordCycleActive(true)`: those two writes overwrite the exact fields the post-mortem reads. A snapshot taken one line later would describe the current cycle and report every previous one as `never_closed`.
+This is also why the snapshot is captured in `runCycleBody` *before* `recordSyncAttemptStarted` and the cycle-active write: those two writes overwrite the exact fields the post-mortem reads. A snapshot taken one line later would describe the current cycle and report every previous one as `never_closed`.
 
 ## Transport: piggyback, not a new endpoint
 
@@ -96,7 +96,7 @@ sequenceDiagram
   rect rgba(200,80,80,0.12)
     Note over C,S: everything below OVERWRITES the fields just read
     C->>S: recordSyncAttemptStarted
-    C->>S: recordCycleActive(true)
+    C->>S: mark the cycle active
   end
 
   C->>B: reconcile + client_telemetry

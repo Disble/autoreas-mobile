@@ -58,7 +58,6 @@ describe("native background floor strategy", () => {
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
       isBackgroundTaskRegistered: true,
-      isBatteryOptimizationExempt: false,
     });
   });
 

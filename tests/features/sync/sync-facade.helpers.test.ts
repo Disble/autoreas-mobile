@@ -18,10 +18,6 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/use-initial-sync', () => ({
-  initialSync: jest.fn(),
-}));
-
 describe('sync facade helpers', () => {
   it('counts pending and processing outbox rows, edits and ratings alike, as unresolved work', () => {
     const limit = jest.fn().mockReturnValue({ query: 'pending-operations' });

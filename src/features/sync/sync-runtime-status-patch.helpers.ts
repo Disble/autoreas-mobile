@@ -2,7 +2,6 @@ import {
   DEFAULT_SYNC_RUNTIME_STATUS_SNAPSHOT,
 } from './sync-runtime-status.constants';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
-import type { OperationLogConvergence } from './operation-log-convergence.types';
 import type {
   SyncAttemptFailureDetail,
   SyncRuntimeStatusPatch,
@@ -62,11 +61,10 @@ export function buildSyncAttemptStartedPatch(
  * Maps the flush counters that answer "was anything destroyed, parked or retired?" onto their patch
  * columns, or an empty patch when the caller holds no flush evidence at all.
  *
- * Extracted so the two writes that can carry them map them through ONE function: the headless
- * cycle's `recordBacklogReadCount` and the foreground cycle's terminal `recordSyncAttemptSucceeded`.
- * They are NOT derived from one another and never fold into one another. `discarded` counts what
+ * Extracted so the foreground cycle's terminal `recordSyncAttemptSucceeded` maps them in one
+ * place. They are NOT derived from one another and never fold into one another. `discarded` counts what
  * the BRIDGE condemned (400/413 -- a permanent rejection by its own verdict) and keeps exactly
- * that meaning in both writes; `undeliverable` counts what THIS build ordered destroyed because the
+ * that meaning; `undeliverable` counts what THIS build ordered destroyed because the
  * row's `kind` can never be accepted; `unclassified` counts what was PARKED because it belongs to a
  * different build, where rolling forward is what recovers it -- a gap counter, not a loss counter;
  * and `reaped` counts what the AGE BOUND retired, which is neither a verdict nor a declaration but
@@ -102,16 +100,13 @@ function buildDiagnosticsCounterPatchFields(
  * -- a success closes the cycle it belongs to. Closing the cycle also RELEASES the
  * `isCycleActive` flag: this patch is the last status write of the cycle's success path, so
  * recording the outcome without releasing the flag would leave every later attempt counted as
- * unclosed. The explicit `recordCycleActive(false)` in the cycle's `finally` stays -- it is
- * idempotent -- but it is no longer the only thing standing between a reported outcome and a
- * flag stuck on.
+ * unclosed.
  *
  * `diagnosticsFlush` is optional and, when supplied, folds this cycle's three destruction
  * counters into the SAME write -- the foreground coordinated cycle has no bookkeeping write of its
  * own, so folding is what keeps its counters from costing a second transaction (see
- * `runCoordinatedForegroundSyncCycle`). Callers without flush evidence (the headless cycle, which
- * writes its own bookkeeping through `recordBacklogReadCount`, and every pre-existing caller) leave
- * the three columns untouched instead of fabricating three zeros.
+ * `runCoordinatedForegroundSyncCycle`). Callers without flush evidence leave the columns
+ * untouched instead of fabricating zeros.
  */
 export function buildSyncAttemptSucceededPatch(
   triggerSource: SyncRuntimeTriggerSource,
@@ -169,48 +164,5 @@ export function buildSyncAttemptFailedPatch(
     lastNativeErrcodeByte: detail.nativeErrcodeByte ?? null,
     consecutiveUnclosedCycles: 0,
     isCycleActive: false,
-  };
-}
-
-/**
- * Builds the snapshot patch that marks a sync cycle as active or inactive.
- * This lets Settings distinguish an idle runtime from one that is mid-cycle.
- */
-export function buildCycleActivePatch(isActive: boolean): SyncRuntimeStatusPatch {
-  return {
-    isCycleActive: isActive,
-  };
-}
-
-/**
- * Folds one cycle's bounded backlog read size, its diagnostics-outbox flush and write-failure
- * counters, and its operation-log convergence projection into a single patch (design.md
- * `2026-09-09-convergence-instrumentation` Decision 6). This is the SAME write
- * `recordBacklogReadCount` already performed before this change -- widened, not duplicated --
- * so the shared write door gains zero new transactions.
- *
- * Every counter here comes from a value its caller already computed this cycle (the flush
- * result, the outbox store's own failure count, the convergence projection), so none of them is
- * ever fabricated: an unmeasured cycle simply never calls this, and the columns stay `null`
- * (Decision 7) rather than reporting a plausible zero. The three destruction counters themselves
- * are mapped by `buildDiagnosticsCounterPatchFields`, shared with the foreground cycle's terminal
- * `recordSyncAttemptSucceeded` so the two writes that carry them cannot drift apart.
- */
-export function buildCycleBookkeepingPatch(
-  backlogReadCount: number,
-  diagnosticsFlush: SyncDiagnosticsFlushResult,
-  outboxFailedWriteCount: number,
-  convergence: OperationLogConvergence,
-): SyncRuntimeStatusPatch {
-  return {
-    lastBacklogReadCount: backlogReadCount,
-    ...buildDiagnosticsCounterPatchFields(diagnosticsFlush),
-    lastDiagnosticsFailedRemovalCount: diagnosticsFlush.failedRemovals,
-    lastOutboxFailedWriteCount: outboxFailedWriteCount,
-    lastDeadLetterCount: convergence.deadLetterCount,
-    lastConflictExhaustedCount: convergence.conflictExhaustedCount,
-    lastStuckProcessingCount: convergence.stuckProcessingCount,
-    lastOldestPendingAgeMs: convergence.oldestPendingAgeMs,
-    lastPendingRowCount: convergence.pendingRowCount,
   };
 }

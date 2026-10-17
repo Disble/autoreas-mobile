@@ -13,14 +13,6 @@
  * - INFRA (no entry, no gate): self-validating code -- types, constants with no logic, thin
  *   native seams, barrels, task registration. A file absent from both lists below is INFRA and
  *   gets no `coverageThreshold` key.
- *
- * `src/features/sync/use-reconcile.ts` is deliberately absent from both tiers: the `useReconcile`
- * hook it exports has no consumer anywhere in `src` (dead code), and Jest never produces a
- * coverage-map entry for a file that no test actually `require()`s -- its own (misleadingly
- * named) test file exercises `reconcile.helpers.ts` instead. A per-file `coverageThreshold` entry
- * for a path with no coverage-map entry makes `jest --coverage` fail outright with
- * "Coverage data for <path> was not found", regardless of how well-tested the rest of the suite
- * is. See the feature document's T1 report for the reproduction.
  */
 
 const CORE_FILES = [
@@ -34,7 +26,6 @@ const CORE_FILES = [
   'src/features/sync/reconcile-base-token.helpers.ts',
   'src/features/sync/reconcile.errors.ts',
   'src/features/sync/applied-operation-token.helpers.ts',
-  'src/features/sync/operation-log-convergence.helpers.ts',
   'src/features/sync/operation-log-retention.helpers.ts',
   'src/features/sync/pending-remote-changes.helpers.ts',
   'src/features/sync/remote-change-drain.helpers.ts',
@@ -87,8 +78,6 @@ const IMPORTANT_FILES = [
   'src/features/sync/ui/SyncRuntimeGate/sync-runtime-gate.helpers.ts',
   'src/features/sync/ui/SyncRuntimeGate/use-sync-runtime-gate.ts',
   'src/features/sync/use-foreground-resync.ts',
-  'src/features/sync/use-incremental-sync-handler.ts',
-  'src/features/sync/use-initial-sync.ts',
   'src/features/sync/use-remote-change-drain.ts',
   'src/features/sync/use-season-sync.ts',
   'src/features/sync/use-sync-facade.ts',

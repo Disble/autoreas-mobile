@@ -69,8 +69,7 @@ class SyncCycleLease(private val appDb: SQLiteDatabase) {
    * Binds all five placeholders of [CLAIM_LEASE_SQL] in order (id, owner, expires_at, fence,
    * and the `WHERE` cutoff), then verifies ownership by selecting the row's `owner` and `fence`
    * back inside the same call. A missing `sync_cycle_lock` table (a store that has not had its
-   * first foreground open) reports unclaimed rather than throwing, mirroring the JS
-   * `SchemaNotReadyError` -> no-op handling.
+   * first foreground open) reports unclaimed rather than throwing, so the attempt is a no-op.
    */
   fun claim(fence: String): Boolean {
     return try {

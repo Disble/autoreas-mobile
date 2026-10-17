@@ -16,7 +16,7 @@ private const val BRIDGE_REQUEST_TIMEOUT_MS = 10_000
 /** Cursor sanity bound, mirroring `MAX_REASONABLE_CHANGELOG_ID`. */
 private const val MAX_REASONABLE_CHANGELOG_ID = 1_000_000_000_000L
 
-/** One terminal attempt result the module maps onto the JS-facing result dictionary. */
+/** One terminal attempt result, handed to the caller of [SyncEngineRunner.runOnce]. */
 data class CycleOutcome(
   val outcome: String,
   val stage: String,
@@ -27,19 +27,7 @@ data class CycleOutcome(
   val recoveredProcessingCount: Int = 0,
   /** Cycle id the sweep marked `abandoned`, or `null` when there was nothing to abandon. */
   val recoveredAbandonedCycleId: String? = null,
-) {
-  /** Builds the result dictionary the Expo bridge delivers to the JS seam. */
-  fun toMap(cycleId: String): Map<String, Any?> = mapOf(
-    "outcome" to outcome,
-    "cycleId" to cycleId,
-    "syncedCount" to syncedCount,
-    "backlogReadCount" to backlogReadCount,
-    "stage" to stage,
-    "errorName" to errorName,
-    "recoveredProcessingCount" to recoveredProcessingCount,
-    "recoveredAbandonedCycleId" to recoveredAbandonedCycleId,
-  )
-}
+)
 
 /**
  * One native sync attempt, ported step by step from the JS cycle

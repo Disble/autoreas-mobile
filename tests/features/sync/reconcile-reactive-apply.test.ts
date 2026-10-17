@@ -110,7 +110,6 @@ describe('reconcile applies remote bridge changes reactively', () => {
         guardByRecordId: expect.any(Map),
         pendingOutboxRecordIds: expect.any(Set),
       }),
-      'deferred',
     );
   });
 
@@ -155,7 +154,6 @@ describe('reconcile applies remote bridge changes reactively', () => {
       writeDb,
       [expect.objectContaining({ recordId: 'anime-1', changedFields: ['estado'] })],
       expect.any(Object),
-      'deferred',
     );
     expect(recordDiagnosticEvent).toHaveBeenCalledWith({
       source: 'sync_cycle',

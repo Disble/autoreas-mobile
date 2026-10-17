@@ -180,10 +180,8 @@ preparation only for `busy`/`locked` outcomes, at most `STARTUP_DATABASE_PREPARA
 `STARTUP_PROVIDER_READINESS_DEADLINE_MS` (25 s) envelops that whole sequence as a watchdog;
 `STARTUP_SOFT_DEADLINE_MS` (8 s) only swaps in a slow notice and never selects the failure card; a
 missing provider renders the `sqlite-unavailable` screen; fonts have their own 5 s deadline.
-Headless actors call
-[`prepareHeadlessDatabase`](../src/infrastructure/db/startup/startup.helpers.ts), which is
-read-only — it refuses with `SchemaNotReadyError` instead of repairing, so two writers never race
-the schema.
+JS has no headless database actor: the native engine waits for the foreground's readiness stamp
+(`PRAGMA user_version`) before it opens `autoreas.db`, so two writers never race the schema.
 
 **The runtime starts on pairing too.** `useSyncRuntime` registers strategies only when
 `isRuntimeEnabled = isBootstrapped && isConfigured` holds
@@ -218,7 +216,7 @@ flowchart TD
     J0["bootstrap | app_active | network_regained | ws_sync_required | manual"] --> J1["useSyncFacade.requestSync"]
     J1 --> J2["runSharedForegroundSyncCycle single flight"]
     J2 --> J3["runCoordinatedForegroundSyncCycle"]
-    J3 --> J4["syncPendingOperations default applyMode deferred"]
+    J3 --> J4["syncPendingOperations"]
   end
 ```
 
@@ -341,7 +339,7 @@ flowchart TD
   B --> C["runSharedForegroundSyncCycle single flight"]
   C --> D["runCoordinatedForegroundSyncCycle"]
   D --> D1["recordSyncAttemptStarted"]
-  D1 --> E["syncPendingOperations - applyMode deferred"]
+  D1 --> E["syncPendingOperations"]
   E --> E1["read backlog pending plus processing, dedupe per anime"]
   E1 --> E2["claim rows processing"]
   E2 --> E3["captureSyncDiagnosticsEnvelope, flushSyncDiagnosticsOutbox to autoreas-telemetry.db"]
@@ -350,11 +348,8 @@ flowchart TD
   E4 --> E5{"result.ok"}
   E5 -->|no| E6["revert - 4xx dead_letter else pending; release the round ratings unsent; throw"]
   E5 -->|yes| F["applyReconcileResponseWrites inside withLocalWrite"]
-  F --> F1{"applyMode"}
-  F1 -->|deferred| F2["applyRemoteChanges to animes - useLiveQuery sees it"]
-  F1 -->|staged| F3["stagePendingRemoteChanges into pending_remote_changes"]
+  F --> F2["applyRemoteChanges to animes - useLiveQuery sees it; a deferred change stays staged"]
   F2 --> F4["persist tokens, op statuses, advance cursor"]
-  F3 --> F4
   F4 --> G["sendSeasonRatingRound - one POST /api/seasons/active/ratings per rating, claim re-checked; 204 synced, 4xx dead_letter, else pending"]
   G --> G1["next round: successors of confirmed keys, until none or the 20 s chain budget"]
   G1 --> G2["refresh the active season after a delivered rating, a 404/409, a season event or app_active"]
@@ -373,12 +368,10 @@ flowchart TD
   end
 ```
 
-- **Foreground reconcile applies in `deferred` mode.** [`syncPendingOperations`](../src/features/sync/reconcile.helpers.ts)
-  defaults `applyMode` to `'deferred'` and the foreground path relies on that default: pulled
-  changes are written to `animes` directly, so `useLiveQuery` consumers refresh immediately.
-  `'staged'` writes `pending_remote_changes` instead and is the background/headless mode; the JS
-  background cycle that used it is retired, so today the only producer of staged rows is the
-  native engine.
+- **Foreground reconcile applies pulled changes directly.** [`syncPendingOperations`](../src/features/sync/reconcile.helpers.ts)
+  writes pulled changes to `animes`, so `useLiveQuery` consumers refresh immediately; a change
+  deferred by an unconfirmed local edit stays in `pending_remote_changes`. The JS `'staged'` mode
+  was removed in convergent-sync T16; the native engine is the producer of staged rows.
 - **Staging drain is the only path background data reaches `animes`.**
   [`drainPendingRemoteChanges`](../src/features/sync/remote-change-drain.helpers.ts) applies and
   deletes staged rows in one deferred transaction, on the reactive connection.
@@ -434,7 +427,6 @@ Startup and readiness branches first, then native-cycle, then JS and diagnostics
 | 30 | Diagnostics payload unclassified | `kind` unknown, non-string, JSON `null`, or unparseable | parked, never posted, reaped only after 7 days | `classifyDiagnosticsPayload` |
 | 31 | Diagnostics oversize / coded 400 | bridge declares permanence | body discarded, counted as `discarded` | `isPermanentDiagnosticsRejection` |
 | 32 | Diagnostics retryable refusal | 401/404/405/408/422/429/5xx or transport | kept pending; no clock may destroy it | `isParkedDiagnosticsRow` |
-| 33 | Headless schema stale | `user_version` stale or a required column missing | `SchemaNotReadyError` no-op; foreground repairs next start | `prepareHeadlessDatabase` |
 
 ## Storage ownership and contended files
 

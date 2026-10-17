@@ -10,18 +10,13 @@ import {
 const mockTickerStart = jest.fn<void, [number]>();
 /** Mock for the native ticker's stop(). */
 const mockTickerStop = jest.fn<void, []>();
-/** Mock for the native ticker's isRunning(). */
-const mockTickerIsRunning = jest.fn<boolean, []>();
 /** Mock for the native presence seam's isForegroundServiceRunning(). */
 const mockPresenceIsRunning = jest.fn<boolean, [string]>();
-/** Mock for the battery-optimization exemption seam's isExempt(). */
-const mockIsExempt = jest.fn<boolean, []>();
 
 jest.mock('../../../src/features/sync/native-foreground-sync-ticker.helpers', () => ({
   createNativeForegroundSyncTicker: jest.fn(() => ({
     start: mockTickerStart,
     stop: mockTickerStop,
-    isRunning: mockTickerIsRunning,
   })),
 }));
 
@@ -31,12 +26,6 @@ jest.mock('../../../src/features/sync/native-foreground-service-presence.helpers
   })),
 }));
 
-jest.mock('../../../src/features/sync/native-battery-optimization.helpers', () => ({
-  createNativeBatteryOptimizationExemption: jest.fn(() => ({
-    isExempt: mockIsExempt,
-    requestExemption: jest.fn(),
-  })),
-}));
 
 describe('native-foreground-sync-adapter', () => {
   const platformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
@@ -49,9 +38,7 @@ describe('native-foreground-sync-adapter', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTickerIsRunning.mockReturnValue(false);
     mockPresenceIsRunning.mockReturnValue(false);
-    mockIsExempt.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -62,7 +49,6 @@ describe('native-foreground-sync-adapter', () => {
 
   it('returns unsupported status outside Android', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'ios' });
-    mockIsExempt.mockReturnValue(true);
 
     const adapter = createNativeForegroundSyncAdapter();
 
@@ -72,7 +58,6 @@ describe('native-foreground-sync-adapter', () => {
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
       isBackgroundTaskRegistered: false,
-      isBatteryOptimizationExempt: true,
     });
     expect(mockPresenceIsRunning).not.toHaveBeenCalled();
   });
@@ -134,7 +119,6 @@ describe('native-foreground-sync-adapter', () => {
   it('getStatus() reports live presence read from the native SyncForegroundService channel', async () => {
     authorizeAndroid();
     mockPresenceIsRunning.mockReturnValue(true);
-    mockIsExempt.mockReturnValue(true);
 
     const adapter = createNativeForegroundSyncAdapter();
 
@@ -146,7 +130,6 @@ describe('native-foreground-sync-adapter', () => {
       isForegroundServiceRunning: true,
       canShowPersistentNotification: true,
       isBackgroundTaskRegistered: false,
-      isBatteryOptimizationExempt: true,
     });
     expect(mockPresenceIsRunning).toHaveBeenCalledWith(SYNC_FOREGROUND_SERVICE_CHANNEL_ID);
   });
@@ -166,7 +149,6 @@ describe('native-foreground-sync-adapter', () => {
       isForegroundServiceRunning: false,
       canShowPersistentNotification: true,
       isBackgroundTaskRegistered: false,
-      isBatteryOptimizationExempt: false,
     });
   });
 
@@ -196,18 +178,5 @@ describe('native-foreground-sync-adapter', () => {
     const adapter = createNativeForegroundSyncAdapter();
 
     expect(adapter.mode).toBe('android_foreground_service');
-  });
-
-  it('reads the battery-optimization exemption fresh on every getStatus() call', async () => {
-    authorizeAndroid();
-    mockIsExempt.mockReturnValueOnce(false).mockReturnValueOnce(true);
-
-    const adapter = createNativeForegroundSyncAdapter();
-
-    const first = await adapter.getStatus();
-    const second = await adapter.getStatus();
-
-    expect(first.isBatteryOptimizationExempt).toBe(false);
-    expect(second.isBatteryOptimizationExempt).toBe(true);
   });
 });

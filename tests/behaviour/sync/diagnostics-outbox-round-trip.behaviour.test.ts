@@ -208,7 +208,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 500, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-1'));
+    await syncPendingOperations(adapter, buildTelemetryContext('cycle-1'));
 
     expect(mockTelemetryAdapter).not.toBeNull();
     const afterCycleOne = await mockTelemetryAdapter!.getAllAsync<StoredDiagnosticsOutboxRow>(
@@ -225,7 +225,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-2'));
+    await syncPendingOperations(adapter, buildTelemetryContext('cycle-2'));
 
     const afterCycleTwo = await mockTelemetryAdapter!.getAllAsync<StoredDiagnosticsOutboxRow>(
       'SELECT cycle_id, payload FROM sync_diagnostics_outbox',
@@ -256,7 +256,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-1'));
+    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-1'));
 
     // The park was retired by the CLOCK -- its own counter, and neither a discard (the bridge
     // refused nothing: it never saw this row) nor a shed (the cap dropped nothing) -- and the
@@ -313,7 +313,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-4'));
+    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-4'));
 
     // `reaped` moved because a CLOCK expired on a row nothing had judged; `discarded` moved because
     // the BRIDGE condemned bytes it was asked about. Folding either into the other would make a
@@ -352,7 +352,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-2'));
+    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-2'));
 
     expect(result.diagnosticsFlush).toEqual({
       attempted: 2,
@@ -375,7 +375,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, 'deferred', buildTelemetryContext('cycle-3'));
+    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-3'));
 
     // Still parked: counted as `unclassified`, never as `reaped`, and the row is still queued for
     // the pass that eventually follows a bridge that serves its kind.

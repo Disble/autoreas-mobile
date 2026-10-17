@@ -27,10 +27,6 @@ export function buildPassThroughOutboxClaimModule(): typeof OutboxClaimHelpers {
         dedupeBy: 'anime_id',
       });
 
-      if (rows.length > 0) {
-        params.onClaim?.();
-      }
-
       return { claim: { owner: params.owner, claimedAt: 0 }, rows };
     }),
     readHeldOperationIds: jest.fn(async (_db, ids) => [...ids]),

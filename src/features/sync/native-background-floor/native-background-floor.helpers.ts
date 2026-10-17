@@ -131,10 +131,7 @@ async function runFloorOperation(
  * calling it the registered floor would hide the loss of the native one. The legacy request may
  * therefore stay pending for the rest of this first unit (the transition is visible as
  * `unregistered`, not as a fabricated success), and `unregister()` cancels both natively.
- *
- * **This strategy does not own the battery-optimization signal.** Only the FGS adapter reads
- * `isBatteryOptimizationExempt`; the concurrent-status OR-merge picks up that adapter's live
- * reading regardless of the safe `false` reported here.
+
  */
 export function createNativeBackgroundFloorStrategy(
   params: CreateNativeBackgroundFloorStrategyParams = {},
@@ -173,7 +170,6 @@ export function createNativeBackgroundFloorStrategy(
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: status.isBackgroundTaskRegistered,
-        isBatteryOptimizationExempt: false,
       };
     },
   };

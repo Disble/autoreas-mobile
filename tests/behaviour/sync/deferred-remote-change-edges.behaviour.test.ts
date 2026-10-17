@@ -281,7 +281,7 @@ describe('T8 verifier probes (ADR 009 R-16a edges)', () => {
     const first = await drainPendingRemoteChanges(adapter);
     const second = await drainPendingRemoteChanges(adapter);
 
-    expect(first).toEqual({ applied: 0, dropped: 0, deferred: 1, rejected: 0, drainedCount: 1 });
+    expect(first).toEqual({ applied: 0, dropped: 0, deferred: 1, rejected: 0 });
     expect(second).toEqual(first);
     expect(await countStaged(adapter)).toBe(1);
   });

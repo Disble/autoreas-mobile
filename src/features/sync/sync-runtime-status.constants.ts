@@ -12,17 +12,17 @@ export const SYNC_RUNTIME_STATUS_SINGLETON_ID = 1;
  * persisted column, and the wire without the typecheck saying so.
  *
  * Each member mirrors one step of the real foreground reconcile cycle, read off
- * `performSyncPendingOperations` rather than invented:
+ * `syncPendingOperations` rather than invented:
  * - `open`            -> `runtime.open()`
  * - `config`          -> `getBridgeConfigSnapshot` (a READ)
  * - `attempt_started` -> `recordSyncAttemptStarted`, an awaited write through the shared door
- * - `cycle_activated` -> `recordCycleActive(true)`, likewise
+ * - `cycle_activated` -> no JS writer since T16 (kept: the persisted and wire vocabulary)
  * - `backlog_read`    -> `readOperationLogBacklog`
  * - `claim_ops`       -> the `withLocalWrite` that marks the batch `processing`
  * - `http`            -> `bridgeClient.reconcile`
  * - `parse_response`  -> `ReconcileResponseSchema.safeParse`
  * - `apply_write`     -> the post-HTTP `withLocalWrite` (stage/confirm/cursor, all one txn)
- * - `prune`           -> `pruneOperationLog`
+ * - `prune`           -> the Kotlin `OperationLogPruner`
  * - `closed`          -> the `finally` released the cycle
  *
  * The two write steps after `config` are listed separately for a specific reason: when the shared

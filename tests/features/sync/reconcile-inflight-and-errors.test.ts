@@ -61,62 +61,6 @@ const mockReconcile = bridgeClient.reconcile as jest.Mock;
 /** Mocked backlog read; empty by default (the module mock's own default). */
 const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
 
-/** A successful, empty reconcile response fixture shared by this suite's happy-path tests. */
-const SUCCESS_RESPONSE = {
-  ok: true,
-  status: 202,
-  url: 'https://192.168.1.10:9876/api/sync/reconcile',
-  rawBody: '{}',
-  data: { status: 'accepted', applied_operations: [], bridge_changes: [], conflicts: [] },
-};
-
-describe('syncPendingOperations in-flight guard', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockReadBacklog.mockResolvedValue([]);
-    mockGetBridgeConfigSnapshot.mockResolvedValue({
-      id: 1,
-      ip: '192.168.1.10',
-      port: 9876,
-      token: 'auth-secret',
-      deviceId: 'device-1',
-      lastChangelogId: 0,
-    });
-    mockWithLocalWrite.mockResolvedValue(NO_CHAIN_ROUND);
-    mockReconcile.mockResolvedValue(SUCCESS_RESPONSE);
-  });
-
-  it('a call arriving while one is already in flight joins it: both callers observe the identical settled result', async () => {
-    const rawDb = { name: 'in-flight-db' };
-
-    // Both calls fire synchronously, with no await between them: by the time the second call
-    // runs, the first has already published its in-flight promise (design.md's per-database
-    // guard), so the second must mark a rerun and return that SAME in-flight work instead of
-    // starting its own independent reconcile pass. Two independently-computed result objects
-    // would only ever be deep-equal by coincidence (the mock is stable across calls); object
-    // IDENTITY is what proves the second caller was handed the first caller's own in-flight
-    // promise rather than a lookalike result from a second, unguarded pass.
-    const firstResult = syncPendingOperations(rawDb as never);
-    const secondResult = syncPendingOperations(rawDb as never);
-
-    const [firstValue, secondValue] = await Promise.all([firstResult, secondResult]);
-
-    expect(firstValue).toBe(secondValue);
-    // One pass for the first call, one rerun pass triggered by the second call joining it --
-    // not two fully independent reconcile round-trips.
-    expect(mockReconcile).toHaveBeenCalledTimes(2);
-  });
-
-  it('a call after the previous one has settled starts its own independent pass (no rerun)', async () => {
-    const rawDb = { name: 'sequential-db' };
-
-    await syncPendingOperations(rawDb as never);
-    await syncPendingOperations(rawDb as never);
-
-    expect(mockReconcile).toHaveBeenCalledTimes(2);
-  });
-});
-
 describe('syncPendingOperations response and revert error paths', () => {
   beforeEach(() => {
     jest.clearAllMocks();

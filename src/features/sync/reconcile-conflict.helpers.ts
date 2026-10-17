@@ -152,7 +152,7 @@ export interface ClassifyUnconfirmedOperationsResult {
  * that write targets only the in-memory ring (`sync-diagnostic-store`), never the DB, so it stays
  * safe to run here, outside any transaction (design.md Decision 6).
  *
- * Extracted out of `reconcile.helpers.ts`'s `performSyncPendingOperations` to keep that function's
+ * Extracted out of `reconcile.helpers.ts`'s `syncPendingOperations` to keep that function's
  * cognitive complexity under threshold (constraint: "Complexity Budget Note").
  */
 export function classifyUnconfirmedOperations(

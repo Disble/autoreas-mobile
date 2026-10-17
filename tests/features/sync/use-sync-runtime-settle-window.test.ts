@@ -206,7 +206,6 @@ function buildForegroundStrategy(): SyncExecutionStrategy {
         isForegroundServiceRunning: nativeFacts.isForegroundServiceUp,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       };
     }),
   };
@@ -231,7 +230,6 @@ function buildFloorStrategy(): SyncExecutionStrategy {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: nativeFacts.isNativeFloorRegistered,
-        isBatteryOptimizationExempt: false,
       }),
     ),
   };

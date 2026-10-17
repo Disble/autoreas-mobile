@@ -114,7 +114,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
     mockStagePendingRemoteChanges.mockResolvedValue(undefined);
   });
 
-  it('deferred mode: persists confirmed tokens AFTER applyRemoteChanges, inside the same withLocalWrite invocation', async () => {
+  it('persists confirmed tokens AFTER applyRemoteChanges, inside the same withLocalWrite invocation', async () => {
     const callOrder: string[] = [];
     mockApplyRemoteChanges.mockImplementation(async () => {
       callOrder.push('applyRemoteChanges');
@@ -150,45 +150,6 @@ describe('syncPendingOperations confirmed token write-back', () => {
     expect(callOrder).toEqual(['applyRemoteChanges', 'persistConfirmedAnimeTokens']);
     expect(mockPersistConfirmedAnimeTokens).toHaveBeenCalledWith(writeDb, [
       { animeId: 'anime-1', bridgeModifiedAt: 1788540735366 },
-    ]);
-    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(1);
-  });
-
-  it('staged mode: persists confirmed tokens AFTER stagePendingRemoteChanges, inside the same withLocalWrite invocation', async () => {
-    const callOrder: string[] = [];
-    mockStagePendingRemoteChanges.mockImplementation(async () => {
-      callOrder.push('stagePendingRemoteChanges');
-    });
-    mockPersistConfirmedAnimeTokens.mockImplementation(async () => {
-      callOrder.push('persistConfirmedAnimeTokens');
-    });
-
-    const writeDb = buildStatusWriteStub();
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      return task(writeDb, {});
-    });
-
-    mockReadBacklog.mockResolvedValue([sentOperation('anime-1', 'update')]);
-    mockReconcile.mockResolvedValue({
-      ok: true,
-      status: 202,
-      url: 'https://192.168.1.10:9876/api/sync/reconcile',
-      rawBody: '{}',
-      data: {
-        status: 'accepted',
-        applied_operations: [
-          { anime_id: 'anime-1', operation: 'update', applied: true, modified_at: 0 },
-        ],
-        bridge_changes: [],
-      },
-    });
-
-    const rawDb = { name: 'staged-reconcile-db-token-order' };
-    await syncPendingOperations(rawDb as never, 'staged');
-
-    expect(callOrder).toEqual(['stagePendingRemoteChanges', 'persistConfirmedAnimeTokens']);
-    expect(mockPersistConfirmedAnimeTokens).toHaveBeenCalledWith(writeDb, [
-      { animeId: 'anime-1', bridgeModifiedAt: 0 },
     ]);
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(1);
   });
@@ -262,8 +223,8 @@ describe('syncPendingOperations confirmed token write-back', () => {
       },
     });
 
-    const rawDb = { name: 'staged-reconcile-db-token-orphan' };
-    await expect(syncPendingOperations(rawDb as never, 'staged')).resolves.toBeDefined();
+    const rawDb = { name: 'reconcile-db-token-orphan' };
+    await expect(syncPendingOperations(rawDb as never)).resolves.toBeDefined();
 
     expect(mockPersistConfirmedAnimeTokens).toHaveBeenCalledWith(writeDb, [
       { animeId: 'anime-not-yet-applied', bridgeModifiedAt: 1788540735366 },

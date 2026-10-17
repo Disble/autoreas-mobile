@@ -90,7 +90,7 @@ export function toLocalWriteError(
  * run on the connection. `busy_timeout` takes no lock and is purely connection-local, so applying
  * it via `execSync` is always safe -- including from a synchronous open path that cannot await.
  * `openAppDatabaseSync` is the implicit third open path H2 found running with no timeout at all;
- * `prepareForegroundDatabase`/`prepareHeadlessDatabase` (startup.helpers.ts) apply the same
+ * `prepareForegroundDatabase` (startup.helpers.ts) applies the same
  * pragma independently through the async API, which is idempotent against a connection already
  * covered here.
  */

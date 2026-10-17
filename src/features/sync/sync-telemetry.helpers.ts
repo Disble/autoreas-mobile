@@ -94,8 +94,8 @@ export function normalizeNativeErrcodeByte(raw: unknown): number | null {
  *
  * This exists because a cycle killed by the host (Android's `jobFinished` timeout) cannot report
  * its own death -- the process is gone before any reporting code runs. The one artifact it leaves
- * behind is a `isCycleActive` flag that was never released, because `recordCycleActive(false)`
- * lives in a `finally` that never executed. Reading that flag at the START of the next cycle is
+ * behind is a `isCycleActive` flag that was never released, because its terminal write never
+ * executed. Reading that flag at the START of the next cycle is
  * therefore the only way this class of failure is ever observable off-device.
  *
  * Precedence is deliberate: `never_closed` outranks `failed`, because a cycle can record a failure

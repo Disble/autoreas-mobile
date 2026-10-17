@@ -5,15 +5,14 @@ import android.util.Log
 
 private const val PRUNE_LOG_TAG = "SyncEnginePrune"
 
-/** Retention policy values, mirroring `DEFAULT_OPERATION_LOG_RETENTION_POLICY`. */
+/** Retention policy values: synced rows live 7 days, at most 1000 of them. */
 private const val RETENTION_DAY_MS = 24L * 60L * 60L * 1000L
 private const val SYNCED_TTL_DAYS = 7L
 private const val SYNCED_MAX_COUNT = 1000
 
 /**
- * Retention prune over the operation log, ported statement-for-statement from
- * `pruneOperationLog` (`operation-log-retention.helpers.ts`): TTL first, then max-count, over
- * `synced` rows only — 7 days / 1000 rows, oldest first. Given-up rows (`dead_letter`,
+ * Retention prune over the operation log, the only one in the app (JS has no background
+ * responsibility, ADR 009 constraint 2): TTL first, then max-count, over `synced` rows only — 7 days / 1000 rows, oldest first. Given-up rows (`dead_letter`,
  * `conflict_exhausted`) are unresolved keys and are never pruned: they stay until a later
  * confirmed edit or `resolveUnresolvedKey` resolves them (ADR 009 R-16b). The prune opens its
  * own `BEGIN IMMEDIATE` transaction and verifies the cycle lease inside it (see `pruneSafely`).

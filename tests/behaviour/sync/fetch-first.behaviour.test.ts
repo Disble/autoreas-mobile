@@ -206,17 +206,4 @@ describe('fetch-first when a token is missing (ADR 009 R-3)', () => {
     ]);
   });
 
-  it('never fetches an anime whose token is already stored', async () => {
-    const adapter = await openDatabaseWithoutToken();
-    await adapter.runAsync("UPDATE animes SET bridge_modified_at = 7 WHERE _id = 'anime-1'");
-    fakeBridge.queueResponse(confirmedAt(8));
-    fakeBridge.queueResponse(confirmedAt(9));
-
-    await syncPendingOperations(adapter);
-
-    expect(fakeBridge.requests.every((request) => request.method === 'POST')).toBe(true);
-    expect(reconcileBodies(fakeBridge)[0].pending_operations).toEqual([
-      expect.objectContaining({ anime_id: 'anime-1', base: 7 }),
-    ]);
-  });
 });

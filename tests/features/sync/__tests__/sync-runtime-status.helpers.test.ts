@@ -1,6 +1,5 @@
 import {
   getSyncRuntimeStatusSnapshot,
-  recordCycleActive,
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
   recordSyncAttemptSucceeded,
@@ -334,9 +333,8 @@ describe('a terminal sync attempt releases the cycle-active flag (regression: 20
   // "`consecutive_unclosed_cycles` stays 0 for 24 h with the app closed" broke. These tests
   // drive the REAL helper stack (`node:sqlite` adapter + project migrations) through the exact
   // write sequence a headless cycle performs, so the flag bookkeeping is exercised the way the
-  // device exercises it rather than against a mocked snapshot. An explicit
-  // `recordCycleActive(false)` still appears in the real cycle's finally -- its absence here is
-  // the point: the terminal write alone must close the cycle.
+  // device exercises it rather than against a mocked snapshot. The terminal write alone must
+  // close the cycle.
 
   /** Replays the status writes a headless cycle performs from start to a terminal outcome. */
   async function recordCycleFromStartToTerminal(
@@ -345,7 +343,6 @@ describe('a terminal sync attempt releases the cycle-active flag (regression: 20
     terminal: 'success' | 'failure',
   ): Promise<void> {
     await recordSyncAttemptStarted(adapter, 'background_task', 1710000000000, cycleId);
-    await recordCycleActive(adapter, true);
 
     if (terminal === 'success') {
       await recordSyncAttemptSucceeded(adapter, 'background_task', 1710000001000, 3, cycleId);

@@ -5,10 +5,8 @@ export {
 export {
   SchemaIncompatibleError,
   SchemaIntegrityError,
-  SchemaNotReadyError,
   SchemaValidationError,
 } from './startup.errors';
 export {
   prepareForegroundDatabase,
-  prepareHeadlessDatabase,
 } from './startup.helpers';

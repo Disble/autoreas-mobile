@@ -9,7 +9,6 @@ describe('sync-execution-strategy.helpers', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
       }),
     ).toEqual({
       registrationStatus: 'registered',
@@ -28,7 +27,6 @@ describe('sync-execution-strategy.helpers', () => {
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: true,
       }),
     ).toEqual({
       registrationStatus: 'registered',
@@ -47,7 +45,6 @@ describe('sync-execution-strategy.helpers', () => {
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
       }),
     ).toEqual({
       registrationStatus: 'registered',

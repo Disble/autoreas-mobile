@@ -316,7 +316,7 @@ describe('a remote change deferred behind a local edit is never lost (ADR 009 R-
 
     const result = await drainPendingRemoteChanges(adapter);
 
-    expect(result).toEqual({ applied: 1, dropped: 0, deferred: 0, rejected: 0, drainedCount: 1 });
+    expect(result).toEqual({ applied: 1, dropped: 0, deferred: 0, rejected: 0 });
     expect(await readAnime(adapter)).toEqual(expect.objectContaining({ nombre: 'Renamed on PC', nrocapvisto: 9 }));
     expect(await countStaged(adapter)).toBe(0);
   });

@@ -21,19 +21,13 @@ import type {
  * then restarts unconditionally, so a caller invoking `start()` again (e.g. the app opening while
  * the FGS mode is on) is safe and simply re-arms/restores the service.
  *
- * `isRunning()` delegates straight to the native module on every call instead of tracking local
- * closure state: a fresh `createNativeForegroundSyncTicker()` call (e.g. from a headless
- * background-task wake, a different JS object than whatever live adapter last called `start()`)
- * must still read the real native ticking state, not a flag that always starts `false` in a new
- * instance.
- *
  * Before T5 this seam also subscribed to a native `onTick` event and reported cycle completion
  * back through `notifyCycleComplete()`. Native no longer emits `onTick` or needs that report
  * (T3+T4 moved cycle dispatch and execution entirely into `SyncForegroundService` /
  * `SyncEngineRunner`), so that wiring is retired here.
  *
  * Degrades to a no-op when the native module is unavailable (Expo Go, iOS, or a non-prebuilt
- * binary) instead of crashing -- `isRunning()` then always answers `false`.
+ * binary) instead of crashing.
  */
 export function createNativeForegroundSyncTicker(
   params: CreateNativeForegroundSyncTickerParams = {},
@@ -53,10 +47,6 @@ export function createNativeForegroundSyncTicker(
 
     stop() {
       nativeModule?.stop();
-    },
-
-    isRunning() {
-      return nativeModule?.isRunning() ?? false;
     },
   };
 }

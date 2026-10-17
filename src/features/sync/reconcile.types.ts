@@ -4,7 +4,6 @@ import type { OutboxClaim } from './outbox-claim.types';
 import type { SyncDiagnosticEvent } from './sync-diagnostic-events.types';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
 import type {
-  SyncCycleStage,
   SyncRuntimeStatusSnapshot,
   SyncRuntimeTriggerSource,
 } from './sync-runtime-status.types';
@@ -14,34 +13,13 @@ import type { ConflictOutcome } from './reconcile-conflict.helpers';
 import type { RemoteAnimeChange } from './merge/merge.types';
 
 /**
- * Selects where a reconcile pass writes its pulled `bridge_changes`:
- * - `deferred` -> applies directly to `animes` via the merge boundary inside
- *   `withLocalWrite` on the shared reactive connection (foreground callers: the manual
- *   reconcile mutation, bootstrap reconcile, WS-triggered sync).
- * - `staged` -> never touches `animes`; inserts into `pending_remote_changes` instead, for
- *   callers running on the isolated, non-reactive background connection (the headless sync
- *   cycle). A foreground drain hook later applies staged rows via the same merge boundary.
- */
-export type ReconcileApplyMode = 'deferred' | 'staged';
-
-/**
- * Publishes one checkpoint of the reconcile pass to the sync-cycle instrument.
- *
- * The contract is ENTRY semantics: the recorder is called before awaiting the step it names, so
- * a hang inside a step reports THAT step rather than the last one that finished. Synchronous and
- * never throwing by contract -- the instrument must never be the reason a pass fails. Optional:
- * foreground callers run without it and only the headless cycle supplies the store.
- */
-export type SyncCycleCheckpointRecorder = (stage: SyncCycleStage) => void;
-
-/**
  * What only the CALLER can supply about the cycle it is running.
  *
  * The snapshot in particular has to be captured by the caller, before it records the attempt
- * start: `recordSyncAttemptStarted` and `recordCycleActive(true)` overwrite the exact fields the
- * post-mortem reads, so a snapshot taken any later would describe THIS cycle and report every
- * previous one as `never_closed`. Reconcile fills in what only IT knows -- pending count and
- * cursor -- and the two halves meet at `resolveClientTelemetry`.
+ * start: `recordSyncAttemptStarted` overwrites the exact fields the post-mortem reads, so a
+ * snapshot taken any later would describe THIS cycle and report every previous one as
+ * `never_closed`. Reconcile fills in what only IT knows -- pending count and cursor -- and the two
+ * halves meet at `resolveClientTelemetry`.
  */
 export interface ReconcileTelemetryContext {
   readonly cycleId: string;
@@ -53,7 +31,6 @@ export interface ReconcileTelemetryContext {
 
 /** Input to `applyReconcileResponseWrites`, one field per write source this cycle produced. */
 export interface ApplyReconcileResponseWritesParams {
-  readonly applyMode: ReconcileApplyMode;
   readonly normalizedChanges: readonly RemoteAnimeChange[];
   readonly confirmedAnimeTokens: readonly ConfirmedAnimeToken[];
   readonly conflictOutcomes: readonly ConflictOutcome[];
@@ -99,7 +76,6 @@ export interface SplitRoundOutcome extends ReconcileRoundOutcome {
 
 /** What one reconcile round needs that stays fixed, or is carried forward, across a chain. */
 export interface ReconcileRoundContext {
-  readonly applyMode: ReconcileApplyMode;
   readonly connection: BridgeConnection;
   readonly deviceId: string | undefined;
   readonly bridgeConfigId: number;
@@ -110,7 +86,6 @@ export interface ReconcileRoundContext {
   readonly claim: OutboxClaim;
   /** Epoch ms after which no further row is claimed for the chain (ADR 009 R-14). */
   readonly chainDeadline: number;
-  readonly checkpointRecorder?: SyncCycleCheckpointRecorder;
 }
 
 /** What one reconcile round produced, and the rows the chain sends next. */

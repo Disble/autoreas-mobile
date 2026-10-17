@@ -6,11 +6,10 @@ import type {
   SyncExecutionStrategy,
 } from '../../../src/features/sync/sync-execution-strategy.types';
 
-/** Builds a stub `SyncExecutionStrategy` reporting the given mode/status/exemption. */
+/** Builds a stub `SyncExecutionStrategy` reporting the given mode/status. */
 function createStrategy(
   mode: SyncExecutionStrategy['mode'],
   registrationStatus: 'registered' | 'unregistered' | 'unsupported',
-  isBatteryOptimizationExempt = false,
 ): SyncExecutionStrategy {
   const isForegroundServiceRunning =
     mode === 'android_foreground_service' && registrationStatus === 'registered';
@@ -27,36 +26,11 @@ function createStrategy(
       isForegroundServiceRunning,
       canShowPersistentNotification: isForegroundServiceRunning,
       isBackgroundTaskRegistered,
-      isBatteryOptimizationExempt,
     })),
   };
 }
 
 describe('sync-execution-facade', () => {
-  it('selects the first registered strategy and exposes its status', async () => {
-    const bestEffort = createStrategy('best_effort_background_task', 'registered');
-    const foreground = createStrategy('android_foreground_service', 'registered');
-
-    const facade = createSyncExecutionFacade({
-      strategies: [foreground, bestEffort],
-    });
-
-    expect(facade.hasCurrentStrategy()).toBe(false);
-
-    await facade.registerPreferredStrategy();
-
-    expect(facade.hasCurrentStrategy()).toBe(true);
-
-    await expect(facade.getStatus()).resolves.toEqual({
-      registrationStatus: 'registered',
-      executionMode: 'android_foreground_service',
-      isForegroundServiceRunning: true,
-      canShowPersistentNotification: true,
-      isBackgroundTaskRegistered: false,
-      isBatteryOptimizationExempt: false,
-    });
-  });
-
   it('reports the safe fallback status before any strategy registers', async () => {
     const foreground = createStrategy('android_foreground_service', 'unregistered');
 
@@ -70,61 +44,10 @@ describe('sync-execution-facade', () => {
       isForegroundServiceRunning: false,
       canShowPersistentNotification: false,
       isBackgroundTaskRegistered: false,
-      isBatteryOptimizationExempt: false,
     });
   });
 
-  it('falls back to best-effort when the preferred strategy is unsupported', async () => {
-    const unsupportedForeground = createStrategy('android_foreground_service', 'unsupported');
-    const bestEffort = createStrategy('best_effort_background_task', 'registered');
-
-    const facade = createSyncExecutionFacade({
-      strategies: [unsupportedForeground, bestEffort],
-    });
-
-    await facade.registerPreferredStrategy();
-
-    expect(bestEffort.register).toHaveBeenCalledTimes(1);
-    await expect(facade.getStatus()).resolves.toEqual({
-      registrationStatus: 'registered',
-      executionMode: 'best_effort_background_task',
-      isForegroundServiceRunning: false,
-      canShowPersistentNotification: false,
-      isBackgroundTaskRegistered: true,
-      isBatteryOptimizationExempt: false,
-    });
-  });
-
-  it('does not re-register when a current strategy already exists', async () => {
-    const foreground = createStrategy('android_foreground_service', 'registered');
-
-    const facade = createSyncExecutionFacade({
-      strategies: [foreground],
-    });
-
-    await facade.registerPreferredStrategy();
-    await facade.registerPreferredStrategy();
-
-    expect(foreground.register).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to the last strategy when none reports registered, rather than leaving no current strategy', async () => {
-    const foreground = createStrategy('android_foreground_service', 'unsupported');
-    const bestEffort = createStrategy('best_effort_background_task', 'unregistered');
-
-    const facade = createSyncExecutionFacade({
-      strategies: [foreground, bestEffort],
-    });
-
-    await facade.registerPreferredStrategy();
-
-    expect(facade.hasCurrentStrategy()).toBe(true);
-    await expect(facade.getStatus()).resolves.toMatchObject({
-      executionMode: 'best_effort_background_task',
-    });
-  });
-
-  it('unregisters the single preferred strategy, and no-ops when nothing is currently registered', async () => {
+  it('no-ops on unregister when nothing is currently registered', async () => {
     const foreground = createStrategy('android_foreground_service', 'registered');
 
     const facade = createSyncExecutionFacade({
@@ -132,12 +55,8 @@ describe('sync-execution-facade', () => {
     });
 
     await facade.unregisterCurrentStrategy();
+
     expect(foreground.unregister).not.toHaveBeenCalled();
-
-    await facade.registerPreferredStrategy();
-    await facade.unregisterCurrentStrategy();
-
-    expect(foreground.unregister).toHaveBeenCalledTimes(1);
     expect(facade.hasCurrentStrategy()).toBe(false);
   });
 
@@ -162,7 +81,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
       });
     });
 
@@ -182,27 +100,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
-      });
-    });
-
-    it('OR-merges the battery-optimization exemption so one strategy reporting it does not get dropped', async () => {
-      const foreground = createStrategy('android_foreground_service', 'registered', true);
-      const bestEffort = createStrategy('best_effort_background_task', 'registered', false);
-
-      const facade = createSyncExecutionFacade({
-        strategies: [foreground, bestEffort],
-      });
-
-      await facade.registerConcurrentStrategies();
-
-      await expect(facade.getStatus()).resolves.toEqual({
-        registrationStatus: 'registered',
-        executionMode: 'android_foreground_service',
-        isForegroundServiceRunning: true,
-        canShowPersistentNotification: true,
-        isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: true,
       });
     });
 
@@ -259,7 +156,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       });
     });
 
@@ -279,7 +175,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
       });
     });
 
@@ -315,7 +210,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       });
     });
 
@@ -345,7 +239,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       });
     });
   });
@@ -397,7 +290,6 @@ describe('sync-execution-facade', () => {
             isForegroundServiceRunning: isForegroundServiceUp,
             canShowPersistentNotification: true,
             isBackgroundTaskRegistered: false,
-            isBatteryOptimizationExempt: false,
           }),
         ),
       };
@@ -417,7 +309,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       });
 
       isFloorRegistered = true;
@@ -430,7 +321,6 @@ describe('sync-execution-facade', () => {
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: true,
-        isBatteryOptimizationExempt: false,
       });
     });
   });

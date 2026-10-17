@@ -20,7 +20,6 @@ function strategy(mode: SyncExecutionStrategy['mode'], running: boolean, pending
       isForegroundServiceRunning: mode === 'android_foreground_service' && running,
       canShowPersistentNotification: mode === 'android_foreground_service',
       isBackgroundTaskRegistered: mode === 'best_effort_background_task' && running,
-      isBatteryOptimizationExempt: false,
     })),
   };
 }

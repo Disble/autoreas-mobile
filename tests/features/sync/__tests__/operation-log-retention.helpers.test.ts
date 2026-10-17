@@ -1,30 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { withLocalWrite } from '../../../../src/infrastructure/db/client/client.helpers';
-import {
-  DEFAULT_OPERATION_LOG_RETENTION_POLICY,
-  OPERATION_LOG_RETENTION_DAY_IN_MS,
-} from '../../../../src/features/sync/operation-log-retention.constants';
 import {
   countOperationLogBacklogRows,
-  countPendingOperationLog,
-  pruneOperationLog,
   readOperationLogBacklog,
 } from '../../../../src/features/sync/operation-log-retention.helpers';
 import type { OperationLogCountRow } from '../../../../src/features/sync/operation-log-retention.types';
 
-jest.mock('../../../../src/infrastructure/db/client/client.helpers', () => ({
-  withLocalWrite: jest.fn(),
-}));
-
-describe('operation log retention helpers', () => {
+describe('operation log backlog helpers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (withLocalWrite as jest.Mock).mockImplementation(
-      async (
-        rawDb: SQLiteDatabase,
-        task: (db: unknown, tx: SQLiteDatabase) => Promise<unknown>,
-      ) => task({}, rawDb),
-    );
   });
 
   it('reads a bounded backlog ordered from oldest to newest', async () => {
@@ -60,7 +43,7 @@ describe('operation log retention helpers', () => {
   it('counts as 0 when the COUNT query returns no row', async () => {
     const rawDb = buildRawDb({ getFirstAsync: jest.fn().mockResolvedValue(null) });
 
-    await expect(countPendingOperationLog(rawDb)).resolves.toBe(0);
+    await expect(countOperationLogBacklogRows(rawDb, ['pending'])).resolves.toBe(0);
   });
 
   it('returns an empty backlog without querying when status is empty', async () => {
@@ -87,91 +70,6 @@ describe('operation log retention helpers', () => {
 
     expect(result).toEqual([]);
     expect(rawDb.getAllAsync).not.toHaveBeenCalled();
-  });
-
-  it('counts pending operation-log rows without materializing the queue', async () => {
-    const rawDb = buildRawDb({
-      getFirstAsync: jest.fn().mockResolvedValue({ count: 27 }),
-    });
-
-    await expect(countPendingOperationLog(rawDb)).resolves.toBe(27);
-    expect(rawDb.getFirstAsync).toHaveBeenCalledWith(
-      'SELECT COUNT(*) AS count FROM operation_log WHERE status = ?',
-      'pending',
-    );
-  });
-
-  it('prunes only synced rows using ttl first and max-count second', async () => {
-    // Fixture is derived from the DEFAULT policy so this stays correct as the
-    // policy's ttlDays/maxCount values evolve: overflow only fires strictly
-    // above maxCount (`Math.max(0, currentCount - maxCount)`).
-    const now = 1_000_000;
-    const syncedCount = DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.maxCount + 1;
-    const syncedCutoff =
-      now - DEFAULT_OPERATION_LOG_RETENTION_POLICY.synced.ttlDays * OPERATION_LOG_RETENTION_DAY_IN_MS;
-
-    const rawDb = buildRawDb({
-      getFirstAsync: jest.fn().mockResolvedValueOnce({ count: syncedCount }),
-      runAsync: jest
-        .fn()
-        .mockResolvedValueOnce({ changes: 2 })
-        .mockResolvedValueOnce({ changes: 1 }),
-    });
-
-    const result = await pruneOperationLog(rawDb, {
-      ...DEFAULT_OPERATION_LOG_RETENTION_POLICY,
-      now: () => now,
-    });
-
-    // Both deletes must route through the file-keyed write door, not raw `rawDb.runAsync`
-    // called outside it -- a write bypassing the door is a defect (local-write-serialization spec).
-    expect(withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-
-    expect(result).toEqual({ deletedSyncedCount: 3 });
-    expect(rawDb.getFirstAsync).toHaveBeenCalledWith(
-      'SELECT COUNT(*) AS count FROM operation_log WHERE status = ?',
-      'synced',
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(2);
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining("WHERE status = 'synced' AND created_at < ?"),
-      syncedCutoff,
-    );
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      2,
-      expect.stringMatching(/WHERE status = 'synced'\s+ORDER BY created_at ASC, id ASC\s+LIMIT \?/),
-      1,
-    );
-  });
-
-  it('skips the max-count delete when synced rows are still under the cap after ttl pruning', async () => {
-    const rawDb = buildRawDb({
-      getFirstAsync: jest.fn().mockResolvedValueOnce({ count: 1 }),
-      runAsync: jest.fn().mockResolvedValueOnce({ changes: 0 }),
-    });
-
-    const result = await pruneOperationLog(rawDb, {
-      ...DEFAULT_OPERATION_LOG_RETENTION_POLICY,
-      now: () => 1_000_000,
-    });
-
-    expect(result).toEqual({ deletedSyncedCount: 0 });
-    // Only the TTL delete ran; the max-count delete did not fire.
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(1);
-  });
-
-  it('defaults to DEFAULT_OPERATION_LOG_RETENTION_POLICY when the caller omits one', async () => {
-    const rawDb = buildRawDb();
-
-    const result = await pruneOperationLog(rawDb);
-
-    expect(result).toEqual({ deletedSyncedCount: 0 });
-    expect(rawDb.runAsync).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining("WHERE status = 'synced' AND created_at < ?"),
-      expect.any(Number),
-    );
   });
 });
 

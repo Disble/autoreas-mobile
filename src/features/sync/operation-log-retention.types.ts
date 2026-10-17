@@ -46,30 +46,6 @@ export interface OperationLogQueryParams {
 }
 
 /**
- * Defines the retention rule for `synced` operation-log rows: TTL first, then max-count.
- */
-export interface OperationLogRetentionRule {
-  readonly ttlDays: number;
-  readonly maxCount: number;
-}
-
-/**
- * Defines the retention policy used for pruning. Only `synced` rows are pruned; given-up rows
- * are unresolved keys and are never pruned (ADR 009 R-16b).
- */
-export interface OperationLogRetentionPolicy {
-  readonly synced: OperationLogRetentionRule;
-  readonly now: () => number;
-}
-
-/**
- * Defines the observable result returned after pruning `synced` operation-log rows.
- */
-export interface OperationLogPruneResult {
-  readonly deletedSyncedCount: number;
-}
-
-/**
  * Defines the aggregate count row returned by lightweight operation-log count queries.
  */
 export interface OperationLogCountRow {

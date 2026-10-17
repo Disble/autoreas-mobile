@@ -21,9 +21,8 @@ import type {
  * no `start`/`stop` pairing and no request/response like the exemption flow.
  *
  * This is the one signal a headless caller can trust for "is the foreground service actually
- * running right now": the adapter's own in-memory `isForegroundServiceRunning` and the ticker
- * seam's `isRunning()` are plain JS closure state that always starts at `false` in a fresh
- * process, and the persisted `sync_runtime_status` snapshot is written only by the live
+ * running right now": the adapter's own in-memory `isForegroundServiceRunning` is plain JS
+ * closure state that always starts at `false` in a fresh process, and the persisted `sync_runtime_status` snapshot is written only by the live
  * foreground runtime, so it goes stale exactly when the service dies silently in the background.
  * The native check queries `NotificationManager.getActiveNotifications()` for the given channel
  * id -- a foreground-service notification cannot outlive its service, so this is a faithful

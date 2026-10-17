@@ -134,8 +134,8 @@ describe('normalizeSyncCycleErrorStage y normalizeSyncCycleStage', () => {
   });
 
   it('distingue los dos writes que siguen a config en vez de plegarlos ahí', () => {
-    // `recordSyncAttemptStarted` y `recordCycleActive(true)` son escrituras awaited por la
-    // puerta compartida. Con la puerta trabada desde un ciclo anterior, el ciclo muere en UNA
+    // `attempt_started` y `cycle_activated` nombran escrituras awaited por la puerta
+    // compartida. Con la puerta trabada desde un ciclo anterior, el ciclo muere en UNA
     // de ellas. Plegarlas en `config` culparía a una lectura que sí completó.
     expect(normalizeSyncCycleStage('attempt_started')).toBe('attempt_started');
     expect(normalizeSyncCycleStage('cycle_activated')).toBe('cycle_activated');

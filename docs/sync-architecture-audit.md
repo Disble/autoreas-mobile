@@ -224,29 +224,29 @@ sequenceDiagram
 
 | Item | Evidence |
 |---|---|
-| `useReconcile` | `use-reconcile.ts:6` |
-| `useIncrementalSyncHandler` | referenced by tests only |
-| `initialSync`, `persistInitialSyncSnapshot` | `use-initial-sync.ts:9`, `initial-sync.helpers.ts:42`; pairing uses `fetchInitialSyncSnapshot` + `persistPairedBridgeConfiguration` |
-| JS `pruneOperationLog` (prune is Kotlin-only) | `operation-log-retention.helpers.ts:195` |
-| `recordBacklogReadCount`, `recordCycleActive`, `readOperationLogConvergence`, `countPendingOperationLog` | `sync-runtime-status.helpers.ts:382,393`, `operation-log-convergence.helpers.ts:31` |
-| `registerPreferredStrategy` | `sync-execution-facade.helpers.ts:96` |
-| `bridgeClient.getStatus` (JS), `ticker.isRunning` | `bridge-client.helpers.ts:247`, `native-foreground-sync-ticker.helpers.ts:58` |
-| `SyncEngine.runOnce` AsyncFunction | `SyncEngineModule.kt:74` |
-| The whole `SyncJournal` module (4 functions) | `SyncJournalModule.kt:188-219` |
-| JS `applyMode: 'staged'` branch and `stagePendingRemoteChanges` from JS | `reconcile.helpers.ts:198-199, 449-452` |
-| `sync_runtime_status` columns that nothing writes: `last_pruned_operations_count`, `last_*_count`, `last_oldest_pending_age_ms`, `foreground_service_callback_started_at`, `last_no_op_reason`, … | `client.constants.ts:37-46`; the only writer is the dead `recordBacklogReadCount` |
+| `useReconcile` | `use-reconcile.ts:6`. Removed earlier (b0ab853). |
+| `useIncrementalSyncHandler` | referenced by tests only. **Removed in convergent-sync T16.** |
+| `initialSync`, `persistInitialSyncSnapshot` | `use-initial-sync.ts:9`, `initial-sync.helpers.ts:42`; pairing uses `fetchInitialSyncSnapshot` + `persistPairedBridgeConfiguration`. **Removed in convergent-sync T16.** |
+| JS `pruneOperationLog` (prune is Kotlin-only) | `operation-log-retention.helpers.ts:195`. **Removed in convergent-sync T16.** `OperationLogPrunerTest` pins every case. |
+| `recordBacklogReadCount`, `recordCycleActive`, `readOperationLogConvergence`, `countPendingOperationLog` | `sync-runtime-status.helpers.ts:382,393`, `operation-log-convergence.helpers.ts:31` **Removed in convergent-sync T16.** |
+| `registerPreferredStrategy` | `sync-execution-facade.helpers.ts:96`. **Removed in convergent-sync T16.** |
+| `bridgeClient.getStatus` (JS), `ticker.isRunning` | `bridge-client.helpers.ts:247`, `native-foreground-sync-ticker.helpers.ts:58`. Removed from JS in convergent-sync T16 (the native `isRunning` stays: `modules/foreground-sync-ticker` is outside that change). |
+| `SyncEngine.runOnce` AsyncFunction | `SyncEngineModule.kt:74`. **Removed in convergent-sync T16.** Its `SyncEngineProcess` guard and `CycleOutcome.toMap` went with it. |
+| The whole `SyncJournal` module (4 functions) | `SyncJournalModule.kt:188-219`. Kept: `modules/sync-journal` was outside T16's edit surface. |
+| JS `applyMode: 'staged'` branch and `stagePendingRemoteChanges` from JS | `reconcile.helpers.ts:198-199, 449-452`. The `staged` branch was removed in convergent-sync T16; `stagePendingRemoteChanges` stays, the drain still keeps deferred changes staged. |
+| `sync_runtime_status` columns that nothing writes: `last_pruned_operations_count`, `last_*_count`, `last_oldest_pending_age_ms`, `foreground_service_callback_started_at`, `last_no_op_reason`, … | `client.constants.ts:37-46`; the only writer is the dead `recordBacklogReadCount` Kept: dropping a column is a migration, outside T16. |
 
 ### 4.4 Dead-end (runs, but nothing consumes the result)
 
 | Item | Evidence |
 |---|---|
-| `telemetryContext` / `checkpointRecorder`: no caller passes them, so `client_telemetry`, cycle envelopes and checkpoints are never built in JS | `reconcile.helpers.ts:69-78, 346-360`, `sync-diagnostics-flush.helpers.ts:315` |
-| In-memory diagnostic ring: written from 8 files, never read | `sync-diagnostic-store.helpers.ts:16,65` |
+| `telemetryContext` / `checkpointRecorder`: no caller passes them, so `client_telemetry`, cycle envelopes and checkpoints are never built in JS | `reconcile.helpers.ts:69-78, 346-360`, `sync-diagnostics-flush.helpers.ts:315` `checkpointRecorder` removed in convergent-sync T16; `telemetryContext` and the telemetry path kept, waiting on a delete-or-wire decision. |
+| In-memory diagnostic ring: written from 8 files, never read | `sync-diagnostic-store.helpers.ts:16,65` Kept, waiting on the same decision. |
 | About 18 `sync_runtime_status` telemetry columns, written by JS and Kotlin and read only through the dead telemetry path | `sync-runtime-status-patch.helpers.ts:39-171`, `SyncEngineRuntimeStatus.kt:154-175` |
-| `isBatteryOptimizationExempt` in `SyncExecutionStatus`: merged, then dropped by the patch builder | `sync-execution-facade.helpers.ts:56` |
-| Native diagnostics drain tally: computed, then discarded | `SyncEngineCycle.kt:200-208` |
-| Recovery state `pruned`: the cycle never moves into it | `SyncEngineRecovery.kt:16` |
-| `normalizeFetchedAnime`: identity function | `full-resync.helpers.ts:15-28` |
+| `isBatteryOptimizationExempt` in `SyncExecutionStatus`: merged, then dropped by the patch builder | `sync-execution-facade.helpers.ts:56` **Removed in convergent-sync T16.** Settings reads the exemption through its own hook. |
+| Native diagnostics drain tally: computed, then discarded | `SyncEngineCycle.kt:200-208` Kept: the courier's tests read the tally. |
+| Recovery state `pruned`: the cycle never moves into it | `SyncEngineRecovery.kt:16` Kept: a journal written by an older build can still hold an in-flight `pruned` row. |
+| `normalizeFetchedAnime`: identity function | `full-resync.helpers.ts:15-28` Kept: its suite feeds wire-shaped fixtures through the success branch; removing it means rewriting those fixtures. |
 | `operation_log.conflict_attempt_count` read by Kotlin and never used | `SyncEngineCycle.kt:27,436`, `ReconcileRequestBody.kt:18` |
 
 ### 4.5 Legacy (superseded, or duplicated across JS and Kotlin)

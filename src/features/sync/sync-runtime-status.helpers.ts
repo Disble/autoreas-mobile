@@ -4,15 +4,12 @@ import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/
 import { syncRuntimeStatus, type SyncRuntimeStatusRow } from '../../infrastructure/db/schema';
 import { SYNC_RUNTIME_STATUS_SINGLETON_ID } from './sync-runtime-status.constants';
 import {
-  buildCycleActivePatch,
-  buildCycleBookkeepingPatch,
   buildSyncAttemptFailedPatch,
   buildSyncAttemptStartedPatch,
   buildSyncAttemptSucceededPatch,
   createEmptySyncRuntimeStatusSnapshot,
 } from './sync-runtime-status-patch.helpers';
 import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
-import type { OperationLogConvergence } from './operation-log-convergence.types';
 import type {
   SyncAttemptFailureDetail,
   SyncRuntimeStatusPatch,
@@ -335,8 +332,7 @@ export async function recordSyncAttemptStarted(
  * caller holds one. Supplying it folds the flush counters (`discarded`, `undeliverable`,
  * `unclassified`, `reaped`) into this SAME write, which is how the foreground coordinated
  * cycle records them without a second status transaction -- that path performs no other status
- * write. A caller with no flush evidence (the headless cycle, which writes its own bookkeeping
- * through `recordBacklogReadCount`) leaves those columns exactly as they were.
+ * write. A caller with no flush evidence leaves those columns exactly as they were.
  */
 export async function recordSyncAttemptSucceeded(
   rawDb: SQLiteDatabase,
@@ -372,33 +368,5 @@ export async function recordSyncAttemptFailed(
   await persistSyncRuntimeStatusPatch(
     rawDb,
     buildSyncAttemptFailedPatch(triggerSource, attemptedAt, message, detail),
-  );
-}
-
-/**
- * Persists whether a sync cycle is currently active.
- * Headless cycles toggle this around reconcile and pruning so the UI reflects live work.
- */
-export async function recordCycleActive(rawDb: SQLiteDatabase, isActive: boolean) {
-  await persistSyncRuntimeStatusPatch(rawDb, buildCycleActivePatch(isActive));
-}
-
-/**
- * Persists one cycle's post-reconcile bookkeeping: the bounded backlog read size, the
- * diagnostics-outbox flush and write-failure counters, and the operation-log convergence
- * projection, all folded into the SAME read-modify-write this function already performed before
- * `2026-09-09-convergence-instrumentation` widened it (design.md Decision 6) -- the write door
- * gains zero new transactions.
- */
-export async function recordBacklogReadCount(
-  rawDb: SQLiteDatabase,
-  backlogReadCount: number,
-  diagnosticsFlush: SyncDiagnosticsFlushResult,
-  outboxFailedWriteCount: number,
-  convergence: OperationLogConvergence,
-) {
-  await persistSyncRuntimeStatusPatch(
-    rawDb,
-    buildCycleBookkeepingPatch(backlogReadCount, diagnosticsFlush, outboxFailedWriteCount, convergence),
   );
 }

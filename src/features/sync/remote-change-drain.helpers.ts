@@ -64,7 +64,7 @@ export async function applyStagedAndIncomingRemoteChanges(
     loadPendingOutboxRecordIds(writeDb),
   ]);
   const ctx: MergeContext = { guardByRecordId, pendingOutboxRecordIds };
-  const result = await applyRemoteChanges(writeDb, changes, ctx, 'deferred');
+  const result = await applyRemoteChanges(writeDb, changes, ctx);
   const consumedStagingIds: number[] = [];
   const keptIncoming: RemoteAnimeChange[] = [];
 
@@ -112,12 +112,8 @@ export async function drainPendingRemoteChanges(
   const staged = await loadPendingRemoteChanges(createDrizzleDb(rawDb));
 
   if (staged.length === 0) {
-    return { applied: 0, dropped: 0, deferred: 0, rejected: 0, drainedCount: 0 };
+    return { applied: 0, dropped: 0, deferred: 0, rejected: 0 };
   }
 
-  const result = await withLocalWrite(rawDb, (writeDb) =>
-    applyStagedAndIncomingRemoteChanges(writeDb, []),
-  );
-
-  return { ...result, drainedCount: staged.length };
+  return withLocalWrite(rawDb, (writeDb) => applyStagedAndIncomingRemoteChanges(writeDb, []));
 }

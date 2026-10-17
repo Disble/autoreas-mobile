@@ -283,8 +283,7 @@ describe('sync diagnostics outbox store', () => {
 
   describe('a rerun with the same cycle_id (Decision 3, guard cycle #6)', () => {
     it('leaves created_at unchanged on a repeated insert for the same cycle_id', () => {
-      // Simulates `syncPendingOperations`'s rerun loop re-entering `performSyncPendingOperations`
-      // with the same telemetryContext, and therefore the same cycle_id (reconcile.helpers.ts:119-126).
+      // The same envelope enqueued twice under one cycle_id.
       const opener = buildOpener();
       let clock = 1_000;
       const store = createSyncDiagnosticsOutboxStore({ openDatabase: opener.open, now: () => clock });

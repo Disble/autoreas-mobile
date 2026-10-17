@@ -76,7 +76,7 @@ describe('drainPendingRemoteChanges', () => {
     const rawDb = { name: 'drain-db' };
     const result = await drainPendingRemoteChanges(rawDb as never);
 
-    expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, rejected: 0, drainedCount: 0 });
+    expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, rejected: 0 });
     expect(mockWithDeferredWrite).not.toHaveBeenCalled();
     expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
   });
@@ -120,10 +120,9 @@ describe('drainPendingRemoteChanges', () => {
         guardByRecordId: expect.any(Map),
         pendingOutboxRecordIds: expect.any(Set),
       }),
-      'deferred',
     );
     expect(mockDeletePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [1, 2]);
-    expect(result).toEqual({ applied: 2, dropped: 0, deferred: 0, drainedCount: 2 });
+    expect(result).toEqual({ applied: 2, dropped: 0, deferred: 0 });
   });
 
   it('deletes drained staging rows even when applyRemoteChanges drops them', async () => {
@@ -149,7 +148,7 @@ describe('drainPendingRemoteChanges', () => {
     const result = await drainPendingRemoteChanges(rawDb as never);
 
     expect(mockDeletePendingRemoteChanges).toHaveBeenCalledWith(writeDb, [5]);
-    expect(result).toEqual({ applied: 0, dropped: 1, deferred: 0, drainedCount: 1 });
+    expect(result).toEqual({ applied: 0, dropped: 1, deferred: 0 });
   });
 });
 

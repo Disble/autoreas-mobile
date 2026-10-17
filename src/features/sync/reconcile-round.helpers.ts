@@ -21,7 +21,6 @@ import {
   readHeldOperationIds,
 } from './outbox-claim.helpers';
 import type { OutboxClaim } from './outbox-claim.types';
-import { stagePendingRemoteChanges } from './pending-remote-changes.helpers';
 import { getConfirmedOperationIds } from './reconcile-confirmation.helpers';
 import { classifyUnconfirmedOperations } from './reconcile-conflict.helpers';
 import { buildReconcileRequestBody } from './reconcile-request.helpers';
@@ -32,10 +31,8 @@ import type {
   ApplyReconcileResponseWritesParams,
   ReconcileRoundContext,
   ReconcileRoundOutcome,
-  SyncCycleCheckpointRecorder,
 } from './reconcile.types';
 import { applyStagedAndIncomingRemoteChanges } from './remote-change-drain.helpers';
-import type { SyncCycleStage } from './sync-runtime-status.types';
 import type { ConfirmedOperation } from './unresolved-key.types';
 import { logAutomaticResolutions, resolveSupersededOperations } from './unresolved-supersede.helpers';
 
@@ -59,18 +56,6 @@ function isMessageRejection(error: unknown): error is ReconcileHttpError {
   return isPermanentReconcileError(error) && error.status !== RECONCILE_UNAUTHORIZED_STATUS;
 }
 
-/** Publishes one ENTRY checkpoint; missing recorder no-ops, raising recorder is swallowed. */
-export function publishCheckpoint(
-  checkpoint: SyncCycleCheckpointRecorder | undefined,
-  stage: SyncCycleStage,
-): void {
-  try {
-    checkpoint?.(stage);
-  } catch {
-    // Swallowed by contract: see the JSDoc above.
-  }
-}
-
 /**
  * Logs the failed request next to the response that rejected it.
  * The bridge's body names what was wrong but not what was sent, so a status alone is not
@@ -92,7 +77,7 @@ function logReconcileHttpError(
 
 /**
  * Applies every write this cycle's response produced, all inside the ONE shared write door the
- * caller already opened. Extracted out of `performSyncPendingOperations` to keep that function's
+ * caller already opened. Extracted out of `syncPendingOperations` to keep that function's
  * cognitive complexity under threshold (constraint: "Complexity Budget Note") -- this function
  * owns nothing about WHEN to run (that stays `withLocalWrite`'s job), only WHAT to write and in
  * what order, per design.md Decision 1/2 (extended to Part 2's conflict outcomes, which are
@@ -103,7 +88,6 @@ async function applyReconcileResponseWrites(
   params: ApplyReconcileResponseWritesParams,
 ): Promise<void> {
   const {
-    applyMode,
     normalizedChanges,
     confirmedAnimeTokens,
     conflictOutcomes,
@@ -116,14 +100,10 @@ async function applyReconcileResponseWrites(
     claim,
   } = params;
 
-  if (applyMode === 'staged') {
-    await stagePendingRemoteChanges(writeDb, normalizedChanges);
-  } else {
-    // Staged changes ride along (ADR 009 R-16a): one the outbox deferred in an earlier round is
-    // re-evaluated here, and one deferred now is kept staged, because the cursor below moves past
-    // it in this same transaction and will never return it again.
-    await applyStagedAndIncomingRemoteChanges(writeDb, normalizedChanges);
-  }
+  // Staged changes ride along (ADR 009 R-16a): one the outbox deferred in an earlier round is
+  // re-evaluated here, and one deferred now is kept staged, because the cursor below moves past
+  // it in this same transaction and will never return it again.
+  await applyStagedAndIncomingRemoteChanges(writeDb, normalizedChanges);
 
   // MUST run after the `bridge_changes` apply above: that apply may be what CREATES the row
   // (an `update` for a record the device has never seen falls through to `upsertAnime`), and a
@@ -200,7 +180,7 @@ async function releaseHeldOperations(
  * Reverts a batch claimed `'processing'` back to a retry-eligible state after this cycle failed,
  * or moves it to `dead_letter` when the bridge's own 4xx response says the batch's CONTENT was
  * rejected (see `isPermanentReconcileError`). No-ops for an empty batch. Extracted out of
- * `performSyncPendingOperations`'s `catch` block to keep that function's cognitive complexity
+ * `syncPendingOperations`'s `catch` block to keep that function's cognitive complexity
  * under threshold (constraint: "Complexity Budget Note").
  */
 function revertPendingOperationsOnFailure(
@@ -298,7 +278,7 @@ export async function sendReconcileRound(
   context: ReconcileRoundContext,
   claimedRows: readonly OperationLogRow[],
 ): Promise<ReconcileRoundOutcome> {
-  const { claim, checkpointRecorder, connection, lastChangelogId } = context;
+  const { claim, connection, lastChangelogId } = context;
 
   // The holder re-checks its claim right before the send (ADR 009 R-13): the diagnostics flush
   // above is a network call, and a key whose claim expired and was taken over meanwhile belongs
@@ -325,7 +305,6 @@ export async function sendReconcileRound(
   );
 
   try {
-    publishCheckpoint(checkpointRecorder, 'http');
     const result = await bridgeClient.reconcile(connection, requestBody);
 
     if (!result.ok) {
@@ -335,7 +314,6 @@ export async function sendReconcileRound(
       throw error;
     }
 
-    publishCheckpoint(checkpointRecorder, 'parse_response');
     const parsed = ReconcileResponseSchema.safeParse(result.data);
 
     if (!parsed.success) {
@@ -382,18 +360,10 @@ export async function sendReconcileRound(
 
     const normalizedChanges = bridge_changes.map(normalizeBridgeChange);
 
-    // Route every pulled bridge change through the single merge boundary instead of the old
-    // full-row clobber, on the one shared write door regardless of mode. `applyMode` selects
-    // WHICH TABLE is written, not the transaction mechanism:
-    // - 'deferred' (foreground): writes `animes` directly, so local `useLiveQuery` consumers
-    //   observe the new data immediately.
-    // - 'staged' (background/headless): never touches `animes`; stages into
-    //   `pending_remote_changes` instead, deferring the real apply to the foreground drain
-    //   hook. Non-reactivity comes from the caller's own connection (`enableChangeListener:
-    //   false`), not from a different transaction path here (design.md Decision 4).
-    // Op-log status writes and the changelog cursor advance stay in the same transaction in
-    // both modes so confirmation/cursor bookkeeping never drifts from the apply outcome.
-    publishCheckpoint(checkpointRecorder, 'apply_write');
+    // Route every pulled bridge change through the single merge boundary on the one shared write
+    // door, so local `useLiveQuery` consumers observe the new data immediately. Op-log status
+    // writes and the changelog cursor advance stay in the same transaction so confirmation/cursor
+    // bookkeeping never drifts from the apply outcome.
     const { heldConfirmedCount, successors, resolutions } = await withLocalWrite(rawDb, async (writeDb, tx) => {
       // Re-read inside the door: a key the other runtime took over mid-request is not ours to
       // write, not even its token (ADR 009 R-13); its status writes already miss by CAS.
@@ -415,7 +385,6 @@ export async function sendReconcileRound(
       const confirmedAnimeIds = confirmedOperations.map((operation) => operation.animeId);
 
       await applyReconcileResponseWrites(writeDb, {
-        applyMode: context.applyMode,
         normalizedChanges,
         confirmedAnimeTokens: confirmedAnimeTokens.filter((token) => heldAnimeIds.has(token.animeId)),
         conflictOutcomes: conflictOutcomes.filter((outcome) => stillHeld.has(outcome.operationId)),

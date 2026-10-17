@@ -9,9 +9,8 @@ import type { UseSettingsScreenBatteryExemptionResult } from './settings-screen.
  * (per the project's Facade Hook pattern) so `useSettingsScreen` stays under its complexity and
  * line budget.
  *
- * The exemption is an OS-level fact with no meaningful cached value to hold between reads -- see
- * `SyncExecutionStatus.isBatteryOptimizationExempt`'s own doc for why the adapter reads it fresh
- * too -- so this hook re-reads `isExempt()` on mount and again after every request, rather than
+ * The exemption is an OS-level fact with no meaningful cached value to hold between reads, so
+ * this hook re-reads `isExempt()` on mount and again after every request, rather than
  * trusting a stale answer the user could have changed through the system dialog.
  */
 export function useSettingsScreenBatteryExemption(): UseSettingsScreenBatteryExemptionResult {

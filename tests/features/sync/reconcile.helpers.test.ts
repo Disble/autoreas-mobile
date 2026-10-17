@@ -61,7 +61,7 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
-describe('syncPendingOperations applyMode routing', () => {
+describe('syncPendingOperations remote-change routing', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
@@ -122,7 +122,7 @@ describe('syncPendingOperations applyMode routing', () => {
     });
   });
 
-  it('foreground default mode applies via withLocalWrite + applyRemoteChanges(deferred), never stages', async () => {
+  it('applies via withLocalWrite + applyRemoteChanges, never stages', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
       return task(writeDb, {});
@@ -146,116 +146,8 @@ describe('syncPendingOperations applyMode routing', () => {
         guardByRecordId: expect.any(Map),
         pendingOutboxRecordIds: expect.any(Set),
       }),
-      'deferred',
     );
     expect(mockStagePendingRemoteChanges).not.toHaveBeenCalled();
-  });
-
-  it('explicit deferred mode behaves the same as the default', async () => {
-    const writeDb = {};
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      return task(writeDb, {});
-    });
-
-    const rawDb = { name: 'deferred-reconcile-db-explicit' };
-    await syncPendingOperations(rawDb as never, 'deferred');
-
-    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(mockApplyRemoteChanges).toHaveBeenCalledWith(
-      writeDb,
-      expect.anything(),
-      expect.anything(),
-      'deferred',
-    );
-  });
-
-  it('staged mode stages into pending_remote_changes via the shared write door and never calls applyRemoteChanges', async () => {
-    const writeDb = {};
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      return task(writeDb, {});
-    });
-
-    const rawDb = { name: 'staged-reconcile-db' };
-    await syncPendingOperations(rawDb as never, 'staged');
-
-    expect(dbClient.withLocalWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(mockStagePendingRemoteChanges).toHaveBeenCalledWith(
-      writeDb,
-      expect.arrayContaining([
-        expect.objectContaining({
-          recordId: 'anime-1',
-          changeType: 'update',
-          changedFields: ['estado'],
-          snapshot: expect.objectContaining({ _id: 'anime-1', estado: 2, nombre: 'Test' }),
-        }),
-      ]),
-    );
-    expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
-  });
-
-  it('staged mode never writes to animes directly (no upsert/delete calls outside the merge boundary)', async () => {
-    const updateMock = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
-    const writeDb = { update: updateMock };
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      return task(writeDb, {});
-    });
-
-    const rawDb = { name: 'staged-reconcile-db-no-animes-write' };
-    await syncPendingOperations(rawDb as never, 'staged');
-
-    // operationLog status updates are allowed (no pending ops in this fixture, so update()
-    // is not even called); the key assertion is that the animes table is never touched.
-    expect(mockApplyRemoteChanges).not.toHaveBeenCalled();
-    expect(mockStagePendingRemoteChanges).toHaveBeenCalled();
-  });
-
-  it('staged mode still advances the changelog cursor and op-log statuses in the same staged transaction', async () => {
-    mockReadBacklog.mockResolvedValue([
-      {
-        id: 1,
-        animeId: 'anime-1',
-        operation: 'update',
-        payload: JSON.stringify({ estado: 2 }),
-        status: 'processing',
-        createdAt: 1710000000000,
-      },
-    ]);
-
-    const updateMock = jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
-      where: jest.fn().mockResolvedValue(undefined),
-    });
-    const writeDb = { update: updateMock };
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      return task(writeDb, {});
-    });
-
-    mockReconcile.mockResolvedValue({
-      ok: true,
-      status: 202,
-      url: 'https://192.168.1.10:9876/api/sync/reconcile',
-      rawBody: '{}',
-      data: {
-        status: 'accepted',
-        applied_operations: [],
-        bridge_changes: [
-          {
-            record_id: 'anime-1',
-            change_type: 'update',
-            changed_fields: ['status'],
-            timestamp: 1710000001000,
-          },
-        ],
-        conflicts: [],
-        last_changelog_id: 99,
-      },
-    });
-
-    const rawDb = { name: 'staged-reconcile-db-cursor' };
-    await syncPendingOperations(rawDb as never, 'staged');
-
-    expect(mockStagePendingRemoteChanges).toHaveBeenCalled();
-    expect(updateMock).toHaveBeenCalled();
   });
 
   it('reports hasMorePending: true when the dedup batch suppressed rows behind it (200 pending rows across 3 animes)', async () => {
