@@ -7,6 +7,8 @@ import { useBridgeConfig } from "../settings/use-bridge-config";
 import { useWebSocket } from "../ws/use-websocket";
 import { createSyncExecutionFacade } from "./sync-execution-facade";
 import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
+import { dispatchForegroundSyncFlush } from "./sync-facade.helpers";
+import { registerSyncFlushDispatcher } from "./sync-flush.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
@@ -48,7 +50,7 @@ export function useSyncRuntime(
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
   const { requestSync } = useSyncFacade();
-  const { clearActiveSeason, refreshActiveSeason } = useSeasonSync({
+  const { clearActiveSeason } = useSeasonSync({
     enabled: props.isBootstrapped && isConfigured && currentAppState === "active",
   });
 
@@ -162,7 +164,9 @@ export function useSyncRuntime(
         | "bootstrap"
         | "app_active"
         | "network_regained"
-        | "ws_sync_required",
+        | "ws_sync_required"
+        | "ws_season_changed"
+        | "ws_preferences_changed",
     ) => {
       void requestSync(source).catch(() => undefined);
     },
@@ -173,23 +177,31 @@ export function useSyncRuntime(
     requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
+  // Both WebSocket season events go through the entry point (ADR 009 R-2, I8): the dispatched
+  // cycle refreshes and caches the active season. Season mode switched off is a local clear only;
+  // it asks the bridge for nothing, so there is nothing to send.
   const handlePreferencesChanged = useCallback(
     (seasonMode: boolean) => {
       if (seasonMode) {
-        void refreshActiveSeason().catch(() => undefined);
+        requestAutomaticSync("ws_preferences_changed");
         return;
       }
 
       void clearActiveSeason().catch(() => undefined);
     },
-    [clearActiveSeason, refreshActiveSeason],
+    [clearActiveSeason, requestAutomaticSync],
   );
 
   const handleSeasonChanged = useCallback(() => {
-    void refreshActiveSeason().catch(() => undefined);
-  }, [refreshActiveSeason]);
+    requestAutomaticSync("ws_season_changed");
+  }, [requestAutomaticSync]);
 
   // 7. Effects
+  // The JS dispatcher exists while the foreground runtime is mounted: from here on, every
+  // `requestFlush` (a kick after a local write included) runs the coordinated cycle. Declared
+  // first so the bootstrap request below already finds it.
+  useEffect(() => registerSyncFlushDispatcher(dispatchForegroundSyncFlush), []);
+
   useWebSocket({
     enabled: isWebSocketEnabled,
     onSeasonChanged: handleSeasonChanged,

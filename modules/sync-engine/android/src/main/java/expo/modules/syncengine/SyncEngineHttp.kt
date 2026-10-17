@@ -5,21 +5,25 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** One completed bridge HTTP exchange: status code plus the body actually received. */
+/**
+ * One completed bridge HTTP exchange: status code, the body actually received, and the raw
+ * `Retry-After` header (read only by the diagnostics courier's not-before gate).
+ */
 data class SyncEngineHttpResponse(
   val code: Int,
   val body: String?,
+  val retryAfter: String? = null,
 )
 
 /**
- * Minimal bridge HTTP transport for the native engine: [postJson] issues the reconcile `POST`
- * with a JSON body and the same 10 s connect/read budget as the JS bridge client
- * (`BRIDGE_REQUEST_TIMEOUT_MS`); [get] issues the presence probe's bodyless `GET` with its own,
- * shorter budget ([PRESENCE_PROBE_TIMEOUT_MS]). Deliberately uses `HttpURLConnection` — no new
- * dependency on the sync path.
+ * The native engine's one exit to the bridge (ADR 009 R-2): every request the `:sync` process
+ * makes leaves through here. [postJson] issues the reconcile and diagnostics `POST`s with a JSON
+ * body and the caller's connect/read budget (10 s, `BRIDGE_REQUEST_TIMEOUT_MS`, for reconcile);
+ * [get] issues the bodyless `GET`s (the presence probe, the fetch-first token read) with their
+ * own budgets. Deliberately uses `HttpURLConnection` — no new dependency on the sync path.
  *
- * Transport failures throw; callers ([SyncEngineCycle], [SyncEngineBridgePresence]) own mapping
- * them onto their own outcome.
+ * Transport failures throw; callers ([SyncEngineCycle], [SyncEngineBridgePresence],
+ * [HttpSyncDiagnosticsTransport]) own mapping them onto their own outcome.
  */
 object SyncEngineHttp {
 
@@ -49,7 +53,11 @@ object SyncEngineHttp {
       }
       val code = connection.responseCode
       val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-      return SyncEngineHttpResponse(code, stream?.let { readAll(it) })
+      return SyncEngineHttpResponse(
+        code = code,
+        body = stream?.let { readAll(it) },
+        retryAfter = connection.getHeaderField("Retry-After"),
+      )
     } finally {
       connection.disconnect()
     }

@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
-import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { useBridgeConfig } from '../settings/use-bridge-config';
 import {
   buildPendingOperationsQuery,
   buildUnresolvedSeasonRatingQuery,
   resolveSyncPrerequisites,
-  runCoordinatedForegroundSyncCycle,
 } from './sync-facade.helpers';
 import type { UseSyncFacadeResult } from './sync-facade.types';
-import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
+import { requestFlush } from './sync-flush.helpers';
+import type { SyncFlushReason } from './sync-flush.types';
 import {
   getSyncConnectionSnapshot,
   invalidateSyncConnectionOnline,
-  runSharedForegroundSyncCycle,
   subscribeSyncConnection,
 } from './sync-connection-store/sync-connection-store.helpers';
 
@@ -24,7 +22,6 @@ export function useSyncFacade(): UseSyncFacadeResult {
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
   const { configStatus, isConfigured } = useBridgeConfig();
-  const setActiveSeasonSnapshot = useActiveSeasonStore((state) => state.setActiveSeasonSnapshot);
   const syncConnection = useSyncExternalStore(
     subscribeSyncConnection,
     getSyncConnectionSnapshot,
@@ -58,7 +55,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   });
 
   // 6. Callbacks (`useCallback` calling pure helpers)
-  const requestSync = useCallback((source: SyncRuntimeTriggerSource) => {
+  const requestSync = useCallback((reason: SyncFlushReason) => {
     if (syncPrerequisites === 'missing') {
       invalidateSyncConnectionOnline();
       return Promise.resolve(0);
@@ -71,10 +68,10 @@ export function useSyncFacade(): UseSyncFacadeResult {
       return Promise.resolve(0);
     }
 
-    return runSharedForegroundSyncCycle(rawDb, () =>
-      runCoordinatedForegroundSyncCycle({ rawDb, source, setActiveSeasonSnapshot }),
-    );
-  }, [rawDb, setActiveSeasonSnapshot, syncPrerequisites]);
+    // The single entry point (ADR 009 R-2): it runs the registered dispatcher's cycle, or joins
+    // the one follow-up queued behind a running cycle.
+    return requestFlush(rawDb, reason);
+  }, [rawDb, syncPrerequisites]);
 
   const manualSync = useCallback(() => requestSync('manual'), [requestSync]);
 

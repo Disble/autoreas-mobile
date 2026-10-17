@@ -8,6 +8,7 @@ import { liveClaimFloor } from './outbox-claim.helpers';
 import type { OutboxClaim } from './outbox-claim.types';
 import { DEFAULT_SEASON_RATING_QUEUE_CLOCK } from './season-rating-queue.constants';
 import { invalidateSyncConnectionOnline } from './sync-connection-store/sync-connection-store.helpers';
+import { requestFlush } from './sync-flush.helpers';
 import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
 import { logAutomaticResolutions, resolveSupersededRatings } from './unresolved-supersede.helpers';
 import type {
@@ -46,6 +47,9 @@ export function createSeasonRatingQueueEntry(
 /**
  * Persists one season-rating intent into the dedicated durable queue before runtime delivery.
  * Writing intent first guarantees pending UI truth even when the immediate bridge attempt never starts.
+ * Then it asks the one entry point for a flush (ADR 009 R-2, I1), so a rating made while the
+ * bridge is reachable leaves without waiting for another trigger. The flush outcome is the
+ * dispatched cycle's to publish; the caller only waits for the durable write.
  */
 export async function enqueueSeasonRatingIntent(
   rawDb: SQLiteDatabase,
@@ -59,6 +63,7 @@ export async function enqueueSeasonRatingIntent(
   });
 
   invalidateSyncConnectionOnline();
+  void requestFlush(rawDb, 'season_rating').catch(() => undefined);
 
   return entry;
 }

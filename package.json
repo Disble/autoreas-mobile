@@ -30,7 +30,6 @@
     "@react-navigation/bottom-tabs": "^7.3.10",
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
-    "@tanstack/react-query": "^5.96.2",
     "drizzle-orm": "^0.45.2",
     "expo": "~55.0.28",
     "expo-build-properties": "~55.0.16",

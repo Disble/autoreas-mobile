@@ -2,6 +2,8 @@
 
 Input for [ADR 009](adr/009-convergent-sync.md), which decides the design. This is a read-only audit; no code was changed.
 
+> **Status 2026-10-16 (T11):** I2 and I8 are fixed and I1 is fixed for JS: every outbound path now goes through one entry point and one exit per runtime (ADR 009, R-2 section). The native rating sender waits for T17. The diagrams below still show the audited state.
+>
 > **Corrected on 2026-10-16** after a dual review. I7 was withdrawn. The flow diagram now draws all six drainers. The sequence diagram now shows the presence probe before the lease, and the second writer of `bridge_modified_at` (Kotlin). The I6 citation was fixed. Section 5 is superseded by ADR 009.
 
 **Method.** Two independent explorers mapped the sync system with CodeGraph from opposite ends:

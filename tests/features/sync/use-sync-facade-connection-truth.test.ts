@@ -7,6 +7,8 @@ import * as seasonQueueModule from '../../../src/features/sync/season-rating-que
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
+import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
+import { registerSyncFlushDispatcher, resetSyncFlush } from '../../../src/features/sync/sync-flush.helpers';
 import {
   beginSyncConnectionAttempt,
   markSyncConnectionSucceeded,
@@ -36,6 +38,8 @@ jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
+  writeCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
+  clearCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -60,6 +64,9 @@ describe('useSyncFacade shared connection truth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSyncConnectionStore();
+    resetSyncFlush();
+    // What the mounted foreground runtime does: `requestSync` reaches the cycle through it.
+    registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
 
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockImplementation(

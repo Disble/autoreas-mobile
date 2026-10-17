@@ -110,6 +110,16 @@ jest.mock("../../../src/features/settings/use-bridge-config", () => ({
   useBridgeConfig: jest.fn(),
 }));
 
+// The runtime registers the JS dispatcher; the real one would pull the whole sync cycle into a
+// hook test that mocks its facade, so both ends of the registration are stubbed here.
+jest.mock("../../../src/features/sync/sync-facade.helpers", () => ({
+  dispatchForegroundSyncFlush: jest.fn(),
+}));
+
+jest.mock("../../../src/features/sync/sync-flush.helpers", () => ({
+  registerSyncFlushDispatcher: jest.fn(() => jest.fn()),
+}));
+
 jest.mock("../../../src/features/sync/use-sync-facade", () => ({
   useSyncFacade: jest.fn(),
 }));

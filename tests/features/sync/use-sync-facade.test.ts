@@ -8,6 +8,8 @@ import * as seasonSyncModule from '../../../src/features/sync/season-sync.helper
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
+import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
+import { registerSyncFlushDispatcher, resetSyncFlush } from '../../../src/features/sync/sync-flush.helpers';
 import { deriveVisibleSyncStatus } from '../../../src/features/sync/sync-visible-status.helpers';
 import {
   beginSyncConnectionAttempt,
@@ -39,6 +41,8 @@ jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
+  writeCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
+  clearCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -63,6 +67,9 @@ describe('useSyncFacade', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSyncConnectionStore();
+    resetSyncFlush();
+    // What the mounted foreground runtime does: `requestSync` reaches the cycle through it.
+    registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
 
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (settingsModule.useBridgeConfig as jest.Mock).mockReturnValue({
@@ -121,14 +128,14 @@ describe('useSyncFacade', () => {
     expect(seasonQueueModule.drainSeasonRatingQueue).toHaveBeenCalledWith(rawDb);
   });
 
-  it('collapses simultaneous trigger storms into a single in-flight sync request', async () => {
+  it('collapses a trigger storm into one running cycle plus exactly one follow-up, never in parallel', async () => {
     type SyncResult = { syncedCount: number; backlogReadCount: number; hasMorePending: boolean };
-    let resolveSync: ((value: SyncResult) => void) | null = null;
+    const pendingSyncs: ((value: SyncResult) => void)[] = [];
 
     (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
       () =>
         new Promise<SyncResult>((resolve) => {
-          resolveSync = resolve;
+          pendingSyncs.push(resolve);
         }),
     );
 
@@ -144,15 +151,29 @@ describe('useSyncFacade', () => {
     });
 
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
-    expect(firstPromise).toBe(secondPromise);
 
     await act(async () => {
-      resolveSync?.({ syncedCount: 7, backlogReadCount: 7, hasMorePending: false });
+      pendingSyncs[0]({ syncedCount: 7, backlogReadCount: 7, hasMorePending: false });
       await firstPromise;
     });
 
     await expect(firstPromise).resolves.toBe(7);
-    await expect(secondPromise).resolves.toBe(7);
+
+    await act(async () => {
+      for (let tick = 0; tick < 10 && pendingSyncs.length < 2; tick += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      pendingSyncs[1]({ syncedCount: 2, backlogReadCount: 2, hasMorePending: false });
+      await secondPromise;
+    });
+
+    await expect(secondPromise).resolves.toBe(2);
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(2);
   });
 
   it('publishes the original bridge failure even when telemetry persistence also fails', async () => {
@@ -237,13 +258,13 @@ describe('useSyncFacade', () => {
     expect(result.current.connectionStatus).not.toBe('unreachable');
   });
 
-  it('shares one coordinated full cycle across concurrent facade consumers', async () => {
+  it('serializes concurrent facade consumers on one cycle at a time and ends both online', async () => {
     type SyncResult = { syncedCount: number; backlogReadCount: number; hasMorePending: boolean };
-    let resolveReconcile!: (value: SyncResult) => void;
+    const pendingReconciles: ((value: SyncResult) => void)[] = [];
     (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
       () =>
         new Promise<SyncResult>((resolve) => {
-          resolveReconcile = resolve;
+          pendingReconciles.push(resolve);
         }),
     );
 
@@ -258,16 +279,27 @@ describe('useSyncFacade', () => {
       await Promise.resolve();
     });
 
-    expect(firstPromise).toBe(secondPromise);
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
     expect(firstFacade.result.current.connectionStatus).toBe('syncing');
     expect(secondFacade.result.current.connectionStatus).toBe('syncing');
 
     await act(async () => {
-      resolveReconcile({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
+      pendingReconciles[0]({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
       await firstPromise;
+      for (let tick = 0; tick < 10 && pendingReconciles.length < 2; tick += 1) {
+        await Promise.resolve();
+      }
     });
 
+    // The first cycle started before the second request, so only the follow-up may claim online.
+    expect(firstFacade.result.current.connectionStatus).toBe('syncing');
+
+    await act(async () => {
+      pendingReconciles[1]({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+      await secondPromise;
+    });
+
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(2);
     expect(firstFacade.result.current.connectionStatus).toBe('online');
     expect(secondFacade.result.current.connectionStatus).toBe('online');
   });

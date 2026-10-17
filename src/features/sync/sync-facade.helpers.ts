@@ -2,12 +2,13 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { and, eq, inArray, not } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import { operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
+import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
-import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
+import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
 import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
 import {
   recordSyncAttemptFailed,
@@ -27,6 +28,7 @@ import type {
   RunCoordinatedForegroundSyncCycleInput,
   SyncPrerequisiteVerdict,
 } from './sync-facade.types';
+import type { SyncFlushRequest } from './sync-flush.types';
 
 /**
  * Starts a cover sweep once a foreground sync cycle's own attempt has settled -- success, the
@@ -94,6 +96,13 @@ async function persistSyncFailureTelemetrySafely(
  * Reconcile alone is not success: a season rating still queued for retry keeps the cycle pending,
  * and telemetry must complete first. A failing rating never fails the cycle (ADR 009 R-5).
  *
+ * This cycle is the JS dispatcher (ADR 009 R-2) and the one place its outbound kinds are listed,
+ * in send order: anime operations (`syncPendingOperations`, whose pass also carries the
+ * diagnostics outbox), then season ratings (`drainSeasonRatingQueue`). Callers never run it
+ * directly; they enqueue and call `requestFlush`, which runs it through
+ * `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating, or when
+ * the request demands it (the WebSocket season events, I8).
+ *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
  * the destruction and reap counters cost ZERO extra status transactions here. That is the reason the
@@ -113,6 +122,7 @@ export async function runCoordinatedForegroundSyncCycle({
   rawDb,
   source,
   setActiveSeasonSnapshot,
+  refreshActiveSeason = false,
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
 
@@ -128,8 +138,8 @@ export async function runCoordinatedForegroundSyncCycle({
     // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
     const seasonDrainResult = await drainSeasonRatingQueue(rawDb);
 
-    if (seasonDrainResult.shouldRefreshActiveSeason) {
-      setActiveSeasonSnapshot(await fetchActiveSeasonFromBridge(rawDb));
+    if (refreshActiveSeason || seasonDrainResult.shouldRefreshActiveSeason) {
+      await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
     }
 
     if (result.hasMorePending || seasonDrainResult.hasMorePending) {
@@ -172,6 +182,19 @@ export async function runCoordinatedForegroundSyncCycle({
     });
     throw failure;
   }
+}
+
+/**
+ * The JS dispatcher the foreground runtime registers with `registerSyncFlushDispatcher`: one
+ * flush request becomes one coordinated cycle, publishing season truth to the shared store.
+ */
+export function dispatchForegroundSyncFlush(request: SyncFlushRequest): Promise<number> {
+  return runCoordinatedForegroundSyncCycle({
+    rawDb: request.database,
+    source: request.source,
+    refreshActiveSeason: request.refreshActiveSeason,
+    setActiveSeasonSnapshot: useActiveSeasonStore.getState().setActiveSeasonSnapshot,
+  });
 }
 
 /**

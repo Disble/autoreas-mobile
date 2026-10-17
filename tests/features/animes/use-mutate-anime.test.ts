@@ -13,26 +13,26 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withLocalWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
-  syncPendingOperations: jest.fn().mockResolvedValue({
-    syncedCount: 0,
-    backlogReadCount: 0,
-    hasMorePending: false,
-  }),
+// The kick after a mutation is a flush request; the cycle it runs has its own tests.
+jest.mock('../../../src/features/sync/sync-flush.helpers', () => ({
+  requestFlush: jest.fn().mockResolvedValue(0),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn().mockResolvedValue(undefined),
 }));
 
+/** Failure telemetry fake: the write-failure cases assert what reaches it. */
 const { recordSyncAttemptFailed: mockRecordSyncAttemptFailed } = jest.requireMock(
   '../../../src/features/sync/sync-runtime-status.helpers'
 ) as { recordSyncAttemptFailed: jest.Mock };
 
+/** SQLite context fake the hook reads its database from. */
 const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite') as {
   useSQLiteContext: jest.Mock;
 };
 
+/** Write-door fakes: the select chain and the `withLocalWrite` callback are driven directly. */
 const {
   createDrizzleDb: mockCreateDrizzleDb,
   withLocalWrite: mockWithDeferredWrite,
@@ -41,14 +41,18 @@ const {
   withLocalWrite: jest.Mock;
 };
 
+/** Shape of the fake drizzle transaction handle `withLocalWrite`'s task callback receives. */
 type MockTxDb = {
   update: jest.Mock;
   insert: jest.Mock;
 };
 
+/** Fixed clock reading every expected timestamp is computed against. */
 const now = 1710000000000;
+/** A dummy raw DB handle: every dependency that would read it is mocked above. */
 const rawDb = { name: 'raw-db' };
 
+/** One `animes` row fixture the fake select chain resolves with. */
 const baseAnimeRow: Record<string, unknown> = {
   _id: 'anime-1',
   nombre: 'One Piece',
@@ -72,6 +76,7 @@ const baseAnimeRow: Record<string, unknown> = {
   tipo: null,
 };
 
+/** Builds the fake drizzle `select` chain, resolving `row` (or nothing). */
 function buildSelectMock(row: Record<string, unknown> | null) {
   const limit = jest.fn().mockResolvedValue(row ? [row] : []);
   const where = jest.fn(() => ({ limit }));
@@ -80,6 +85,7 @@ function buildSelectMock(row: Record<string, unknown> | null) {
   return { select, from, where, limit };
 }
 
+/** Builds the fake `update`/`insert` transaction handle, optionally failing the insert. */
 function createTxDbMocks(options?: { insertError?: Error }) {
   const where = jest.fn().mockResolvedValue(undefined);
   const set = jest.fn(() => ({ where }));
@@ -99,6 +105,7 @@ function createTxDbMocks(options?: { insertError?: Error }) {
   };
 }
 
+/** Runs every `withLocalWrite` task against `txDb`. */
 function mockAnimeDeferredWrite(txDb: MockTxDb) {
   mockWithDeferredWrite.mockImplementation(async (_db, task) => task(txDb, rawDb));
 }
@@ -150,26 +157,27 @@ describe('useMutateAnime', () => {
     });
   });
 
-  it('capPlus dispara syncPendingOperations en background después de mutar', async () => {
-    const { syncPendingOperations: mockSync } = jest.requireMock(
-      '../../../src/features/sync/reconcile.helpers'
-    ) as { syncPendingOperations: jest.Mock };
-    mockSync.mockResolvedValue(1);
-
-    const selectMock = buildSelectMock(baseAnimeRow);
+  it.each([
+    ['capPlus', (mutate: ReturnType<typeof useMutateAnime>) => mutate.capPlus('anime-1')],
+    ['capMinus', (mutate: ReturnType<typeof useMutateAnime>) => mutate.capMinus('anime-1')],
+    ['setEstado', (mutate: ReturnType<typeof useMutateAnime>) => mutate.setEstado('anime-1', 2)],
+  ])('%s pide un flush en background después de mutar', async (_name, mutate) => {
+    const { requestFlush: mockRequestFlush } = jest.requireMock(
+      '../../../src/features/sync/sync-flush.helpers'
+    ) as { requestFlush: jest.Mock };
+    mockRequestFlush.mockResolvedValue(1);
     const txMocks = createTxDbMocks();
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
+    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
     mockAnimeDeferredWrite(txMocks.txDb);
 
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.capPlus('anime-1');
+      await mutate(result.current);
       await Promise.resolve();
     });
 
-    expect(mockSync).toHaveBeenCalledWith(rawDb);
+    expect(mockRequestFlush).toHaveBeenCalledWith(rawDb, 'local_mutation');
   });
 
   it('propaga el error si falla el insert del operation_log', async () => {
@@ -373,28 +381,6 @@ describe('useMutateAnime', () => {
     });
   });
 
-  it('capMinus dispara syncPendingOperations en background después de mutar', async () => {
-    const { syncPendingOperations: mockSync } = jest.requireMock(
-      '../../../src/features/sync/reconcile.helpers'
-    ) as { syncPendingOperations: jest.Mock };
-    mockSync.mockResolvedValue(1);
-
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
-
-    const { result } = renderHook(() => useMutateAnime());
-
-    await act(async () => {
-      await result.current.capMinus('anime-1');
-      await Promise.resolve();
-    });
-
-    expect(mockSync).toHaveBeenCalledWith(rawDb);
-  });
-
   it('setEstado escribe el patch de estado y registra operation_log pendiente', async () => {
     const selectMock = buildSelectMock(baseAnimeRow);
     const txMocks = createTxDbMocks();
@@ -440,28 +426,6 @@ describe('useMutateAnime', () => {
       fechaUltCapVisto: now,
       estado: 1,
     });
-  });
-
-  it('setEstado dispara syncPendingOperations en background', async () => {
-    const { syncPendingOperations: mockSync } = jest.requireMock(
-      '../../../src/features/sync/reconcile.helpers'
-    ) as { syncPendingOperations: jest.Mock };
-    mockSync.mockResolvedValue(1);
-
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
-
-    const { result } = renderHook(() => useMutateAnime());
-
-    await act(async () => {
-      await result.current.setEstado('anime-1', 2);
-      await Promise.resolve();
-    });
-
-    expect(mockSync).toHaveBeenCalledWith(rawDb);
   });
 
   it('capPlusHalf escribe nrocapvisto fraccionario en el patch', async () => {

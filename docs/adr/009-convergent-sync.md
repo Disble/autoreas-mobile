@@ -88,6 +88,17 @@ Both runtimes apply the same fate to the anime outbox; JS applies it to season r
 
 When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating never fails the foreground cycle (I4): a rating left `pending` only keeps the cycle from reporting success.
 
+**R-2: one entry point, one exit per runtime**
+
+Added 2026-10-16 with task T11.
+
+- **JS entry point.** Callers write their intent durably, then call `requestFlush(database, reason)` (`sync-flush.helpers.ts`): the episode and estado mutations, a season rating (I1, JS half), every runtime trigger, and the WebSocket `season_changed` and `preferences_changed` events (I8). Switching season mode off is only a local clear; it sends nothing.
+- **Single flight.** One cycle runs per database. A request during a running cycle schedules exactly one follow-up, which every later request joins; cycles never overlap.
+- **JS dispatcher.** The foreground runtime registers the coordinated cycle (`runCoordinatedForegroundSyncCycle`) as the only dispatcher while it is mounted. That cycle is the one place the JS kinds are listed, in send order: anime operations (whose pass also carries the diagnostics outbox), then season ratings, then the active-season refresh. The episode kick runs it too (I2), so it drains ratings, records started and succeeded status, and can reach `online`. With no dispatcher registered, a request sends nothing: the rows wait for the native engine or the next foreground trigger.
+- **Kotlin exit.** Every request of the `:sync` process leaves through `SyncEngineHttp`, the diagnostics courier included.
+- **Pinned by** `tests/features/sync/single-exit.architecture.test.ts`: each drain and each `BridgeClient` send method has exactly one caller, and only `SyncEngineHttp.kt` opens a connection.
+- **Not yet:** the native rating sender (I1, Kotlin half) lands with T17, when ratings move into `operation_log` and the Kotlin dispatcher sends them from there.
+
 **R-7: bounds on the reconnect catch-up**
 
 - It is single-flight.

@@ -9,13 +9,8 @@ import type {
   SerializedMutationOperation,
 } from './anime-mutation.types';
 import { eq } from 'drizzle-orm';
-import { syncPendingOperations } from '../sync/reconcile.helpers';
-import {
-  beginSyncConnectionAttempt,
-  markSyncConnectionFailed,
-  markSyncConnectionPending,
-  publishSyncConnectionAttempt,
-} from '../sync/sync-connection-store/sync-connection-store.helpers';
+import { invalidateSyncConnectionOnline } from '../sync/sync-connection-store/sync-connection-store.helpers';
+import { requestFlush } from '../sync/sync-flush.helpers';
 import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
 import { getAnimeMutationFailureMessage } from './anime-mutation-failure.helpers';
 import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
@@ -284,18 +279,17 @@ export async function applyAnimeMutationPatch(
     recordChapterActionCommitted(actionContext);
   }
 
-  const syncAttempt = beginSyncConnectionAttempt();
-
-  // Sincroniza en background — no bloquea la UI
-  void syncPendingOperations(rawDb)
+  // New durable work: online truth no longer holds until a cycle reads it. Then the one entry
+  // point (ADR 009 R-2, I2) runs the coordinated cycle, which drains every kind, records its
+  // attempt and publishes the connection outcome; this kick only reports the chapter's push.
+  invalidateSyncConnectionOnline();
+  void requestFlush(rawDb, 'local_mutation')
     .then(() => {
       if (actionContext) {
         recordChapterActionSync(actionContext, 'ok');
       }
-
-      markSyncConnectionPending(syncAttempt);
     })
-    .catch(async (err: unknown) => {
+    .catch((err: unknown) => {
       // Recorded here, not at the promise's rejection site: this branch IS where the push's
       // outcome becomes known, and the chapter feed must report it while the local write stays
       // reported as committed.
@@ -303,33 +297,14 @@ export async function applyAnimeMutationPatch(
         recordChapterActionSync(actionContext, 'failed');
       }
 
-      const failure = err instanceof Error ? err : new Error('Sync failed');
-
       // Distinct from `mutation_failed`: the local write LANDED and only the push to the bridge
       // failed. Same symptom for the user, opposite diagnosis, and today the two are
       // indistinguishable from anywhere but the device.
       recordDiagnosticEvent({
         source: 'mutation',
         event: 'mutation_sync_failed',
-        cause: causeFromError(failure),
+        cause: causeFromError(err),
         at: Date.now(),
-      });
-
-      await publishSyncConnectionAttempt({
-        attempt: syncAttempt,
-        persistTelemetry: async () => {
-          try {
-            await recordSyncAttemptFailed(
-              rawDb,
-              'local_mutation',
-              Date.now(),
-              failure.message,
-            );
-          } catch (telemetryError) {
-            console.warn(`[${label}] Failed to persist sync failure telemetry`, telemetryError);
-          }
-        },
-        publishConnection: () => markSyncConnectionFailed(syncAttempt, failure),
       });
       console.warn(`[${label}] Sync failed:`, err);
     });

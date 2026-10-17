@@ -9,7 +9,13 @@ import {
 } from '../../../src/features/animes/anime-mutation.helpers';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import { drainSeasonRatingQueue } from '../../../src/features/sync/season-rating-queue.helpers';
-import { runCoordinatedForegroundSyncCycle } from '../../../src/features/sync/sync-facade.helpers';
+import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
+import {
+  registerSyncFlushDispatcher,
+  requestFlush,
+  resetSyncFlush,
+  waitForSyncFlushIdle,
+} from '../../../src/features/sync/sync-flush.helpers';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -160,6 +166,9 @@ describe('anime mutation connection truth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSyncConnectionStore();
+    resetSyncFlush();
+    // What the mounted foreground runtime does: the mutation's kick reaches the cycle through it.
+    registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
     jest.spyOn(Date, 'now').mockReturnValue(now);
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 0,
@@ -178,6 +187,7 @@ describe('anime mutation connection truth', () => {
   });
 
   afterEach(() => {
+    resetSyncFlush();
     jest.restoreAllMocks();
   });
 
@@ -226,7 +236,7 @@ describe('anime mutation connection truth', () => {
     });
   });
 
-  it('prevents older facade success telemetry from replacing newer chapter failure diagnostics', async () => {
+  it('sends a mutation made during a running cycle in one follow-up, and the stale cycle publishes nothing', async () => {
     type SyncResult = {
       syncedCount: number;
       backlogReadCount: number;
@@ -246,19 +256,16 @@ describe('anime mutation connection truth', () => {
           }),
       )
       .mockRejectedValueOnce(unreachableError);
-    const olderFacadePromise = runCoordinatedForegroundSyncCycle({
-      rawDb: rawDb as never,
-      source: 'manual',
-      setActiveSeasonSnapshot: jest.fn(),
-    });
+    const olderFlush = requestFlush(rawDb as never, 'manual');
     await waitForCalls(syncPendingOperations as jest.Mock, 1);
     configureMutationWrite();
 
     await applyChapterIncrement();
-    await waitForCalls(recordSyncAttemptFailed as jest.Mock, 1);
     resolveOlderSync({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
-    await expect(olderFacadePromise).resolves.toBe(1);
+    await expect(olderFlush).resolves.toBe(1);
+    await waitForSyncFlushIdle(rawDb as never);
 
+    expect(syncPendingOperations).toHaveBeenCalledTimes(2);
     expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
       rawDb,
       'local_mutation',
@@ -266,50 +273,6 @@ describe('anime mutation connection truth', () => {
       unreachableError.message,
     );
     expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(getSyncConnectionSnapshot().kind).toBe('unreachable');
-  });
-
-  it('settles a newer chapter failure after an older facade start write already began', async () => {
-    const telemetryEvents: string[] = [];
-    let resolveOlderStart!: () => void;
-    const unreachableError = new BridgeUnreachableError(
-      'http://bridge.test/api/sync/reconcile',
-      'offline',
-    );
-    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    (recordSyncAttemptStarted as jest.Mock).mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveOlderStart = () => {
-            telemetryEvents.push('started');
-            resolve();
-          };
-        }),
-    );
-    (recordSyncAttemptFailed as jest.Mock).mockImplementationOnce(async () => {
-      telemetryEvents.push('failed');
-    });
-    (syncPendingOperations as jest.Mock)
-      .mockRejectedValueOnce(unreachableError)
-      .mockResolvedValueOnce({
-        syncedCount: 1,
-        backlogReadCount: 1,
-        hasMorePending: false,
-      });
-    const olderFacadePromise = runCoordinatedForegroundSyncCycle({
-      rawDb: rawDb as never,
-      source: 'manual',
-      setActiveSeasonSnapshot: jest.fn(),
-    });
-    await waitForCalls(recordSyncAttemptStarted as jest.Mock, 1);
-    configureMutationWrite();
-
-    await applyChapterIncrement();
-    resolveOlderStart();
-    await expect(olderFacadePromise).resolves.toBe(1);
-    await waitForCalls(recordSyncAttemptFailed as jest.Mock, 1);
-
-    expect(telemetryEvents).toEqual(['started', 'failed']);
     expect(getSyncConnectionSnapshot().kind).toBe('unreachable');
   });
 

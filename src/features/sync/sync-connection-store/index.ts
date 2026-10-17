@@ -7,7 +7,6 @@ export {
   markSyncConnectionSucceeded,
   publishSyncConnectionAttempt,
   resetSyncConnectionStore,
-  runSharedForegroundSyncCycle,
   subscribeSyncConnection,
 } from './sync-connection-store.helpers';
 export type {

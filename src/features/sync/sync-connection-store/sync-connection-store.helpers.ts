@@ -1,6 +1,5 @@
 import { BridgeUnreachableError } from '../../../infrastructure/api';
 import {
-  FOREGROUND_SYNC_CYCLES,
   INITIAL_SYNC_CONNECTION_SNAPSHOT,
   syncConnectionStore,
   SYNC_CONNECTION_ATTEMPT_STATE,
@@ -117,34 +116,8 @@ export function publishSyncConnectionAttempt({
   return publication;
 }
 
-/**
- * Runs at most one coordinated foreground sync cycle for a database and shares its exact promise.
- * Full-cycle ownership here prevents independent hook instances from publishing overlapping outcomes.
- */
-export function runSharedForegroundSyncCycle(
-  database: object,
-  createCycle: () => Promise<number>,
-): Promise<number> {
-  const activeCycle = FOREGROUND_SYNC_CYCLES.get(database);
-
-  if (activeCycle) {
-    return activeCycle;
-  }
-
-  const cycle = createCycle();
-  const trackedCycle = cycle.finally(() => {
-    if (FOREGROUND_SYNC_CYCLES.get(database) === trackedCycle) {
-      FOREGROUND_SYNC_CYCLES.delete(database);
-    }
-  });
-
-  FOREGROUND_SYNC_CYCLES.set(database, trackedCycle);
-  return trackedCycle;
-}
-
 /** Resets module state so tests cannot leak connection truth between cases. */
 export function resetSyncConnectionStore(): void {
-  FOREGROUND_SYNC_CYCLES.clear();
   SYNC_CONNECTION_ATTEMPT_STATE.current = 0;
   SYNC_CONNECTION_PUBLICATION_QUEUE_STATE.current = Promise.resolve();
   syncConnectionStore.setState(INITIAL_SYNC_CONNECTION_SNAPSHOT, true);
