@@ -93,7 +93,7 @@ class SyncEngineFetchFirstRacesTest {
     JSONObject().put("id", animeId).put("name", "Test").put("modified_at", 42).toString(),
   )
 
-  private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[],"last_changelog_id":1}""")
+  private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"status":"accepted","applied_operations":[],"last_changelog_id":1}""")
 
   private fun sentOperationCount(server: SyncEngineTestHttpServer): Int = server.requests
     .filter { it.path == RECONCILE_PATH }

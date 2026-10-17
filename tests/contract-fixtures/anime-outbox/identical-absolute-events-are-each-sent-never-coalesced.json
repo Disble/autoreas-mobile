@@ -1,0 +1,129 @@
+{
+  "name": "identical-absolute-events-are-each-sent-never-coalesced",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-4",
+    "R-14"
+  ],
+  "description": "Two queued events carry the same absolute value. Both reach the bridge, in order, chained on the token the first confirmation returned; the bridge answers the identical second one as a no-op (token unchanged).",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 2
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 1,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 14
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-a",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 2,
+    "tokens": {
+      "anime-a": 14
+    },
+    "staged": []
+  }
+}

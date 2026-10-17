@@ -169,6 +169,6 @@ class SyncEngineDiagnosticsCycleTest {
 
   private companion object {
     const val RECONCILE_RESPONSE =
-      """{"applied_operations":[{"anime_id":"anime-1","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-1","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
   }
 }

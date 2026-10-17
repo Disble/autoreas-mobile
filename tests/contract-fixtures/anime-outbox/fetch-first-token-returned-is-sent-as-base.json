@@ -1,0 +1,104 @@
+{
+  "name": "fetch-first-token-returned-is-sent-as-base",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-3"
+  ],
+  "description": "No stored token: the claim holder fetches the anime first, stores only the token, and sends on it.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": null
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 200,
+          "body": {
+            "id": "anime-a",
+            "name": "Bridge Name",
+            "status": 0,
+            "episodesWatched": 9,
+            "active": 1,
+            "firstCycle": 1,
+            "lastWatchedAt": null,
+            "premieredAt": null,
+            "createdAt": null,
+            "deletedAt": null,
+            "modified_at": 9
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/animes/anime-a"
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 9
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 1,
+    "tokens": {
+      "anime-a": 14
+    },
+    "staged": []
+  }
+}

@@ -174,11 +174,11 @@ class SyncEngineFetchFirstTest {
 
   private fun confirmed(token: Long) = SyncEngineTestHttpServer.Response(
     200,
-    """{"applied_operations":[{"anime_id":"anime-1","operation":"update","applied":true,"modified_at":$token}],""" +
+    """{"status":"accepted","applied_operations":[{"anime_id":"anime-1","operation":"update","applied":true,"modified_at":$token}],""" +
       """"last_changelog_id":1}""",
   )
 
-  private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[],"last_changelog_id":1}""")
+  private fun emptyResponse() = SyncEngineTestHttpServer.Response(200, """{"status":"accepted","applied_operations":[],"last_changelog_id":1}""")
 
   private fun reconcileRequests(server: SyncEngineTestHttpServer) = server.requests.filter { it.path == RECONCILE_PATH }
 

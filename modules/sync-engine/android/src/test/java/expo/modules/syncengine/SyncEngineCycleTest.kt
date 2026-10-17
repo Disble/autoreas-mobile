@@ -25,7 +25,7 @@ class SyncEngineCycleTest {
   @Test
   fun successfulCyclePersistsFencedConfirmation() {
     SyncEngineTestDatabase().use { fixture ->
-      val response = """{"applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
+      val response = """{"status":"accepted","applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
       SyncEngineTestHttpServer(200, response).use { server ->
         val operationCreatedAt = insertCycleInput(fixture, server.port)
         val states = mutableListOf<String>()
@@ -148,7 +148,7 @@ class SyncEngineCycleTest {
       )
       assertTrue("Successful preflight append did not create $journalFile", journalFile.exists())
       val successorFence = "cycle-k6-successor"
-      val response = """{"applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
+      val response = """{"status":"accepted","applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
       SyncEngineTestHttpServer(200, response) { request ->
         assertEquals("POST", request.method)
         assertEquals(cycleId, JSONObject(request.body).getJSONObject("client_telemetry").getString("cycle_id"))

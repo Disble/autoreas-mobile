@@ -1,0 +1,160 @@
+{
+  "name": "applied-false-unsupported-operation-stops-only-its-key",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-15"
+  ],
+  "description": "A message rejected inside a 2xx as unsupported_operation becomes dead_letter; only that key stops, and the other key of the same round is confirmed and chained.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      },
+      {
+        "id": "anime-b",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": false,
+                "reason": "unsupported_operation"
+              },
+              {
+                "anime_id": "anime-b",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-b",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 15
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 2
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          },
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 1,
+        "operations": [
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 14
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "dead_letter",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 2,
+    "tokens": {
+      "anime-a": 7,
+      "anime-b": 15
+    },
+    "staged": []
+  }
+}

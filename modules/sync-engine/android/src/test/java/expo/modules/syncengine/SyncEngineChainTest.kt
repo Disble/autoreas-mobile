@@ -174,7 +174,7 @@ class SyncEngineChainTest {
 
   private fun response(appliedOperation: String) = SyncEngineTestHttpServer.Response(
     200,
-    """{"applied_operations":[$appliedOperation],"last_changelog_id":1}""",
+    """{"status":"accepted","applied_operations":[$appliedOperation],"last_changelog_id":1}""",
   )
 
   private fun reconcileRequests(server: SyncEngineTestHttpServer) =

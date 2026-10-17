@@ -1,0 +1,78 @@
+{
+  "name": "fetch-first-404-gives-the-key-up",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-3",
+    "R-16b"
+  ],
+  "description": "No stored token and the bridge answers 404: the key becomes unresolved (bridge_404) and nothing is sent without a base; the attempt still pulls since the cursor.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": null
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 404,
+          "body": {
+            "error": "not found"
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 4
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/animes/anime-a"
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "dead_letter",
+        "unresolvedReason": "bridge_404",
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 4,
+    "tokens": {
+      "anime-a": null
+    },
+    "staged": []
+  }
+}

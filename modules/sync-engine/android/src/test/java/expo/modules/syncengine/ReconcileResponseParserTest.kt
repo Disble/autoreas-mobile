@@ -11,7 +11,7 @@ class ReconcileResponseParserTest {
   @Test
   fun parsesAppliedOperationFromBridgeResponse() {
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-42","operation":"update","applied":true}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-42","operation":"update","applied":true}]}""",
     )
 
     assertEquals(1, parsed.appliedOperations.size)
@@ -22,40 +22,100 @@ class ReconcileResponseParserTest {
 
   @Test
   fun missingAndNullArraysUseEmptyFallbacks() {
-    val missing = ReconcileResponseParser.parse("{}")
+    // `ReconcileArrayFallback` (`z.array(...).nullish()`): absent and null are empty, nothing else.
+    val missing = ReconcileResponseParser.parse("""{"status":"accepted"}""")
     val nulls = ReconcileResponseParser.parse(
-      """{"applied_operations":null,"bridge_changes":null}""",
-    )
-    val wrongShapes = ReconcileResponseParser.parse(
-      """{"applied_operations":"not-an-array","bridge_changes":{}}""",
+      """{"status":"accepted","applied_operations":null,"bridge_changes":[{"record_id":"a","change_type":"update","timestamp":1,"changed_fields":null}]}""",
     )
 
     assertTrue(missing.appliedOperations.isEmpty())
     assertTrue(missing.bridgeChanges.isEmpty())
     assertTrue(nulls.appliedOperations.isEmpty())
-    assertTrue(nulls.bridgeChanges.isEmpty())
-    assertTrue(wrongShapes.appliedOperations.isEmpty())
-    assertTrue(wrongShapes.bridgeChanges.isEmpty())
+    assertTrue(nulls.bridgeChanges.single().changedFields.isEmpty())
+    assertTrue(ReconcileResponseParser.parse("""{"status":"accepted","bridge_changes":null}""").bridgeChanges.isEmpty())
+  }
+
+  /** Every body the JS `ReconcileResponseSchema.safeParse` rejects is malformed here too (ADR 009 R-5). */
+  @Test
+  fun rejectsEveryShapeTheJsSchemaRejects() {
+    val change = """"record_id":"a","change_type":"update","timestamp":1"""
+    val operation = """"anime_id":"a","operation":"update","applied":true"""
+    val malformed = listOf(
+      // `status`: a required string.
+      """{}""",
+      """{"status":1}""",
+      """{"status":null}""",
+      // A collection that is present but not an array.
+      """{"status":"accepted","applied_operations":"not-an-array"}""",
+      """{"status":"accepted","applied_operations":{}}""",
+      """{"status":"accepted","bridge_changes":{}}""",
+      """{"status":"accepted","bridge_changes":"not-an-array"}""",
+      """{"status":"accepted","bridge_changes":[{$change,"changed_fields":""}]}""",
+      // `last_changelog_id`: optional, never null or a string.
+      """{"status":"accepted","last_changelog_id":null}""",
+      """{"status":"accepted","last_changelog_id":"42"}""",
+      // `applied`: a required boolean.
+      """{"status":"accepted","applied_operations":[{"anime_id":"a","operation":"update"}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"a","operation":"update","applied":"true"}]}""",
+      // `modified_at`: an optional integer.
+      """{"status":"accepted","applied_operations":[{$operation,"modified_at":null}]}""",
+      """{"status":"accepted","applied_operations":[{$operation,"modified_at":"5"}]}""",
+      """{"status":"accepted","applied_operations":[{$operation,"modified_at":5.5}]}""",
+      """{"status":"accepted","applied_operations":[{$operation,"modified_at":true}]}""",
+      // `reason`: an optional string.
+      """{"status":"accepted","applied_operations":[{$operation,"reason":null}]}""",
+      """{"status":"accepted","applied_operations":[{$operation,"reason":3}]}""",
+      // `timestamp`: a required number.
+      """{"status":"accepted","bridge_changes":[{"record_id":"a","change_type":"update","timestamp":"1"}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a","change_type":"update","timestamp":null}]}""",
+      // `snapshot`: optional, never null.
+      """{"status":"accepted","bridge_changes":[{$change,"snapshot":null}]}""",
+      // `changed_fields`: strings only.
+      """{"status":"accepted","bridge_changes":[{$change,"changed_fields":["name",7]}]}""",
+      """{"status":"accepted","bridge_changes":[{$change,"changed_fields":["name",null]}]}""",
+    )
+
+    val accepted = malformed.filter { body ->
+      try {
+        ReconcileResponseParser.parse(body)
+        true
+      } catch (expected: ReconcileParseException) {
+        false
+      }
+    }
+
+    assertEquals(emptyList<String>(), accepted)
+  }
+
+  @Test
+  fun acceptsAnIntegralTokenWrittenAsADecimalAndAFractionalCursorLikeTheJsSchema() {
+    val parsed = ReconcileResponseParser.parse(
+      """{"status":"accepted","applied_operations":[{"anime_id":"a","operation":"update","applied":true,"modified_at":5.0,"reason":"conflict"}],"last_changelog_id":7.5}""",
+    )
+
+    assertEquals(5L, parsed.appliedOperations.single().modifiedAt)
+    assertEquals("conflict", parsed.appliedOperations.single().reason)
+    assertEquals(7L, parsed.lastChangelogId)
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsAppliedOperationWithoutAnimeId() {
-    ReconcileResponseParser.parse("""{"applied_operations":[{"operation":"update"}]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","applied_operations":[{"operation":"update"}]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsAppliedOperationWithoutOperation() {
-    ReconcileResponseParser.parse("""{"applied_operations":[{"anime_id":"a-1"}]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","applied_operations":[{"anime_id":"a-1"}]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsBridgeChangeWithoutRecordId() {
-    ReconcileResponseParser.parse("""{"bridge_changes":[{"change_type":"create","timestamp":1}]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","bridge_changes":[{"change_type":"create","timestamp":1}]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsBridgeChangeWithoutTimestamp() {
-    ReconcileResponseParser.parse("""{"bridge_changes":[{"record_id":"a-1","change_type":"create"}]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"create"}]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
@@ -66,7 +126,7 @@ class ReconcileResponseParserTest {
   @Test
   fun acceptsEachSupportedChangeType() {
     val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a","change_type":"create","timestamp":1},{"record_id":"b","change_type":"update","timestamp":2},{"record_id":"c","change_type":"delete","timestamp":3}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a","change_type":"create","timestamp":1},{"record_id":"b","change_type":"update","timestamp":2},{"record_id":"c","change_type":"delete","timestamp":3}]}""",
     )
 
     assertEquals(listOf("create", "update", "delete"), parsed.bridgeChanges.map { it.changeType })
@@ -75,14 +135,14 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsUnknownChangeType() {
     ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a","change_type":"restore","timestamp":1}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a","change_type":"restore","timestamp":1}]}""",
     )
   }
 
   @Test
   fun preservesZeroValuedOccTokensAsPresentValues() {
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"a","operation":"update","modified_at":0}],"last_changelog_id":0}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"a","operation":"update","applied":true,"modified_at":0}],"last_changelog_id":0}""",
     )
 
     assertEquals(0L, parsed.appliedOperations.single().modifiedAt)
@@ -90,19 +150,20 @@ class ReconcileResponseParserTest {
   }
 
   @Test
-  fun absentAndNonNumericOptionalTokensAreNull() {
+  fun absentOptionalFieldsAreNull() {
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"a","operation":"update"}],"last_changelog_id":"later"}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"a","operation":"update","applied":false}]}""",
     )
 
     assertEquals(null, parsed.appliedOperations.single().modifiedAt)
+    assertEquals(null, parsed.appliedOperations.single().reason)
     assertEquals(null, parsed.lastChangelogId)
   }
 
   @Test
   fun mapsWireChangedFieldsToLocalVocabularyAndDropsUnknownFields() {
     val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["name","episodesWatched","genres","unknownField"],"timestamp":9}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["name","episodesWatched","genres","unknownField"],"timestamp":9}]}""",
     )
     val normalized = WireAnimeMapper.normalize(parsed.bridgeChanges.single())
 
@@ -115,7 +176,7 @@ class ReconcileResponseParserTest {
   @Test
   fun mapsWireSnapshotIntoLegacyLocalShape() {
     val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"anime-7","change_type":"update","timestamp":12,"snapshot":{"id":"anime-7","name":"North Star","status":2,"episodesWatched":4,"totalEpisodes":12,"active":1,"firstCycle":0,"days":[{"day":"Tue","order":2}],"genres":["Mystery"],"kind":1,"lastWatchedAt":1700,"premieredAt":1800,"createdAt":1900,"deletedAt":2000,"cover":"cover.png","sourceUrl":"https://example.invalid/anime/7","folder":"North","studios":"Studio X","origin":"Manga","durationMinutes":24,"modified_at":0}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"anime-7","change_type":"update","timestamp":12,"snapshot":{"id":"anime-7","name":"North Star","status":2,"episodesWatched":4,"totalEpisodes":12,"active":1,"firstCycle":0,"days":[{"day":"Tue","order":2}],"genres":["Mystery"],"kind":1,"lastWatchedAt":1700,"premieredAt":1800,"createdAt":1900,"deletedAt":2000,"cover":"cover.png","sourceUrl":"https://example.invalid/anime/7","folder":"North","studios":"Studio X","origin":"Manga","durationMinutes":24,"modified_at":0}}]}""",
     )
     val normalized = WireAnimeMapper.normalize(parsed.bridgeChanges.single())
     val legacy = org.json.JSONObject(normalized.snapshotJson!!)
@@ -146,7 +207,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsSnapshotWithNonStringId() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":7,"name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":7,"name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -155,7 +216,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsSnapshotWithNonStringName() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":7,"status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":7,"status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -164,7 +225,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsSnapshotWithMissingRequiredScalar() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -173,7 +234,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsADaysEntryThatIsNotAnObject() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":["not-an-object"]}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":["not-an-object"]}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -182,7 +243,7 @@ class ReconcileResponseParserTest {
   @Test
   fun mapsTheLegacyEmptyStringSentinelForDaysAndGenresToAnEmptyArray() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"","genres":""}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"","genres":""}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -194,7 +255,7 @@ class ReconcileResponseParserTest {
   @Test
   fun dateLikeUnwrapsTheDollarDollarDateWrapper() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":12345}}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":12345}}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -205,7 +266,7 @@ class ReconcileResponseParserTest {
   @Test
   fun mapsAnExplicitJsonNullDaysAndGenresToAnEmptyArrayJustLikeAnAbsentKey() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":null,"genres":null}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":null,"genres":null}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -217,7 +278,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsANonArrayNonEmptyStringGenresValue() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":"Action"}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":"Action"}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -228,7 +289,7 @@ class ReconcileResponseParserTest {
     // The local domain contract is `genres: z.array(z.string())`: a mixed array like
     // `["Action", 42]` must be rejected here (retryable), never staged and later committed.
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",42]}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",42]}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -239,7 +300,7 @@ class ReconcileResponseParserTest {
     // A JSON `null` MEMBER is not the legacy empty-string sentinel: it is still a non-string
     // element, and `JSONArray.opt` hands it back as `JSONObject.NULL`, not Kotlin `null`.
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",null]}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"genres":["Action",null]}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -250,7 +311,7 @@ class ReconcileResponseParserTest {
     // `has("$$date")` is true, but `opt("$$date")` itself returns null -- the `?:` fallback,
     // distinct from the outer `else` (no "$$date" key at all) covered by the next test.
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":null}}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"${'$'}${'$'}date":null}}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -261,7 +322,7 @@ class ReconcileResponseParserTest {
   @Test
   fun dateLikeIsNullForAJsonObjectWithoutTheDollarDollarDateKey() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"other":1}}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":{"other":1}}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -274,7 +335,7 @@ class ReconcileResponseParserTest {
     // Neither a Number, a String, nor a `{ "$$date": n }` object: `dateLike`'s `when` must fall
     // to its `else -> JSONObject.NULL`.
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":[1,2,3]}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"lastWatchedAt":[1,2,3]}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)
@@ -285,7 +346,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsSnapshotWithMalformedDaysShape() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"Tuesday"}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"days":"Tuesday"}}]}""",
     ).bridgeChanges.single()
 
     WireAnimeMapper.normalize(change)
@@ -294,7 +355,7 @@ class ReconcileResponseParserTest {
   @Test(expected = ReconcileParseException::class)
   fun rejectsNonObjectSnapshot() {
     ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":[]}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":[]}]}""",
     )
   }
 
@@ -310,59 +371,33 @@ class ReconcileResponseParserTest {
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsAnAppliedOperationsElementThatIsNotAnObject() {
-    ReconcileResponseParser.parse("""{"applied_operations":["not-an-object"]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","applied_operations":["not-an-object"]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsABridgeChangesElementThatIsNotAnObject() {
-    ReconcileResponseParser.parse("""{"bridge_changes":[42]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","bridge_changes":[42]}""")
   }
 
   @Test(expected = ReconcileParseException::class)
   fun rejectsBridgeChangeWithoutChangeType() {
-    ReconcileResponseParser.parse("""{"bridge_changes":[{"record_id":"a-1","timestamp":1}]}""")
+    ReconcileResponseParser.parse("""{"status":"accepted","bridge_changes":[{"record_id":"a-1","timestamp":1}]}""")
   }
 
   @Test
-  fun anExplicitJsonNullSnapshotIsTreatedAsAbsent() {
-    // Distinct from an OMITTED "snapshot" key: `entry.has("snapshot")` is true here, but
-    // `entry.isNull("snapshot")` must short-circuit the "not an object" rejection.
+  fun anOmittedSnapshotIsAbsent() {
     val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":null}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1}]}""",
     )
 
     assertEquals(null, parsed.bridgeChanges.single().snapshot)
   }
 
   @Test
-  fun anExplicitJsonNullLastChangelogIdIsNullDistinctFromAnAbsentKey() {
-    val parsed = ReconcileResponseParser.parse("""{"last_changelog_id":null}""")
-
-    assertEquals(null, parsed.lastChangelogId)
-  }
-
-  @Test
-  fun aNumericStringOptionalTokenParsesSuccessfully() {
-    val parsed = ReconcileResponseParser.parse("""{"last_changelog_id":"42"}""")
-
-    assertEquals(42L, parsed.lastChangelogId)
-  }
-
-  @Test
-  fun anOptionalTokenOfAnUnsupportedTypeIsNull() {
-    // Neither Number nor String: the `parseOptionalLong` `when` must fall to its `else -> null`.
-    val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"a","operation":"update","modified_at":true}]}""",
-    )
-
-    assertEquals(null, parsed.appliedOperations.single().modifiedAt)
-  }
-
-  @Test
   fun anExplicitJsonNullAnimeIdIsRejectedJustLikeAnAbsentOne() {
     try {
       ReconcileResponseParser.parse(
-        """{"applied_operations":[{"anime_id":null,"operation":"update"}]}""",
+        """{"status":"accepted","applied_operations":[{"anime_id":null,"operation":"update"}]}""",
       )
       org.junit.Assert.fail("expected ReconcileParseException")
     } catch (expected: ReconcileParseException) {
@@ -370,24 +405,10 @@ class ReconcileResponseParserTest {
     }
   }
 
-  @Test
-  fun nonStringChangedFieldsElementsAreDroppedNotThrown() {
-    val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"changed_fields":["name",7,null,"genres"]}]}""",
-    )
-
-    assertEquals(
-      listOf("nombre", "generos"),
-      WireAnimeMapper.normalize(parsed.bridgeChanges.single()).changedFieldsJson
-        .let { org.json.JSONArray(it) }
-        .let { array -> (0 until array.length()).map { array.getString(it) } },
-    )
-  }
-
   /** Maps one snapshot whose `episodes` value is the given raw JSON, returning the legacy `episodes`. */
   private fun legacyEpisodesFor(episodesJson: String): Any {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["episodes"],"timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"episodes":$episodesJson}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["episodes"],"timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"episodes":$episodesJson}}]}""",
     ).bridgeChanges.single()
 
     return org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!).get("episodes")
@@ -422,7 +443,7 @@ class ReconcileResponseParserTest {
   @Test
   fun mapsAnAbsentEpisodesKeyToNull() {
     val change = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0}}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0}}]}""",
     ).bridgeChanges.single()
 
     val legacy = org.json.JSONObject(WireAnimeMapper.normalize(change).snapshotJson!!)

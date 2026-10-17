@@ -86,7 +86,18 @@ Both runtimes apply the same fate to the anime outbox; JS applies it to season r
 | Any other 4xx (400, 403, 404, 409, 422, ...) | The message is rejected, so it becomes unresolved (`dead_letter`; a rating `failed` with `not_found`, `conflict` or `rejected`). When the request carried several messages, they are re-sent one per request first, so only the message that caused it takes this fate. |
 | A message rejected inside a 2xx (`applied: false`) | The conflict rule (R-15), or `dead_letter` for an unsupported operation; only that key stops. |
 
+A response is malformed when the JS `ReconcileResponseSchema` rejects it: for example a missing `status`, or a present `applied_operations` or `bridge_changes` that is not an array. Missing or null collections are empty. The Kotlin parser accepts exactly the same envelope, so neither runtime advances the cursor on a malformed answer (aligned with task T15). The snapshot fields inside `bridge_changes` are not aligned yet: `reconcile-response-divergence-cases.json` records them.
+
 When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating never fails the foreground cycle (I4): a rating left `pending` only keeps the cycle from reporting success.
+
+**R-4, R-10: the shared contract fixtures**
+
+Added 2026-10-16 with task T15.
+
+- **Where.** `tests/contract-fixtures/<queue>/*.json`, one scenario per file: the stored precondition, the bridge's scripted answers per attempt, and the expected end state (the requests the bridge answered, each row's status, unresolved reason, claim and conflict count, the cursor, the tokens, and the staged remote changes).
+- **Who runs them.** Jest runs every file (`tests/behaviour/sync/contract-fixtures.behaviour.test.ts`, real SQLite). Robolectric runs the same files (`SyncEngineContractFixtureTest.kt`; the directory is a test resources dir in `modules/sync-engine/android/build.gradle`, never copied). Both assert the same expectation, so a fixture never holds one expectation per runtime.
+- **What they pin.** Every R-5 failure class, the R-3 fetch outcomes, the R-15 conflict rule, and R-4: an identical resend carries the same absolute payload and base, and identical absolute events are each sent, never coalesced. The device's own echo is staged, never applied in the cycle that confirmed it, and its snapshot never supplies the token. The bridge's own idempotency is the bridge team's fact; the fixtures pin only what the device sends and how it ends.
+- **Ratings.** The rating fixtures (`season-rating/`) run in JS only (`"runtimes": ["js"]`) until T17 moves ratings into `operation_log`; adding `kotlin` to that list is how T17 runs them natively. Only rating fixtures may skip a runtime.
 
 **R-2: one entry point, one exit per runtime**
 

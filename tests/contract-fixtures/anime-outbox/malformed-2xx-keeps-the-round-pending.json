@@ -1,0 +1,103 @@
+{
+  "name": "malformed-2xx-keeps-the-round-pending",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5"
+  ],
+  "description": "A 2xx whose body does not match the reconcile contract: the rows stay pending; the attempt fails; the cursor does not move.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      },
+      {
+        "id": "anime-b",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": "not-an-array",
+            "bridge_changes": [],
+            "last_changelog_id": 9
+          }
+        }
+      ],
+      "attempt": "failed"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          },
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 0,
+    "tokens": {
+      "anime-a": 7,
+      "anime-b": 7
+    },
+    "staged": []
+  }
+}

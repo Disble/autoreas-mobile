@@ -1,0 +1,86 @@
+{
+  "name": "applied-false-third-non-advancing-conflict-exhausts",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-15"
+  ],
+  "description": "The third consecutive conflict whose token equals the base sent makes the row conflict_exhausted (unresolved).",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        },
+        "conflictAttemptCount": 2
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": false,
+                "reason": "conflict",
+                "modified_at": 7
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "conflict_exhausted",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 3
+      }
+    ],
+    "cursor": 1,
+    "tokens": {
+      "anime-a": 7
+    },
+    "staged": []
+  }
+}

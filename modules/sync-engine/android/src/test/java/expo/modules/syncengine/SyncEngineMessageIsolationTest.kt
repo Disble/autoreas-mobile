@@ -241,7 +241,7 @@ class SyncEngineMessageIsolationTest {
   @Test
   fun aPullOnlyAttemptStillPullsSinceTheStoredCursorWithTheTelemetryEnvelope() {
     SyncEngineTestDatabase().use { fixture ->
-      val response = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[],"last_changelog_id":4}""")
+      val response = SyncEngineTestHttpServer.Response(200, """{"status":"accepted","applied_operations":[],"last_changelog_id":4}""")
       SyncEngineTestHttpServer.scripted(listOf(response)).use { server ->
         seed(fixture, server, emptyList())
         fixture.appDatabase.execSQL("UPDATE bridge_config SET last_changelog_id = 2")
@@ -281,12 +281,12 @@ class SyncEngineMessageIsolationTest {
 
   private fun confirming(animeId: String) = SyncEngineTestHttpServer.Response(
     200,
-    """{"applied_operations":[{"anime_id":"$animeId","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":1}""",
+    """{"status":"accepted","applied_operations":[{"anime_id":"$animeId","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":1}""",
   )
 
   private fun confirmingAt(animeId: String, cursor: Long) = SyncEngineTestHttpServer.Response(
     200,
-    """{"applied_operations":[{"anime_id":"$animeId","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":$cursor}""",
+    """{"status":"accepted","applied_operations":[{"anime_id":"$animeId","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":$cursor}""",
   )
 
   private fun rejecting(code: Int) = SyncEngineTestHttpServer.Response(code, """{"error":"rejected"}""")

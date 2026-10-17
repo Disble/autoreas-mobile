@@ -1,0 +1,49 @@
+{
+  "name": "rating-204-is-delivered",
+  "kind": "season_rating",
+  "runtimes": [
+    "js"
+  ],
+  "given": {
+    "cursor": 0,
+    "animes": [],
+    "outbox": [],
+    "ratings": [
+      {
+        "seasonId": "season-1",
+        "animeId": "anime-1",
+        "nota": 8,
+        "ratedAt": 1700000000000
+      }
+    ]
+  },
+  "covers": [
+    "R-5"
+  ],
+  "description": "A 204 delivers the rating; its row is removed.",
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 204,
+          "body": null
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/seasons/active/ratings",
+        "body": {
+          "anime_id": "anime-1",
+          "grade": 8,
+          "rated_at": 1700000000000
+        }
+      }
+    ],
+    "ratings": []
+  }
+}

@@ -117,6 +117,20 @@ describe('installFakeBridge', () => {
     fakeBridge.restore();
   });
 
+  it('fails the next request in transport, records it, and still replays what was queued after it', async () => {
+    const fakeBridge = installFakeBridge();
+    fakeBridge.queueTransportFailure();
+    fakeBridge.queueResponse({ status: 204, body: null });
+
+    await expect(globalThis.fetch('https://bridge.local/api/status')).rejects.toThrow('Network request failed');
+    const next = await globalThis.fetch('https://bridge.local/api/status');
+
+    expect(next.status).toBe(204);
+    expect(fakeBridge.requests).toHaveLength(2);
+
+    fakeBridge.restore();
+  });
+
   it('restore() returns globalThis.fetch to its previous value', () => {
     const originalFetch = globalThis.fetch;
     const fakeBridge = installFakeBridge();

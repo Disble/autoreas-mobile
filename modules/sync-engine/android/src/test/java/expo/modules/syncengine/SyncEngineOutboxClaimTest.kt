@@ -184,8 +184,8 @@ class SyncEngineOutboxClaimTest {
     const val ROW_ID = 41L
     const val RECONCILE_PATH = "/api/sync/reconcile"
     const val PAYLOAD = """{"status":2}"""
-    const val EMPTY_RESPONSE = """{"applied_operations":[],"last_changelog_id":1}"""
+    const val EMPTY_RESPONSE = """{"status":"accepted","applied_operations":[],"last_changelog_id":1}"""
     const val CONFIRMING_RESPONSE =
-      """{"applied_operations":[{"anime_id":"anime-claim","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":1}"""
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-claim","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":1}"""
   }
 }

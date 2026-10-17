@@ -27,7 +27,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
     // no-op attempt always issues the reconcile request, so remote changes still arrive.
     SyncEngineTestDatabase().use { fixture ->
       insertBridgeConfigOnly(fixture, port = 0) // port patched below once the server is up
-      val response = """{"bridge_changes":[{"record_id":"remote-x","change_type":"create","changed_fields":["name"],"timestamp":9,"snapshot":{"id":"remote-x","name":"Remote","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":30}"""
+      val response = """{"status":"accepted","bridge_changes":[{"record_id":"remote-x","change_type":"create","changed_fields":["name"],"timestamp":9,"snapshot":{"id":"remote-x","name":"Remote","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":30}"""
       SyncEngineTestHttpServer(200, response).use { server ->
         fixture.appDatabase.execSQL("UPDATE bridge_config SET port = ? WHERE id = 1", arrayOf(server.port.toString()))
         val states = mutableListOf<String>()

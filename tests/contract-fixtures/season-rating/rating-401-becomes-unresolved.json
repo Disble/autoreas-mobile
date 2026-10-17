@@ -1,0 +1,62 @@
+{
+  "name": "rating-401-becomes-unresolved",
+  "kind": "season_rating",
+  "runtimes": [
+    "js"
+  ],
+  "given": {
+    "cursor": 0,
+    "animes": [],
+    "outbox": [],
+    "ratings": [
+      {
+        "seasonId": "season-1",
+        "animeId": "anime-1",
+        "nota": 8,
+        "ratedAt": 1700000000000
+      }
+    ]
+  },
+  "covers": [
+    "R-5",
+    "R-16b"
+  ],
+  "description": "401: the rating becomes unresolved (failed, auth_repair), is never sent again, and does not fail the attempt (I4).",
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 401,
+          "body": {
+            "error": "rejected"
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    },
+    {
+      "bridge": [],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/seasons/active/ratings",
+        "body": {
+          "anime_id": "anime-1",
+          "grade": 8,
+          "rated_at": 1700000000000
+        }
+      }
+    ],
+    "ratings": [
+      {
+        "animeId": "anime-1",
+        "status": "failed",
+        "lastFailureKind": "auth_repair"
+      }
+    ]
+  }
+}

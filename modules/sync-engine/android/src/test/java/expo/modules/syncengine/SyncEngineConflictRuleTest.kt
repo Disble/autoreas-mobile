@@ -87,7 +87,7 @@ class SyncEngineConflictRuleTest {
    */
   private fun runConflictCycle(storedToken: Long?, attemptCount: Long, conflict: String, fetchedToken: Long? = null): RowState {
     SyncEngineTestDatabase().use { fixture ->
-      val response = SyncEngineTestHttpServer.Response(200, """{"applied_operations":[$conflict],"last_changelog_id":1}""")
+      val response = SyncEngineTestHttpServer.Response(200, """{"status":"accepted","applied_operations":[$conflict],"last_changelog_id":1}""")
       val fetched = fetchedToken?.let {
         SyncEngineTestHttpServer.Response(200, """{"id":"anime-conflict","modified_at":$it}""")
       }

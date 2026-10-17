@@ -49,7 +49,7 @@ class SyncEngineResponseApplierTest {
   fun appliesConfirmationTokenAndNormalizedBridgeChange() {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-b","operation":"update","applied":false,"reason":"unsupported_operation"}],"bridge_changes":[{"record_id":"remote-b","change_type":"update","changed_fields":["name","episodesWatched","unmapped"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":999}}],"last_changelog_id":16}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-b","operation":"update","applied":false,"reason":"unsupported_operation"}],"bridge_changes":[{"record_id":"remote-b","change_type":"update","changed_fields":["name","episodesWatched","unmapped"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":999}}],"last_changelog_id":16}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
@@ -80,7 +80,7 @@ class SyncEngineResponseApplierTest {
   fun writesZeroAppliedOperationTokenAsARealToken() {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":0}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":0}]}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
@@ -96,7 +96,7 @@ class SyncEngineResponseApplierTest {
   fun lastAppliedOperationTokenWinsForRepeatedAnime() {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":52}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47},{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":52}]}""",
     )
 
     val confirmed = inImmediateTransaction(database) {
@@ -166,7 +166,7 @@ class SyncEngineResponseApplierTest {
       ::heldOperationIds,
     )
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["name"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":16}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["name"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":16}""",
     )
 
     assertThrows(IllegalStateException::class.java) {
@@ -187,7 +187,7 @@ class SyncEngineResponseApplierTest {
     // applied=true but modified_at is ABSENT: the `entry.applied && entry.modifiedAt != null`
     // guard's second operand must short-circuit to false, never crash on the null token.
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -203,7 +203,7 @@ class SyncEngineResponseApplierTest {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     takenOver.add(11)
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -218,7 +218,7 @@ class SyncEngineResponseApplierTest {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     takenOver.add(11)
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":false,"reason":"conflict","modified_at":47}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":false,"reason":"conflict","modified_at":47}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -234,7 +234,7 @@ class SyncEngineResponseApplierTest {
     // Only "unsupported_operation" dead-letters; every other rejection reason (even a known,
     // non-null one) resets to pending -- the deferred conflict-exhaustion policy.
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false,"reason":"conflict"}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false,"reason":"conflict"}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -250,7 +250,7 @@ class SyncEngineResponseApplierTest {
     // rejected is non-null but its `reason` field itself is null (never set), not merely a
     // different string -- a distinct path through the `rejected?.reason == ...` comparison.
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-b","operation":"update","applied":false}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -267,7 +267,7 @@ class SyncEngineResponseApplierTest {
     // "update"): the rejected-entry lookup's `it.operation == row.operation` conjunct must be
     // what excludes it, not the anime_id check alone.
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-c","operation":"delete","applied":false,"reason":"unsupported_operation"}]}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-c","operation":"delete","applied":false,"reason":"unsupported_operation"}]}""",
     )
 
     inImmediateTransaction(database) {
@@ -285,7 +285,7 @@ class SyncEngineResponseApplierTest {
     // no cursor advance. Together with the cycle's own claimed-batch revert (`run()`'s catch),
     // this is why the response is retryable instead of losing the cursor or dead-lettering rows.
     val parsed = ReconcileResponseParser.parse(
-      """{"applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["genres"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"genres":["Action",42]}}],"last_changelog_id":16}""",
+      """{"status":"accepted","applied_operations":[{"anime_id":"anime-a","operation":"update","applied":true,"modified_at":47}],"bridge_changes":[{"record_id":"remote-b","change_type":"create","changed_fields":["genres"],"timestamp":81,"snapshot":{"id":"remote-b","name":"Remote title","status":2,"episodesWatched":3,"active":1,"firstCycle":0,"genres":["Action",42]}}],"last_changelog_id":16}""",
     )
 
     assertThrows(ReconcileParseException::class.java) {
@@ -304,7 +304,7 @@ class SyncEngineResponseApplierTest {
   fun aBridgeChangeWithNoSnapshotStagesANullSnapshotColumn() {
     val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
     val parsed = ReconcileResponseParser.parse(
-      """{"bridge_changes":[{"record_id":"remote-c","change_type":"delete","changed_fields":[],"timestamp":5}]}""",
+      """{"status":"accepted","bridge_changes":[{"record_id":"remote-c","change_type":"delete","changed_fields":[],"timestamp":5}]}""",
     )
 
     inImmediateTransaction(database) {
