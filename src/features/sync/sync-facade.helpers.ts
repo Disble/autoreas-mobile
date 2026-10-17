@@ -101,7 +101,8 @@ async function persistSyncFailureTelemetrySafely(
  * diagnostics outbox), then season ratings (`drainSeasonRatingQueue`). Callers never run it
  * directly; they enqueue and call `requestFlush`, which runs it through
  * `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating, or when
- * the request demands it (the WebSocket season events, I8).
+ * the request demands it (the WebSocket season events, I8); that refresh is best effort and never
+ * fails the cycle.
  *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so

@@ -198,7 +198,6 @@ describe("useSyncRuntime", () => {
     mockClearActiveSeason.mockResolvedValue(undefined);
     (useSeasonSync as jest.Mock).mockReturnValue({
       clearActiveSeason: mockClearActiveSeason,
-      isRefreshing: false,
       refreshActiveSeason: mockRefreshActiveSeason,
     });
     (useWebSocket as jest.Mock).mockImplementation(() => ({}));

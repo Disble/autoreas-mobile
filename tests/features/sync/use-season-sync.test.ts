@@ -66,7 +66,7 @@ describe('useSeasonSync', () => {
       url: 'http://127.0.0.1:9876/api/seasons/active',
     });
 
-    const { result } = renderHook(() => useSeasonSync({ enabled: true }));
+    renderHook(() => useSeasonSync({ enabled: true }));
 
     await waitFor(() => {
       expect(useActiveSeasonStore.getState().activeSeasonSnapshot).toMatchObject({
@@ -81,7 +81,6 @@ describe('useSeasonSync', () => {
       });
     });
 
-    expect(result.current.isRefreshing).toBe(false);
     expect(getActiveSeasonMock).toHaveBeenCalledWith({
       ip: '127.0.0.1',
       port: 9876,

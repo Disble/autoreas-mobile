@@ -350,11 +350,8 @@ describe('useSyncFacade', () => {
     expect(result.current.connectionStatus).toBe('online');
   });
 
-  it('publishes unreachable when active-season refresh fails after confirmed delivery', async () => {
-    const unreachableError = new BridgeUnreachableError(
-      'http://bridge.test/api/seasons/active',
-      'offline',
-    );
+  it('stays online when the active-season refresh fails after confirmed delivery', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
       backlogReadCount: 1,
@@ -367,24 +364,18 @@ describe('useSyncFacade', () => {
       hasMorePending: false,
     });
     (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValueOnce(
-      unreachableError,
+      new BridgeUnreachableError('http://bridge.test/api/seasons/active', 'offline'),
     );
 
     const { result } = renderHook(() => useSyncFacade());
 
     await act(async () => {
-      await expect(result.current.manualSync()).rejects.toBe(unreachableError);
+      await expect(result.current.manualSync()).resolves.toBe(1);
     });
 
-    expect(runtimeStatusModule.recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(runtimeStatusModule.recordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'manual',
-      expect.any(Number),
-      unreachableError.message,
-    );
-    expect(result.current.connectionStatus).toBe('unreachable');
-    expect(result.current.connectionStatus).not.toBe('online');
+    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe('online');
+    warn.mockRestore();
   });
 
   it('includes unresolved season ratings in visible count so prior online cannot appear current', () => {

@@ -54,19 +54,27 @@ describe('foreground sync failure precedence', () => {
     (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('fails on the refresh, never on the rating, when an unresolved rating triggers an unreachable refresh', async () => {
-    const refreshFailure = new BridgeUnreachableError(
-      'http://127.0.0.1:9876/api/seasons/active',
-      'offline',
-    );
-
+  it.each([
+    [
+      'an unreachable refresh triggered by an unresolved rating',
+      new BridgeUnreachableError('http://127.0.0.1:9876/api/seasons/active', 'offline'),
+      0,
+    ],
+    [
+      'an invalid reachable active-season response after a delivered rating',
+      new ActiveSeasonSyncError('Active season fetch failed: 500', 500, '{"error":"internal"}'),
+      1,
+    ],
+  ])('never fails the cycle over %s: the refresh is best effort and keeps the cached season', async (_case, refreshFailure, deliveredCount) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const setActiveSeasonSnapshot = jest.fn();
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 0,
       backlogReadCount: 0,
       hasMorePending: false,
     });
     (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
+      deliveredCount,
       backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
       hasMorePending: false,
@@ -77,53 +85,16 @@ describe('foreground sync failure precedence', () => {
       runCoordinatedForegroundSyncCycle({
         rawDb: { id: 'raw-db' } as never,
         source: 'manual',
-        setActiveSeasonSnapshot: jest.fn(),
+        setActiveSeasonSnapshot,
       }),
-    ).rejects.toBe(refreshFailure);
+    ).resolves.toBe(0);
 
     expect(fetchActiveSeasonFromBridge).toHaveBeenCalledTimes(1);
-    expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
-      { id: 'raw-db' },
-      'manual',
-      expect.any(Number),
-      refreshFailure.message,
-    );
-    expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'unreachable' });
-  });
-
-  it('publishes sync_error when a reachable active-season response is invalid', async () => {
-    const activeSeasonFailure = new ActiveSeasonSyncError(
-      'Active season fetch failed: 500',
-      500,
-      '{"error":"internal"}',
-    );
-
-    (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 1,
-      backlogReadCount: 1,
-      shouldRefreshActiveSeason: true,
-      hasMorePending: false,
-    });
-    (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(activeSeasonFailure);
-
-    await expect(
-      runCoordinatedForegroundSyncCycle({
-        rawDb: { id: 'raw-db' } as never,
-        source: 'manual',
-        setActiveSeasonSnapshot: jest.fn(),
-      }),
-    ).rejects.toBe(activeSeasonFailure);
-
-    expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(getSyncConnectionSnapshot()).toMatchObject({
-      kind: 'sync_error',
-      message: activeSeasonFailure.message,
-    });
+    expect(setActiveSeasonSnapshot).not.toHaveBeenCalled();
+    expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(recordSyncAttemptSucceeded).toHaveBeenCalledTimes(1);
+    expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'online' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[refreshActiveSeasonSnapshot]'), refreshFailure);
+    warn.mockRestore();
   });
 });

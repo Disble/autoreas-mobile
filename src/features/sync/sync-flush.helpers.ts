@@ -1,5 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { beginSyncConnectionAttempt } from './sync-connection-store/sync-connection-store.helpers';
+import {
+  beginSyncConnectionAttempt,
+  invalidateSyncConnectionOnline,
+} from './sync-connection-store/sync-connection-store.helpers';
 import {
   ACTIVE_SEASON_REFRESH_FLUSH_REASONS,
   SYNC_FLUSH_DISPATCHER,
@@ -137,6 +140,8 @@ function settleFlush(database: SQLiteDatabase, state: SyncFlushState): void {
   const dispatcher = SYNC_FLUSH_DISPATCHER.current;
 
   if (!dispatcher) {
+    // Queuing the follow-up showed `syncing`; with no run left to settle it, the work is pending.
+    invalidateSyncConnectionOnline();
     followUp.resolve(0);
     return;
   }

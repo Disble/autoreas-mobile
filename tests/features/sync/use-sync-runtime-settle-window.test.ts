@@ -275,7 +275,6 @@ describe("useSyncRuntime settle window and projection ordering", () => {
     ).mockResolvedValue(undefined);
     (useSeasonSync as jest.Mock).mockReturnValue({
       clearActiveSeason: jest.fn(async () => undefined),
-      isRefreshing: false,
       refreshActiveSeason: jest.fn(async () => undefined),
     });
     (useWebSocket as jest.Mock).mockImplementation(() => ({}));
