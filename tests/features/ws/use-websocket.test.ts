@@ -241,4 +241,89 @@ describe('useWebSocket', () => {
 
     expect(onSyncRequired).toHaveBeenCalledTimes(1);
   });
+
+  describe('reconnect catch-up (ADR 009 R-7)', () => {
+    /** Opens the current socket, then closes it and lets the scheduled reconnect build the next one. */
+    async function dropAndReconnect(): Promise<void> {
+      act(() => {
+        mockWs.onclose?.({} as CloseEvent);
+      });
+
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it('does not report the first open of a session as a reconnect: the mount or resume flush already covers it', async () => {
+      const onReconnected = jest.fn();
+
+      renderHook(() => useWebSocket({ enabled: true, onReconnected }));
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      expect(onReconnected).not.toHaveBeenCalled();
+    });
+
+    it('reports every later open of the same session as a reconnect', async () => {
+      const onReconnected = jest.fn();
+
+      renderHook(() => useWebSocket({ enabled: true, onReconnected }));
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      await dropAndReconnect();
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      await dropAndReconnect();
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      expect(global.WebSocket).toHaveBeenCalledTimes(3);
+      expect(onReconnected).toHaveBeenCalledTimes(2);
+    });
+
+    it('starts a new session when the runtime re-enables the socket, so its first open is not a reconnect', async () => {
+      const onReconnected = jest.fn();
+      const { rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useWebSocket({ enabled, onReconnected }),
+        { initialProps: { enabled: true } },
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      rerender({ enabled: false });
+      rerender({ enabled: true });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => {
+        mockWs.onopen?.({} as Event);
+      });
+
+      expect(global.WebSocket).toHaveBeenCalledTimes(2);
+      expect(onReconnected).not.toHaveBeenCalled();
+    });
+  });
 });

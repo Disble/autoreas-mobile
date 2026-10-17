@@ -106,6 +106,13 @@ Added 2026-10-16 with task T11.
 - It runs the full snapshot only when the last successful heal is more than 5 minutes old. A failed heal does not reset that interval.
 - It does not repeat the mount heal.
 
+How JS implements it (task T12, 2026-10-16):
+
+- Every heal goes through `requestFlush`. Each flush reason carries a snapshot-heal demand (`SNAPSHOT_HEAL_FLUSH_DEMANDS`): `bootstrap` (mount) and `app_active` (resume) always heal, `ws_reconnected` heals only when the last successful heal is stale, and every other reason never heals. A run that absorbs several reasons serves the strongest demand. Single-flight therefore comes from the dispatcher: one cycle runs, plus at most one follow-up.
+- The dispatched cycle sends, refreshes the season when asked, and then heals. The heal is best effort. A cycle whose sends failed skips the heal. A mount or resume cycle starts the cover sweep after its heal; the cover hydrate stays on the mount and resume events.
+- The last successful heal is kept in memory, per database. It only has to outlive a resume within one process, and a cold start always heals on mount. A failed heal never writes it.
+- `useWebSocket` reports `onReconnected` only for opens after the first one of a connection session. A session starts on mount or resume, which already flushed.
+
 **R-13: the claim mechanism**
 
 - The queue key is the anime for `operation_log` and the season for `season_rating_queue`.

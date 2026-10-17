@@ -78,6 +78,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
       database,
       source: 'local_mutation',
       refreshActiveSeason: true,
+      healSnapshot: 'never',
     });
 
     dispatcher.runs[1].resolve(2);
@@ -111,7 +112,30 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     void requestFlush(database, 'network_regained');
 
     expect(dispatcher.runs).toHaveLength(2);
-    expect(dispatcher.runs[1].request).toEqual({ database, source: 'network_regained', refreshActiveSeason: false });
+    expect(dispatcher.runs[1].request).toEqual({ database, source: 'network_regained', refreshActiveSeason: false, healSnapshot: 'never' });
+  });
+
+  it('serves the strongest snapshot-heal demand of the reasons a run absorbs (ADR 009 R-7)', async () => {
+    const dispatcher = registerHeldDispatcher();
+    void requestFlush(database, 'bootstrap');
+    void requestFlush(database, 'local_mutation');
+    void requestFlush(database, 'ws_reconnected');
+
+    expect(dispatcher.runs[0].request).toEqual(expect.objectContaining({ source: 'bootstrap', healSnapshot: 'always' }));
+
+    dispatcher.runs[0].resolve(0);
+    await flushMicrotasks();
+    // A reconnect is persisted as the sync the bridge asked for, and heals only when stale.
+    expect(dispatcher.runs[1].request).toEqual(expect.objectContaining({ source: 'local_mutation', healSnapshot: 'if_stale' }));
+
+    dispatcher.runs[1].resolve(0);
+    await waitForSyncFlushIdle(database);
+    void requestFlush(database, 'ws_reconnected');
+    void requestFlush(database, 'app_active');
+    expect(dispatcher.runs[2].request).toEqual(expect.objectContaining({ source: 'ws_sync_required', healSnapshot: 'if_stale' }));
+    dispatcher.runs[2].resolve(0);
+    await flushMicrotasks();
+    expect(dispatcher.runs[3].request).toEqual(expect.objectContaining({ source: 'app_active', healSnapshot: 'always' }));
   });
 
   it('keeps the running cycle from publishing online over work requested after it started', async () => {

@@ -3,8 +3,11 @@ import {
   beginSyncConnectionAttempt,
   invalidateSyncConnectionOnline,
 } from './sync-connection-store/sync-connection-store.helpers';
+import { SNAPSHOT_HEAL_DEMAND_RANK } from './snapshot-heal.constants';
+import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
   ACTIVE_SEASON_REFRESH_FLUSH_REASONS,
+  SNAPSHOT_HEAL_FLUSH_DEMANDS,
   SYNC_FLUSH_DISPATCHER,
   SYNC_FLUSH_REASON_SOURCES,
   SYNC_FLUSH_STATES,
@@ -91,7 +94,10 @@ export function resetSyncFlush(): void {
   SYNC_FLUSH_STATES.clear();
 }
 
-/** Merges the reasons one run serves into the dispatcher's request; the first reason names the source. */
+/**
+ * Merges the reasons one run serves into the dispatcher's request: the first reason names the
+ * source, and the strongest heal demand among them is served.
+ */
 function buildSyncFlushRequest(
   database: SQLiteDatabase,
   reasons: readonly SyncFlushReason[],
@@ -100,7 +106,17 @@ function buildSyncFlushRequest(
     database,
     source: SYNC_FLUSH_REASON_SOURCES[reasons[0]],
     refreshActiveSeason: reasons.some((reason) => ACTIVE_SEASON_REFRESH_FLUSH_REASONS.has(reason)),
+    healSnapshot: mergeSnapshotHealDemands(reasons),
   };
+}
+
+/** Returns the strongest heal demand among the reasons one run serves. */
+function mergeSnapshotHealDemands(reasons: readonly SyncFlushReason[]): SnapshotHealDemand {
+  return reasons.reduce<SnapshotHealDemand>((strongest, reason) => {
+    const demand = SNAPSHOT_HEAL_FLUSH_DEMANDS[reason];
+
+    return SNAPSHOT_HEAL_DEMAND_RANK[demand] > SNAPSHOT_HEAL_DEMAND_RANK[strongest] ? demand : strongest;
+  }, 'never');
 }
 
 /** Starts one run now, synchronously, so its connection attempt begins before the caller resumes. */

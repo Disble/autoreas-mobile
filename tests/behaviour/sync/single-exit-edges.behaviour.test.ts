@@ -181,7 +181,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     fakeBridge.queueResponse(EMPTY_RECONCILE);
 
     const first = requestFlush(adapter, 'manual');
-    const second = requestFlush(adapter, 'app_active');
+    const second = requestFlush(adapter, 'network_regained');
     const firstOutcome = await first.then(() => 'resolved', () => 'rejected');
     await expect(second).resolves.toBe(0);
     await waitForSyncFlushIdle(adapter);
@@ -197,7 +197,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     const held = fakeBridge.queueDeferredResponse();
     fakeBridge.queueResponse(confirmedAt(8));
 
-    const running = requestFlush(adapter, 'app_active');
+    const running = requestFlush(adapter, 'manual');
     await waitForRequests(fakeBridge, 1);
     expect(fakeBridge.requests).toHaveLength(1);
     await expect(applyAnimeMutationPatch(adapter, 'anime-1', buildCapPlusPatch, 'capPlus')).resolves.toBe(true);

@@ -43,7 +43,7 @@ flowchart TD
   subgraph Emitters["Emitters — features"]
     WS["use-websocket\nws_opened / ws_closed\nws_error / ws_reconnect_scheduled"]
     MUT["anime-mutation.helpers\nmutation_failed\nmutation_sync_failed"]
-    RES["use-foreground-resync\nresync_failed"]
+    RES["snapshot-heal.helpers\nresync_failed"]
     CYC["headless-sync-cycle catch\nwrite_failed"]
     PROBE["liveness probe\nheadless_task_registered / _missing"]
   end

@@ -60,6 +60,8 @@ jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
     fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
   }),
 }));
+// The `bootstrap` snapshot heal (ADR 009 R-7) is pinned by `reconnect-catch-up.behaviour.test.ts`.
+jest.mock('../../../src/features/sync/snapshot-heal.helpers', () => ({ healSnapshotOnDemand: jest.fn() }));
 
 describe('useSyncFacade', () => {
   const rawDb = { name: 'raw-db' };

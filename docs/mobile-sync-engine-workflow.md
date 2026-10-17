@@ -362,8 +362,8 @@ flowchart TD
   E6 --> K["recordSyncAttemptFailed, markSyncConnectionFailed"]
   subgraph FG["Foreground-only, on mount and app resume"]
     R1["useRemoteChangeDrain to drainPendingRemoteChanges"] --> R2["load pending_remote_changes, apply via merge boundary, delete in same transaction"]
-    R3["useForegroundResync to runForegroundResyncCycle"] --> R4["resyncFromBridgeSnapshot full heal, skips animes with a pending outbox op"]
-    R3 --> R5["runCoverSweep"]
+    R3["bootstrap / app_active / ws_reconnected flush (heal demand)"] --> R4["resyncFromBridgeSnapshot full heal inside the dispatched cycle, skips animes with a pending outbox op; ws_reconnected only if the last successful heal is over 5 min old"]
+    R3 --> R5["runCoverSweep after an always heal"]
   end
   subgraph OUT["Local mutation outbox"]
     O1["applyAnimeMutationPatch"] --> O2["BEGIN IMMEDIATE: update animes and insert operation_log row pending"]

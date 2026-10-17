@@ -152,7 +152,8 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     const adapter = await openRepairedDatabase();
     fakeBridge.queueResponse({ status: 202, body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 } });
 
-    await requestFlush(adapter, 'app_active');
+    // `manual`, not `app_active`: a resume also heals the snapshot (ADR 009 R-7).
+    await requestFlush(adapter, 'manual');
 
     expect(sentPaths(fakeBridge)).toEqual(['POST /api/sync/reconcile']);
     expect(getSyncConnectionSnapshot().kind).toBe('online');

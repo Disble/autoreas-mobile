@@ -9,6 +9,8 @@ import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
 import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
+import { healSnapshotOnDemand } from './snapshot-heal.helpers';
+import type { SnapshotHealDemand } from './snapshot-heal.types';
 import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
 import {
   recordSyncAttemptFailed,
@@ -32,7 +34,9 @@ import type { SyncFlushRequest } from './sync-flush.types';
 
 /**
  * Starts a cover sweep once a foreground sync cycle's own attempt has settled -- success, the
- * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`.
+ * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`,
+ * or for a cycle that always heals the snapshot (mount and resume), whose sweep runs after the heal
+ * so newly healed rows get their covers.
  * Never awaited: image downloads must never hold the caller's returned promise (the manual refresh
  * spinner included).
  *
@@ -44,8 +48,12 @@ import type { SyncFlushRequest } from './sync-flush.types';
  * unforced sweep instead of starting a second one; a forced call never joins one running unforced
  * (see `runCoverSweep`'s own doc comment).
  */
-function triggerCoverSweepForSource(rawDb: SQLiteDatabase, source: SyncRuntimeTriggerSource): void {
-  if (!COVER_SWEEP_TRIGGER_SOURCES.has(source)) {
+function triggerCoverSweep(
+  rawDb: SQLiteDatabase,
+  source: SyncRuntimeTriggerSource,
+  healSnapshot: SnapshotHealDemand,
+): void {
+  if (!COVER_SWEEP_TRIGGER_SOURCES.has(source) && healSnapshot !== 'always') {
     return;
   }
 
@@ -102,7 +110,10 @@ async function persistSyncFailureTelemetrySafely(
  * directly; they enqueue and call `requestFlush`, which runs it through
  * `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating, or when
  * the request demands it (the WebSocket season events, I8); that refresh is best effort and never
- * fails the cycle.
+ * fails the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
+ * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
+ * best effort too, and a cycle whose sends failed skips it, leaving the last success untouched so
+ * the next trigger heals.
  *
  * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
  * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
@@ -124,6 +135,7 @@ export async function runCoordinatedForegroundSyncCycle({
   source,
   setActiveSeasonSnapshot,
   refreshActiveSeason = false,
+  healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
 
@@ -143,9 +155,11 @@ export async function runCoordinatedForegroundSyncCycle({
       await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
     }
 
+    await healSnapshotOnDemand(rawDb, healSnapshot);
+
     if (result.hasMorePending || seasonDrainResult.hasMorePending) {
       markSyncConnectionPending(attempt);
-      triggerCoverSweepForSource(rawDb, source);
+      triggerCoverSweep(rawDb, source, healSnapshot);
       return result.syncedCount;
     }
 
@@ -167,12 +181,12 @@ export async function runCoordinatedForegroundSyncCycle({
       publishConnection: () => markSyncConnectionSucceeded(attempt, syncedAt),
     });
 
-    triggerCoverSweepForSource(rawDb, source);
+    triggerCoverSweep(rawDb, source, healSnapshot);
     return result.syncedCount;
   } catch (error) {
     const failure = error instanceof Error ? error : new Error('Sync failed');
 
-    triggerCoverSweepForSource(rawDb, source);
+    triggerCoverSweep(rawDb, source, healSnapshot);
     await publishSyncConnectionAttempt({
       attempt,
       persistTelemetry: () =>
@@ -194,6 +208,7 @@ export function dispatchForegroundSyncFlush(request: SyncFlushRequest): Promise<
     rawDb: request.database,
     source: request.source,
     refreshActiveSeason: request.refreshActiveSeason,
+    healSnapshot: request.healSnapshot,
     setActiveSeasonSnapshot: useActiveSeasonStore.getState().setActiveSeasonSnapshot,
   });
 }

@@ -63,7 +63,7 @@ const IMPORTANT_FILES = [
   'src/features/sync/cover-sweep/cover-sweep-entry.helpers.ts',
   'src/features/sync/cover-sweep/cover-sweep.helpers.ts',
   'src/features/sync/cover-sweep/cover-sweep-lock.ts',
-  'src/features/sync/foreground-resync-cycle.helpers.ts',
+  'src/features/sync/snapshot-heal.helpers.ts',
   'src/features/sync/native-battery-optimization.helpers.ts',
   'src/features/sync/native-foreground-service-presence.helpers.ts',
   'src/features/sync/native-foreground-sync-ticker.helpers.ts',

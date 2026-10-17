@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 import type { SyncFlushReason } from './sync-flush.types';
+import type { SnapshotHealDemand } from './snapshot-heal.types';
 import type { SyncConnectionStatus } from './sync-connection-store/sync-connection-store.types';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 import type { OptionalLiveQueryStatus } from '../../infrastructure/db/native-runtime/native-runtime.types';
@@ -26,6 +27,8 @@ export interface RunCoordinatedForegroundSyncCycleInput {
   readonly setActiveSeasonSnapshot: (snapshot: ActiveSeasonSnapshot | null) => void;
   /** Refreshes the active season even when no rating was delivered (WebSocket season events). */
   readonly refreshActiveSeason?: boolean;
+  /** The full-snapshot heal this cycle serves after its sends (ADR 009 R-7); `never` by default. */
+  readonly healSnapshot?: SnapshotHealDemand;
 }
 
 /** Defines the data contract for use sync facade result. */

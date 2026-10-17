@@ -315,7 +315,11 @@ describe("useSyncRuntime", () => {
     expect(mockRequestSync).toHaveBeenCalledWith("network_regained");
   });
 
-  it("routes websocket sync_required messages through the root runtime", async () => {
+  // A reconnect is the R-7 catch-up (ADR 009): it goes through the flush entry point too.
+  it.each([
+    ["sync_required messages", "onSyncRequired", "ws_sync_required"],
+    ["a reconnect", "onReconnected", "ws_reconnected"],
+  ])("routes websocket %s through the root runtime", async (_event, callback, reason) => {
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 
     await act(async () => {
@@ -326,11 +330,11 @@ describe("useSyncRuntime", () => {
     mockRequestSync.mockClear();
 
     await act(async () => {
-      webSocketArgs.onSyncRequired();
+      webSocketArgs[callback]();
       await Promise.resolve();
     });
 
-    expect(mockRequestSync).toHaveBeenCalledWith("ws_sync_required");
+    expect(mockRequestSync.mock.calls).toEqual([[reason]]);
   });
 
   it("routes websocket season events through the flush entry point instead of acting alone (I8)", async () => {

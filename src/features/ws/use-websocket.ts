@@ -12,6 +12,7 @@ export function useWebSocket({
   onSeasonChanged,
   onSyncRequired,
   onPreferencesChanged,
+  onReconnected,
 }: UseWebSocketProps = {}) {
   // 1. Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -20,6 +21,7 @@ export function useWebSocket({
   const onSeasonChangedRef = useRef(onSeasonChanged);
   const onSyncRequiredRef = useRef(onSyncRequired);
   const onPreferencesChangedRef = useRef(onPreferencesChanged);
+  const onReconnectedRef = useRef(onReconnected);
 
   // 2. State
 
@@ -46,6 +48,11 @@ export function useWebSocket({
   }, [onPreferencesChanged]);
 
   useEffect(() => {
+    onReconnectedRef.current = onReconnected;
+  }, [onReconnected]);
+
+  // eslint-disable-next-line react-doctor/effect-needs-cleanup -- the reconnect timer is set from socket callbacks; the returned cleanup (`disconnect`) clears the pending one and closes the socket, and `isMounted` stops a fired one from reconnecting.
+  useEffect(() => {
     const disconnect = () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -64,6 +71,9 @@ export function useWebSocket({
     }
 
     let isMounted = true;
+    // One connection session per effect run: only an open after the session's first one is a
+    // reconnect (ADR 009 R-7), so the first open never repeats the mount or resume flush.
+    let hasOpenedInSession = false;
 
     const scheduleReconnect = () => {
       if (reconnectTimeoutRef.current) {
@@ -117,6 +127,12 @@ export function useWebSocket({
           // there is no other way to see it off-device: from the bridge, one live socket and
           // two look identical until one of them is orphaned.
           recordDiagnosticEvent({ source: 'websocket', event: 'ws_opened', at: Date.now() });
+
+          if (hasOpenedInSession) {
+            onReconnectedRef.current?.();
+          }
+
+          hasOpenedInSession = true;
         };
 
         ws.onmessage = (event: MessageEvent) => {
