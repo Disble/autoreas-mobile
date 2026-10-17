@@ -13,11 +13,14 @@ import {
   TREE_SEGMENT,
 } from './anime-folders.constants';
 import type {
+  AnimeFolderArrivalSource,
   AnimeFolderSource,
   FolderClaim,
   FolderIndex,
   FolderIndexSummary,
+  FolderProbe,
   FolderResolution,
+  FolderTreeChild,
   FolderTreeEntry,
   FolderTreeLister,
   IndexedFolder,
@@ -108,6 +111,17 @@ function toNormalizedKey(name: string): string {
   return unaccented.toLowerCase().replace(NON_ALPHANUMERIC_PATTERN, '');
 }
 
+/** Reads the name and document id of a listed child, or `null` for a file or a hidden folder. */
+function readChildFolder(child: FolderTreeChild): { name: string; documentId: string } | null {
+  const documentId = getSafDocumentId(child.uri);
+  const name = toSegments(documentId?.slice(documentId.indexOf(':') + 1)).at(-1);
+  if (!child.isDirectory || !documentId || !name || name.startsWith('.')) {
+    return null;
+  }
+
+  return { name, documentId };
+}
+
 /**
  * Walks a SAF folder tree level by level, up to `ANIME_FOLDERS_MAX_DEPTH` levels, and returns
  * every folder found. Files and hidden folders (names starting with `.`) are skipped. Listings are
@@ -129,14 +143,13 @@ export async function walkFolderTree(
 
     for (const [parentIndex, parent] of level.entries()) {
       for (const child of listings[parentIndex]) {
-        const documentId = getSafDocumentId(child.uri);
-        const name = toSegments(documentId?.slice(documentId.indexOf(':') + 1)).at(-1);
-        if (!child.isDirectory || !documentId || !name || name.startsWith('.')) {
+        const folder = readChildFolder(child);
+        if (!folder) {
           continue;
         }
 
-        const relativePath = parent.relativePath ? `${parent.relativePath}/${name}` : name;
-        found.push({ relativePath, documentId });
+        const relativePath = parent.relativePath ? `${parent.relativePath}/${folder.name}` : folder.name;
+        found.push({ relativePath, documentId: folder.documentId });
         nextLevel.push({ uri: child.uri, relativePath });
       }
     }
@@ -312,6 +325,97 @@ export function resolveAnimeFolders(
   }
 
   return { byAnimeId, summary: summarizeClaims(index, claims) };
+}
+
+/**
+ * Finds where the folder of one pending anime would appear: the deepest indexed parent of its
+ * bridge path and the first folder name missing below it, or the root and the path's first folder
+ * when no parent is indexed. `null` when its folder name is already indexed (found, shared, or
+ * ambiguous: a new listing cannot change that), or when its parent matches more than one folder.
+ */
+function findExpectedFolder(
+  index: FolderIndex,
+  folderRelative: string,
+): { parentRelativePath: string; expectedKey: string } | null {
+  const segments = toSegments(folderRelative);
+  const lastName = segments.at(-1);
+  if (!lastName || index.byExactKey.has(toExactKey(lastName))) {
+    return null;
+  }
+
+  for (let depth = segments.length - 1; depth >= 1; depth -= 1) {
+    const parents = matchByPath(index, segments.slice(0, depth).join('/'));
+    if (parents) {
+      // A parent at the deepest walked level can hold the folder, but the walk would never index
+      // it: a hit there would re-walk the whole tree on every event and still find nothing.
+      const isParentWalkable =
+        parents.length === 1 && toSegments(parents[0].relativePath).length < ANIME_FOLDERS_MAX_DEPTH;
+      return isParentWalkable
+        ? { parentRelativePath: parents[0].relativePath, expectedKey: toExactKey(segments[depth]) }
+        : null;
+    }
+  }
+
+  return { parentRelativePath: '', expectedKey: toExactKey(segments[0]) };
+}
+
+/**
+ * Lists the folders to check for active animes that have a bridge path but no indexed folder yet,
+ * one probe per parent folder so a listing serves every anime waiting in it. A folder copied to the
+ * tablet after its anime arrived shows up in one of these listings.
+ */
+export function findFolderProbes(
+  index: FolderIndex,
+  animes: readonly AnimeFolderSource[],
+): FolderProbe[] {
+  const keysByParent = new Map<string, string[]>();
+
+  for (const source of animes) {
+    const expected =
+      source.activo === 1 && source.folderRelative ? findExpectedFolder(index, source.folderRelative) : null;
+    if (!expected) {
+      continue;
+    }
+
+    keysByParent.set(expected.parentRelativePath, [
+      ...(keysByParent.get(expected.parentRelativePath) ?? []),
+      expected.expectedKey,
+    ]);
+  }
+
+  return [...keysByParent].map(([parentRelativePath, expectedKeys]) => ({ parentRelativePath, expectedKeys }));
+}
+
+/** Builds the SAF uri of a folder below the picked root; `''` is the root itself. */
+export function buildFolderUri(rootUri: string, relativePath: string): string {
+  const rootDocumentId = getSafDocumentId(rootUri);
+  if (!relativePath || !rootDocumentId) {
+    return rootUri;
+  }
+
+  const separator = rootDocumentId.endsWith(':') ? '' : '/';
+  return `${rootUri}${DOCUMENT_SEGMENT}${encodeURIComponent(`${rootDocumentId}${separator}${relativePath}`)}`;
+}
+
+/** True when a listing of the probe's parent holds one of the folders it waits for. */
+export function hasFolderProbeHit(probe: FolderProbe, children: readonly FolderTreeChild[]): boolean {
+  const expectedKeys = new Set(probe.expectedKeys);
+  return children.some((child) => {
+    const folder = readChildFolder(child);
+    return folder !== null && expectedKeys.has(toExactKey(folder.name));
+  });
+}
+
+/**
+ * Returns the animes that got an incoming event since the previous read: new rows, and rows whose
+ * last applied remote change differs from the one read before.
+ */
+export function findArrivedAnimes(
+  previous: ReadonlyMap<string, number | null>,
+  sources: readonly AnimeFolderArrivalSource[],
+): AnimeFolderArrivalSource[] {
+  // A new row reads `undefined` from the map, which never equals a stored stamp or `null`.
+  return sources.filter((source) => previous.get(source.id) !== source.lastAppliedChangeMs);
 }
 
 /** Returns the anime page url when it is an http(s) url with a host, else `null` (no page button). */

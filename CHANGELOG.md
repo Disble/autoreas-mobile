@@ -16,6 +16,12 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- The folder button now shows up on its own when an anime's folder reaches the tablet after the anime, as happens with animes created from Season. It used to stay hidden until the app restarted or you tapped "Volver a buscar".
+- Anime covers keep their poster shape instead of stretching into a tall strip on taller cards.
+- The season status and "Disponible para calificar" share one row, so cards are shorter.
+
 ## [1.12.0] — 2026-10-15
 
 ### Added
