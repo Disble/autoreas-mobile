@@ -1,8 +1,8 @@
 import { Directory } from 'expo-file-system';
-import { startActivityAsync } from 'expo-intent-launcher';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Alert, Linking } from 'react-native';
 import {
+  ACTIVITY_LAUNCHER_MODULE_NAME,
   FLAG_ACTIVITY_LAUNCH_ADJACENT,
   FLAG_ACTIVITY_NEW_TASK,
   OPEN_FOLDER_FAILED_TITLE,
@@ -11,7 +11,11 @@ import {
   SAF_LISTER_MODULE_NAME,
   SAMSUNG_MY_FILES_START_PATH_EXTRA,
 } from './anime-folders.constants';
-import type { FolderTreeChild, SafListerModule } from './anime-folders.types';
+import type {
+  ActivityLauncherModule,
+  FolderTreeChild,
+  SafListerModule,
+} from './anime-folders.types';
 
 /**
  * Lists the direct children of a SAF folder with one provider query, off the JS thread (see
@@ -50,15 +54,29 @@ export async function pickSafRoot(initialUri: string): Promise<string | null> {
 
 /**
  * Opens a device folder in Samsung My Files. In split screen it opens in the other half, reusing
- * the My Files already there; from full screen it opens full screen.
+ * the My Files already there; from full screen it opens full screen. Fire and forget: nothing waits
+ * for My Files, so the app is never paused for a result (see modules/activity-launcher).
  */
 export function openDeviceFolder(path: string): void {
-  startActivityAsync(SAMSUNG_MY_FILES_LAUNCH_ACTION, {
-    extra: { [SAMSUNG_MY_FILES_START_PATH_EXTRA]: path },
-    flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_LAUNCH_ADJACENT,
-  }).catch((error: unknown) => {
+  launchDeviceFolder(path).catch((error: unknown) => {
     Alert.alert(OPEN_FOLDER_FAILED_TITLE, String(error));
   });
+}
+
+/** Hands the folder to My Files; rejects when the launcher is missing or Android refuses it. */
+async function launchDeviceFolder(path: string): Promise<void> {
+  const activityLauncher = requireOptionalNativeModule<ActivityLauncherModule>(
+    ACTIVITY_LAUNCHER_MODULE_NAME,
+  );
+  if (!activityLauncher) {
+    throw new Error(`${ACTIVITY_LAUNCHER_MODULE_NAME} is not in this build`);
+  }
+
+  await activityLauncher.startActivity(
+    SAMSUNG_MY_FILES_LAUNCH_ACTION,
+    { [SAMSUNG_MY_FILES_START_PATH_EXTRA]: path },
+    FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_LAUNCH_ADJACENT,
+  );
 }
 
 /** Opens an anime page in the browser. */
