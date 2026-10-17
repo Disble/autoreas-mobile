@@ -159,6 +159,9 @@ def CORE_CLASSES = [
   'MissingTokenOutcome', 'MissingTokenOutcome$*',
   // MessageIsolation.kt (ADR 009 R-5: a message rejection is isolated per message)
   'MessageIsolationKt', 'MessageIsolationKt$*', 'RoundResult', 'RoundResult$*',
+  // SeasonRatingSender.kt (ADR 009 R-2 I1, L28: season ratings sent from operation_log)
+  'SeasonRatingSender', 'SeasonRatingSender$*', 'SeasonRatingSenderKt', 'SeasonRatingSenderKt$*',
+  'SeasonRatingFate', 'SeasonRatingFate$*', 'SeasonRatingPassResult', 'SeasonRatingPassResult$*',
   // UnresolvedResolution.kt (ADR 009 R-16b: automatic resolution)
   'UnresolvedResolution', 'UnresolvedResolution$*',
   // SyncCycleLease.kt

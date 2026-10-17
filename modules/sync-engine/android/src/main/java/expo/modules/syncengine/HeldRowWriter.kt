@@ -64,8 +64,9 @@ internal class HeldRowWriter(
   }
 
   /**
-   * Gives a key up (ADR 009 R-3): its held rows and its unclaimed pending rows become `dead_letter`
-   * with [reason], all released. The whole key goes, since none of its rows can carry a base.
+   * Gives a key up (ADR 009 R-3): its held rows and its unclaimed pending `update` rows become
+   * `dead_letter` with [reason], all released. The whole key's edits go, since none of them can
+   * carry a base; its season ratings need no base, so they stay queued (L28).
    */
   fun giveKeyUp(animeId: String, heldIds: List<Long>, reason: String) {
     val heldFence = fence()
@@ -75,7 +76,8 @@ internal class HeldRowWriter(
     appDb.compileStatement(
       "UPDATE operation_log SET status = 'dead_letter', unresolved_reason = ?, claim_owner = NULL, " +
         "claimed_at = NULL WHERE ((id IN ($placeholders) AND status = 'processing' AND claim_owner = ? " +
-        "AND claimed_at = ?) OR (anime_id = ? AND status = 'pending' AND claimed_at IS NULL)) " +
+        "AND claimed_at = ?) OR (anime_id = ? AND operation = '$ANIME_UPDATE_OPERATION' " +
+        "AND status = 'pending' AND claimed_at IS NULL)) " +
         "AND $LEASE_OWNERSHIP_GUARD_SQL",
     ).run {
       bindString(1, reason)
@@ -85,6 +87,29 @@ internal class HeldRowWriter(
       bindString(heldIds.size + 4, animeId)
       bindString(heldIds.size + 5, heldFence.owner)
       bindString(heldIds.size + 6, heldFence.fence)
+      executeUpdateDelete()
+    }
+  }
+
+  /**
+   * Gives one held row up with [reason] (a season rating the bridge answered 4xx, ADR 009 R-5):
+   * `dead_letter`, released, compare-and-set on the claim like every other status write.
+   */
+  fun giveOperationUp(id: Long, reason: String) {
+    val heldFence = fence()
+    requireLeaseOwnership(appDb, heldFence)
+    val heldClaim = claim()
+    appDb.compileStatement(
+      "UPDATE operation_log SET status = 'dead_letter', unresolved_reason = ?, claim_owner = NULL, " +
+        "claimed_at = NULL WHERE id = ? AND status = 'processing' AND claim_owner = ? " +
+        "AND claimed_at = ? AND $LEASE_OWNERSHIP_GUARD_SQL",
+    ).run {
+      bindString(1, reason)
+      bindLong(2, id)
+      bindString(3, heldClaim.owner)
+      bindLong(4, heldClaim.claimedAt)
+      bindString(5, heldFence.owner)
+      bindString(6, heldFence.fence)
       executeUpdateDelete()
     }
   }

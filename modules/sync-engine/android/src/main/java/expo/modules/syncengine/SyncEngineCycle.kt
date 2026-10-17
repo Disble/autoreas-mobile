@@ -77,6 +77,7 @@ class SyncEngineCycle(
    */
   private val heldRows = HeldRowWriter(appDb, { requireOwned() }, { claim })
   private val missingTokens = MissingTokenResolver(appDb, heldRows) { requireOwned() }
+  private val ratings = SeasonRatingSender(appDb, heldRows, { requireOwned() }, { claim }, clock)
   private val responseApplier = SyncEngineResponseApplier(
     appDb,
     heldRows::updateOperationStatus,
@@ -230,17 +231,29 @@ class SyncEngineCycle(
     var firstRound = true
     do {
       backlogReadCount += round.size
-      val sent = sendRound(target, round, lastChangelogId, includeTelemetry = firstRound)
+      // A key's rows go out in order whatever their endpoint (L28): the round holds at most one
+      // row per anime, so its anime edits share one reconcile and its ratings follow, one each.
+      val (seasonRatings, edits) = round.partition { it.operation == SEASON_RATING_OPERATION }
+      val result = if (firstRound || edits.isNotEmpty()) {
+        reconcileRound(target, edits, lastChangelogId, includeTelemetry = firstRound)
+      } else {
+        RoundResult.Applied(0, emptyList(), lastChangelogId)
+      }
       firstRound = false
-      val result = if (sent is RoundResult.Rejected) settleRejection(target, sent, lastChangelogId) else sent
       if (result is RoundResult.Failed) {
+        // The reconcile failed first: this round's ratings are released unsent.
+        releaseRows(seasonRatings)
         return outcome("failed", lastState, syncedCount + result.confirmedCount, backlogReadCount, result.errorName)
       }
       // A settled round is applied: `settleRejection` never answers a rejection.
       val applied = result as RoundResult.Applied
-      syncedCount += applied.confirmedCount
+      claimedRows = seasonRatings
+      val rated = ratings.send(seasonRatings, target.chainDeadline) { body ->
+        SyncEngineHttp.postJson("http://${target.ip}:${target.port}$SEASON_RATING_PATH", target.token, body, BRIDGE_REQUEST_TIMEOUT_MS)
+      }
+      syncedCount += applied.confirmedCount + rated.confirmedCount
       lastChangelogId = applied.cursor
-      round = applied.successors
+      round = applied.successors + rated.successors
     } while (round.isNotEmpty())
     claimedRows = emptyList()
 
@@ -339,6 +352,18 @@ class SyncEngineCycle(
     return RoundResult.Applied(confirmedIds.size, successors, maxOf(cursor, parsed.lastChangelogId ?: cursor))
   }
 
+  /** Sends one reconcile for [edits] and settles a message rejection, if any. */
+  private fun reconcileRound(target: RoundTarget, edits: List<BacklogRow>, cursor: Long, includeTelemetry: Boolean): RoundResult {
+    val sent = sendRound(target, edits, cursor, includeTelemetry)
+    return if (sent is RoundResult.Rejected) settleRejection(target, sent, cursor) else sent
+  }
+
+  /** Releases [rows] to `pending`, compare-and-set on the claim; never throws. */
+  private fun releaseRows(rows: List<BacklogRow>) {
+    claimedRows = rows
+    revertClaimedRows(deadLetter = false)
+  }
+
   /** Gives the round's rows their failure fate and journals the failure that ends the attempt. */
   private fun fail(deadLetter: Boolean, reason: String?, errorName: String): RoundResult.Failed {
     revertClaimedRows(deadLetter)
@@ -363,10 +388,7 @@ class SyncEngineCycle(
         heldRows.updateOperationStatus(listOf(row.id), "dead_letter")
       }
 
-      override fun release(rows: List<BacklogRow>) {
-        claimedRows = rows
-        revertClaimedRows(deadLetter = false)
-      }
+      override fun release(rows: List<BacklogRow>) = releaseRows(rows)
 
       override fun noneDelivered(rejection: RoundResult.Rejected): RoundResult.Failed {
         // Every isolated message is already dead-lettered: nothing is left to revert.
