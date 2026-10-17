@@ -48,6 +48,11 @@ async function applyAcceptedChange(
   }
 
   if (change.changedFields.length === 0) {
+    // Fail closed: nothing in this change is understood, so it is rejected, logged and acknowledged.
+    console.warn('[applyRemoteChanges] remote_change_rejected: no known field in an update', {
+      recordId: change.recordId,
+      timestamp: change.timestamp,
+    });
     return 'rejected';
   }
 

@@ -35,8 +35,8 @@ const RUNTIME_STATUS_SQL = 'SELECT last_attempt_at, last_cycle_stage, last_cycle
 const BRIDGE_CONFIG_GATE_SQL = 'SELECT ip, port, token FROM bridge_config ORDER BY id DESC LIMIT 1;';
 /** Read-only query for every journal cycle's newest transition, newest cycle first. */
 const JOURNAL_CYCLES_SQL = 'SELECT cycle_id, to_state FROM journal WHERE id IN (SELECT MAX(id) FROM journal GROUP BY cycle_id) ORDER BY id DESC;';
-/** The journal states that finish a cycle: it closed, or it failed and reported why. */
-const FINISHED_CYCLE_STATES = new Set(['closed', 'failed']);
+/** The journal states that finish a cycle: it closed, failed and reported why, or stood down as `not_applicable` (terminal in the engine's FSM). */
+const FINISHED_CYCLE_STATES = new Set(['closed', 'failed', 'not_applicable']);
 
 /** Builds one check outcome object in the shape the entry point records and prints; shared by both check modules. */
 export function outcome(name, verdict, evidence) {

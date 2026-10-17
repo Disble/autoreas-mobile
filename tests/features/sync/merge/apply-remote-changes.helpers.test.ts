@@ -123,11 +123,15 @@ describe("applyRemoteChanges", () => {
     });
     const ctx = makeContext({ guardByRecordId: new Map([["anime-1", 100]]) });
 
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
     const result = await applyRemoteChanges(db, [change], ctx);
 
     expect(applyAnimePartial).not.toHaveBeenCalled();
     expect(upsertAnime).not.toHaveBeenCalled();
     expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, rejected: 1 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('remote_change_rejected'), { recordId: 'anime-1', timestamp: 150 });
+    warn.mockRestore();
   });
 
   it("update con changed_fields vacío y fila inexistente hace cold insert vía upsertAnime", async () => {

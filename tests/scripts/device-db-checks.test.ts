@@ -92,6 +92,10 @@ describe('check 10 cycle-closure parsing', () => {
 });
 
 describe('check 10 unfinished-cycle streak', () => {
+  it('treats a not_applicable cycle as finished: the engine stood down and its FSM marks it terminal', () => {
+    expect(unfinishedCycleStreak(journalOf('cyc-3|not_applicable', 'cyc-2|not_applicable', 'cyc-1|closed').cycles)).toEqual([]);
+  });
+
   it('counts abandoned cycles at the head of the journal until the first finished one', () => {
     const streak = unfinishedCycleStreak(
       journalOf('cyc-3|abandoned', 'cyc-2|abandoned', 'cyc-1|closed', 'cyc-0|abandoned').cycles,
