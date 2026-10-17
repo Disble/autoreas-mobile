@@ -216,7 +216,7 @@ sequenceDiagram
 | R1 | **JS and Kotlin can claim the same `operation_log` rows.** JS never takes `sync_cycle_lock`. While Kotlin holds it, its recovery sweep returns every `processing` row to `pending`, including rows JS claimed and is sending. Native ticks are not gated on app state. Outcome: duplicate sends (masked if the bridge is idempotent per operation id) _(inferred)_. This contradicts ADR 008 decision 3, "single owner per store, with lease and fencing" | `SyncEngineRecovery.kt:8-10`, `SyncEngineDatabases.kt:67-68`, `reconcile.helpers.ts:331-338` |
 | R2 | Changes a native tick pulls while the app is open advance the cursor but stay in staging until the next mount or resume _(inferred)_ | `SyncEngineResponseApplier.kt:90-98`, `use-remote-change-drain.ts:39-57` |
 | R3 | Unpairing deletes only `bridge_config`. `operation_log`, `season_rating_queue` and `pending_remote_changes` survive into the next pairing | `client.helpers.ts:404-407` |
-| R4 | Tearing down the ticker module calls `stopTicking()`, which persists `isTicking=false` and cancels the alarm _(inferred)_ | `ForegroundSyncTickerModule.kt:240-242`, `TickAlarmScheduler.kt:223-227` |
+| R4 | Tearing down the ticker module calls `stopTicking()`, which persists `isTicking=false` and cancels the alarm. _Partially confirmed (T14, 2026-10-16): true, but `OnDestroy` runs only when the React instance is invalidated (JS reload, dev-mode exception), and it is not the only retry path: the WorkManager floor (`SyncFloorWorker`, 15 min) takes over once the alarm is cancelled, and the next mount re-registers the ticker. R-8 holds._ | `ForegroundSyncTickerModule.kt:240-242`, `TickAlarmScheduler.kt:223-227` |
 
 ### 4.3 Dead (no production caller)
 
