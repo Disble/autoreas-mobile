@@ -119,6 +119,28 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
     expect(await readVisibleStatus(adapter, 1)).toMatchObject({ chipLabel: 'Esperando a la PC', title: 'Esperando a la PC' });
   });
 
+  it('stops claiming a reachable bridge once a WebSocket drop finds it gone (A1)', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const adapter = await openRepairedDatabase();
+    fakeBridge.queueResponse(EMPTY_RECONCILE);
+    fakeBridge.queueResponse({ status: 503, body: { error: 'busy' } });
+    await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1 });
+    await waitForSyncFlushIdle(adapter);
+    expect(await readVisibleStatus(adapter, 1)).toMatchObject({ title: 'Bridge conectado' });
+
+    // The PC is turned off: the socket drops, and the flush it requests cannot reach the bridge.
+    await expect(requestFlush(adapter, 'ws_disconnected')).rejects.toThrow();
+
+    expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'unreachable', bridgeContact: { reached: false } });
+    expect(await readVisibleStatus(adapter, 1)).toMatchObject({ chipLabel: 'Esperando a la PC', title: 'Esperando a la PC' });
+    expect(fakeBridge.requests.map((request) => new URL(request.url).pathname)).toEqual([
+      '/api/sync/reconcile',
+      '/api/seasons/active/ratings',
+      '/api/sync/reconcile',
+    ]);
+  });
+
   describe('I6: the season refresh after a delivered rating keeps active_season_cache in step', () => {
     it('writes the refreshed season into the cache', async () => {
       const adapter = await openRepairedDatabase();

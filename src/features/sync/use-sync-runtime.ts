@@ -166,6 +166,7 @@ export function useSyncRuntime(
         | "network_regained"
         | "ws_sync_required"
         | "ws_reconnected"
+        | "ws_disconnected"
         | "ws_season_changed"
         | "ws_preferences_changed",
     ) => {
@@ -183,6 +184,13 @@ export function useSyncRuntime(
   // socket never reports a first attempt that succeeds, which the mount or resume flush covers.
   const handleWebSocketReconnected = useCallback(() => {
     requestAutomaticSync("ws_reconnected");
+  }, [requestAutomaticSync]);
+
+  // A drop of an open socket re-checks the bridge (ADR 009 R-9): the drop alone proves nothing
+  // about HTTP, so the cycle's own outcome decides whether the status still claims it reachable.
+  // Single-flight: a flapping socket runs at most one cycle plus one follow-up.
+  const handleWebSocketDisconnected = useCallback(() => {
+    requestAutomaticSync("ws_disconnected");
   }, [requestAutomaticSync]);
 
   // Both WebSocket season events go through the entry point (ADR 009 R-2, I8): the dispatched
@@ -216,6 +224,7 @@ export function useSyncRuntime(
     onSyncRequired: handleWebSocketSyncRequired,
     onPreferencesChanged: handlePreferencesChanged,
     onReconnected: handleWebSocketReconnected,
+    onDisconnected: handleWebSocketDisconnected,
   });
 
   // Drains background-staged remote changes into `animes` on the foreground reactive

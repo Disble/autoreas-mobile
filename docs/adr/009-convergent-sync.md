@@ -120,6 +120,7 @@ The status waits for the Bridge only while no runtime has evidence that it is re
 - The connection store records the latest exchange (`bridgeContact`): a cycle that succeeded, or that the Bridge answered but left work pending, reached it; only a transport failure did not. A rejection keeps the previous evidence. New work keeps it. Unpairing forgets it.
 - The sync facade reads `last_attempt_at` and `last_success_at` from `sync_runtime_status`, which both runtimes write. A success there that is the row's latest attempt and is newer than the store's evidence overrides it, so a native delivery after a JS failure counts. With no JS evidence yet, the row is not trusted.
 - When the Bridge is reachable and no cycle runs, the facade reports `reachable`. Pending changes then read "Bridge conectado / Por enviar", never "Esperando a la PC", however old the last full sync is.
+- The evidence never expires by time. When an open socket drops while it is still wanted, `useWebSocket` reports `onDisconnected`, and the runtime requests a `ws_disconnected` flush (persisted as `ws_sync_required`, no heal). The drop alone proves nothing about HTTP; the cycle's own outcome decides, and a transport failure records the Bridge as not reached. A socket that never opened, or a close caused by unmount or disable, requests nothing, and a flapping socket runs at most one cycle plus one follow-up.
 - I6: the season refresh after a delivered rating writes `active_season_cache`, and a failed refresh keeps it (fixed by T11, pinned by T13).
 
 **R-13: the claim mechanism**

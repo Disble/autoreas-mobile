@@ -13,6 +13,7 @@ export function useWebSocket({
   onSyncRequired,
   onPreferencesChanged,
   onReconnected,
+  onDisconnected,
 }: UseWebSocketProps = {}) {
   // 1. Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -22,6 +23,7 @@ export function useWebSocket({
   const onSyncRequiredRef = useRef(onSyncRequired);
   const onPreferencesChangedRef = useRef(onPreferencesChanged);
   const onReconnectedRef = useRef(onReconnected);
+  const onDisconnectedRef = useRef(onDisconnected);
 
   // 2. State
 
@@ -50,6 +52,10 @@ export function useWebSocket({
   useEffect(() => {
     onReconnectedRef.current = onReconnected;
   }, [onReconnected]);
+
+  useEffect(() => {
+    onDisconnectedRef.current = onDisconnected;
+  }, [onDisconnected]);
 
   // eslint-disable-next-line react-doctor/effect-needs-cleanup -- the reconnect timer is set from socket callbacks; the returned cleanup (`disconnect`) clears the pending one and closes the socket, and `isMounted` stops a fired one from reconnecting.
   useEffect(() => {
@@ -123,8 +129,11 @@ export function useWebSocket({
         });
 
         wsRef.current = ws;
+        // Per socket: only the drop of a socket that opened is a disconnect (ADR 009 R-9).
+        let didOpen = false;
 
         ws.onopen = () => {
+          didOpen = true;
           reconnectAttemptRef.current = 0;
           // Two opens milliseconds apart is how the duplicate-socket bug shows itself, and
           // there is no other way to see it off-device: from the bridge, one live socket and
@@ -196,6 +205,12 @@ export function useWebSocket({
 
           if (isMounted && enabled) {
             scheduleReconnect();
+
+            // A close the cleanup caused (unmount, disable, backgrounding) lands with
+            // `isMounted` false and is not reported.
+            if (didOpen) {
+              onDisconnectedRef.current?.();
+            }
           }
         };
 

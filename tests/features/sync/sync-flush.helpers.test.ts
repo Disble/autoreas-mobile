@@ -138,6 +138,25 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     expect(dispatcher.runs[3].request).toEqual(expect.objectContaining({ source: 'app_active', healSnapshot: 'always' }));
   });
 
+  it('persists a WebSocket drop as a bridge-asked sync with no heal, and a flapping socket queues one follow-up (ADR 009 R-9)', async () => {
+    const dispatcher = registerHeldDispatcher();
+    void requestFlush(database, 'ws_disconnected');
+    void requestFlush(database, 'ws_disconnected');
+    void requestFlush(database, 'ws_disconnected');
+    void requestFlush(database, 'ws_disconnected');
+
+    expect(dispatcher.runs).toHaveLength(1);
+    expect(dispatcher.runs[0].request).toEqual({ database, source: 'ws_sync_required', refreshActiveSeason: false, healSnapshot: 'never' });
+
+    dispatcher.runs[0].resolve(0);
+    await flushMicrotasks();
+    dispatcher.runs[1].resolve(0);
+    await waitForSyncFlushIdle(database);
+
+    expect(dispatcher.runs).toHaveLength(2);
+    expect(dispatcher.maxActive()).toBe(1);
+  });
+
   it('keeps the running cycle from publishing online over work requested after it started', async () => {
     registerHeldDispatcher();
     void requestFlush(database, 'manual');

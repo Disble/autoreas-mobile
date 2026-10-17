@@ -15,6 +15,7 @@ export type SyncFlushReason =
   | 'network_regained'
   | 'ws_sync_required'
   | 'ws_reconnected'
+  | 'ws_disconnected'
   | 'ws_season_changed'
   | 'ws_preferences_changed'
   | 'local_mutation'
