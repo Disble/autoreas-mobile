@@ -13,14 +13,6 @@
  * - INFRA (no entry, no gate): self-validating code -- types, constants with no logic, thin
  *   native seams, barrels, task registration. A file absent from both lists below is INFRA and
  *   gets no `coverageThreshold` key.
- *
- * `src/features/sync/use-reconcile.ts` is deliberately absent from both tiers: the `useReconcile`
- * hook it exports has no consumer anywhere in `src` (dead code), and Jest never produces a
- * coverage-map entry for a file that no test actually `require()`s -- its own (misleadingly
- * named) test file exercises `reconcile.helpers.ts` instead. A per-file `coverageThreshold` entry
- * for a path with no coverage-map entry makes `jest --coverage` fail outright with
- * "Coverage data for <path> was not found", regardless of how well-tested the rest of the suite
- * is. See the feature document's T1 report for the reproduction.
  */
 
 const CORE_FILES = [
@@ -34,7 +26,6 @@ const CORE_FILES = [
   'src/features/sync/reconcile-base-token.helpers.ts',
   'src/features/sync/reconcile.errors.ts',
   'src/features/sync/applied-operation-token.helpers.ts',
-  'src/features/sync/operation-log-convergence.helpers.ts',
   'src/features/sync/operation-log-retention.helpers.ts',
   'src/features/sync/pending-remote-changes.helpers.ts',
   'src/features/sync/remote-change-drain.helpers.ts',
@@ -42,7 +33,9 @@ const CORE_FILES = [
   'src/features/sync/full-resync.helpers.ts',
   'src/features/sync/initial-sync.helpers.ts',
   'src/features/sync/initial-sync.schema.ts',
-  'src/features/sync/season-rating-queue.helpers.ts',
+  'src/features/sync/season-rating-event.helpers.ts',
+  'src/features/sync/season-rating-intent.helpers.ts',
+  'src/features/sync/season-rating-round.helpers.ts',
   'src/features/sync/merge/apply-remote-changes.helpers.ts',
   'src/features/sync/merge/field-merge.helpers.ts',
   'src/features/sync/merge/merge-context.helpers.ts',
@@ -56,6 +49,10 @@ const CORE_FILES = [
   'src/features/animes/anime-mutation.helpers.ts',
   'src/infrastructure/db/anime-repository/anime-repository.ts',
   'src/infrastructure/db/anime-repository/anime-repository.helpers.ts',
+  // Moves every queued season rating into operation_log (migration 0019, ADR 009 L28).
+  'src/infrastructure/db/client/season-rating-queue-move.helpers.ts',
+  // Drops the dead sync_runtime_status columns on an installed device (migration 0020, T18).
+  'src/infrastructure/db/client/sync-runtime-status-column-drop.helpers.ts',
 ];
 
 /** IMPORTANT-tier files: user-visible sync features and orchestration with real branching. */
@@ -63,14 +60,12 @@ const IMPORTANT_FILES = [
   'src/features/sync/cover-sweep/cover-sweep-entry.helpers.ts',
   'src/features/sync/cover-sweep/cover-sweep.helpers.ts',
   'src/features/sync/cover-sweep/cover-sweep-lock.ts',
-  'src/features/sync/foreground-resync-cycle.helpers.ts',
+  'src/features/sync/snapshot-heal.helpers.ts',
   'src/features/sync/native-battery-optimization.helpers.ts',
   'src/features/sync/native-foreground-service-presence.helpers.ts',
   'src/features/sync/native-foreground-sync-ticker.helpers.ts',
   'src/features/sync/season-sync.helpers.ts',
   'src/features/sync/sync-connection-store/sync-connection-store.helpers.ts',
-  'src/features/sync/sync-diagnostic-events.helpers.ts',
-  'src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers.ts',
   'src/features/sync/sync-diagnostics-flush.helpers.ts',
   'src/features/sync/sync-execution-facade/sync-execution-facade.helpers.ts',
   'src/features/sync/sync-execution-strategy.helpers.ts',
@@ -83,8 +78,6 @@ const IMPORTANT_FILES = [
   'src/features/sync/ui/SyncRuntimeGate/sync-runtime-gate.helpers.ts',
   'src/features/sync/ui/SyncRuntimeGate/use-sync-runtime-gate.ts',
   'src/features/sync/use-foreground-resync.ts',
-  'src/features/sync/use-incremental-sync-handler.ts',
-  'src/features/sync/use-initial-sync.ts',
   'src/features/sync/use-remote-change-drain.ts',
   'src/features/sync/use-season-sync.ts',
   'src/features/sync/use-sync-facade.ts',

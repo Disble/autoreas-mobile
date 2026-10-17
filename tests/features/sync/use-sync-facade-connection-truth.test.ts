@@ -3,12 +3,15 @@ import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
-import * as seasonQueueModule from '../../../src/features/sync/season-rating-queue.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
+import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
+import { registerSyncFlushDispatcher, resetSyncFlush } from '../../../src/features/sync/sync-flush.helpers';
 import {
   beginSyncConnectionAttempt,
+  getSyncConnectionSnapshot,
+  markSyncConnectionFailed,
   markSyncConnectionSucceeded,
   resetSyncConnectionStore,
 } from '../../../src/features/sync/sync-connection-store';
@@ -30,12 +33,11 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
-}));
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
+  writeCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
+  clearCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -60,6 +62,9 @@ describe('useSyncFacade shared connection truth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSyncConnectionStore();
+    resetSyncFlush();
+    // What the mounted foreground runtime does: `requestSync` reaches the cycle through it.
+    registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
 
     (nativeRuntime.useOptionalSQLiteContext as jest.Mock).mockReturnValue(rawDb);
     (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockImplementation(
@@ -82,18 +87,12 @@ describe('useSyncFacade shared connection truth', () => {
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
-      backlogReadCount: 0,
-      shouldRefreshActiveSeason: false,
-    });
   });
 
   it('shares the latest unreachable failure across mounted facade consumers', async () => {
     (syncModule.syncPendingOperations as jest.Mock)
       .mockResolvedValueOnce({
         syncedCount: 0,
-        backlogReadCount: 0,
         hasMorePending: false,
       })
       .mockRejectedValueOnce(
@@ -209,5 +208,27 @@ describe('useSyncFacade shared connection truth', () => {
     const { result } = renderHook(() => useSyncFacade());
 
     expect(result.current.connectionStatus).toBe('idle');
+  });
+
+  it('reads a native success newer than its own unreachable failure as reachable (ADR 009 R-9)', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionFailed(attempt, new BridgeUnreachableError('http://bridge.test/api/sync/reconcile', 'offline'));
+    const failedAt = getSyncConnectionSnapshot().bridgeContact?.at ?? 0;
+    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
+      .mockReturnValueOnce({ data: [{ id: 1 }] })
+      .mockReturnValueOnce({ data: [{ lastAttemptAt: failedAt + 1, lastSuccessAt: failedAt + 1 }] });
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    expect(result.current.connectionStatus).toBe('reachable');
+  });
+
+  it('keeps an unreachable failure when the native row holds no newer success', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionFailed(attempt, new BridgeUnreachableError('http://bridge.test/api/sync/reconcile', 'offline'));
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    expect(result.current.connectionStatus).toBe('unreachable');
   });
 });

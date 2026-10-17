@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted 2026-09-20.** The four decisions below were taken by the maintainer, and the evidence that forced them is device-measured rather than inferred. Implementation is tracked as ODD feature `mobile-sync-native-engine` (`odd/tasks/mobile-sync-native-engine.md`), sliced S1..S6.
+**Accepted 2026-09-20. Decision 3 is amended by [ADR 009](009-convergent-sync.md) for `operation_log`** (2026-10-16): compare-and-set transitions and per-key claims replace JS ownership under the lease. The four decisions below were taken by the maintainer, and the evidence that forced them is device-measured rather than inferred. Implementation is tracked as ODD feature `mobile-sync-native-engine` (`odd/tasks/mobile-sync-native-engine.md`), sliced S1..S6.
 
 **Amends ADR 007** rather than superseding it. What 007 got right is kept: no keep-alive mechanism is selected by preference (decision 1), the background obligation is outbox delivery with bounded latency rather than continuous polling (decision 2), policy is separated from mechanism (decision 3), observability is a precondition (decision 4) and bridge contract changes are proposed, not assumed (decision 6). What changes is the substrate those decisions run on, and one ownership mechanism.
 

@@ -40,9 +40,9 @@ export const COVER_SWEEP_CONCURRENCY = 2;
  * `runCoordinatedForegroundSyncCycle`: a manual pull, a bridge-pushed `anime_changed` over
  * WebSocket, and connectivity just regained (so a due or transient cover retries immediately
  * instead of waiting for the next foreground transition). Every other source is deliberately
- * excluded -- `app_active` already has its own path via `runForegroundResyncCycle`, and
- * `bootstrap`/`local_mutation`/`local_mutation_write`/`foreground_service`/`background_task` must
- * never start image work from this cycle (the background task's timers are paused, and a chapter
+ * excluded from this set -- a mount or resume cycle sweeps after its snapshot heal instead (its
+ * `always` heal demand, ADR 009 R-7), and `local_mutation`/`local_mutation_write`/
+ * `foreground_service`/`background_task` must never start image work from this cycle (the background task's timers are paused, and a chapter
  * mutation is not a cover change).
  */
 export const COVER_SWEEP_TRIGGER_SOURCES: ReadonlySet<SyncRuntimeTriggerSource> = new Set([

@@ -15,8 +15,8 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
   withLocalWrite: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
-  syncPendingOperations: jest.fn(),
+jest.mock('../../../src/features/sync/sync-flush.helpers', () => ({
+  requestFlush: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -54,9 +54,9 @@ const {
 };
 
 /** Controls the fire-and-forget push's outcome after a committed write. */
-const { syncPendingOperations: mockSyncPendingOperations } = jest.requireMock(
-  '../../../src/features/sync/reconcile.helpers',
-) as { syncPendingOperations: jest.Mock };
+const { requestFlush: mockRequestFlush } = jest.requireMock(
+  '../../../src/features/sync/sync-flush.helpers',
+) as { requestFlush: jest.Mock };
 
 /** The diagnostics outbox the recorder resolves by default, mocked in the registry above. */
 const mockDiagnosticsOutbox = jest.requireMock(
@@ -164,11 +164,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Date, 'now').mockReturnValue(now);
     mockUseSQLiteContext.mockReturnValue(rawDb);
-    mockSyncPendingOperations.mockResolvedValue({
-      syncedCount: 1,
-      backlogReadCount: 1,
-      hasMorePending: false,
-    });
+    mockRequestFlush.mockResolvedValue(1);
   });
 
   afterEach(() => {
@@ -267,7 +263,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
     const txMocks = createTxDbMocks();
     configureMutationWrite(txMocks.txDb);
-    mockSyncPendingOperations.mockRejectedValueOnce(new Error('network request failed'));
+    mockRequestFlush.mockRejectedValueOnce(new Error('network request failed'));
 
     const context = beginChapterAction('capMinusHalf');
     const { result } = renderHook(() => useMutateAnime());
@@ -358,7 +354,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     // The user's own write is untouched: the switch is a diagnostics flag, never a mutation gate.
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.insert).toHaveBeenCalled();
-    expect(mockSyncPendingOperations).toHaveBeenCalled();
+    expect(mockRequestFlush).toHaveBeenCalled();
   });
 
   it('enqueues nothing for a tap dropped with no SQLite context while the switch is off', async () => {
@@ -409,7 +405,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     expect(payloads[2]).toMatchObject({ phase: 'sync', outcome: 'ok', duration_ms: null });
     expect(txMocks.update).toHaveBeenCalledWith(animes);
     expect(txMocks.insert).toHaveBeenCalled();
-    expect(mockSyncPendingOperations).toHaveBeenCalled();
+    expect(mockRequestFlush).toHaveBeenCalled();
 
     // The admission is the REGISTRY's, not a blanket yes: the decision as it ships accepts the kind
     // the recorder now emits, and still refuses a kind no build here names.

@@ -1,16 +1,15 @@
 import { useEffect, useRef } from "react";
 import { AppState } from "react-native";
 import { useOptionalSQLiteContext } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
-import { runForegroundResyncCycle } from "./foreground-resync-cycle.helpers";
+import { hydrateCoverUris } from "./cover-sweep/cover-sweep.helpers";
 
 /**
- * Runs one foreground resync cycle -- hydrate the offline cover store, heal local anime rows
- * against the bridge's full snapshot, then sweep for cover updates -- on the foreground reactive
- * connection: once on mount and again every time the app returns to the foreground. This is what
- * makes rows that drifted out of sync (or changes a background cycle missed) converge without a
- * manual pull-to-refresh, while never clobbering un-acked local edits (the heal skips animes with
- * a pending outbox op). The cycle itself lives in `runForegroundResyncCycle`
- * (`foreground-resync-cycle.helpers.ts`); this hook only decides WHEN to call it.
+ * Starts hydrating the offline cover store from disk on mount and again every time the app returns
+ * to the foreground. The snapshot heal those same events used to run here is now a demand of the
+ * dispatched cycle (`bootstrap` and `app_active` always heal, ADR 009 R-7), which also starts the
+ * cover sweep after the heal. Declared before the runtime's own mount and resume handlers, so the
+ * hydrate still starts before the heal. Never awaited: it never rejects, and chapter data must
+ * never wait for the cover-store mutex.
  */
 export function useForegroundResync(): void {
   // 1. Refs
@@ -29,7 +28,9 @@ export function useForegroundResync(): void {
 
   // 7. Effects
   useEffect(() => {
-    void runForegroundResyncCycle(rawDb);
+    if (rawDb) {
+      void hydrateCoverUris();
+    }
   }, [rawDb]);
 
   useEffect(() => {
@@ -38,8 +39,8 @@ export function useForegroundResync(): void {
 
       currentAppStateRef.current = nextAppState;
 
-      if (previousAppState !== "active" && nextAppState === "active") {
-        void runForegroundResyncCycle(rawDb);
+      if (rawDb && previousAppState !== "active" && nextAppState === "active") {
+        void hydrateCoverUris();
       }
     });
 

@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
+import {
+  beginActiveSeasonRefresh,
+  invalidateActiveSeasonRefresh,
+  isCurrentActiveSeasonRefresh,
+} from './active-season-refresh.helpers';
 import {
   clearCachedActiveSeasonSnapshot,
   fetchActiveSeasonFromBridge,
@@ -13,10 +18,10 @@ import type { UseSeasonSyncProps, UseSeasonSyncResult } from './season-sync.type
 /** Coordinates season sync state and actions. */
 export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncResult {
   // 1. Refs
-  const refreshGenerationRef = useRef(0);
+  // The refresh generation is shared with the dispatched cycle (`active-season-refresh.helpers`),
+  // so a clear here also makes a cycle's refresh in flight stale.
 
   // 2. State
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -28,9 +33,8 @@ export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncRes
 
   // 6. Callbacks (`useCallback` calling pure helpers)
   const clearActiveSeason = useCallback(async () => {
-    refreshGenerationRef.current += 1;
+    invalidateActiveSeasonRefresh();
     setActiveSeasonSnapshot(null);
-    setIsRefreshing(false);
 
     if (!rawDb) {
       return;
@@ -48,9 +52,7 @@ export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncRes
       return;
     }
 
-    setIsRefreshing(true);
-    const refreshGeneration = refreshGenerationRef.current + 1;
-    refreshGenerationRef.current = refreshGeneration;
+    const refreshGeneration = beginActiveSeasonRefresh();
 
     try {
       let cachedSnapshot: ActiveSeasonSnapshot | null = null;
@@ -63,14 +65,14 @@ export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncRes
 
       if (
         cachedSnapshot !== null &&
-        refreshGeneration === refreshGenerationRef.current
+        isCurrentActiveSeasonRefresh(refreshGeneration)
       ) {
         setActiveSeasonSnapshot(cachedSnapshot);
       }
 
       const snapshot = await fetchActiveSeasonFromBridge(rawDb);
 
-      if (refreshGeneration !== refreshGenerationRef.current) {
+      if (!isCurrentActiveSeasonRefresh(refreshGeneration)) {
         return;
       }
 
@@ -87,10 +89,6 @@ export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncRes
       }
     } catch {
       // Keep the restored snapshot while offline; a transport failure is not proof the season ended.
-    } finally {
-      if (refreshGeneration === refreshGenerationRef.current) {
-        setIsRefreshing(false);
-      }
     }
   }, [clearActiveSeason, enabled, rawDb, setActiveSeasonSnapshot]);
 
@@ -105,7 +103,6 @@ export function useSeasonSync({ enabled }: UseSeasonSyncProps): UseSeasonSyncRes
 
   return {
     clearActiveSeason,
-    isRefreshing,
     refreshActiveSeason,
   };
 }

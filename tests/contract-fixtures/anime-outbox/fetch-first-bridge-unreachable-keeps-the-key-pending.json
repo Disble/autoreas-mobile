@@ -1,0 +1,77 @@
+{
+  "name": "fetch-first-bridge-unreachable-keeps-the-key-pending",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-3"
+  ],
+  "description": "No stored token and the bridge cannot answer the fetch (5xx): the row stays pending, released, and is not a conflict; the attempt still pulls since the cursor.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": null
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 503,
+          "body": {
+            "error": "down"
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 4
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/animes/anime-a"
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 4,
+    "tokens": {
+      "anime-a": null
+    },
+    "staged": []
+  }
+}

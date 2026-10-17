@@ -1,4 +1,8 @@
-import type { AnimeFolderSource, AnimeFoldersIndexState } from './anime-folders.types';
+import type {
+  AnimeFolderArrivalSource,
+  AnimeFolderSource,
+  AnimeFoldersIndexState,
+} from './anime-folders.types';
 
 /** How many folder levels below the root the index walks. */
 export const ANIME_FOLDERS_MAX_DEPTH = 3;
@@ -77,6 +81,9 @@ export const OPEN_PAGE_FAILED_TITLE = 'No se pudo abrir la página';
 
 /** Stable empty fallback for the anime live query, so the resolution memo is not rebuilt each render. */
 export const EMPTY_ANIME_FOLDER_SOURCES: readonly AnimeFolderSource[] = [];
+
+/** Stable empty fallback for the arrival live query, so a loading render is not read as a change. */
+export const EMPTY_ANIME_FOLDER_ARRIVAL_SOURCES: readonly AnimeFolderArrivalSource[] = [];
 
 /** Name of the native folder lister in modules/saf-lister. */
 export const SAF_LISTER_MODULE_NAME = 'SafLister';

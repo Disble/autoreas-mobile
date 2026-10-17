@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { bridgeClient } from '../../infrastructure/api';
 import { getBridgeConfigSnapshot } from '../../infrastructure/db/client/client.helpers';
 import { useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
-import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { WsMessageSchema } from './websocket.schema';
 import type { UseWebSocketProps } from './websocket.types';
 
@@ -12,6 +11,8 @@ export function useWebSocket({
   onSeasonChanged,
   onSyncRequired,
   onPreferencesChanged,
+  onReconnected,
+  onDisconnected,
 }: UseWebSocketProps = {}) {
   // 1. Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -20,6 +21,8 @@ export function useWebSocket({
   const onSeasonChangedRef = useRef(onSeasonChanged);
   const onSyncRequiredRef = useRef(onSyncRequired);
   const onPreferencesChangedRef = useRef(onPreferencesChanged);
+  const onReconnectedRef = useRef(onReconnected);
+  const onDisconnectedRef = useRef(onDisconnected);
 
   // 2. State
 
@@ -46,6 +49,15 @@ export function useWebSocket({
   }, [onPreferencesChanged]);
 
   useEffect(() => {
+    onReconnectedRef.current = onReconnected;
+  }, [onReconnected]);
+
+  useEffect(() => {
+    onDisconnectedRef.current = onDisconnected;
+  }, [onDisconnected]);
+
+  // eslint-disable-next-line react-doctor/effect-needs-cleanup -- the reconnect timer is set from socket callbacks; the returned cleanup (`disconnect`) clears the pending one and closes the socket, and `isMounted` stops a fired one from reconnecting.
+  useEffect(() => {
     const disconnect = () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -64,21 +76,20 @@ export function useWebSocket({
     }
 
     let isMounted = true;
+    // One connection session per effect run (ADR 009 R-7). An open is a reconnect when the session
+    // already opened once, or already failed an attempt: the mount or resume flush covers only a
+    // first attempt that succeeds, so a bridge that was down at mount still gets its catch-up.
+    let hasOpenedInSession = false;
+    let hadFailedAttemptInSession = false;
 
     const scheduleReconnect = () => {
+      hadFailedAttemptInSession = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
 
       const backoffSeconds = Math.min(Math.pow(2, reconnectAttemptRef.current), 30);
       reconnectAttemptRef.current += 1;
-      // Separates "the socket is retrying" from "the socket gave up". Both look like silence
-      // from the bridge, and only one of them is a bug.
-      recordDiagnosticEvent({
-        source: 'websocket',
-        event: 'ws_reconnect_scheduled',
-        at: Date.now(),
-      });
 
       reconnectTimeoutRef.current = setTimeout(() => {
         if (isMounted && enabled) {
@@ -110,13 +121,18 @@ export function useWebSocket({
         });
 
         wsRef.current = ws;
+        // Per socket: only the drop of a socket that opened is a disconnect (ADR 009 R-9).
+        let didOpen = false;
 
         ws.onopen = () => {
+          didOpen = true;
           reconnectAttemptRef.current = 0;
-          // Two opens milliseconds apart is how the duplicate-socket bug shows itself, and
-          // there is no other way to see it off-device: from the bridge, one live socket and
-          // two look identical until one of them is orphaned.
-          recordDiagnosticEvent({ source: 'websocket', event: 'ws_opened', at: Date.now() });
+
+          if (hasOpenedInSession || hadFailedAttemptInSession) {
+            onReconnectedRef.current?.();
+          }
+
+          hasOpenedInSession = true;
         };
 
         ws.onmessage = (event: MessageEvent) => {
@@ -173,16 +189,16 @@ export function useWebSocket({
 
         ws.onclose = () => {
           wsRef.current = null;
-          recordDiagnosticEvent({ source: 'websocket', event: 'ws_closed', at: Date.now() });
 
           if (isMounted && enabled) {
             scheduleReconnect();
-          }
-        };
 
-        ws.onerror = () => {
-          // onerror generally followed by onclose
-          recordDiagnosticEvent({ source: 'websocket', event: 'ws_error', at: Date.now() });
+            // A close the cleanup caused (unmount, disable, backgrounding) lands with
+            // `isMounted` false and is not reported.
+            if (didOpen) {
+              onDisconnectedRef.current?.();
+            }
+          }
         };
       } catch (error) {
         console.error('Error in connect WS:', error);

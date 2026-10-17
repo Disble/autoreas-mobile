@@ -41,16 +41,20 @@ data class ParsedReconcileResponse(
 )
 
 /**
- * Parses the reconcile response leniently with `org.json`, mirroring the zod contract's
- * fallbacks (`ReconcileResponseSchema` + `ReconcileArrayFallback`): missing or null arrays
- * become empty, unknown keys are ignored, an unknown `reason` string is tolerated, and
- * `modified_at`/`last_changelog_id` PRESENCE (not truthiness) decides whether a token exists.
+ * Parses the reconcile response with `org.json`, accepting exactly what the zod contract
+ * (`ReconcileResponseSchema` + `ReconcileArrayFallback`) accepts, so both runtimes give a
+ * malformed response the same fate (ADR 009 R-5): `status` must be a string; a missing or null
+ * `applied_operations`/`bridge_changes`/`changed_fields` becomes empty, but any other non-array
+ * value is malformed; unknown keys are ignored; an unknown `reason` string is tolerated; an
+ * optional field (`modified_at`, `reason`, `last_changelog_id`, `snapshot`) may be absent but
+ * never null or of the wrong type; `modified_at` must be an integer. `modified_at` and
+ * `last_changelog_id` PRESENCE (not truthiness) decides whether a token exists.
  *
- * A response whose required scalars are missing or mistyped (a `record_id` that is not a
- * string, a `change_type` outside the closed vocabulary, a non-numeric `timestamp`, an invalid
- * snapshot shape) throws {@link ReconcileParseException}: the caller treats that as a RETRYABLE
- * failed attempt (rows back to `pending`, never dead-lettered), exactly like the JS cycle
- * treats a failed `safeParse`.
+ * Anything else (a mistyped or missing required field, a `change_type` outside the closed
+ * vocabulary, an invalid snapshot shape) throws {@link ReconcileParseException}: the caller
+ * treats that as a RETRYABLE failed attempt (rows back to `pending`, never dead-lettered, the
+ * cursor kept, nothing staged), exactly like the JS cycle treats a failed `safeParse`. Pinned by
+ * the shared fixtures under `tests/contract-fixtures/anime-outbox/malformed-2xx-*.json`.
  *
  * The wire→legacy snapshot mapping reproduces `mapWireAnimeToLegacyAnime` +
  * `normalizeWireAnimeChangedFields` (`anime-wire.helpers.ts`), because the JS staging write
@@ -61,7 +65,7 @@ data class ParsedReconcileResponse(
  */
 object ReconcileResponseParser {
 
-  /** Parses a raw response body string; throws {@link ReconcileParseException} when unrepairable. */
+  /** Parses a raw response body string; throws {@link ReconcileParseException} when malformed. */
   fun parse(body: String?): ParsedReconcileResponse {
     if (body.isNullOrBlank()) {
       throw ReconcileParseException("reconcile response body was empty")
@@ -73,97 +77,101 @@ object ReconcileResponseParser {
       throw ReconcileParseException("reconcile response was not a JSON object")
     }
 
+    requiredString(root, "status", "status")
     return ParsedReconcileResponse(
-      appliedOperations = parseAppliedOperations(root.optJSONArray("applied_operations")),
-      bridgeChanges = parseBridgeChanges(root.optJSONArray("bridge_changes")),
-      lastChangelogId = parseOptionalLong(root, "last_changelog_id"),
+      appliedOperations = parseAppliedOperations(nullishArray(root, "applied_operations", "applied_operations")),
+      bridgeChanges = parseBridgeChanges(nullishArray(root, "bridge_changes", "bridge_changes")),
+      lastChangelogId = optionalNumber(root, "last_changelog_id", "last_changelog_id")?.toLong(),
     )
   }
 
-  /** Missing/null arrays become empty (the `ReconcileArrayFallback` contract). */
-  private fun parseAppliedOperations(array: JSONArray?): List<AppliedOperationEntry> {
-    if (array == null) return emptyList()
+  /** Each entry of `applied_operations`, every field typed as `ReconcileAppliedOperationSchema`. */
+  private fun parseAppliedOperations(array: JSONArray): List<AppliedOperationEntry> {
     val entries = mutableListOf<AppliedOperationEntry>()
     for (index in 0 until array.length()) {
-      val entry = array.optJSONObject(index)
-        ?: throw ReconcileParseException("applied_operations[$index] is not an object")
-      val animeId = entry.optStringOrNull("anime_id")
-        ?: throw ReconcileParseException("applied_operations[$index].anime_id missing")
-      val operation = entry.optStringOrNull("operation")
-        ?: throw ReconcileParseException("applied_operations[$index].operation missing")
+      val path = "applied_operations[$index]"
+      val entry = array.opt(index) as? JSONObject ?: throw ReconcileParseException("$path is not an object")
       entries.add(
         AppliedOperationEntry(
-          animeId = animeId,
-          operation = operation,
-          applied = entry.optBoolean("applied", false),
-          modifiedAt = parseOptionalLong(entry, "modified_at"),
-          reason = entry.optStringOrNull("reason"),
+          animeId = requiredString(entry, "anime_id", "$path.anime_id"),
+          operation = requiredString(entry, "operation", "$path.operation"),
+          applied = entry.opt("applied") as? Boolean
+            ?: throw ReconcileParseException("$path.applied is missing or not a boolean"),
+          modifiedAt = optionalInteger(entry, "modified_at", "$path.modified_at"),
+          reason = optionalString(entry, "reason", "$path.reason"),
         ),
       )
     }
     return entries
   }
 
-  /** Missing/null arrays become empty; the closed `change_type` vocabulary is enforced. */
-  private fun parseBridgeChanges(array: JSONArray?): List<BridgeChangeEntry> {
-    if (array == null) return emptyList()
+  /** Each entry of `bridge_changes`; the closed `change_type` vocabulary is enforced. */
+  private fun parseBridgeChanges(array: JSONArray): List<BridgeChangeEntry> {
     val entries = mutableListOf<BridgeChangeEntry>()
     for (index in 0 until array.length()) {
-      val entry = array.optJSONObject(index)
-        ?: throw ReconcileParseException("bridge_changes[$index] is not an object")
-      val recordId = entry.optStringOrNull("record_id")
-        ?: throw ReconcileParseException("bridge_changes[$index].record_id missing")
-      val changeType = entry.optStringOrNull("change_type")
-        ?: throw ReconcileParseException("bridge_changes[$index].change_type missing")
+      val path = "bridge_changes[$index]"
+      val entry = array.opt(index) as? JSONObject ?: throw ReconcileParseException("$path is not an object")
+      val recordId = requiredString(entry, "record_id", "$path.record_id")
+      val changeType = requiredString(entry, "change_type", "$path.change_type")
       if (changeType != "create" && changeType != "update" && changeType != "delete") {
-        throw ReconcileParseException("bridge_changes[$index].change_type invalid: $changeType")
+        throw ReconcileParseException("$path.change_type invalid: $changeType")
       }
-      val timestamp = parseOptionalLong(entry, "timestamp")
-        ?: throw ReconcileParseException("bridge_changes[$index].timestamp missing")
-      val snapshot = entry.optJSONObject("snapshot")
-      if (entry.has("snapshot") && !entry.isNull("snapshot") && snapshot == null) {
-        throw ReconcileParseException("bridge_changes[$index].snapshot is not an object")
+      val timestamp = entry.opt("timestamp") as? Number
+        ?: throw ReconcileParseException("$path.timestamp is missing or not a number")
+      val snapshot = if (entry.has("snapshot")) {
+        entry.opt("snapshot") as? JSONObject ?: throw ReconcileParseException("$path.snapshot is not an object")
+      } else {
+        null
       }
       entries.add(
         BridgeChangeEntry(
           recordId = recordId,
           changeType = changeType,
-          changedFields = parseStringArray(entry.optJSONArray("changed_fields")),
+          changedFields = parseStringArray(nullishArray(entry, "changed_fields", "$path.changed_fields"), "$path.changed_fields"),
           snapshot = snapshot,
-          timestamp = timestamp,
+          timestamp = timestamp.toLong(),
         ),
       )
     }
     return entries
   }
 
-  /** Reads an optional number field; `null` when the key is absent, null, or not a number. */
-  private fun parseOptionalLong(obj: JSONObject, key: String): Long? {
-    if (!obj.has(key) || obj.isNull(key)) return null
-    val value = obj.opt(key)
-    return when (value) {
-      is Number -> value.toLong()
-      is String -> value.toDoubleOrNull()?.toLong()
-      else -> null
-    }
+  /** `ReconcileArrayFallback`: absent or null is empty; any value other than an array is malformed. */
+  private fun nullishArray(obj: JSONObject, key: String, path: String): JSONArray {
+    if (!obj.has(key) || obj.isNull(key)) return JSONArray()
+    return obj.opt(key) as? JSONArray ?: throw ReconcileParseException("$path is not an array")
   }
 
-  private fun JSONObject.optStringOrNull(key: String): String? {
-    if (!has(key) || isNull(key)) return null
-    val value = opt(key)
-    return value as? String
+  /** A required string; absent, null and any other type are malformed. */
+  private fun requiredString(obj: JSONObject, key: String, path: String): String =
+    obj.opt(key) as? String ?: throw ReconcileParseException("$path is missing or not a string")
+
+  /** An optional string (zod `.optional()`): absent is `null`; null or any other type is malformed. */
+  private fun optionalString(obj: JSONObject, key: String, path: String): String? {
+    if (!obj.has(key)) return null
+    return obj.opt(key) as? String ?: throw ReconcileParseException("$path is not a string")
   }
 
-  /** A missing/null/'' array becomes empty; non-string members are dropped. */
-  private fun parseStringArray(array: JSONArray?): List<String> {
-    if (array == null) return emptyList()
-    val fields = mutableListOf<String>()
-    for (index in 0 until array.length()) {
-      val value = array.opt(index)
-      if (value is String) fields.add(value)
-    }
-    return fields
+  /** An optional number (zod `.optional()`): absent is `null`; null or any other type is malformed. */
+  private fun optionalNumber(obj: JSONObject, key: String, path: String): Number? {
+    if (!obj.has(key)) return null
+    return obj.opt(key) as? Number ?: throw ReconcileParseException("$path is not a number")
   }
+
+  /** An optional integer (zod `.int().optional()`): a fractional number is malformed too. */
+  private fun optionalInteger(obj: JSONObject, key: String, path: String): Long? {
+    val number = optionalNumber(obj, key, path) ?: return null
+    if (number.toDouble() != Math.floor(number.toDouble())) {
+      throw ReconcileParseException("$path is not an integer")
+    }
+    return number.toLong()
+  }
+
+  /** Every member of a `changed_fields` array must be a string (`z.array(z.string())`). */
+  private fun parseStringArray(array: JSONArray, path: String): List<String> =
+    (0 until array.length()).map { index ->
+      array.opt(index) as? String ?: throw ReconcileParseException("$path[$index] is not a string")
+    }
 }
 
 /**

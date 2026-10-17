@@ -19,11 +19,6 @@ export type OperationLogBacklogStatus =
 export type OperationLogBacklogOrder = 'oldest_first';
 
 /**
- * Names the terminal operation-log statuses eligible for retention pruning.
- */
-export type OperationLogTerminalStatus = 'synced' | 'dead_letter' | 'conflict_exhausted';
-
-/**
  * Defines one bounded operation-log backlog read request.
  *
  * `limit` bounds ROWS when `dedupeBy` is absent (today's byte-identical query), but bounds
@@ -41,35 +36,13 @@ export interface OperationLogQueryParams {
    * dedup runs BEFORE `LIMIT` rather than after.
    */
   readonly dedupeBy?: 'anime_id';
-}
-
-/**
- * Defines one retention rule for a terminal operation-log status.
- */
-export interface OperationLogRetentionRule {
-  readonly status: OperationLogTerminalStatus;
-  readonly ttlDays: number;
-  readonly maxCount: number;
-}
-
-/**
- * Defines the full terminal-status retention policy used for pruning.
- */
-export interface OperationLogRetentionPolicy {
-  readonly synced: OperationLogRetentionRule;
-  readonly deadLetter: OperationLogRetentionRule;
-  readonly conflictExhausted: OperationLogRetentionRule;
-  readonly now: () => number;
-}
-
-/**
- * Defines the observable result returned after pruning terminal operation-log rows.
- */
-export interface OperationLogPruneResult {
-  readonly prunedCount: number;
-  readonly deletedSyncedCount: number;
-  readonly deletedDeadLetterCount: number;
-  readonly deletedConflictExhaustedCount: number;
+  /**
+   * Epoch-ms liveness floor for per-key claims (ADR 009 R-13). When set, every anime with ANY
+   * row whose `claimed_at` is above this floor is left out entirely, before the dedup ranks
+   * rows: excluding only the claimed row would let a newer row of the same anime rank first.
+   * Only honoured together with `dedupeBy: 'anime_id'`.
+   */
+  readonly skipKeysClaimedAfter?: number;
 }
 
 /**

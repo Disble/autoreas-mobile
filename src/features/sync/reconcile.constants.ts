@@ -1,5 +1,3 @@
-import type { SyncPendingOperationsResult } from './reconcile.types';
-
 /**
  * Maximum number of pending operation-log entries the reconcile cycle reads in one batch.
  * Bounds DISTINCT ANIMES, not rows, because the backlog read dedupes per anime (design.md
@@ -15,9 +13,9 @@ export const RECONCILE_BACKLOG_BATCH_LIMIT = 200;
  */
 export const PENDING_OPERATIONS_LIVE_QUERY_LIMIT = 200;
 
-/** Provides the shared sync state by database value. */
+/**
+ * The status that rejects the pairing, never a message (ADR 009 R-5): a 401 is not isolated per
+ * message, it dead-letters every row of its round.
+ */
+export const RECONCILE_UNAUTHORIZED_STATUS = 401;
 
-export const syncStateByDatabase = new WeakMap<object, {
-  inFlight: Promise<SyncPendingOperationsResult> | null;
-  rerunRequested: boolean;
-}>();

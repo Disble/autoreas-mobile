@@ -7,6 +7,8 @@ import { useBridgeConfig } from "../settings/use-bridge-config";
 import { useWebSocket } from "../ws/use-websocket";
 import { createSyncExecutionFacade } from "./sync-execution-facade";
 import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
+import { dispatchForegroundSyncFlush } from "./sync-facade.helpers";
+import { registerSyncFlushDispatcher } from "./sync-flush.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
@@ -48,7 +50,7 @@ export function useSyncRuntime(
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
   const { requestSync } = useSyncFacade();
-  const { clearActiveSeason, refreshActiveSeason } = useSeasonSync({
+  const { clearActiveSeason } = useSeasonSync({
     enabled: props.isBootstrapped && isConfigured && currentAppState === "active",
   });
 
@@ -162,7 +164,11 @@ export function useSyncRuntime(
         | "bootstrap"
         | "app_active"
         | "network_regained"
-        | "ws_sync_required",
+        | "ws_sync_required"
+        | "ws_reconnected"
+        | "ws_disconnected"
+        | "ws_season_changed"
+        | "ws_preferences_changed",
     ) => {
       void requestSync(source).catch(() => undefined);
     },
@@ -173,28 +179,52 @@ export function useSyncRuntime(
     requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
+  // A reconnect is the catch-up (ADR 009 R-7): the dispatched cycle pulls since the cursor, drains
+  // the staged changes and heals the snapshot only when the last successful heal is stale. The
+  // socket never reports a first attempt that succeeds, which the mount or resume flush covers.
+  const handleWebSocketReconnected = useCallback(() => {
+    requestAutomaticSync("ws_reconnected");
+  }, [requestAutomaticSync]);
+
+  // A drop of an open socket re-checks the bridge (ADR 009 R-9): the drop alone proves nothing
+  // about HTTP, so the cycle's own outcome decides whether the status still claims it reachable.
+  // Single-flight: a flapping socket runs at most one cycle plus one follow-up.
+  const handleWebSocketDisconnected = useCallback(() => {
+    requestAutomaticSync("ws_disconnected");
+  }, [requestAutomaticSync]);
+
+  // Both WebSocket season events go through the entry point (ADR 009 R-2, I8): the dispatched
+  // cycle refreshes and caches the active season. Season mode switched off is a local clear only;
+  // it asks the bridge for nothing, so there is nothing to send.
   const handlePreferencesChanged = useCallback(
     (seasonMode: boolean) => {
       if (seasonMode) {
-        void refreshActiveSeason().catch(() => undefined);
+        requestAutomaticSync("ws_preferences_changed");
         return;
       }
 
       void clearActiveSeason().catch(() => undefined);
     },
-    [clearActiveSeason, refreshActiveSeason],
+    [clearActiveSeason, requestAutomaticSync],
   );
 
   const handleSeasonChanged = useCallback(() => {
-    void refreshActiveSeason().catch(() => undefined);
-  }, [refreshActiveSeason]);
+    requestAutomaticSync("ws_season_changed");
+  }, [requestAutomaticSync]);
 
   // 7. Effects
+  // The JS dispatcher exists while the foreground runtime is mounted: from here on, every
+  // `requestFlush` (a kick after a local write included) runs the coordinated cycle. Declared
+  // first so the bootstrap request below already finds it.
+  useEffect(() => registerSyncFlushDispatcher(dispatchForegroundSyncFlush), []);
+
   useWebSocket({
     enabled: isWebSocketEnabled,
     onSeasonChanged: handleSeasonChanged,
     onSyncRequired: handleWebSocketSyncRequired,
     onPreferencesChanged: handlePreferencesChanged,
+    onReconnected: handleWebSocketReconnected,
+    onDisconnected: handleWebSocketDisconnected,
   });
 
   // Drains background-staged remote changes into `animes` on the foreground reactive
@@ -203,9 +233,9 @@ export function useSyncRuntime(
   // shares the same foreground-only lifecycle.
   useRemoteChangeDrain();
 
-  // Snapshot-authoritative heal on mount + app-resume: pulls the bridge's full anime list and
-  // converges any rows that drifted out of sync (or changes a background cycle missed),
-  // skipping animes with un-acked local outbox ops. Replaces the need for a manual refresh.
+  // Cover hydration on mount + app-resume. The snapshot-authoritative heal those events trigger is
+  // a demand of the dispatched `bootstrap` and `app_active` cycles below (ADR 009 R-7), so it is
+  // single-flight with every other trigger.
   useForegroundResync();
 
   useEffect(() => {

@@ -5,19 +5,17 @@ import android.util.Log
 
 private const val PRUNE_LOG_TAG = "SyncEnginePrune"
 
-/** Retention policy values, mirroring `DEFAULT_OPERATION_LOG_RETENTION_POLICY`. */
+/** Retention policy values: synced rows live 7 days, at most 1000 of them. */
 private const val RETENTION_DAY_MS = 24L * 60L * 60L * 1000L
 private const val SYNCED_TTL_DAYS = 7L
-private const val TERMINAL_TTL_DAYS = 30L
 private const val SYNCED_MAX_COUNT = 1000
-private const val TERMINAL_MAX_COUNT = 500
 
 /**
- * Retention prune over the operation log, ported statement-for-statement from
- * `pruneOperationLog` (`operation-log-retention.helpers.ts`): TTL first, then max-count, per
- * status — `synced` 7 days / 1000 rows, `dead_letter` 30 days / 500, `conflict_exhausted`
- * 30 days / 500 — deleting only terminal statuses, oldest first. The prune opens its own
- * `BEGIN IMMEDIATE` transaction and verifies the cycle lease inside it (see `pruneSafely`).
+ * Retention prune over the operation log, the only one in the app (JS has no background
+ * responsibility, ADR 009 constraint 2): TTL first, then max-count, over `synced` rows only — 7 days / 1000 rows, oldest first. Given-up rows (`dead_letter`,
+ * `conflict_exhausted`) are unresolved keys and are never pruned: they stay until a later
+ * confirmed edit or `resolveUnresolvedKey` resolves them (ADR 009 R-16b). The prune opens its
+ * own `BEGIN IMMEDIATE` transaction and verifies the cycle lease inside it (see `pruneSafely`).
  */
 object OperationLogPruner {
 
@@ -38,12 +36,8 @@ object OperationLogPruner {
       inImmediateTransaction(appDb) {
         requireLeaseOwnership(appDb, lease)
         val now = System.currentTimeMillis()
-        pruneByTtl(appDb, "synced", now - SYNCED_TTL_DAYS * RETENTION_DAY_MS)
-        pruneByTtl(appDb, "dead_letter", now - TERMINAL_TTL_DAYS * RETENTION_DAY_MS)
-        pruneByTtl(appDb, "conflict_exhausted", now - TERMINAL_TTL_DAYS * RETENTION_DAY_MS)
-        pruneByMaxCount(appDb, "synced", SYNCED_MAX_COUNT)
-        pruneByMaxCount(appDb, "dead_letter", TERMINAL_MAX_COUNT)
-        pruneByMaxCount(appDb, "conflict_exhausted", TERMINAL_MAX_COUNT)
+        pruneSyncedByTtl(appDb, now - SYNCED_TTL_DAYS * RETENTION_DAY_MS)
+        pruneSyncedByMaxCount(appDb)
       }
     } catch (error: LeaseLostException) {
       // Fence contract: lease loss during the prune is not a prune failure -- rethrow so the
@@ -54,24 +48,23 @@ object OperationLogPruner {
     }
   }
 
-  /** Deletes rows of one terminal status older than the given cutoff, oldest first. */
-  private fun pruneByTtl(appDb: SQLiteDatabase, status: String, cutoffTimestamp: Long) {
+  /** Deletes `synced` rows older than the given cutoff, oldest first. */
+  private fun pruneSyncedByTtl(appDb: SQLiteDatabase, cutoffTimestamp: Long) {
     appDb.compileStatement(
       "DELETE FROM operation_log" +
         " WHERE id IN (" +
         "  SELECT id FROM operation_log" +
-        "  WHERE status = ? AND created_at < ?" +
+        "  WHERE status = 'synced' AND created_at < ?" +
         "  ORDER BY created_at ASC, id ASC" +
         ")",
     ).apply {
-      bindString(1, status)
-      bindLong(2, cutoffTimestamp)
+      bindLong(1, cutoffTimestamp)
       executeUpdateDelete()
     }
   }
 
   /**
-   * Deletes the oldest rows of one terminal status once its count exceeds [maxCount].
+   * Deletes the oldest `synced` rows once their count exceeds [SYNCED_MAX_COUNT].
    *
    * `moveToFirst()`'s result is intentionally unchecked (T3, sync-core-test-assurance): a bare
    * `SELECT COUNT(*)` always returns exactly one row, even over zero matches, so the "no row"
@@ -79,28 +72,27 @@ object OperationLogPruner {
    * this exact, unconditioned query shape -- proven, not assumed, and removed rather than
    * `Kover`-excluded, per this feature's unreachable-code decision.
    */
-  private fun pruneByMaxCount(appDb: SQLiteDatabase, status: String, maxCount: Int) {
+  private fun pruneSyncedByMaxCount(appDb: SQLiteDatabase) {
     val currentCount = appDb.rawQuery(
-      "SELECT COUNT(*) FROM operation_log WHERE status = ?",
-      arrayOf(status),
+      "SELECT COUNT(*) FROM operation_log WHERE status = 'synced'",
+      null,
     ).use { cursor ->
       cursor.moveToFirst()
       cursor.getLong(0)
     }
-    val overflowCount = maxOf(0L, currentCount - maxCount)
+    val overflowCount = maxOf(0L, currentCount - SYNCED_MAX_COUNT)
     if (overflowCount == 0L) return
 
     appDb.compileStatement(
       "DELETE FROM operation_log" +
         " WHERE id IN (" +
         "  SELECT id FROM operation_log" +
-        "  WHERE status = ?" +
+        "  WHERE status = 'synced'" +
         "  ORDER BY created_at ASC, id ASC" +
         "  LIMIT ?" +
         ")",
     ).apply {
-      bindString(1, status)
-      bindLong(2, overflowCount)
+      bindLong(1, overflowCount)
       executeUpdateDelete()
     }
   }

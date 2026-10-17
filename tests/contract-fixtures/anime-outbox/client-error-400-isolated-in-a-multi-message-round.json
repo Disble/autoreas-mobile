@@ -1,0 +1,197 @@
+{
+  "name": "client-error-400-isolated-in-a-multi-message-round",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-14"
+  ],
+  "description": "400 on a request of several messages: each is re-sent alone, so only the message that caused it is given up; the other key is confirmed and chained in the same cycle, and the attempt does not fail.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      },
+      {
+        "id": "anime-b",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 400,
+          "body": {
+            "error": "rejected"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "error": "rejected"
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-b",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-b",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 15
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 2
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          },
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 1,
+        "operations": [
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 14
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "dead_letter",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 2,
+    "tokens": {
+      "anime-a": 7,
+      "anime-b": 15
+    },
+    "staged": []
+  }
+}

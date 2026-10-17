@@ -15,9 +15,6 @@ function createFallbackStatus(): SyncExecutionStatus {
     isForegroundServiceRunning: false,
     canShowPersistentNotification: false,
     isBackgroundTaskRegistered: false,
-    // Static like every other field here: no strategy has registered yet, so there is no live
-    // seam to read through, unlike the adapter's own status builders.
-    isBatteryOptimizationExempt: false,
   };
 }
 
@@ -50,12 +47,6 @@ function mergeConcurrentSyncExecutionStatus(
   const canShowPersistentNotification = statuses.some(
     (status) => status.canShowPersistentNotification,
   );
-  // Also OR-ed, not just the FGS-owning strategy's own reading: the exemption is a single
-  // device-wide fact, so any strategy that read it as true is enough to report it true, and a
-  // strategy that does not own this signal already reports its own safe `false`.
-  const isBatteryOptimizationExempt = statuses.some(
-    (status) => status.isBatteryOptimizationExempt,
-  );
   // Read from the strategies' own `registrationStatus` (not from the flags) on purpose: the
   // verdict above already prefers a real flag, and this second read is the one that must notice
   // that no path can register anything.
@@ -76,7 +67,6 @@ function mergeConcurrentSyncExecutionStatus(
     isForegroundServiceRunning,
     canShowPersistentNotification,
     isBackgroundTaskRegistered,
-    isBatteryOptimizationExempt,
   };
 }
 
@@ -87,30 +77,11 @@ function mergeConcurrentSyncExecutionStatus(
 export function createSyncExecutionFacade(
   params: CreateSyncExecutionFacadeParams,
 ): SyncExecutionFacade {
-  let currentStrategy: SyncExecutionStrategy | null = null;
   let concurrentStrategies: readonly SyncExecutionStrategy[] = [];
   let concurrentRegistration: Promise<void> | null = null;
   let registrationGeneration = 0;
 
   return {
-    async registerPreferredStrategy() {
-      if (currentStrategy) {
-        return;
-      }
-
-      for (const strategy of params.strategies) {
-        await strategy.register();
-        const status = await strategy.getStatus();
-
-        if (status.registrationStatus === 'registered') {
-          currentStrategy = strategy;
-          return;
-        }
-      }
-
-      currentStrategy = params.strategies.at(-1) ?? null;
-    },
-
     async registerConcurrentStrategies() {
       if (concurrentStrategies.length > 0) {
         return concurrentRegistration ?? undefined;
@@ -144,44 +115,34 @@ export function createSyncExecutionFacade(
     },
 
     hasCurrentStrategy() {
-      return currentStrategy !== null || concurrentStrategies.length > 0;
+      return concurrentStrategies.length > 0;
     },
 
     async unregisterCurrentStrategy() {
-      if (concurrentStrategies.length > 0) {
-        const strategiesToUnregister = concurrentStrategies;
-        registrationGeneration += 1;
-        concurrentStrategies = [];
-        concurrentRegistration = null;
-
-        await Promise.all(
-          strategiesToUnregister.map((strategy) => strategy.unregister().catch(() => undefined)),
-        );
+      if (concurrentStrategies.length === 0) {
         return;
       }
 
-      if (!currentStrategy) {
-        return;
-      }
+      const strategiesToUnregister = concurrentStrategies;
+      registrationGeneration += 1;
+      concurrentStrategies = [];
+      concurrentRegistration = null;
 
-      await currentStrategy.unregister();
-      currentStrategy = null;
+      await Promise.all(
+        strategiesToUnregister.map((strategy) => strategy.unregister().catch(() => undefined)),
+      );
     },
 
     async getStatus() {
-      if (concurrentStrategies.length > 0) {
-        const statuses = await Promise.all(
-          concurrentStrategies.map((strategy) => strategy.getStatus()),
-        );
-
-        return mergeConcurrentSyncExecutionStatus(statuses);
-      }
-
-      if (!currentStrategy) {
+      if (concurrentStrategies.length === 0) {
         return createFallbackStatus();
       }
 
-      return currentStrategy.getStatus();
+      const statuses = await Promise.all(
+        concurrentStrategies.map((strategy) => strategy.getStatus()),
+      );
+
+      return mergeConcurrentSyncExecutionStatus(statuses);
     },
   };
 }

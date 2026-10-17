@@ -36,9 +36,7 @@ const nativeFacts = {
 const SETTLED_PROJECTION = {
   registrationStatus: "registered",
   executionMode: "android_foreground_service",
-  isForegroundServiceRunning: true,
   canShowPersistentNotification: true,
-  isBackgroundTaskRegistered: true,
 };
 
 /** Captured `AppState` listeners the mocked `addEventListener` registers, driven via `emitAppState`. */
@@ -108,6 +106,16 @@ jest.mock("expo-network", () => ({
 
 jest.mock("../../../src/features/settings/use-bridge-config", () => ({
   useBridgeConfig: jest.fn(),
+}));
+
+// The runtime registers the JS dispatcher; the real one would pull the whole sync cycle into a
+// hook test that mocks its facade, so both ends of the registration are stubbed here.
+jest.mock("../../../src/features/sync/sync-facade.helpers", () => ({
+  dispatchForegroundSyncFlush: jest.fn(),
+}));
+
+jest.mock("../../../src/features/sync/sync-flush.helpers", () => ({
+  registerSyncFlushDispatcher: jest.fn(() => jest.fn()),
 }));
 
 jest.mock("../../../src/features/sync/use-sync-facade", () => ({
@@ -196,7 +204,6 @@ function buildForegroundStrategy(): SyncExecutionStrategy {
         isForegroundServiceRunning: nativeFacts.isForegroundServiceUp,
         canShowPersistentNotification: true,
         isBackgroundTaskRegistered: false,
-        isBatteryOptimizationExempt: false,
       };
     }),
   };
@@ -221,7 +228,6 @@ function buildFloorStrategy(): SyncExecutionStrategy {
         isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
         isBackgroundTaskRegistered: nativeFacts.isNativeFloorRegistered,
-        isBatteryOptimizationExempt: false,
       }),
     ),
   };
@@ -265,7 +271,6 @@ describe("useSyncRuntime settle window and projection ordering", () => {
     ).mockResolvedValue(undefined);
     (useSeasonSync as jest.Mock).mockReturnValue({
       clearActiveSeason: jest.fn(async () => undefined),
-      isRefreshing: false,
       refreshActiveSeason: jest.fn(async () => undefined),
     });
     (useWebSocket as jest.Mock).mockImplementation(() => ({}));

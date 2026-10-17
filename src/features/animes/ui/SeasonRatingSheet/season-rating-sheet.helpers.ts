@@ -59,15 +59,10 @@ export function buildSeasonRatingSheetStatus(
   }
 
   if (props.pendingStatus === "failed") {
-    const failedDescription =
-      props.pendingFailureKind === "unreachable"
-        ? SEASON_RATING_SHEET_COPY.pendingDescription
-        : SEASON_RATING_SHEET_COPY.failedDescription;
-
     return {
       kind: "failed",
       label: SEASON_RATING_SHEET_COPY.failedTitle,
-      description: failedDescription,
+      description: SEASON_RATING_SHEET_COPY.failedDescription,
     };
   }
 

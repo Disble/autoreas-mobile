@@ -152,3 +152,90 @@ describe('recheckAnimeFoldersAccess', () => {
     expect(mockListSafChildren.mock.calls.filter(([uri]) => uri === ROOT_URI)).toHaveLength(1);
   });
 });
+
+describe('probeAnimeFolders', () => {
+  /** Active anime waiting for the folder `name` below the bridge library root. */
+  const pending = (id: string, name: string) => ({
+    id,
+    carpeta: `D:\\Anime\\${name}`,
+    folderRelative: name,
+    activo: 1,
+  });
+
+  it('re-indexes when the folder of a pending anime reached the tablet after the anime', async () => {
+    const store = loadStore();
+    await store.indexAnimeFolders(ROOT_URI);
+    mockListSafChildren.mockImplementation(async (uri) =>
+      uri === ROOT_URI ? rootWith('Bleach', 'Date a Live', 'Ranma 1 2 (2024) 3rd Season') : [],
+    );
+
+    await store.probeAnimeFolders([pending('ranma', 'Ranma 1 2 (2024) 3rd Season')]);
+
+    const state = store.getAnimeFoldersIndexState();
+    expect(state.status).toBe('ready');
+    expect(state.index?.folders.map((folder) => folder.name)).toContain('Ranma 1 2 (2024) 3rd Season');
+  });
+
+  it('lists only the parent where the folder is expected, once, and keeps the index when it is not there', async () => {
+    const store = loadStore();
+    await store.indexAnimeFolders(ROOT_URI);
+    const indexedBefore = store.getAnimeFoldersIndexState();
+    mockListSafChildren.mockClear();
+
+    await store.probeAnimeFolders([pending('ranma', 'Ranma 1 2 (2024) 3rd Season'), pending('ao', 'Ao Ashi Season 2nd')]);
+
+    expect(mockListSafChildren.mock.calls).toEqual([[ROOT_URI]]);
+    expect(store.getAnimeFoldersIndexState()).toBe(indexedBefore);
+  });
+
+  it('lists nothing for an anime whose folder is indexed, or while no index is ready', async () => {
+    const store = loadStore();
+    await store.probeAnimeFolders([pending('ranma', 'Ranma 1 2 (2024) 3rd Season')]);
+    await store.indexAnimeFolders(ROOT_URI);
+    mockListSafChildren.mockClear();
+
+    await store.probeAnimeFolders([pending('bleach', 'Bleach')]);
+
+    expect(mockListSafChildren).not.toHaveBeenCalled();
+  });
+
+  it('keeps a root chosen while the check was listing the previous one', async () => {
+    const store = loadStore();
+    await store.indexAnimeFolders(ROOT_URI);
+    let finishListing: (children: FolderTreeChild[]) => void = () => undefined;
+    mockListSafChildren.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishListing = resolve;
+      }),
+    );
+
+    const probe = store.probeAnimeFolders([pending('ranma', 'Ranma')]);
+    const chosen = store.indexAnimeFolders(OTHER_ROOT_URI);
+    finishListing(rootWith('Ranma'));
+    await Promise.all([probe, chosen]);
+
+    expect(store.getAnimeFoldersIndexState().rootUri).toBe(OTHER_ROOT_URI);
+  });
+
+  it('lists nothing while a walk runs, since that walk finds the folder', async () => {
+    const store = loadStore();
+    await store.indexAnimeFolders(ROOT_URI);
+    const refresh = store.indexAnimeFolders(ROOT_URI, true);
+    mockListSafChildren.mockClear();
+
+    await store.probeAnimeFolders([pending('ranma', 'Ranma')]);
+    await refresh;
+
+    // The walk's own deeper levels list their folders; the probe would have listed the root.
+    expect(mockListSafChildren).not.toHaveBeenCalledWith(ROOT_URI);
+  });
+
+  it('treats a listing that fails as nothing arrived', async () => {
+    const store = loadStore();
+    await store.indexAnimeFolders(ROOT_URI);
+    mockListSafChildren.mockRejectedValue(new Error('provider gone'));
+
+    await expect(store.probeAnimeFolders([pending('ranma', 'Ranma')])).resolves.toBeUndefined();
+    expect(store.getAnimeFoldersIndexState().status).toBe('ready');
+  });
+});

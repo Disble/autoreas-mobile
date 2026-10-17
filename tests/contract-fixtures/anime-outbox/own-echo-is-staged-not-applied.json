@@ -1,0 +1,112 @@
+{
+  "name": "own-echo-is-staged-not-applied",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-4",
+    "R-16a"
+  ],
+  "description": "Reconcile records the device's own operation before it lists bridge_changes, so the device always receives its own echo. The echo is not applied as a remote change in the cycle that confirmed it: it is kept staged, and the token comes from applied_operations, never from the echo snapshot's hardcoded modified_at 0.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": true,
+                "modified_at": 14
+              }
+            ],
+            "bridge_changes": [
+              {
+                "record_id": "anime-a",
+                "change_type": "update",
+                "changed_fields": [
+                  "episodesWatched"
+                ],
+                "timestamp": 1700000000500,
+                "snapshot": {
+                  "id": "anime-a",
+                  "name": "Echo",
+                  "status": 1,
+                  "episodesWatched": 5,
+                  "totalEpisodes": 12,
+                  "active": 1,
+                  "firstCycle": 0,
+                  "days": [],
+                  "genres": [],
+                  "lastWatchedAt": null,
+                  "premieredAt": null,
+                  "createdAt": null,
+                  "deletedAt": null,
+                  "modified_at": 0
+                }
+              }
+            ],
+            "last_changelog_id": 3
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 3,
+    "tokens": {
+      "anime-a": 14
+    },
+    "staged": [
+      "anime-a"
+    ]
+  }
+}

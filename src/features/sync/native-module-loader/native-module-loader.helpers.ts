@@ -1,6 +1,4 @@
 import type { OptionalNativeModuleLoader } from './native-module-loader.types';
-import { recordDiagnosticEvent } from '../sync-diagnostic-store/sync-diagnostic-store.helpers';
-import type { SyncNativeSeamDiagnosticCause } from '../sync-diagnostic-events.types';
 
 /**
  * Lazily loads `expo-modules-core`'s `requireOptionalNativeModule` only when a native-sync seam
@@ -48,11 +46,7 @@ export function loadOptionalNativeModule<TModule>(
   moduleName: string,
 ): TModule | null {
   if (!loadModule) {
-    warnModuleUnavailableOnce(
-      moduleName,
-      'expo-modules-core is unavailable',
-      'expo_modules_core_unavailable',
-    );
+    warnModuleUnavailableOnce(moduleName, 'expo-modules-core is unavailable');
     return null;
   }
 
@@ -60,30 +54,21 @@ export function loadOptionalNativeModule<TModule>(
     const nativeModule = loadModule(moduleName);
 
     if (!nativeModule) {
-      warnModuleUnavailableOnce(moduleName, 'the native module is missing', 'native_module_missing');
+      warnModuleUnavailableOnce(moduleName, 'the native module is missing');
     }
 
     return nativeModule;
   } catch {
     // requireOptionalNativeModule already returns null when the module is simply missing;
     // this guard only protects against unexpected native-bridge lookup failures (e.g. Expo Go).
-    warnModuleUnavailableOnce(
-      moduleName,
-      'the native-bridge lookup threw',
-      'native_bridge_lookup_threw',
-    );
+    warnModuleUnavailableOnce(moduleName, 'the native-bridge lookup threw');
     return null;
   }
 }
 
 /**
- * Warns exactly once per JS runtime that a native-sync seam degraded to its no-op path, on BOTH
- * channels: the `console.warn` line (the cable channel -- the device acceptance instrument reads
- * it through `adb logcat`, and it is the earliest decisive signal with the device in hand) and
- * the diagnostic telemetry ring (the production channel -- it rides `POST /api/sync/reconcile`
- * per `docs/mobile-diagnostic-telemetry.md`, because in production there is no cable). Neither
- * duplicates the other: they are the same incident on two transports, both once per runtime, so
- * do not delete one as a redundancy of the other.
+ * Warns exactly once per JS runtime that a native-sync seam degraded to its no-op path, through
+ * the `console.warn` line the device acceptance instrument reads through `adb logcat`.
  *
  * The degradation is otherwise completely silent, and silence is indistinguishable from a healthy
  * module that simply has not fired yet: on device a foreground service can sit `isForeground=true`
@@ -94,13 +79,8 @@ export function loadOptionalNativeModule<TModule>(
  *
  * @param moduleName - The native module whose absence degraded the seam.
  * @param reason - How the lookup failed, for the warning line.
- * @param cause - The same failure as a closed-vocabulary symbol for the telemetry ring.
  */
-function warnModuleUnavailableOnce(
-  moduleName: string,
-  reason: string,
-  cause: SyncNativeSeamDiagnosticCause,
-): void {
+function warnModuleUnavailableOnce(moduleName: string, reason: string): void {
   const flags = globalThis as { __nativeSyncSeamsWarned?: Record<string, boolean> };
   const warned = (flags.__nativeSyncSeamsWarned ??= {});
 
@@ -112,16 +92,8 @@ function warnModuleUnavailableOnce(
 
   try {
     console.warn(`[nativeSeam] ${moduleName} unavailable (${reason}); this seam degrades to a no-op`);
-    recordDiagnosticEvent({
-      source: 'native_seam',
-      event: 'native_module_unavailable',
-      cause,
-      at: Date.now(),
-    });
   } catch {
-    // A runtime without console -- or a diagnostic sink that ever throws -- must not fail here:
-    // this is a diagnostic, not control flow, and instrumentation that can break the code it
-    // observes is worse than none. `recordDiagnosticEvent` already never throws; the guard is
-    // defence in depth.
+    // A runtime without console must not fail here: this is a diagnostic, not control flow, and
+    // instrumentation that can break the code it observes is worse than none.
   }
 }

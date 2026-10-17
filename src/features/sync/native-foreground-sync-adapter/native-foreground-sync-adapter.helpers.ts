@@ -1,6 +1,5 @@
 import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
 import { Platform } from 'react-native';
-import { createNativeBatteryOptimizationExemption } from '../native-battery-optimization.helpers';
 import { createNativeForegroundServicePresence } from '../native-foreground-service-presence.helpers';
 import { createNativeForegroundSyncTicker } from '../native-foreground-sync-ticker.helpers';
 import {
@@ -18,9 +17,6 @@ function createUnsupportedStatus(): SyncExecutionStatus {
     isForegroundServiceRunning: false,
     canShowPersistentNotification: false,
     isBackgroundTaskRegistered: false,
-    // Read live even off Android: an OS-level fact with no register/unregister lifecycle of its
-    // own, matching every other status read in this adapter.
-    isBatteryOptimizationExempt: createNativeBatteryOptimizationExemption().isExempt(),
   };
 }
 
@@ -88,9 +84,6 @@ export function createNativeForegroundSyncAdapter(): NativeForegroundSyncAdapter
         isForegroundServiceRunning,
         canShowPersistentNotification,
         isBackgroundTaskRegistered: false,
-        // Read fresh every call, never cached: the user can grant or revoke this through the
-        // system dialog at any time, independent of the FGS registration lifecycle above.
-        isBatteryOptimizationExempt: createNativeBatteryOptimizationExemption().isExempt(),
       });
     },
   };

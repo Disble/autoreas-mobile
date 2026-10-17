@@ -208,8 +208,8 @@
     }
   },
   {
-    "name": "client-telemetry-presence-projected-fields-match",
-    "description": "Both engines attach a client_telemetry envelope carrying the same cycle_id, trigger_source and pending_ops_count, even though the JS envelope is richer (WireSyncCycleTelemetry) and the Kotlin envelope is a deliberately minimal, deferred subset (see ReconcileRequestBody.kt's own header comment; unifying them is T5, not T2). Only the SHARED projection is asserted here, not full-shape equality across languages.",
+    "name": "client-telemetry-kotlin-only",
+    "description": "Only the Kotlin engine attaches a client_telemetry envelope: its deliberately minimal one carries cycle_id, trigger_source and pending_ops_count (see ReconcileRequestBody.kt's own header comment). The JS body never carries the key (convergent-sync T18 removed the JS telemetry path), so the JS suite asserts its absence for every case and the Kotlin suite asserts this projection.",
     "input": {
       "deviceId": "device-9",
       "lastChangelogId": 2400,
@@ -217,16 +217,7 @@
       "triggerSource": "native_fgs_tick",
       "pendingOperations": [
         { "id": 11, "animeId": "anime-11", "operation": "update", "payload": "{}", "createdAt": 1710000008000 }
-      ],
-      "clientTelemetry": {
-        "cycle_id": "cycle-telemetry-1",
-        "degraded": null,
-        "trigger_source": "native_fgs_tick",
-        "app_state": "background",
-        "previous_cycle": null,
-        "counters": { "consecutive_unclosed_cycles": 0, "pending_ops_count": 1, "cursor": 2400 },
-        "recent_events": []
-      }
+      ]
     },
     "expected": {
       "device_id": "device-9",

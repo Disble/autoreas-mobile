@@ -3,13 +3,12 @@
  *
  * These pin the pure parsing and verdict pieces of the DB-backed acceptance checks: the
  * bridge-config row reader behind check 7's T6 presence-gate awareness, and the cycle-closure
- * metric of `docs/mobile-sync-architecture.md` §9 (check 10) — the newest
- * `sync_runtime_status` telemetry row and the journal's per-cycle newest transitions. They
- * need no device, no adb and no sqlite3.
+ * metric of `docs/mobile-sync-architecture.md` §9 (check 10) -- read from the native journal's
+ * per-cycle newest transitions. They need no device, no adb and no sqlite3.
  *
  * The module under test is plain ESM (`.mjs`), which Jest's CJS runtime cannot `require`
  * directly; it is transformed to CommonJS in-memory with babel and evaluated, so the real
- * source — not a copy — is what these tests exercise.
+ * source -- not a copy -- is what these tests exercise.
  */
 
 import { transformFileSync } from '@babel/core';
@@ -21,16 +20,16 @@ import path from 'node:path';
 import type {
   cycleClosureOutcome as CycleClosureOutcome,
   parseBridgeConfigRow as ParseBridgeConfigRow,
-  parseCycleStatusRow as ParseCycleStatusRow,
-  parseOpenJournalCycles as ParseOpenJournalCycles,
+  parseJournalCycles as ParseJournalCycles,
+  unfinishedCycleStreak as UnfinishedCycleStreak,
 } from '../../scripts/lib/device-db-checks.mjs';
 
 /** The DB-check parsing and verdict surface, typed from the statically imported helper values. */
 type DeviceDbChecks = {
   cycleClosureOutcome: typeof CycleClosureOutcome;
   parseBridgeConfigRow: typeof ParseBridgeConfigRow;
-  parseCycleStatusRow: typeof ParseCycleStatusRow;
-  parseOpenJournalCycles: typeof ParseOpenJournalCycles;
+  parseJournalCycles: typeof ParseJournalCycles;
+  unfinishedCycleStreak: typeof UnfinishedCycleStreak;
 };
 
 /** Loads `scripts/lib/device-db-checks.mjs` by transforming it to CJS and evaluating it. */
@@ -49,25 +48,13 @@ function loadDeviceDbChecksModule(): DeviceDbChecks {
 }
 
 /** The real DB-check surface, loaded from source. */
-const { cycleClosureOutcome, parseBridgeConfigRow, parseCycleStatusRow, parseOpenJournalCycles } =
+const { cycleClosureOutcome, parseBridgeConfigRow, parseJournalCycles, unfinishedCycleStreak } =
   loadDeviceDbChecksModule();
 
-/** A journal read that proves an attempt is in flight: rows exist and one cycle is non-terminal. */
-const JOURNAL_IN_FLIGHT = {
-  readable: true,
-  rowCount: 4,
-  openCycles: [{ cycleId: 'cyc-9', toState: 'sent' }],
-  note: null,
-};
-
-/** A journal read that proves no attempt is in flight: rows exist and every newest transition is terminal. */
-const JOURNAL_ALL_CLOSED = { readable: true, rowCount: 7, openCycles: [], note: null };
-
-/** A journal read with no evidence at all: the database holds no transitions. */
-const JOURNAL_EMPTY = { readable: true, rowCount: 0, openCycles: [], note: null };
-
-/** A journal read that failed, so nothing about in-flight state can be proven from the FSM. */
-const JOURNAL_UNREADABLE = { readable: false, rowCount: null, openCycles: [], note: 'pull of files/sync-journal.db failed' };
+/** Builds a readable journal read from `cycle_id|to_state` lines, newest first. */
+function journalOf(...lines: string[]) {
+  return { readable: true, cycles: parseJournalCycles(lines.join('\n')), note: null };
+}
 
 describe('check 7 presence-gate bridge config parsing', () => {
   it('splits a complete pipe-delimited bridge_config row into its three gate coordinates', () => {
@@ -88,113 +75,91 @@ describe('check 7 presence-gate bridge config parsing', () => {
 });
 
 describe('check 10 cycle-closure parsing', () => {
-  it('splits the newest sync_runtime_status cycle row into its named telemetry fields', () => {
-    expect(parseCycleStatusRow('1|3|cyc-7|http')).toEqual({
-      isCycleActive: '1',
-      consecutiveUnclosedCycles: '3',
-      lastCycleId: 'cyc-7',
-      lastCycleStage: 'http',
-    });
-  });
-
-  it('yields empty strings for missing columns instead of guessing defaults', () => {
-    expect(parseCycleStatusRow('0|0')).toEqual({
-      isCycleActive: '0',
-      consecutiveUnclosedCycles: '0',
-      lastCycleId: '',
-      lastCycleStage: '',
-    });
-  });
-
-  it('parses each open-cycle line into a cycleId/toState pair', () => {
-    expect(parseOpenJournalCycles('cyc-9|sent\ncyc-4|claimed')).toEqual([
+  it('parses each journal line into a cycleId/toState pair, keeping the newest-first order', () => {
+    expect(parseJournalCycles('cyc-9|sent\ncyc-4|closed')).toEqual([
       { cycleId: 'cyc-9', toState: 'sent' },
-      { cycleId: 'cyc-4', toState: 'claimed' },
+      { cycleId: 'cyc-4', toState: 'closed' },
     ]);
   });
 
-  it('returns an empty list for a journal with no non-terminal cycle so absence stays provable', () => {
-    expect(parseOpenJournalCycles('')).toEqual([]);
+  it('returns an empty list for an empty journal so absence stays provable', () => {
+    expect(parseJournalCycles('')).toEqual([]);
   });
 
   it('tolerates CRLF line endings from the device shell', () => {
-    expect(parseOpenJournalCycles('cyc-9|sent\r\ncyc-4|claimed\r\n')).toHaveLength(2);
+    expect(parseJournalCycles('cyc-9|sent\r\ncyc-4|claimed\r\n')).toHaveLength(2);
+  });
+});
+
+describe('check 10 unfinished-cycle streak', () => {
+  it('treats a not_applicable cycle as finished: the engine stood down and its FSM marks it terminal', () => {
+    expect(unfinishedCycleStreak(journalOf('cyc-3|not_applicable', 'cyc-2|not_applicable', 'cyc-1|closed').cycles)).toEqual([]);
+  });
+
+  it('counts abandoned cycles at the head of the journal until the first finished one', () => {
+    const streak = unfinishedCycleStreak(
+      journalOf('cyc-3|abandoned', 'cyc-2|abandoned', 'cyc-1|closed', 'cyc-0|abandoned').cycles,
+    );
+
+    expect(streak.map((cycle) => cycle.cycleId)).toEqual(['cyc-3', 'cyc-2']);
+  });
+
+  it('skips the newest cycle while it is non-terminal, because it may be in flight', () => {
+    expect(unfinishedCycleStreak(journalOf('cyc-2|sent', 'cyc-1|closed').cycles)).toEqual([]);
+  });
+
+  it('counts an older cycle parked in a non-terminal state behind the newest one', () => {
+    const streak = unfinishedCycleStreak(journalOf('cyc-3|claimed', 'cyc-2|sent', 'cyc-1|failed').cycles);
+
+    expect(streak).toEqual([{ cycleId: 'cyc-2', toState: 'sent' }]);
+  });
+
+  it('treats a failed cycle as finished: it ran to its end and reported why', () => {
+    expect(unfinishedCycleStreak(journalOf('cyc-2|failed', 'cyc-1|abandoned').cycles)).toEqual([]);
   });
 });
 
 describe('check 10 cycle-closure verdicts', () => {
-  it('FAILs with the counter value and the offending cycle ids when consecutive_unclosed_cycles > 0', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('0|2|cyc-9|sent'),
-      JOURNAL_IN_FLIGHT,
-    );
+  it('FAILs with the streak length and the offending cycle ids when the newest cycles never finished', () => {
+    const outcome = cycleClosureOutcome(journalOf('cyc-9|abandoned', 'cyc-8|abandoned', 'cyc-7|closed'));
+
     expect(outcome.verdict).toBe('FAIL');
-    expect(outcome.evidence).toContain('consecutive_unclosed_cycles=2');
-    expect(outcome.evidence).toContain('cyc-9');
-    expect(outcome.evidence).toContain('sent');
+    expect(outcome.evidence).toContain('unfinished cycles=2');
+    expect(outcome.evidence).toContain('cyc-9 (newest transition: abandoned)');
+    expect(outcome.evidence).toContain('cyc-8 (newest transition: abandoned)');
+    expect(outcome.evidence).not.toContain('cyc-7 (newest transition');
   });
 
-  it('FAILs on the counter alone when the journal is unreadable, naming the counter and the journal failure', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('0|2|cyc-9|sent'),
-      JOURNAL_UNREADABLE,
-    );
-    expect(outcome.verdict).toBe('FAIL');
-    expect(outcome.evidence).toContain('consecutive_unclosed_cycles=2');
-    expect(outcome.evidence).toContain('pull of files/sync-journal.db failed');
-  });
+  it('PASSes when the newest cycle closed, naming it', () => {
+    const outcome = cycleClosureOutcome(journalOf('cyc-7|closed', 'cyc-6|abandoned'));
 
-  it('PASSes the metric when the counter is zero and no cycle is active', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('0|0|cyc-7|closed'),
-      JOURNAL_ALL_CLOSED,
-    );
     expect(outcome.verdict).toBe('PASS');
-    expect(outcome.evidence).toContain('consecutive_unclosed_cycles=0');
-    expect(outcome.evidence).toContain('is_cycle_active=0');
+    expect(outcome.evidence).toContain('unfinished cycles=0');
+    expect(outcome.evidence).toContain('newest cycle: cyc-7 (closed)');
   });
 
-  it('PASSes with a legitimately in-flight attempt: active flag up and a non-terminal journal cycle', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('1|0|cyc-9|sent'),
-      JOURNAL_IN_FLIGHT,
-    );
+  it('PASSes while the newest cycle is in flight and the one before it finished', () => {
+    const outcome = cycleClosureOutcome(journalOf('cyc-9|sent', 'cyc-8|closed'));
+
     expect(outcome.verdict).toBe('PASS');
-    expect(outcome.evidence).toContain('attempt in flight');
+    expect(outcome.evidence).toContain('newest cycle: cyc-9 (sent)');
   });
 
-  it('FAILs when is_cycle_active=1 but the journal proves no attempt is in flight (stuck flag)', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('1|0|cyc-7|closed'),
-      JOURNAL_ALL_CLOSED,
-    );
-    expect(outcome.verdict).toBe('FAIL');
-    expect(outcome.evidence).toContain('is_cycle_active=1');
-    expect(outcome.evidence).toContain('no attempt actually in flight');
-  });
+  it('is UNKNOWN for an empty journal, so no transitions never read as a green metric', () => {
+    const outcome = cycleClosureOutcome(journalOf());
 
-  it('FAILs on the stage fallback when the journal is empty and the recorded stage is terminal', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('1|0|cyc-7|closed'),
-      JOURNAL_EMPTY,
-    );
-    expect(outcome.verdict).toBe('FAIL');
-  });
-
-  it('PASSes when the journal is empty but the recorded stage shows a cycle mid-flight', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('1|0|cyc-9|claim_ops'),
-      JOURNAL_EMPTY,
-    );
-    expect(outcome.verdict).toBe('PASS');
-  });
-
-  it('degrades to UNKNOWN when the counter itself is unparseable, never PASS', () => {
-    const outcome = cycleClosureOutcome(
-      parseCycleStatusRow('1||cyc-9|sent'),
-      JOURNAL_IN_FLIGHT,
-    );
     expect(outcome.verdict).toBe('UNKNOWN');
-    expect(outcome.evidence).toContain('unparseable');
+    expect(outcome.evidence).toContain('journal is empty');
+  });
+
+  it('is UNKNOWN when the journal could not be read, naming why', () => {
+    const outcome = cycleClosureOutcome({
+      readable: false,
+      cycles: [],
+      note: 'pull of files/sync-journal.db failed',
+    });
+
+    expect(outcome.verdict).toBe('UNKNOWN');
+    expect(outcome.evidence).toContain('pull of files/sync-journal.db failed');
   });
 });

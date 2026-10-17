@@ -1,0 +1,85 @@
+{
+  "name": "applied-false-conflict-rebases-on-the-bridge-token",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-15"
+  ],
+  "description": "A conflict carrying a token that differs from the base sent re-bases: the anime takes the bridge token, the count restarts at 0, the row goes back to pending, and its key stops for this cycle.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [
+              {
+                "anime_id": "anime-a",
+                "operation": "update",
+                "applied": false,
+                "reason": "conflict",
+                "modified_at": 21
+              }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 1
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 1,
+    "tokens": {
+      "anime-a": 21
+    },
+    "staged": []
+  }
+}

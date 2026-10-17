@@ -118,7 +118,6 @@ describe('applyMigrationFiles', () => {
         'animes',
         'operation_log',
         'bridge_config',
-        'season_rating_queue',
         'pending_remote_changes',
       ]),
     );

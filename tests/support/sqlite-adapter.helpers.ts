@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLInputValue } from 'node:sqlite';
 import type { SQLiteDatabase, SQLiteRunResult } from 'expo-sqlite';
+import type { ApplyMigrationFilesOptions } from './sqlite-adapter.types';
 import {
   IMPLEMENTED_MEMBERS,
   MIGRATIONS_DIR,
@@ -121,10 +122,17 @@ export function getNativeHandle(adapter: SQLiteDatabase): DatabaseSync {
  * This is only HALF of the production schema. `sync_cycle_lock` and `active_season_cache` are
  * created imperatively by `prepareDatabaseSchema`'s `ensure*` steps and exist in no migration
  * file, so a behaviour test needing them must run the app's own `runMigrations` as well.
+ *
+ * `through` stops at that four-digit migration prefix (inclusive), which is how a test builds the
+ * schema an already-installed device carried before a later migration shipped.
  */
-export async function applyMigrationFiles(adapter: SQLiteDatabase): Promise<void> {
+export async function applyMigrationFiles(
+  adapter: SQLiteDatabase,
+  options: ApplyMigrationFilesOptions = {},
+): Promise<void> {
   const migrationFiles = readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith('.sql'))
+    .filter((file) => options.through === undefined || file.slice(0, 4) <= options.through)
     .sort();
 
   for (const file of migrationFiles) {

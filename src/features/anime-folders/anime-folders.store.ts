@@ -1,7 +1,13 @@
 import { INITIAL_ANIME_FOLDERS_INDEX_STATE } from './anime-folders.constants';
-import { buildFolderIndex, walkFolderTree } from './anime-folders.helpers';
+import {
+  buildFolderIndex,
+  buildFolderUri,
+  findFolderProbes,
+  hasFolderProbeHit,
+  walkFolderTree,
+} from './anime-folders.helpers';
 import { isSafRootReadable, listSafChildren } from './anime-folders-io.helpers';
-import type { AnimeFoldersIndexState } from './anime-folders.types';
+import type { AnimeFolderSource, AnimeFoldersIndexState, FolderProbe } from './anime-folders.types';
 
 /** Current index state; replaced on every change so `useSyncExternalStore` sees new snapshots. */
 let state: AnimeFoldersIndexState = INITIAL_ANIME_FOLDERS_INDEX_STATE;
@@ -107,4 +113,34 @@ export function recheckAnimeFoldersAccess(): Promise<void> {
   }
 
   return isReadable && status === 'lost' ? indexAnimeFolders(rootUri, true) : Promise.resolve();
+}
+
+/** Lists one probe's parent folder; a listing that fails counts as nothing arrived. */
+async function isProbeHit(rootUri: string, probe: FolderProbe): Promise<boolean> {
+  try {
+    return hasFolderProbeHit(probe, await listSafChildren(buildFolderUri(rootUri, probe.parentRelativePath)));
+  } catch {
+    // Lost access is the foreground access check's job, not a probe's.
+    return false;
+  }
+}
+
+/**
+ * Checks whether the folder of any pending anime (active, with a bridge path, no indexed folder)
+ * reached the tablet after the anime did. Lists only the folders where they are expected, one
+ * query per parent, and re-indexes only when one of them is there. Does nothing without a ready
+ * index or while a walk runs, since that walk will find it.
+ */
+export async function probeAnimeFolders(animes: readonly AnimeFolderSource[]): Promise<void> {
+  const { rootUri, index } = state;
+  if (!rootUri || !index || inFlight) {
+    return;
+  }
+
+  const probes = findFolderProbes(index, animes);
+  const hits = await Promise.all(probes.map((probe) => isProbeHit(rootUri, probe)));
+  // A root replaced while the listings ran is not re-indexed: that would switch back to it.
+  if (hits.some(Boolean) && state.rootUri === rootUri) {
+    await indexAnimeFolders(rootUri, true);
+  }
 }

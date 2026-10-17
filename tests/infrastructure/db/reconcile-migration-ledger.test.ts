@@ -54,6 +54,9 @@ const PREVIOUS_CLAMP_TARGET_MS = 1_788_546_067_501;
 /** Matches the `ALTER TABLE ... ADD COLUMN` shape every migration and repair step emits. */
 const ALTER_COLUMN_PATTERN = /^ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/u;
 
+/** Matches the `ALTER TABLE ... DROP COLUMN` shape migration `0020` and its repair step emit. */
+const DROP_COLUMN_PATTERN = /^ALTER TABLE `?(\w+)`? DROP (?:COLUMN )?`?(\w+)`?/u;
+
 /** Matches a `CREATE TABLE` and captures its body, so declared columns can be registered. */
 const CREATE_TABLE_PATTERN = /^CREATE TABLE (?:IF NOT EXISTS )?`?(\w+)`?\s*\(([\s\S]*)$/u;
 
@@ -120,6 +123,15 @@ function createFakeDatabase() {
     return { changes: 1 };
   };
 
+  /** Applies one `ALTER TABLE ... DROP COLUMN`, refusing a missing column exactly as SQLite does. */
+  const applyDrop = (table: string, column: string) => {
+    if (!columnsOf(table).delete(column)) {
+      throw new Error(`Error code 1: no such column: "${column}"`);
+    }
+
+    return { changes: 0 };
+  };
+
   /** Registers the columns a `CREATE TABLE` body declares, ignoring table-level constraints. */
   const applyCreate = (table: string, body: string) => {
     const tableColumns = columnsOf(table);
@@ -155,6 +167,12 @@ function createFakeDatabase() {
 
     if (alter) {
       return applyAlter(alter[1], alter[2]);
+    }
+
+    const drop = DROP_COLUMN_PATTERN.exec(statement);
+
+    if (drop) {
+      return applyDrop(drop[1], drop[2]);
     }
 
     if (statement.startsWith("CREATE TABLE") && statement.includes("__drizzle_migrations")) {
@@ -272,6 +290,8 @@ function createFakeDatabase() {
     applyPendingMigrations,
     applyPreviousClamp,
     dropLedger,
+    // Transaction control only: the repair steps' BEGIN / COMMIT / ROLLBACK change no modelled state.
+    execAsync: jest.fn(async () => undefined),
     getAllAsync,
     getFirstAsync,
     poisonLedgerRow,

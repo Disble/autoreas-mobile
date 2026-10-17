@@ -1,5 +1,4 @@
 import {
-  captureSyncDiagnosticsEnvelope,
   flushSyncDiagnosticsOutbox,
   isSyncDiagnosticsPayloadAccepted,
 } from '../../../../src/features/sync/sync-diagnostics-flush.helpers';
@@ -9,7 +8,6 @@ import {
   SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS,
 } from '../../../../src/features/sync/sync-diagnostics-flush.constants';
 import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
-import type { WireSyncCycleTelemetry } from '../../../../src/features/sync/sync-telemetry.types';
 import type {
   SyncDiagnosticsOutboxRecord,
   SyncDiagnosticsOutboxStore,
@@ -19,8 +17,12 @@ import type { BridgeHttpResult } from '../../../../src/infrastructure/api/bridge
 /** Bridge coordinates shared by every test in this suite. */
 const CONNECTION = { ip: '192.168.0.10', port: 8080, token: 'token-1' };
 
-/** One fully-formed wire telemetry envelope, reused as the base fixture for every test. */
-const WIRE: WireSyncCycleTelemetry = {
+/**
+ * One kindless cycle envelope, as a build before convergent-sync T18 captured it. Nothing enqueues
+ * this shape any more, but rows a device queued before the update still flush through the legacy
+ * rule, so it stays the base fixture: the flush treats every payload as opaque bytes.
+ */
+const WIRE = {
   cycle_id: 'cycle-1',
   degraded: null,
   trigger_source: 'background_task',
@@ -131,35 +133,6 @@ async function runFlush(
 
   return { store, postSyncDiagnostics, result };
 }
-
-describe('captureSyncDiagnosticsEnvelope', () => {
-  it('enqueues the envelope keyed by its own cycle_id when telemetry is present', () => {
-    const store = buildFakeStore();
-
-    captureSyncDiagnosticsEnvelope(WIRE, { store });
-
-    expect(store.enqueue).toHaveBeenCalledWith({
-      cycleId: 'cycle-1',
-      payload: JSON.stringify(WIRE),
-    });
-  });
-
-  it('captures nothing when the telemetry preference is disabled -- resolveClientTelemetry already returned null', () => {
-    const store = buildFakeStore();
-
-    captureSyncDiagnosticsEnvelope(null, { store });
-
-    expect(store.enqueue).not.toHaveBeenCalled();
-  });
-
-  it('captures nothing when the cycle supplied no telemetry context -- resolveClientTelemetry already returned null', () => {
-    const store = buildFakeStore();
-
-    captureSyncDiagnosticsEnvelope(null, { store });
-
-    expect(store.enqueue).not.toHaveBeenCalled();
-  });
-});
 
 describe('isSyncDiagnosticsPayloadAccepted', () => {
   it('accepts the kindless legacy cycle envelope AND the chapter kind the registry now serves', () => {

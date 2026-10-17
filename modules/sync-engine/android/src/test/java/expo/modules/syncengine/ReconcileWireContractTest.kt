@@ -20,10 +20,9 @@ import org.robolectric.RobolectricTestRunner
  * a response case's `bridgeChanges[]` compares `recordId`/`changeType`/`timestamp` verbatim,
  * `changedFields` in the LOCAL (Spanish) vocabulary, and `snapshot` mapped to the legacy shape (or
  * `null` when the change carried none). A request case's `expectedTelemetryProjection`, when
- * present, compares only `cycle_id`/`trigger_source`/`counters.pending_ops_count` -- the fields
- * both engines' `client_telemetry` envelopes actually share; Kotlin's envelope is a deliberately
- * minimal, deferred subset (see `ReconcileRequestBody.kt`'s header comment), so full-shape
- * equality across languages is never asserted for that field.
+ * present, compares `cycle_id`/`trigger_source`/`counters.pending_ops_count` of Kotlin's
+ * deliberately minimal `client_telemetry` envelope (see `ReconcileRequestBody.kt`'s header
+ * comment); it is Kotlin's alone, because the JS body never carries that key.
  *
  * Five fixture cases in `reconcile-response-divergence-cases.json` remain documented, unfixed
  * disagreements between the two engines; the non-string `genres[]` case is resolved. This suite

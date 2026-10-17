@@ -1,19 +1,10 @@
-import {
-  CONFLICT_ATTEMPT_CAP,
-  STALLED_OPERATION_VISIBILITY_THRESHOLD_MS,
-} from '../../../src/features/sync/reconcile-conflict.constants';
+import { CONFLICT_ATTEMPT_CAP } from '../../../src/features/sync/reconcile-conflict.constants';
 import {
   classifyRejectedOperation,
   classifyUnconfirmedOperations,
-  isOperationStalled,
 } from '../../../src/features/sync/reconcile-conflict.helpers';
 import type { ReconcileAppliedOperation } from '../../../src/features/sync/reconcile.schema';
 import type { OperationLogRow } from '../../../src/infrastructure/db/schema';
-import { recordDiagnosticEvent } from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
-
-jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
-  recordDiagnosticEvent: jest.fn(),
-}));
 
 /** Builds a fixture `OperationLogRow` with a definite `conflictAttemptCount`. */
 function makeOperationLogRow(overrides: Partial<OperationLogRow> = {}): OperationLogRow {
@@ -47,8 +38,6 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'unsupported_operation' }),
       storedBridgeModifiedAt: null,
       currentAttemptCount: 0,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({ kind: 'unsupported' });
@@ -59,8 +48,6 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'some_future_value' }),
       storedBridgeModifiedAt: 100,
       currentAttemptCount: 0,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({ kind: 'unrecognized_reason', reason: 'some_future_value' });
@@ -71,15 +58,12 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 200 }),
       storedBridgeModifiedAt: 100,
       currentAttemptCount: 2,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({
       kind: 'conflict_progress',
       bridgeModifiedAt: 200,
       nextAttemptCount: 0,
-      isStalled: false,
     });
   });
 
@@ -88,8 +72,6 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 1788540735366 }),
       storedBridgeModifiedAt: null,
       currentAttemptCount: 0,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result.kind).toBe('conflict_progress');
@@ -101,15 +83,12 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 100 }),
       storedBridgeModifiedAt: 100,
       currentAttemptCount: 1,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({
       kind: 'conflict_progress',
       bridgeModifiedAt: 100,
       nextAttemptCount: 2,
-      isStalled: false,
     });
   });
 
@@ -120,8 +99,6 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 100 }),
       storedBridgeModifiedAt: 100,
       currentAttemptCount: 2,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({
@@ -136,50 +113,9 @@ describe('classifyRejectedOperation', () => {
       appliedOperation: makeRejectedOperation({ reason: 'conflict' }),
       storedBridgeModifiedAt: 100,
       currentAttemptCount: 0,
-      operationCreatedAt: 0,
-      now: 0,
     });
 
     expect(result).toEqual({ kind: 'conflict_missing_token' });
-  });
-
-  it('marks a progressing conflict as stalled once the visibility threshold is crossed, while still classifying it as progress (remains queued, keeps retrying)', () => {
-    const operationCreatedAt = 0;
-    const now = STALLED_OPERATION_VISIBILITY_THRESHOLD_MS;
-
-    const result = classifyRejectedOperation({
-      appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 300 }),
-      storedBridgeModifiedAt: 200,
-      currentAttemptCount: 5,
-      operationCreatedAt,
-      now,
-    });
-
-    expect(result).toEqual({
-      kind: 'conflict_progress',
-      bridgeModifiedAt: 300,
-      nextAttemptCount: 0,
-      isStalled: true,
-    });
-  });
-
-  it('does not mark a progressing conflict as stalled before the visibility threshold', () => {
-    const result = classifyRejectedOperation({
-      appliedOperation: makeRejectedOperation({ reason: 'conflict', modified_at: 300 }),
-      storedBridgeModifiedAt: 200,
-      currentAttemptCount: 0,
-      operationCreatedAt: 0,
-      now: STALLED_OPERATION_VISIBILITY_THRESHOLD_MS - 1,
-    });
-
-    expect((result as { isStalled: boolean }).isStalled).toBe(false);
-  });
-});
-
-describe('isOperationStalled', () => {
-  it('is false strictly before the threshold and true at/after it', () => {
-    expect(isOperationStalled(0, STALLED_OPERATION_VISIBILITY_THRESHOLD_MS - 1)).toBe(false);
-    expect(isOperationStalled(0, STALLED_OPERATION_VISIBILITY_THRESHOLD_MS)).toBe(true);
   });
 });
 
@@ -193,7 +129,6 @@ describe('classifyUnconfirmedOperations', () => {
         { anime_id: 'anime-1', operation: 'delete', applied: false, reason: 'unsupported_operation' },
       ],
       bridgeTokensByAnimeId: new Map(),
-      now: 0,
     });
 
     expect(result.deadLetterIds).toEqual([1]);
@@ -212,7 +147,6 @@ describe('classifyUnconfirmedOperations', () => {
         { anime_id: 'anime-2', operation: 'update', applied: false, reason: 'conflict', modified_at: 999 },
       ],
       bridgeTokensByAnimeId: new Map([['anime-2', 100]]),
-      now: 0,
     });
 
     expect(result.conflictOutcomes).toEqual([
@@ -220,39 +154,6 @@ describe('classifyUnconfirmedOperations', () => {
     ]);
     expect(result.remainingUnconfirmedIds).toEqual([]);
     expect(result.deadLetterIds).toEqual([]);
-  });
-
-  it('records a diagnostic event when a progressing conflict crosses the stalled visibility threshold', () => {
-    (recordDiagnosticEvent as jest.Mock).mockClear();
-    const pendingOps = [
-      makeOperationLogRow({
-        id: 2,
-        animeId: 'anime-2',
-        conflictAttemptCount: 1,
-        createdAt: 0,
-      }),
-    ];
-    const now = STALLED_OPERATION_VISIBILITY_THRESHOLD_MS;
-
-    const result = classifyUnconfirmedOperations({
-      unconfirmedIds: [2],
-      pendingOps,
-      appliedOperations: [
-        { anime_id: 'anime-2', operation: 'update', applied: false, reason: 'conflict', modified_at: 999 },
-      ],
-      bridgeTokensByAnimeId: new Map([['anime-2', 100]]),
-      now,
-    });
-
-    expect(result.conflictOutcomes).toEqual([
-      { operationId: 2, animeId: 'anime-2', bridgeModifiedAt: 999, conflictAttemptCount: 0, status: 'pending' },
-    ]);
-    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
-      source: 'reconcile_conflict',
-      event: 'conflict_operation_stalled',
-      cause: null,
-      at: now,
-    });
   });
 
   it('routes an exhausted conflict into conflictOutcomes with status conflict_exhausted', () => {
@@ -266,7 +167,6 @@ describe('classifyUnconfirmedOperations', () => {
         { anime_id: 'anime-3', operation: 'update', applied: false, reason: 'conflict', modified_at: 100 },
       ],
       bridgeTokensByAnimeId: new Map([['anime-3', 100]]),
-      now: 0,
     });
 
     expect(result.conflictOutcomes).toEqual([
@@ -281,7 +181,6 @@ describe('classifyUnconfirmedOperations', () => {
       pendingOps,
       appliedOperations: [],
       bridgeTokensByAnimeId: new Map(),
-      now: 0,
     });
 
     expect(result.remainingUnconfirmedIds).toEqual([4]);
@@ -301,7 +200,6 @@ describe('classifyUnconfirmedOperations', () => {
         { anime_id: 'anime-7', operation: 'update', applied: true, reason: 'conflict', modified_at: 999 },
       ],
       bridgeTokensByAnimeId: new Map([['anime-7', 100]]),
-      now: 0,
     });
 
     expect(result.remainingUnconfirmedIds).toEqual([7]);
@@ -315,7 +213,6 @@ describe('classifyUnconfirmedOperations', () => {
       pendingOps: [],
       appliedOperations: [],
       bridgeTokensByAnimeId: new Map(),
-      now: 0,
     });
 
     expect(result.remainingUnconfirmedIds).toEqual([999]);
@@ -336,7 +233,6 @@ describe('classifyUnconfirmedOperations', () => {
         { anime_id: 'anime-6', operation: 'update', applied: false, reason: 'some_future_value' },
       ],
       bridgeTokensByAnimeId: new Map(),
-      now: 0,
     });
 
     expect(result.remainingUnconfirmedIds.sort()).toEqual([5, 6]);

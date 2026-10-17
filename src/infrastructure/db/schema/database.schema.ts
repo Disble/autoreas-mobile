@@ -1,9 +1,5 @@
 import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type {
-  SyncCycleStage,
-  SyncRuntimeRegistrationStatus,
-  SyncRuntimeTriggerSource,
-} from '../../../features/sync/sync-runtime-status.types';
+import type { SyncRuntimeRegistrationStatus } from '../../../features/sync/sync-runtime-status.types';
 import type { SyncExecutionMode } from '../../../features/sync/sync-execution-mode.types';
 
 /** Provides the shared animes value. */
@@ -63,34 +59,16 @@ export const operationLog = sqliteTable(
     // increments only when it repeats the same token. NOT NULL with a default of 0 -- unlike the
     // OCC token columns, a freshly queued row has definitely made zero attempts, never "unknown".
     conflictAttemptCount: integer("conflict_attempt_count").notNull().default(0),
+    // ADR 009 R-13 per-key claim: the runtime holding this anime ('js' | 'native') and when it
+    // took the claim. NULL means unclaimed; a claim older than 60 s is expired.
+    claimOwner: text("claim_owner"),
+    claimedAt: integer("claimed_at"),
+    // ADR 009 R-16(b): why a row was given up when its status alone cannot say (fetch-first
+    // outcomes `bridge_404` and `token_missing`). NULL on every row that is not unresolved.
+    unresolvedReason: text("unresolved_reason"),
   },
   (table) => [
     index('operation_log_status_created_at_idx').on(
-      table.status,
-      table.createdAt,
-      table.id,
-    ),
-  ],
-);
-
-/** Provides the shared season rating queue value. */
-
-export const seasonRatingQueue = sqliteTable(
-  'season_rating_queue',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    seasonId: text('season_id').notNull(),
-    animeId: text('anime_id').notNull(),
-    nota: integer('nota').notNull(),
-    ratedAt: integer('rated_at').notNull(),
-    status: text('status').notNull().default('pending'),
-    createdAt: integer('created_at').notNull(),
-    updatedAt: integer('updated_at').notNull(),
-    lastAttemptAt: integer('last_attempt_at'),
-    lastFailureKind: text('last_failure_kind'),
-  },
-  (table) => [
-    index('season_rating_queue_status_created_at_idx').on(
       table.status,
       table.createdAt,
       table.id,
@@ -160,70 +138,17 @@ export const syncRuntimeStatus = sqliteTable('sync_runtime_status', {
     .$type<SyncExecutionMode>()
     .notNull()
     .default('best_effort_background_task'),
-  isForegroundServiceRunning: integer('is_foreground_service_running', { mode: 'boolean' })
-    .notNull()
-    .default(false),
   canShowPersistentNotification: integer('can_show_persistent_notification', { mode: 'boolean' })
     .notNull()
     .default(false),
   lastAttemptAt: integer('last_attempt_at'),
   lastSuccessAt: integer('last_success_at'),
-  lastFailureMessage: text('last_failure_message'),
-  lastTriggerSource: text('last_trigger_source').$type<SyncRuntimeTriggerSource>(),
-  lastSyncedCount: integer('last_synced_count').notNull().default(0),
-  foregroundServiceCallbackStartedAt: integer('foreground_service_callback_started_at'),
-  lastNoOpReason: text('last_no_op_reason'),
-  lastPendingOperationsCountAtStart: integer('last_pending_operations_count_at_start'),
-  isCycleActive: integer('is_cycle_active', { mode: 'boolean' }).notNull().default(false),
-  lastBacklogReadCount: integer('last_backlog_read_count').notNull().default(0),
-  lastPrunedOperationsCount: integer('last_pruned_operations_count').notNull().default(0),
-  isBackgroundTaskRegistered: integer('is_background_task_registered', { mode: 'boolean' })
-    .notNull()
-    .default(false),
-  // Cycle post-mortem columns. A cycle killed by the host cannot report its own death, so the
-  // NEXT cycle reads these to reconstruct what happened. Each column answers a question that
-  // otherwise requires a USB cable and `adb logcat`.
+  // The last cycle's identity, stage and error class: the native engine and the JS attempt
+  // bookkeeping write them, and the device verifier prints them as evidence. Every other column
+  // this table once carried had no reader and was dropped by migration `0020` (convergent-sync T18).
   lastCycleId: text('last_cycle_id'),
-  lastCycleStage: text('last_cycle_stage').$type<SyncCycleStage>(),
+  lastCycleStage: text('last_cycle_stage'),
   lastErrorName: text('last_error_name'),
-  lastNativeErrcodeByte: integer('last_native_errcode_byte'),
-  lastErrorStage: text('last_error_stage'),
-  consecutiveUnclosedCycles: integer('consecutive_unclosed_cycles').notNull().default(0),
-  // Instant the last checkpoint was taken. Without it, a `never_closed` cycle can only report
-  // `now - started_at`, which includes the gap until the NEXT cycle fired -- that measures how
-  // long ago it started, not how long it ran. With it, the duration is measured inside the cycle.
-  lastCycleStageAt: integer('last_cycle_stage_at'),
-  // Checkpoints that failed to persist during the last cycle. A checkpoint swallows its own
-  // errors so the instrument can never break the cycle, but silence would make a stale
-  // `last_cycle_stage` indistinguishable from an accurate one. Zero means the stage is
-  // trustworthy; anything else marks it as degraded rather than quietly wrong.
-  lastFailedCheckpointCount: integer('last_failed_checkpoint_count').notNull().default(0),
-  // Convergence-instrumentation columns (design.md `2026-09-09-convergence-instrumentation`
-  // Decision 6). All eight are additive and NULLABLE with no default: a row that predates this
-  // change, or a cycle that never reached the folded bookkeeping write, must read back NULL --
-  // never a plausible zero, which would misreport "no lost edits" (Decision 7's false-answer
-  // defect class). They fold into the SAME write `recordBacklogReadCount` already performs, so
-  // this table gains zero new write-door transactions.
-  lastDiagnosticsDiscardedCount: integer('last_diagnostics_discarded_count'),
-  // The other diagnostics counters the flush result carries beside `discarded`, persisted here for
-  // the same reason it is: a destruction by judgement (`undeliverable`), a park (`unclassified`) and
-  // a retirement by the age bound (`reaped`) must all be observable, and NULL means "never
-  // measured" rather than zero. Driven by migration `0015` on a fresh install and by
-  // `SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS` on an already provisioned device -- both routes,
-  // pinned by the migration/repair parity test.
-  lastDiagnosticsUndeliverableCount: integer('last_diagnostics_undeliverable_count'),
-  lastDiagnosticsUnclassifiedCount: integer('last_diagnostics_unclassified_count'),
-  lastDiagnosticsReapedCount: integer('last_diagnostics_reaped_count'),
-  lastDiagnosticsFailedRemovalCount: integer('last_diagnostics_failed_removal_count'),
-  lastOutboxFailedWriteCount: integer('last_outbox_failed_write_count'),
-  lastDeadLetterCount: integer('last_dead_letter_count'),
-  lastConflictExhaustedCount: integer('last_conflict_exhausted_count'),
-  lastStuckProcessingCount: integer('last_stuck_processing_count'),
-  lastOldestPendingAgeMs: integer('last_oldest_pending_age_ms'),
-  // TRUE `operation_log` backlog depth (`OperationLogConvergence.pendingRowCount`), never the
-  // bounded per-cycle batch size. `hasMore` is DERIVED from this at read time (Decision 1),
-  // never stored, so it can never go stale against the count beside it.
-  lastPendingRowCount: integer('last_pending_row_count'),
 });
 
 /** Defines the anime row value shape. */
@@ -234,10 +159,6 @@ export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 /** Defines the insert operation log row value shape. */
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
-/** Defines the season rating queue row value shape. */
-export type SeasonRatingQueueRow = typeof seasonRatingQueue.$inferSelect;
-/** Defines the insert season rating queue row value shape. */
-export type InsertSeasonRatingQueueRow = typeof seasonRatingQueue.$inferInsert;
 /** Defines the active season cache row value shape. */
 export type ActiveSeasonCacheRow = typeof activeSeasonCache.$inferSelect;
 /** Defines the new active season cache row value shape. */

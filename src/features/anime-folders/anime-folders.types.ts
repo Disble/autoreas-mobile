@@ -24,7 +24,22 @@ export interface IndexedFolder {
   readonly devicePath: string | null;
 }
 
-/** Folders of the anime root with the lookups the resolution steps use. */
+/** An anime folder source with the stamp of its last remote change, so a new incoming event is visible. */
+export interface AnimeFolderArrivalSource extends AnimeFolderSource {
+  /** `last_applied_change_ms`: changes every time a remote change of this anime is applied. */
+  readonly lastAppliedChangeMs: number | null;
+}
+
+/**
+ * Where the folders of pending animes are expected: the indexed folder to list (`''` is the root)
+ * and the exact-match keys of the folder names that would appear in it.
+ */
+export interface FolderProbe {
+  readonly parentRelativePath: string;
+  readonly expectedKeys: readonly string[];
+}
+
+/** The indexed folders below the root, with lookups by exact and by normalized folder name. */
 export interface FolderIndex {
   readonly folders: readonly IndexedFolder[];
   readonly byExactKey: ReadonlyMap<string, readonly IndexedFolder[]>;

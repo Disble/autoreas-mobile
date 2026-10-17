@@ -153,7 +153,7 @@ class SyncEngineRunnerTest {
             "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, anime_id TEXT NOT NULL, " +
             "operation TEXT NOT NULL, payload TEXT NOT NULL, " +
             "status TEXT DEFAULT 'pending' NOT NULL, created_at INTEGER NOT NULL, " +
-            "conflict_attempt_count INTEGER DEFAULT 0 NOT NULL)",
+            "conflict_attempt_count INTEGER DEFAULT 0 NOT NULL, claim_owner TEXT, claimed_at INTEGER)",
         )
       }
       if (ip != null) {
@@ -247,10 +247,9 @@ class SyncEngineRunnerTest {
   }
 
   @Test
-  fun `requirePresence defaults to false when the caller omits it, exactly like SyncEngineModule's own call`() {
-    // SyncEngineModule.runAttempt calls runOnce(context, triggerSource, cycleId, startMs) {... }
-    // with NO requirePresence argument at all -- this is the only test exercising that omitted-
-    // argument default, every other test in this file passes it explicitly.
+  fun `requirePresence defaults to false when the caller omits it`() {
+    // The only test exercising the omitted-argument default; every other test in this file
+    // passes it explicitly.
     seedAppSchema(withOperationLog = true) // bridge_config exists but is empty
 
     val results = mutableListOf<CycleOutcome>()

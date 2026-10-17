@@ -5,5 +5,4 @@ export interface DrainPendingRemoteChangesResult {
   readonly deferred: number;
   /** Updates rejected because no field in them is known to this build: nothing was written. */
   readonly rejected: number;
-  readonly drainedCount: number;
 }

@@ -28,6 +28,11 @@ export interface FakeBridge {
   readonly requests: readonly FakeBridgeRequest[];
   readonly queueResponse: (response: QueuedBridgeResponse) => void;
   /**
+   * Queues a transport failure: the next request is recorded, then rejects the way a dropped
+   * connection does (`TypeError: Network request failed`), with no response at all.
+   */
+  readonly queueTransportFailure: () => void;
+  /**
    * Queues a response whose delivery the test controls explicitly: the next request hangs until
    * `release`/`reject` is called. This is how a behaviour test holds a probe or a cycle in
    * flight to prove the one-attempt-at-a-time guard.

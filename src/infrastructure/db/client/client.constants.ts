@@ -19,47 +19,19 @@ export const ERRCODE_PREFIX_PATTERN = /Error code (.+?): /;
  */
 export const WRITE_QUEUE_BY_DATABASE = new Map<string, Promise<unknown>>();
 
-/** Lists legacy sync-runtime columns and their idempotent repair statements. */
+/**
+ * Lists the kept sync-runtime columns added after the table first shipped, and their idempotent
+ * repair statements. The columns migration `0020` drops are deliberately absent: re-adding them
+ * here would undo the drop on every startup.
+ */
 export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
   {
     columnName: 'execution_mode',
     sql: "ALTER TABLE sync_runtime_status ADD COLUMN execution_mode TEXT DEFAULT 'best_effort_background_task' NOT NULL",
   },
   {
-    columnName: 'is_foreground_service_running',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN is_foreground_service_running INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
     columnName: 'can_show_persistent_notification',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
-    columnName: 'foreground_service_callback_started_at',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN foreground_service_callback_started_at INTEGER',
-  },
-  {
-    columnName: 'last_no_op_reason',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_no_op_reason TEXT',
-  },
-  {
-    columnName: 'last_pending_operations_count_at_start',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_operations_count_at_start INTEGER',
-  },
-  {
-    columnName: 'is_cycle_active',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN is_cycle_active INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
-    columnName: 'last_backlog_read_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_backlog_read_count INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
-    columnName: 'last_pruned_operations_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
-    columnName: 'is_background_task_registered',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL',
   },
   {
     columnName: 'last_cycle_id',
@@ -72,79 +44,6 @@ export const SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS: readonly MissingColumnDefin
   {
     columnName: 'last_error_name',
     sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_error_name TEXT',
-  },
-  {
-    columnName: 'last_native_errcode_byte',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_native_errcode_byte INTEGER',
-  },
-  {
-    columnName: 'last_error_stage',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_error_stage TEXT',
-  },
-  {
-    columnName: 'consecutive_unclosed_cycles',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN consecutive_unclosed_cycles INTEGER DEFAULT 0 NOT NULL',
-  },
-  {
-    columnName: 'last_cycle_stage_at',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_cycle_stage_at INTEGER',
-  },
-  {
-    columnName: 'last_failed_checkpoint_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_failed_checkpoint_count INTEGER DEFAULT 0 NOT NULL',
-  },
-  // Convergence-instrumentation columns (design.md `2026-09-09-convergence-instrumentation`
-  // Decision 6). Nullable with no default, mirroring `last_cycle_id`/`last_error_name` above:
-  // NULL means "never measured", not zero (Decision 7).
-  {
-    columnName: 'last_diagnostics_discarded_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_discarded_count INTEGER',
-  },
-  // The counters stored beside `discarded` by the same patch helper, write and call site
-  // (migration `0014`/`0015` on a fresh install, these repair twins on a device already in the
-  // field -- `reconcileMigrationLedger` pins the migrator's gate, so this list is that device's
-  // ONLY route). Nullable with no default: NULL means "never measured".
-  {
-    columnName: 'last_diagnostics_undeliverable_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_undeliverable_count INTEGER',
-  },
-  {
-    columnName: 'last_diagnostics_unclassified_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_unclassified_count INTEGER',
-  },
-  // The age bound's own counter (migration `0015`): a non-zero value is the operator signal that a
-  // park outlived the declared bound, which is the fact the counter exists to make readable.
-  {
-    columnName: 'last_diagnostics_reaped_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count INTEGER',
-  },
-  {
-    columnName: 'last_diagnostics_failed_removal_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_failed_removal_count INTEGER',
-  },
-  {
-    columnName: 'last_outbox_failed_write_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_outbox_failed_write_count INTEGER',
-  },
-  {
-    columnName: 'last_dead_letter_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_dead_letter_count INTEGER',
-  },
-  {
-    columnName: 'last_conflict_exhausted_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_conflict_exhausted_count INTEGER',
-  },
-  {
-    columnName: 'last_stuck_processing_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_stuck_processing_count INTEGER',
-  },
-  {
-    columnName: 'last_oldest_pending_age_ms',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_oldest_pending_age_ms INTEGER',
-  },
-  {
-    columnName: 'last_pending_row_count',
-    sql: 'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_row_count INTEGER',
   },
 ];
 
@@ -216,6 +115,11 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
     columnName: 'conflict_attempt_count',
     sql: 'ALTER TABLE operation_log ADD COLUMN conflict_attempt_count INTEGER DEFAULT 0 NOT NULL',
   },
+  // ADR 009 R-13 per-key claim: NULL means unclaimed. Repair twin of migration 0018.
+  { columnName: 'claim_owner', sql: 'ALTER TABLE operation_log ADD COLUMN claim_owner TEXT' },
+  { columnName: 'claimed_at', sql: 'ALTER TABLE operation_log ADD COLUMN claimed_at INTEGER' },
+  // ADR 009 R-16(b): why a row with no dedicated status was given up. NULL on every other row.
+  { columnName: 'unresolved_reason', sql: 'ALTER TABLE operation_log ADD COLUMN unresolved_reason TEXT' },
 ];
 
 /**
@@ -290,20 +194,6 @@ export const PENDING_REMOTE_CHANGES_TABLE_SQL =
   'snapshot TEXT, ' +
   'timestamp INTEGER NOT NULL, ' +
   'created_at INTEGER NOT NULL)';
-
-/** Creates the durable season-rating queue for installs that predate it. */
-export const SEASON_RATING_QUEUE_TABLE_SQL =
-  'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
-  'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-  'season_id TEXT NOT NULL, ' +
-  'anime_id TEXT NOT NULL, ' +
-  'nota INTEGER NOT NULL, ' +
-  'rated_at INTEGER NOT NULL, ' +
-  "status TEXT NOT NULL DEFAULT 'pending', " +
-  'created_at INTEGER NOT NULL, ' +
-  'updated_at INTEGER NOT NULL, ' +
-  'last_attempt_at INTEGER, ' +
-  'last_failure_kind TEXT)';
 
 /** Creates the single-row active-season cache. Exists in no migration file; only as a repair step. */
 export const ACTIVE_SEASON_CACHE_TABLE_SQL =

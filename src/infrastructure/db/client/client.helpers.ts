@@ -15,13 +15,14 @@ import {
 import { withDeadline } from '../../async/deadline.helpers';
 import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
+import { moveSeasonRatingQueueIntoOperationLog } from './season-rating-queue-move.helpers';
+import { dropDeadSyncRuntimeStatusColumns } from './sync-runtime-status-column-drop.helpers';
 
 import {
   ACTIVE_SEASON_CACHE_TABLE_SQL,
   ANIMES_COLUMN_DEFINITIONS,
   APP_PREFERENCES_COLUMN_DEFINITIONS,
   PENDING_REMOTE_CHANGES_TABLE_SQL,
-  SEASON_RATING_QUEUE_TABLE_SQL,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
@@ -90,7 +91,7 @@ export function toLocalWriteError(
  * run on the connection. `busy_timeout` takes no lock and is purely connection-local, so applying
  * it via `execSync` is always safe -- including from a synchronous open path that cannot await.
  * `openAppDatabaseSync` is the implicit third open path H2 found running with no timeout at all;
- * `prepareForegroundDatabase`/`prepareHeadlessDatabase` (startup.helpers.ts) apply the same
+ * `prepareForegroundDatabase` (startup.helpers.ts) applies the same
  * pragma independently through the async API, which is idempotent against a connection already
  * covered here.
  */
@@ -248,15 +249,6 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(PENDING_REMOTE_CHANGES_TABLE_SQL);
 }
 
-/** Creates the durable season-rating queue for installs that predate it. */
-async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(SEASON_RATING_QUEUE_TABLE_SQL);
-
-  await rawDb.runAsync(
-    'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
-  );
-}
-
 /** Creates the single-row active-season cache. Exists in no migration file; only here. */
 async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(ACTIVE_SEASON_CACHE_TABLE_SQL);
@@ -370,11 +362,12 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await migrate(db, migrations);
   await ensureBridgeConfigLastChangelogId(rawDb);
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);
+  await dropDeadSyncRuntimeStatusColumns(rawDb);
   await ensureOperationLogRetentionIndex(rawDb);
   await ensureAnimesColumns(rawDb);
   await ensureOperationLogColumns(rawDb);
   await ensurePendingRemoteChangesTable(rawDb);
-  await ensureSeasonRatingQueueTable(rawDb);
+  await moveSeasonRatingQueueIntoOperationLog(rawDb);
   await ensureActiveSeasonCacheTable(rawDb);
   await ensureSyncCycleLockTable(rawDb);
   await ensureSyncCycleLockColumns(rawDb);
@@ -400,10 +393,16 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
   return config ?? null;
 }
 
-/** Executes the clear bridge config operation. */
+/**
+ * Unpairs the bridge in one transaction (ADR 009 R-11): drops its config and cursor, every queue
+ * of that pairing and every anime's bridge token, none of which means anything to the next bridge.
+ */
 export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   await withLocalWrite(rawDb, async (db) => {
     await db.delete(schema.bridgeConfig);
+    await db.delete(schema.operationLog);
+    await db.delete(schema.pendingRemoteChanges);
+    await db.update(schema.animes).set({ bridgeModifiedAt: null });
   });
 }
 

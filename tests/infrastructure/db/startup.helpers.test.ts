@@ -1,10 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   prepareForegroundDatabase,
-  prepareHeadlessDatabase,
-  SchemaIncompatibleError,
   EXPECTED_SCHEMA_READINESS_VERSION,
-  SchemaNotReadyError,
   SchemaValidationError,
 } from '../../../src/infrastructure/db/startup';
 import { runMigrations } from '../../../src/infrastructure/db/client/client.helpers';
@@ -32,7 +29,7 @@ describe('database startup helpers', () => {
         })
         .mockImplementationOnce(async () => {
           events.push('table-check');
-          return { count: 9 };
+          return { count: 8 };
         }),
       getAllAsync: jest.fn().mockImplementation(async () => {
         events.push('column-check');
@@ -44,6 +41,9 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'folder_relative' },
           { name: 'conflict_attempt_count' },
+          { name: 'claim_owner' },
+          { name: 'claimed_at' },
+          { name: 'unresolved_reason' },
           { name: 'fence' },
           { name: 'anime_folders_root_uri' },
           { name: 'anime_folders_hint_dismissed_at' },
@@ -68,6 +68,7 @@ describe('database startup helpers', () => {
       'column-check',
       'column-check',
       'column-check',
+      // season_rating_queue left REQUIRED_SCHEMA_COLUMNS with migration 0019 (ADR 009 L28).
       'column-check',
       `PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION};`,
     ]);
@@ -84,7 +85,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: 0 })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           // Missing `last_cycle_id`: the table exists, but a skipped migration never added it.
@@ -109,7 +110,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -118,6 +119,9 @@ describe('database startup helpers', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -143,7 +147,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return repaired ? [{ name: 'last_cycle_id' }] : [{ name: 'id' }];
@@ -156,6 +160,9 @@ describe('database startup helpers', () => {
           { name: 'episodes' },
           { name: 'folder_relative' },
           { name: 'conflict_attempt_count' },
+          { name: 'claim_owner' },
+          { name: 'claimed_at' },
+          { name: 'unresolved_reason' },
           { name: 'fence' },
           { name: 'anime_folders_root_uri' },
           { name: 'anime_folders_hint_dismissed_at' },
@@ -183,7 +190,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return [{ name: 'id' }];
@@ -204,68 +211,6 @@ describe('database startup helpers', () => {
     );
   });
 
-  it('refuses headless access when the stamped version is right but a required column is missing', async () => {
-    // Measured on a real device: the stamped version LIES. A silently skipped migration left
-    // `sync_runtime_status` without `last_cycle_id` while readiness still read 12, so this path
-    // returned clean and the cycle then died writing to a column that does not exist -- reported
-    // as `[resolveBackgroundTaskOutcome] Background sync cycle failed`, one layer too late to be
-    // actionable.
-    //
-    // Headless must NOT repair: migrations are foreground-owned by design, and two writers
-    // racing the schema is the contention this whole boundary exists to prevent. But it CAN
-    // refuse, and `SchemaNotReadyError` is the refusal the caller already handles as a clean
-    // no-op. The next foreground start does the repair.
-    const rawDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION }),
-      getAllAsync: jest.fn().mockImplementation(async (query: string) => {
-        if (query === 'PRAGMA table_info(sync_runtime_status)') {
-          return [{ name: 'id' }];
-        }
-
-        return [{ name: 'is_sync_telemetry_enabled' }, { name: 'last_applied_change_ms' }];
-      }),
-    } as unknown as SQLiteDatabase;
-
-    await expect(prepareHeadlessDatabase(rawDb)).rejects.toBeInstanceOf(SchemaNotReadyError);
-  });
-
-  it('permits headless access only for the exact durable readiness version', async () => {
-    const readyDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      getFirstAsync: jest.fn().mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION }),
-      // Headless now proves the columns exist rather than trusting the stamped version, so a
-      // ready database has to answer the column probe too. The assertion is unchanged.
-      getAllAsync: jest.fn().mockResolvedValue([
-        { name: 'last_cycle_id' },
-        { name: 'is_sync_telemetry_enabled' },
-        { name: 'last_applied_change_ms' },
-        { name: 'bridge_modified_at' },
-        { name: 'episodes' },
-        { name: 'folder_relative' },
-        { name: 'conflict_attempt_count' },
-        { name: 'fence' },
-        { name: 'anime_folders_root_uri' },
-        { name: 'anime_folders_hint_dismissed_at' },
-      ]),
-    } as unknown as SQLiteDatabase;
-    const newerDb = {
-      execAsync: jest.fn().mockResolvedValue(undefined),
-      // Derived, not a literal: "newer than we understand" has to stay newer as migrations are
-      // added, or this case silently turns into the stale one and stops testing anything.
-      getFirstAsync: jest
-        .fn()
-        .mockResolvedValue({ user_version: EXPECTED_SCHEMA_READINESS_VERSION + 1 }),
-    } as unknown as SQLiteDatabase;
-
-    await expect(prepareHeadlessDatabase(readyDb)).resolves.toBeUndefined();
-    await expect(prepareHeadlessDatabase(newerDb)).rejects.toBeInstanceOf(
-      SchemaIncompatibleError,
-    );
-  });
-
   it('reports not-ready when animes exists but bridge_modified_at does not, even though the table itself is present', async () => {
     // H0Xx class: `animes` surviving in `sqlite_master` proves nothing about which columns a
     // silently skipped migration (0011) would have added. SQLITE_DQS=3 makes this the barrier --
@@ -276,7 +221,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }];
@@ -299,27 +244,27 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }, { name: 'episodes' }, { name: 'folder_relative' }];
         }
 
         if (query === 'PRAGMA table_info(operation_log)') {
-          return [{ name: 'id' }, { name: 'conflict_attempt_count' }];
+          return [{ name: 'id' }, { name: 'conflict_attempt_count' }, { name: 'claim_owner' }, { name: 'claimed_at' }, { name: 'unresolved_reason' }];
         }
 
-        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }, { name: 'anime_folders_root_uri' }, { name: 'anime_folders_hint_dismissed_at' }];
+        return [{ name: 'last_cycle_id' }, { name: 'is_sync_telemetry_enabled' }, { name: 'fence' }, { name: 'anime_folders_root_uri' }, { name: 'anime_folders_hint_dismissed_at' }, { name: 'claim_owner' }, { name: 'claimed_at' }];
       }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
-    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0017`
-    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`. Pinned as a
+    // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0018`
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`, 20 with `0019`, 21 with `0020`. Pinned as a
     // literal rather than against the exported constant so a migration that silently fails to
     // register in the journal is caught here instead of agreeing with itself.
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(18);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(21);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });
@@ -330,7 +275,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(operation_log)') {
           return [{ name: 'id' }];

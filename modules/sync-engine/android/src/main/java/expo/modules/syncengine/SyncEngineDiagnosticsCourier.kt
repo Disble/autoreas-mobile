@@ -2,10 +2,7 @@ package expo.modules.syncengine
 
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
-import java.io.InputStream
 import java.math.BigInteger
-import java.net.HttpURLConnection
-import java.net.URL
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -198,54 +195,26 @@ private fun parseHttpDate(raw: String): Long? {
 }
 
 /**
- * HTTP transport for one diagnostics POST: the same header contract as [SyncEngineHttp.postJson]
- * (POST, `Content-Type: application/json`, `Authorization: Bearer <token>`, the caller's
- * connect/read budget), plus the two things that call cannot report -- the `Retry-After` response
- * header the drain's gate is built from, and the refusal `code` its ladder branches on.
+ * HTTP transport for one diagnostics POST, sent through the engine's one exit
+ * ([SyncEngineHttp.postJson]: POST, `Content-Type: application/json`, `Authorization: Bearer
+ * <token>`, the caller's connect/read budget). It adds the two things the drain needs from the
+ * answer: the `Retry-After` delay its gate is built from, and the refusal `code` its ladder
+ * branches on.
  *
  * Any status code is a normal return, never an exception: a 4xx/5xx is a VERDICT the drain must
  * tally, and only a transport failure (timeout, refused connection, DNS) throws, exactly like the
- * JS bridge client. The response body is read best effort from whichever stream the status code
- * makes readable, so a bridge error body cannot stall the connection either.
+ * JS bridge client. The response body is read best effort, so a bridge error body that cannot be
+ * read is never a delivery failure.
  */
 object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
   override fun post(url: String, token: String, body: String, timeoutMs: Int): SyncDiagnosticsPostResult {
-    val connection = URL(url).openConnection() as HttpURLConnection
-    connection.requestMethod = "POST"
-    connection.connectTimeout = timeoutMs
-    connection.readTimeout = timeoutMs
-    connection.doOutput = true
-    connection.setRequestProperty("Content-Type", "application/json")
-    connection.setRequestProperty("Authorization", "Bearer $token")
-
-    try {
-      connection.outputStream.use { output ->
-        output.write(body.toByteArray(Charsets.UTF_8))
-        output.flush()
-      }
-      val code = connection.responseCode
-      val retryAfter = connection.getHeaderField("Retry-After")
-      // Best effort: a body this build cannot read is never a delivery failure.
-      val responseBody = readBodyQuietly(
-        if (code in 200..299) connection.inputStream else connection.errorStream,
-      )
-      return SyncDiagnosticsPostResult(
-        code = code,
-        retryAfterMillis = parseRetryAfterMillis(retryAfter, System.currentTimeMillis()),
-        refusalCode = readDiagnosticsRefusalCode(responseBody),
-      )
-    } finally {
-      connection.disconnect()
-    }
+    val response = SyncEngineHttp.postJson(url, token, body, timeoutMs)
+    return SyncDiagnosticsPostResult(
+      code = response.code,
+      retryAfterMillis = parseRetryAfterMillis(response.retryAfter, System.currentTimeMillis()),
+      refusalCode = readDiagnosticsRefusalCode(response.body),
+    )
   }
-
-  /** Reads the response body best effort, or `null`: not reading it is never a delivery failure. */
-  private fun readBodyQuietly(stream: InputStream?): String? =
-    try {
-      stream?.use { String(it.readBytes(), Charsets.UTF_8) }
-    } catch (error: Throwable) {
-      null
-    }
 }
 
 /**

@@ -117,8 +117,9 @@ internal class SyncEngineTestHttpServer private constructor(
       }
 
       check(headers["transfer-encoding"] == null) { "Chunked test requests are not supported" }
+      // A bodyless GET (the fetch-first anime read, ADR 009 R-3) sends no Content-Length at all.
       val contentLength = headers["content-length"]?.toIntOrNull()
-        ?: error("Missing or invalid Content-Length")
+        ?: if (requestParts[0] == "GET" && headers["content-length"] == null) 0 else error("Missing or invalid Content-Length")
       check(contentLength in 0..MAX_REQUEST_BODY_BYTES) {
         "HTTP request body exceeds $MAX_REQUEST_BODY_BYTES bytes"
       }

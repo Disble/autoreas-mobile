@@ -16,6 +16,31 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-10-17
+
+### Changed
+
+- Your anime edits and season ratings now leave the tablet from a single queue, one at a time and in the order you made them, whether the app is open or in the background. Season ratings no longer wait in a list of their own.
+
+### Fixed
+
+- Edits made while the app and the background sync were both running no longer overwrite each other or get lost.
+- An edit the Bridge refuses no longer holds back the edits queued behind it for the same anime.
+- When an edit clashes with a change made on the Bridge, the app retries it against the Bridge's latest version, and gives up after three tries instead of retrying forever.
+- An edit to an anime whose Bridge version the tablet did not know yet is checked against the Bridge first instead of being sent blind.
+- Edits the Bridge cannot place are kept and settled automatically later, instead of being dropped.
+- The tablet catches up as soon as the connection to the Bridge drops and comes back, without waiting for the next periodic check.
+- The sync status no longer shows a waiting state while the Bridge is answering.
+- Unpairing now also clears the edits queued for the old pairing.
+- The folder button now shows up on its own when an anime's folder reaches the tablet after the anime, as happens with animes created from Season. It used to stay hidden until the app restarted or you tapped "Volver a buscar".
+- Anime covers keep their poster shape instead of stretching into a tall strip on taller cards.
+- The season status and "Disponible para calificar" share one row, so cards are shorter.
+
+### Internal
+
+- The local database is upgraded on first launch: queued season ratings move into the anime queue and their old table is removed, and unused sync diagnostic columns are dropped. Going back to 1.12.0 afterwards requires reinstalling and pairing again.
+- The old JavaScript background sync and its leftovers are removed; background sync runs only in the native service.
+
 ## [1.12.0] — 2026-10-15
 
 ### Added

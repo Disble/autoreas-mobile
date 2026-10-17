@@ -1,5 +1,6 @@
 export {
   beginSyncConnectionAttempt,
+  forgetSyncConnectionBridge,
   getSyncConnectionSnapshot,
   markSyncConnectionFailed,
   invalidateSyncConnectionOnline,
@@ -7,10 +8,10 @@ export {
   markSyncConnectionSucceeded,
   publishSyncConnectionAttempt,
   resetSyncConnectionStore,
-  runSharedForegroundSyncCycle,
   subscribeSyncConnection,
 } from './sync-connection-store.helpers';
 export type {
+  SyncBridgeContact,
   SyncConnectionAttemptPublication,
   SyncConnectionSnapshot,
   SyncConnectionStatus,

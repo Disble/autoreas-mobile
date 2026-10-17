@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { applyAnimePartial, upsertAnime } from '../../../infrastructure/db/anime-repository';
 import type { AppDatabase } from '../../../infrastructure/db/client';
 import { animes } from '../../../infrastructure/db/schema';
-import { recordDiagnosticEvent } from '../sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { buildPartialUpdate } from './field-merge.helpers';
 import { decideMerge } from './merge-decision.helpers';
 import type { ApplyRemoteChangesResult, MergeContext, RemoteAnimeChange } from './merge.types';
@@ -49,11 +48,10 @@ async function applyAcceptedChange(
   }
 
   if (change.changedFields.length === 0) {
-    recordDiagnosticEvent({
-      source: 'sync_cycle',
-      event: 'remote_change_rejected',
-      cause: null,
-      at: Date.now(),
+    // Fail closed: nothing in this change is understood, so it is rejected, logged and acknowledged.
+    console.warn('[applyRemoteChanges] remote_change_rejected: no known field in an update', {
+      recordId: change.recordId,
+      timestamp: change.timestamp,
     });
     return 'rejected';
   }
@@ -72,19 +70,13 @@ async function applyAcceptedChange(
  * - 'apply' on a create -> full-row insert via `upsertAnime` (cold create has no prior
  *   columns to preserve).
  * - 'apply' on an update with no known field -> rejected: no write, counted and recorded.
- * - 'drop_stale' / 'defer_outbox' -> no write; counted only.
- *
- * `applyMode` is accepted so callers can express where this coordinator runs (foreground
- * deferred-write vs background staged-write) but it is NOT used to change behavior here:
- * the caller is responsible for choosing whether to invoke this against a reactive
- * connection (`withLocalWrite`) or to stage the change instead of calling this at all.
- * Reconcile/WS/drain wiring is out of scope for this coordinator (later phase).
+ * - 'drop_stale' / 'defer_outbox' -> no write; counted only. A deferred change is NOT discarded:
+ *   `applyStagedAndIncomingRemoteChanges` keeps it staged for a later pass (ADR 009 R-16a).
  */
 export async function applyRemoteChanges(
   db: AppDatabase,
   changes: readonly RemoteAnimeChange[],
   ctx: MergeContext,
-  _applyMode: 'deferred' | 'staged' = 'deferred',
 ): Promise<ApplyRemoteChangesResult> {
   let applied = 0;
   let dropped = 0;

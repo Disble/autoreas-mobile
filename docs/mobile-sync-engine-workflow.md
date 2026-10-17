@@ -180,10 +180,8 @@ preparation only for `busy`/`locked` outcomes, at most `STARTUP_DATABASE_PREPARA
 `STARTUP_PROVIDER_READINESS_DEADLINE_MS` (25 s) envelops that whole sequence as a watchdog;
 `STARTUP_SOFT_DEADLINE_MS` (8 s) only swaps in a slow notice and never selects the failure card; a
 missing provider renders the `sqlite-unavailable` screen; fonts have their own 5 s deadline.
-Headless actors call
-[`prepareHeadlessDatabase`](../src/infrastructure/db/startup/startup.helpers.ts), which is
-read-only — it refuses with `SchemaNotReadyError` instead of repairing, so two writers never race
-the schema.
+JS has no headless database actor: the native engine waits for the foreground's readiness stamp
+(`PRAGMA user_version`) before it opens `autoreas.db`, so two writers never race the schema.
 
 **The runtime starts on pairing too.** `useSyncRuntime` registers strategies only when
 `isRuntimeEnabled = isBootstrapped && isConfigured` holds
@@ -218,7 +216,7 @@ flowchart TD
     J0["bootstrap | app_active | network_regained | ws_sync_required | manual"] --> J1["useSyncFacade.requestSync"]
     J1 --> J2["runSharedForegroundSyncCycle single flight"]
     J2 --> J3["runCoordinatedForegroundSyncCycle"]
-    J3 --> J4["syncPendingOperations default applyMode deferred"]
+    J3 --> J4["syncPendingOperations"]
   end
 ```
 
@@ -321,8 +319,8 @@ Reading the cycle:
   stages `pending_remote_changes`, writes `animes.bridge_modified_at` from `applied_operations`
   only (never from `bridge_changes[].snapshot.modified_at`, which the bridge hardcodes to 0), sets
   operation statuses, and advances the cursor. **Deferred, not silently skipped:** conflict
-  exhaustion and the full `client_telemetry` envelope are not implemented here — conflicts fall
-  back to the generic "reset to pending" retry.
+  exhaustion is not implemented here — conflicts fall back to the generic "reset to pending"
+  retry.
 - **Prune.** [`OperationLogPruner`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/OperationLogPruner.kt)
   runs fenced; a prune failure is swallowed, but a lease loss during the prune is rethrown and
   classified `abandoned`.
@@ -341,41 +339,39 @@ flowchart TD
   B --> C["runSharedForegroundSyncCycle single flight"]
   C --> D["runCoordinatedForegroundSyncCycle"]
   D --> D1["recordSyncAttemptStarted"]
-  D1 --> E["syncPendingOperations - applyMode deferred"]
+  D1 --> E["syncPendingOperations"]
   E --> E1["read backlog pending plus processing, dedupe per anime"]
   E1 --> E2["claim rows processing"]
-  E2 --> E3["captureSyncDiagnosticsEnvelope, flushSyncDiagnosticsOutbox to autoreas-telemetry.db"]
-  E3 --> E4["bridgeClient.reconcile POST /api/sync/reconcile"]
+  E2 --> E3["flushSyncDiagnosticsOutbox from autoreas-telemetry.db"]
+  E3 --> E3a["split the round: update rows reconcile, season_rating rows follow"]
+  E3a --> E4["bridgeClient.reconcile POST /api/sync/reconcile - first round always, as the pull"]
   E4 --> E5{"result.ok"}
-  E5 -->|no| E6["revert - 4xx dead_letter else pending, then throw"]
+  E5 -->|no| E6["revert - 4xx dead_letter else pending; release the round ratings unsent; throw"]
   E5 -->|yes| F["applyReconcileResponseWrites inside withLocalWrite"]
-  F --> F1{"applyMode"}
-  F1 -->|deferred| F2["applyRemoteChanges to animes - useLiveQuery sees it"]
-  F1 -->|staged| F3["stagePendingRemoteChanges into pending_remote_changes"]
+  F --> F2["applyRemoteChanges to animes - useLiveQuery sees it; a deferred change stays staged"]
   F2 --> F4["persist tokens, op statuses, advance cursor"]
-  F3 --> F4
-  F4 --> G["drainSeasonRatingQueue"]
-  G --> H{"hasMorePending"}
+  F4 --> G["sendSeasonRatingRound - one POST /api/seasons/active/ratings per rating, claim re-checked; 204 synced, 4xx dead_letter, else pending"]
+  G --> G1["next round: successors of confirmed keys, until none or the 20 s chain budget"]
+  G1 --> G2["refresh the active season after a delivered rating, a 404/409, a season event or app_active"]
+  G2 --> H{"hasMorePending"}
   H -->|yes| H1["markSyncConnectionPending, cover sweep"]
   H -->|no| I["recordSyncAttemptSucceeded with diagnosticsFlush"]
   I --> J["cover sweep"]
   E6 --> K["recordSyncAttemptFailed, markSyncConnectionFailed"]
   subgraph FG["Foreground-only, on mount and app resume"]
     R1["useRemoteChangeDrain to drainPendingRemoteChanges"] --> R2["load pending_remote_changes, apply via merge boundary, delete in same transaction"]
-    R3["useForegroundResync to runForegroundResyncCycle"] --> R4["resyncFromBridgeSnapshot full heal, skips animes with a pending outbox op"]
-    R3 --> R5["runCoverSweep"]
+    R3["bootstrap / app_active / ws_reconnected flush (heal demand)"] --> R4["resyncFromBridgeSnapshot full heal inside the dispatched cycle, skips animes with an unconfirmed edit (an update row; a queued rating never blocks it); ws_reconnected only if the last successful heal is over 5 min old"]
+    R3 --> R5["runCoverSweep after an always heal"]
   end
   subgraph OUT["Local mutation outbox"]
     O1["applyAnimeMutationPatch"] --> O2["BEGIN IMMEDIATE: update animes and insert operation_log row pending"]
   end
 ```
 
-- **Foreground reconcile applies in `deferred` mode.** [`syncPendingOperations`](../src/features/sync/reconcile.helpers.ts)
-  defaults `applyMode` to `'deferred'` and the foreground path relies on that default: pulled
-  changes are written to `animes` directly, so `useLiveQuery` consumers refresh immediately.
-  `'staged'` writes `pending_remote_changes` instead and is the background/headless mode; the JS
-  background cycle that used it is retired, so today the only producer of staged rows is the
-  native engine.
+- **Foreground reconcile applies pulled changes directly.** [`syncPendingOperations`](../src/features/sync/reconcile.helpers.ts)
+  writes pulled changes to `animes`, so `useLiveQuery` consumers refresh immediately; a change
+  deferred by an unconfirmed local edit stays in `pending_remote_changes`. The JS `'staged'` mode
+  was removed in convergent-sync T16; the native engine is the producer of staged rows.
 - **Staging drain is the only path background data reaches `animes`.**
   [`drainPendingRemoteChanges`](../src/features/sync/remote-change-drain.helpers.ts) applies and
   deletes staged rows in one deferred transaction, on the reactive connection.
@@ -431,7 +427,6 @@ Startup and readiness branches first, then native-cycle, then JS and diagnostics
 | 30 | Diagnostics payload unclassified | `kind` unknown, non-string, JSON `null`, or unparseable | parked, never posted, reaped only after 7 days | `classifyDiagnosticsPayload` |
 | 31 | Diagnostics oversize / coded 400 | bridge declares permanence | body discarded, counted as `discarded` | `isPermanentDiagnosticsRejection` |
 | 32 | Diagnostics retryable refusal | 401/404/405/408/422/429/5xx or transport | kept pending; no clock may destroy it | `isParkedDiagnosticsRow` |
-| 33 | Headless schema stale | `user_version` stale or a required column missing | `SchemaNotReadyError` no-op; foreground repairs next start | `prepareHeadlessDatabase` |
 
 ## Storage ownership and contended files
 
@@ -480,7 +475,7 @@ Named so a reader does not mistake absence for behavior:
 
 - **Conflict-exhaustion policy** (`conflict_attempt_count` caps and the token re-base) is deferred
   in the native cycle; the JS cycle implements it.
-- **`client_telemetry`** is minimal (`cycle_id`, `trigger_source`, counters) natively.
+- **`client_telemetry`** is minimal (`cycle_id`, `trigger_source`, counters) and sent only by the native cycle; the JS reconcile body carries none.
 - The retired JS background cycle, `expo-background-task` floor, and Notifee-owned foreground service are intentionally absent; they are not current paths.
 
 ## Next step

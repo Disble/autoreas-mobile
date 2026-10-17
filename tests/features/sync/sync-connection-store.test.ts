@@ -33,6 +33,7 @@ describe('sync connection store', () => {
       kind: 'unreachable',
       lastSyncAt: 1_000,
       message: 'Bridge unreachable at http://bridge.test/api/sync/reconcile',
+      bridgeContact: { at: expect.any(Number), reached: false },
     });
     expect(firstSubscriber).toHaveBeenCalledTimes(4);
     expect(secondSubscriber).toHaveBeenCalledTimes(4);
@@ -49,6 +50,7 @@ describe('sync connection store', () => {
       kind: 'sync_error',
       lastSyncAt: null,
       message: 'Reconcile failed: 422',
+      bridgeContact: null,
     });
   });
 
@@ -67,6 +69,7 @@ describe('sync connection store', () => {
       kind: 'unreachable',
       lastSyncAt: null,
       message: unreachableError.message,
+      bridgeContact: { at: expect.any(Number), reached: false },
     });
   });
 
@@ -81,13 +84,13 @@ describe('sync connection store', () => {
 
   it('publishes pending for the current attempt but ignores a stale one', () => {
     const attempt = beginSyncConnectionAttempt();
-    markSyncConnectionPending(attempt);
+    markSyncConnectionPending(attempt, 500);
     expect(getSyncConnectionSnapshot().kind).toBe('idle');
 
     markSyncConnectionSucceeded(attempt, 1_000);
     const staleAttempt = attempt;
     beginSyncConnectionAttempt();
-    markSyncConnectionPending(staleAttempt);
+    markSyncConnectionPending(staleAttempt, 2_000);
 
     expect(getSyncConnectionSnapshot().kind).toBe('syncing');
   });
@@ -153,6 +156,7 @@ describe('sync connection store', () => {
       kind: 'unreachable',
       lastSyncAt: null,
       message: unreachableError.message,
+      bridgeContact: { at: expect.any(Number), reached: false },
     });
   });
 });

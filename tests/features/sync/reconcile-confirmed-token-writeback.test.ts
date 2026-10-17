@@ -33,8 +33,24 @@ jest.mock('../../../src/features/sync/merge/merge-context.helpers', () => ({
 
 jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
+  loadPendingRemoteChanges: jest.fn().mockResolvedValue([]),
 }));
 
+// Fetch-first (ADR 009 R-3) has its own behaviour suite; here every held row passes through as sendable.
+jest.mock('../../../src/features/sync/missing-token.helpers', () => ({
+  resolveMissingTokens: jest.fn(async (...args: unknown[]) => [...(args[3] as unknown[])]),
+}));
+
+// The automatic-resolution SQL is pinned against real SQLite in
+// `tests/behaviour/sync/unresolved-auto-resolution.behaviour.test.ts`; here it resolves nothing.
+jest.mock('../../../src/features/sync/unresolved-supersede.helpers', () => ({
+  resolveSupersededOperations: jest.fn(async () => []),
+  logAutomaticResolutions: jest.fn(),
+}));
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -46,6 +62,27 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
  * no-throw case. Split out of `reconcile.helpers.test.ts` to keep that file under the 500-line
  * ceiling (constraint 5).
  */
+/** A write handle whose status writes (`update().set().where()`) resolve and record nothing. */
+function buildStatusWriteStub() {
+  return { update: () => ({ set: () => ({ where: () => Promise.resolve() }) }) };
+}
+
+/**
+ * One backlog row this cycle sends. A token is only written for a key the cycle still holds
+ * (ADR 009 R-13), so every response below confirms an operation that was actually sent.
+ */
+function sentOperation(animeId: string, operation: string) {
+  return {
+    id: 1,
+    animeId,
+    operation,
+    payload: '{}',
+    status: 'pending',
+    createdAt: 1,
+    conflictAttemptCount: 0,
+  };
+}
+
 describe('syncPendingOperations confirmed token write-back', () => {
   const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
   const mockReconcile = bridgeClient.reconcile as jest.Mock;
@@ -77,7 +114,7 @@ describe('syncPendingOperations confirmed token write-back', () => {
     mockStagePendingRemoteChanges.mockResolvedValue(undefined);
   });
 
-  it('deferred mode: persists confirmed tokens AFTER applyRemoteChanges, inside the same withLocalWrite invocation', async () => {
+  it('persists confirmed tokens AFTER applyRemoteChanges, inside the same withLocalWrite invocation', async () => {
     const callOrder: string[] = [];
     mockApplyRemoteChanges.mockImplementation(async () => {
       callOrder.push('applyRemoteChanges');
@@ -87,11 +124,12 @@ describe('syncPendingOperations confirmed token write-back', () => {
       callOrder.push('persistConfirmedAnimeTokens');
     });
 
-    const writeDb = {};
+    const writeDb = buildStatusWriteStub();
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
+    mockReadBacklog.mockResolvedValue([sentOperation('anime-1', 'update')]);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
@@ -116,48 +154,10 @@ describe('syncPendingOperations confirmed token write-back', () => {
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(1);
   });
 
-  it('staged mode: persists confirmed tokens AFTER stagePendingRemoteChanges, inside the same withLocalWrite invocation', async () => {
-    const callOrder: string[] = [];
-    mockStagePendingRemoteChanges.mockImplementation(async () => {
-      callOrder.push('stagePendingRemoteChanges');
-    });
-    mockPersistConfirmedAnimeTokens.mockImplementation(async () => {
-      callOrder.push('persistConfirmedAnimeTokens');
-    });
-
-    const writeDb = {};
-    (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
-    });
-
-    mockReconcile.mockResolvedValue({
-      ok: true,
-      status: 202,
-      url: 'https://192.168.1.10:9876/api/sync/reconcile',
-      rawBody: '{}',
-      data: {
-        status: 'accepted',
-        applied_operations: [
-          { anime_id: 'anime-1', operation: 'update', applied: true, modified_at: 0 },
-        ],
-        bridge_changes: [],
-      },
-    });
-
-    const rawDb = { name: 'staged-reconcile-db-token-order' };
-    await syncPendingOperations(rawDb as never, 'staged');
-
-    expect(callOrder).toEqual(['stagePendingRemoteChanges', 'persistConfirmedAnimeTokens']);
-    expect(mockPersistConfirmedAnimeTokens).toHaveBeenCalledWith(writeDb, [
-      { animeId: 'anime-1', bridgeModifiedAt: 0 },
-    ]);
-    expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(1);
-  });
-
   it('never reads bridge_changes[].snapshot.modified_at as a token source (invariant 1)', async () => {
     const writeDb = {};
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
 
     mockReconcile.mockResolvedValue({
@@ -200,14 +200,15 @@ describe('syncPendingOperations confirmed token write-back', () => {
   });
 
   it('an applied_operations entry whose anime_id is absent from animes writes nothing and throws nothing', async () => {
-    const writeDb = {};
+    const writeDb = buildStatusWriteStub();
     (dbClient.withLocalWrite as jest.Mock).mockImplementation(async (_db, task) => {
-      await task(writeDb, {});
+      return task(writeDb, {});
     });
     // Simulates the real repository's behavior against a row that does not exist yet: an UPDATE
     // matching zero rows resolves normally, it never rejects.
     mockPersistConfirmedAnimeTokens.mockResolvedValue(undefined);
 
+    mockReadBacklog.mockResolvedValue([sentOperation('anime-not-yet-applied', 'create')]);
     mockReconcile.mockResolvedValue({
       ok: true,
       status: 202,
@@ -222,8 +223,8 @@ describe('syncPendingOperations confirmed token write-back', () => {
       },
     });
 
-    const rawDb = { name: 'staged-reconcile-db-token-orphan' };
-    await expect(syncPendingOperations(rawDb as never, 'staged')).resolves.toBeDefined();
+    const rawDb = { name: 'reconcile-db-token-orphan' };
+    await expect(syncPendingOperations(rawDb as never)).resolves.toBeDefined();
 
     expect(mockPersistConfirmedAnimeTokens).toHaveBeenCalledWith(writeDb, [
       { animeId: 'anime-not-yet-applied', bridgeModifiedAt: 1788540735366 },

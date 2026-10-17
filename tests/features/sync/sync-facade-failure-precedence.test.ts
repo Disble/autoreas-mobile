@@ -1,5 +1,4 @@
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
-import { drainSeasonRatingQueue } from '../../../src/features/sync/season-rating-queue.helpers';
 import {
   ActiveSeasonSyncError,
   fetchActiveSeasonFromBridge,
@@ -18,10 +17,6 @@ import {
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
@@ -54,23 +49,24 @@ describe('foreground sync failure precedence', () => {
     (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('keeps a terminal rating rejection authoritative when refresh would be unreachable', async () => {
-    const ratingFailure = new Error('Season rating delivery incomplete: conflict');
-    const refreshFailure = new BridgeUnreachableError(
-      'http://127.0.0.1:9876/api/seasons/active',
-      'offline',
-    );
-
+  it.each([
+    [
+      'an unreachable refresh triggered by an unresolved rating',
+      new BridgeUnreachableError('http://127.0.0.1:9876/api/seasons/active', 'offline'),
+      0,
+    ],
+    [
+      'an invalid reachable active-season response after a delivered rating',
+      new ActiveSeasonSyncError('Active season fetch failed: 500', 500, '{"error":"internal"}'),
+      1,
+    ],
+  ])('never fails the cycle over %s: the refresh is best effort and keeps the cached season', async (_case, refreshFailure, deliveredCount) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const setActiveSeasonSnapshot = jest.fn();
     (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 0,
-      backlogReadCount: 0,
+      syncedCount: deliveredCount,
       hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
-      backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
-      failure: ratingFailure,
     });
     (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(refreshFailure);
 
@@ -78,56 +74,16 @@ describe('foreground sync failure precedence', () => {
       runCoordinatedForegroundSyncCycle({
         rawDb: { id: 'raw-db' } as never,
         source: 'manual',
-        setActiveSeasonSnapshot: jest.fn(),
+        setActiveSeasonSnapshot,
       }),
-    ).rejects.toBe(ratingFailure);
+    ).resolves.toBe(deliveredCount);
 
-    expect(fetchActiveSeasonFromBridge).not.toHaveBeenCalled();
-    expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
-      { id: 'raw-db' },
-      'manual',
-      expect.any(Number),
-      ratingFailure.message,
-    );
-    expect(getSyncConnectionSnapshot()).toMatchObject({
-      kind: 'sync_error',
-      message: ratingFailure.message,
-    });
-  });
-
-  it('publishes sync_error when a reachable active-season response is invalid', async () => {
-    const activeSeasonFailure = new ActiveSeasonSyncError(
-      'Active season fetch failed: 500',
-      500,
-      '{"error":"internal"}',
-    );
-
-    (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 1,
-      backlogReadCount: 1,
-      shouldRefreshActiveSeason: true,
-      failure: null,
-    });
-    (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(activeSeasonFailure);
-
-    await expect(
-      runCoordinatedForegroundSyncCycle({
-        rawDb: { id: 'raw-db' } as never,
-        source: 'manual',
-        setActiveSeasonSnapshot: jest.fn(),
-      }),
-    ).rejects.toBe(activeSeasonFailure);
-
-    expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
-    expect(getSyncConnectionSnapshot()).toMatchObject({
-      kind: 'sync_error',
-      message: activeSeasonFailure.message,
-    });
+    expect(fetchActiveSeasonFromBridge).toHaveBeenCalledTimes(1);
+    expect(setActiveSeasonSnapshot).not.toHaveBeenCalled();
+    expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(recordSyncAttemptSucceeded).toHaveBeenCalledTimes(1);
+    expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'online' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[refreshActiveSeasonSnapshot]'), refreshFailure);
+    warn.mockRestore();
   });
 });

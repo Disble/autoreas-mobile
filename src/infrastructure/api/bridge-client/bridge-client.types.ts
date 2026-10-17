@@ -102,6 +102,11 @@ export interface BridgeClient {
     request: BridgePairDeviceRequest,
   ) => Promise<BridgeHttpResult>;
   readonly listAnimes: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
+  /**
+   * Fetches one anime (`GET /api/animes/{id}`): a `MobileAnime` carrying its live `modified_at`
+   * token, or a 404 when the bridge has no such anime. Sync's fetch-first step (ADR 009 R-3).
+   */
+  readonly getAnime: (connection: BridgeConnection, animeId: string) => Promise<BridgeHttpResult>;
   readonly getActiveSeason: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
     connection: BridgeConnection,
@@ -119,18 +124,6 @@ export interface BridgeClient {
   readonly postSyncDiagnostics: (
     connection: BridgeConnection,
     envelope: unknown,
-    options?: BridgeRequestOptions,
-  ) => Promise<BridgeHttpResult>;
-  /**
-   * Cheap authenticated liveness probe against `GET /api/status` (a side-effect-free route the
-   * bridge's router registers). Presence semantics for the T6 attempt policy: ANY HTTP response
-   * -- including 401/403/404 -- means the bridge is present; only a transport failure, an abort,
-   * or a timeout (`BridgeTimeoutError` / `BridgeUnreachableError`) means absence. Callers probing
-   * presence should pass a short `timeoutMs` override: the T6 probe budget is 1500 ms, so a
-   * skipped tick settles well under the 2 s no-op acceptance bound.
-   */
-  readonly getStatus: (
-    connection: BridgeConnection,
     options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly openWebSocket: (connection: BridgeConnection) => WebSocket;

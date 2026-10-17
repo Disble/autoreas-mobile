@@ -1,0 +1,87 @@
+{
+  "name": "fetch-first-no-token-gives-the-key-up",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-3",
+    "R-16b"
+  ],
+  "description": "No stored token and the bridge returns the anime without one: the key becomes unresolved (token_missing) and nothing is sent; the attempt still pulls since the cursor.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": null
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 200,
+          "body": {
+            "id": "anime-a",
+            "name": "Bridge Name",
+            "status": 0,
+            "episodesWatched": 9,
+            "active": 1,
+            "firstCycle": 1,
+            "lastWatchedAt": null,
+            "premieredAt": null,
+            "createdAt": null,
+            "deletedAt": null
+          }
+        },
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 4
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/animes/anime-a"
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "dead_letter",
+        "unresolvedReason": "token_missing",
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 4,
+    "tokens": {
+      "anime-a": null
+    },
+    "staged": []
+  }
+}

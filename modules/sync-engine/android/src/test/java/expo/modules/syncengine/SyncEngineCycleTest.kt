@@ -25,7 +25,7 @@ class SyncEngineCycleTest {
   @Test
   fun successfulCyclePersistsFencedConfirmation() {
     SyncEngineTestDatabase().use { fixture ->
-      val response = """{"applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
+      val response = """{"status":"accepted","applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
       SyncEngineTestHttpServer(200, response).use { server ->
         val operationCreatedAt = insertCycleInput(fixture, server.port)
         val states = mutableListOf<String>()
@@ -148,7 +148,7 @@ class SyncEngineCycleTest {
       )
       assertTrue("Successful preflight append did not create $journalFile", journalFile.exists())
       val successorFence = "cycle-k6-successor"
-      val response = """{"applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
+      val response = """{"status":"accepted","applied_operations":[{"anime_id":"anime-k6","operation":"update","applied":true,"modified_at":14}],"last_changelog_id":25}"""
       SyncEngineTestHttpServer(200, response) { request ->
         assertEquals("POST", request.method)
         assertEquals(cycleId, JSONObject(request.body).getJSONObject("client_telemetry").getString("cycle_id"))
@@ -191,49 +191,6 @@ class SyncEngineCycleTest {
         assertTrue(journalReasons(fixture.journalDirectory, cycleId).last().orEmpty().contains("lease lost"))
       }
     }
-  }
-
-  @Test
-  fun cycleOutcomeToMapCarriesEveryFieldTheBridgeReturnsToTheJsSeam() {
-    // Dedicated (T3, sync-core-test-assurance): every other test here asserts equality on the
-    // CycleOutcome data class itself, never on toMap() -- the JS-visible payload SyncEngineModule
-    // actually hands the bridge.
-    val outcome = CycleOutcome(
-      outcome = "closed",
-      stage = "closed",
-      syncedCount = 3,
-      backlogReadCount = 5,
-      errorName = null,
-      recoveredProcessingCount = 2,
-      recoveredAbandonedCycleId = "cycle-recovered",
-    )
-
-    val map = outcome.toMap("cycle-k6")
-
-    assertEquals(
-      mapOf(
-        "outcome" to "closed",
-        "cycleId" to "cycle-k6",
-        "syncedCount" to 3,
-        "backlogReadCount" to 5,
-        "stage" to "closed",
-        "errorName" to null,
-        "recoveredProcessingCount" to 2,
-        "recoveredAbandonedCycleId" to "cycle-recovered",
-      ),
-      map,
-    )
-  }
-
-  @Test
-  fun cycleOutcomeToMapDefaultsRecoveryFieldsToZeroAndNull() {
-    val outcome = CycleOutcome("failed", "sent", 0, 0, "ReconcileHttpError")
-
-    val map = outcome.toMap("cycle-defaults")
-
-    assertEquals(0, map["recoveredProcessingCount"])
-    assertEquals(null, map["recoveredAbandonedCycleId"])
-    assertEquals("ReconcileHttpError", map["errorName"])
   }
 
   private fun assertCycleFailure(

@@ -146,8 +146,7 @@ fun isSyncTelemetryEnabled(storedValue: String?): Boolean {
  *   case the config still reads and the absent switch reports ENABLED;
  * - the whole TABLE may not exist (a fresh install whose first foreground open has not run yet),
  *   in which case there is no config to read and the answer is `null` -- the same shape the cycle
- *   already handles as `not_applicable`, exactly like the JS side's `SchemaNotReadyError`
- *   tolerance. A missing schema must never surface as an exception out of a read whose KDoc
+ *   already handles as `not_applicable`. A missing schema must never surface as an exception out of a read whose KDoc
  *   promises `null`, which is what the nested tolerance below pins.
  */
 fun readBridgeConfig(appDb: SQLiteDatabase): BridgeConfigRow? {
@@ -239,7 +238,7 @@ const val PENDING_REMOTE_CHANGES_TABLE_SQL =
  * file as text and fails when the literal drifts from the journal length, so a new migration
  * cannot silently block the native owner forever. Bump this value only with that test's help.
  */
-const val EXPECTED_SCHEMA_READINESS_VERSION = 18
+const val EXPECTED_SCHEMA_READINESS_VERSION = 21
 
 /**
  * Explicit verdict of the app database readiness probe. The decision itself ([resolveAppDatabaseReadiness])
@@ -346,9 +345,8 @@ fun resolveAppDatabaseFile(context: Context): File {
  * **Why this is safe beside Expo's SQLite core in the same process.** [SQLiteDatabase.deleteDatabase]
  * is a PURE UNLINK: it opens NO connection, so this function cannot put a second independently
  * linked SQLite core in touch with `autoreas.db`, which is the hazard T3 removed by moving the
- * native owner into `:sync`. It is also why [SyncEngineModule] exposes this as the one destructive
- * entry point NOT covered by the `runOnce` main-process refusal: that refusal protects a call that
- * opens a framework connection, and this one opens nothing. Ordering still belongs to the caller --
+ * native owner into `:sync`, so [SyncEngineModule] may expose it to JS in the main process.
+ * Ordering still belongs to the caller --
  * every owner must be closed first -- and this function never expresses that as an assumption.
  *
  * Idempotent for a missing database: the API deletes what it finds, throws nothing when the files

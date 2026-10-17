@@ -38,6 +38,10 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
   stagePendingRemoteChanges: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../src/features/sync/outbox-claim.helpers', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
+  require('../../support/outbox-claim-mock.helpers').buildPassThroughOutboxClaimModule(),
+);
 jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   readOperationLogBacklog: jest.fn().mockResolvedValue([]),
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
@@ -45,68 +49,17 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
 
 /** Mocked `getBridgeConfigSnapshot` the suite drives per test. */
 const mockGetBridgeConfigSnapshot = dbClient.getBridgeConfigSnapshot as jest.Mock;
-/** Mocked `withLocalWrite`, resolved without running its callback unless a test overrides it. */
+/**
+ * Mocked `withLocalWrite`, resolved to no chain successors without running its callback unless
+ * a test overrides it.
+ */
 const mockWithLocalWrite = dbClient.withLocalWrite as jest.Mock;
+/** What a round's response transaction answers when it confirmed nothing and claims no successor. */
+const NO_CHAIN_ROUND = { heldConfirmedCount: 0, successors: [], resolutions: [] };
 /** Mocked bridge endpoint the suite drives per test. */
 const mockReconcile = bridgeClient.reconcile as jest.Mock;
 /** Mocked backlog read; empty by default (the module mock's own default). */
 const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
-
-/** A successful, empty reconcile response fixture shared by this suite's happy-path tests. */
-const SUCCESS_RESPONSE = {
-  ok: true,
-  status: 202,
-  url: 'https://192.168.1.10:9876/api/sync/reconcile',
-  rawBody: '{}',
-  data: { status: 'accepted', applied_operations: [], bridge_changes: [], conflicts: [] },
-};
-
-describe('syncPendingOperations in-flight guard', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockReadBacklog.mockResolvedValue([]);
-    mockGetBridgeConfigSnapshot.mockResolvedValue({
-      id: 1,
-      ip: '192.168.1.10',
-      port: 9876,
-      token: 'auth-secret',
-      deviceId: 'device-1',
-      lastChangelogId: 0,
-    });
-    mockWithLocalWrite.mockResolvedValue(undefined);
-    mockReconcile.mockResolvedValue(SUCCESS_RESPONSE);
-  });
-
-  it('a call arriving while one is already in flight joins it: both callers observe the identical settled result', async () => {
-    const rawDb = { name: 'in-flight-db' };
-
-    // Both calls fire synchronously, with no await between them: by the time the second call
-    // runs, the first has already published its in-flight promise (design.md's per-database
-    // guard), so the second must mark a rerun and return that SAME in-flight work instead of
-    // starting its own independent reconcile pass. Two independently-computed result objects
-    // would only ever be deep-equal by coincidence (the mock is stable across calls); object
-    // IDENTITY is what proves the second caller was handed the first caller's own in-flight
-    // promise rather than a lookalike result from a second, unguarded pass.
-    const firstResult = syncPendingOperations(rawDb as never);
-    const secondResult = syncPendingOperations(rawDb as never);
-
-    const [firstValue, secondValue] = await Promise.all([firstResult, secondResult]);
-
-    expect(firstValue).toBe(secondValue);
-    // One pass for the first call, one rerun pass triggered by the second call joining it --
-    // not two fully independent reconcile round-trips.
-    expect(mockReconcile).toHaveBeenCalledTimes(2);
-  });
-
-  it('a call after the previous one has settled starts its own independent pass (no rerun)', async () => {
-    const rawDb = { name: 'sequential-db' };
-
-    await syncPendingOperations(rawDb as never);
-    await syncPendingOperations(rawDb as never);
-
-    expect(mockReconcile).toHaveBeenCalledTimes(2);
-  });
-});
 
 describe('syncPendingOperations response and revert error paths', () => {
   beforeEach(() => {
@@ -120,7 +73,7 @@ describe('syncPendingOperations response and revert error paths', () => {
       deviceId: 'device-1',
       lastChangelogId: 0,
     });
-    mockWithLocalWrite.mockResolvedValue(undefined);
+    mockWithLocalWrite.mockResolvedValue(NO_CHAIN_ROUND);
   });
 
   it('rejects with a parse error when the bridge response fails ReconcileResponseSchema', async () => {

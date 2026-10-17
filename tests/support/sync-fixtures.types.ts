@@ -24,6 +24,10 @@ export interface AppliedOperationFixture {
   anime_id: string;
   operation: string;
   applied: boolean;
+  /** The bridge token for this anime after the operation, when the bridge sends one. */
+  modified_at?: number;
+  /** Why a rejected (`applied: false`) operation was refused. */
+  reason?: string;
 }
 
 /** Options accepted when composing a reconcile response body. */

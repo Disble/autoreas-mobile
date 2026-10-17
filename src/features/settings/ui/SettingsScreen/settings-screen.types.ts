@@ -5,7 +5,7 @@ import type { BridgeConfig } from '../../../../infrastructure/db/schema';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type { SyncVisibleStatus, SyncVisibleStatusTone } from '../../../sync/sync-visible-status.types';
 import type { SyncRuntimeStatusSnapshot } from '../../../sync/sync-runtime-status.types';
-import type { SyncConnectionStatus } from '../../../sync/sync-connection-store/sync-connection-store.types';
+import type { SyncFacadeConnectionStatus } from '../../../sync/bridge-reachability.types';
 import type { UseSyncFacadeResult } from '../../../sync/sync-facade.types';
 import type { useBridgeConfig } from '../../use-bridge-config';
 
@@ -50,7 +50,7 @@ export interface BuildSettingsSyncSummaryInput {
   readonly isDeviceOnline: boolean | null;
   readonly now: Date;
   readonly syncFacts: {
-    readonly connectionStatus: SyncConnectionStatus;
+    readonly connectionStatus: SyncFacadeConnectionStatus;
     readonly lastSyncAt: number | null;
     readonly pendingOpsCount: number;
   };

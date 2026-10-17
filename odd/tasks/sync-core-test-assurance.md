@@ -58,17 +58,20 @@ Produced by a read-only mapping pass on 2026-09-24. Borderline calls were decide
 **CORE, JS (`src/features/sync/`):** `reconcile.helpers.ts`, `reconcile-request.helpers.ts`,
 `reconcile.schema.ts`, `reconcile-schema.helpers.ts`, `reconcile-conflict.helpers.ts`,
 `reconcile-confirmation.helpers.ts`, `reconcile-base-token.helpers.ts`, `reconcile.errors.ts`,
-`applied-operation-token.helpers.ts`, `operation-log-convergence.helpers.ts`,
-`operation-log-retention.helpers.ts`, `sync-cycle-lock.helpers.ts`, `sync-cycle-lock.constants.ts`,
+`applied-operation-token.helpers.ts`, `operation-log-retention.helpers.ts`,
 `pending-remote-changes.helpers.ts`, `remote-change-drain.helpers.ts`, `last-changelog.helpers.ts`,
 `full-resync.helpers.ts`, `initial-sync.helpers.ts`, `initial-sync.schema.ts`,
-`headless-sync-cycle.helpers.ts`, `season-rating-queue.helpers.ts`, `merge/*.helpers.ts` (4 files).
+`season-rating-event.helpers.ts`, `season-rating-intent.helpers.ts`,
+`season-rating-round.helpers.ts`, `merge/*.helpers.ts` (4 files). This list matches
+`jest.coverage-tiers.js` (fixed in convergent-sync T16: the queue helper, the convergence
+projection, the cycle lock and the headless cycle are gone from the code).
 
 **CORE, JS outside sync (write and wire path):**
 - `src/infrastructure/api/bridge-client/{bridge-client.helpers,bridge-url.helpers,bridge-client.errors}.ts`
 - `src/infrastructure/validation/anime-schema/{anime.schema,anime-wire.helpers}.ts`
 - `src/features/animes/anime-mutation.helpers.ts`
 - `src/infrastructure/db/anime-repository/{anime-repository,anime-repository.helpers}.ts`
+- `src/infrastructure/db/client/season-rating-queue-move.helpers.ts` (migration 0019)
 
 **CORE, Kotlin (`modules/sync-engine`):** `ReconcileRequestBody`, `ReconcileResponseParser`
 (+ `WireAnimeMapper`), `ReconcileConfirmation`, `SyncEngineResponseApplier`, `SyncCycleLease`,

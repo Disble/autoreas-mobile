@@ -11,8 +11,13 @@ interface DeferredQueueEntry {
   reject: (reason: unknown) => void;
 }
 
-/** Anything the queue can hold: an immediate replay or a test-held deferred entry. */
-type QueueEntry = QueuedBridgeResponse | DeferredQueueEntry;
+/** Internal queue entry that fails its request the way a dropped connection does. */
+interface TransportFailureEntry {
+  transportFailure: true;
+}
+
+/** Anything the queue can hold: an immediate replay, a test-held deferred entry, or a transport failure. */
+type QueueEntry = QueuedBridgeResponse | DeferredQueueEntry | TransportFailureEntry;
 
 /**
  * Builds the replayed `Response`-shaped double for one queued response, shared by the immediate
@@ -102,6 +107,11 @@ export function installFakeBridge(): FakeBridge {
       );
     }
 
+    if ('transportFailure' in next) {
+      // The shape React Native's fetch rejects with when the connection fails.
+      return Promise.reject(new TypeError('Network request failed'));
+    }
+
     if ('resolve' in next) {
       return new Promise<Response>((resolve, reject) => {
         next.resolve = (response) => resolve(replayResponse(response));
@@ -118,6 +128,9 @@ export function installFakeBridge(): FakeBridge {
     requests,
     queueResponse(response: QueuedBridgeResponse) {
       queued.push(response);
+    },
+    queueTransportFailure() {
+      queued.push({ transportFailure: true });
     },
     queueDeferredResponse(): DeferredBridgeResponse {
       const entry: DeferredQueueEntry = {

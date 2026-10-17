@@ -1,7 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { applyAnimePartial, upsertAnime } from '../../infrastructure/db/anime-repository';
+import {
+  applyAnimeBridgeToken,
+  applyAnimePartial,
+  upsertAnime,
+} from '../../infrastructure/db/anime-repository';
 import { getBridgeConfigSnapshot, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
+import type { AppDatabase } from '../../infrastructure/db/client/client.types';
 import { animes } from '../../infrastructure/db/schema';
+import type { AnimeRow } from '../../infrastructure/db/schema';
 import type { Anime } from '../../infrastructure/validation/anime-schema';
 import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/anime.schema';
 import { mapWireAnimeToLegacyAnime } from '../../infrastructure/validation/anime-schema/anime-wire.helpers';
@@ -28,6 +34,39 @@ function normalizeFetchedAnime(anime: Anime) {
 }
 
 /**
+ * Writes one bridge anime over its local row, the heal's full-truth correction for a single key:
+ * a missing row is cold-inserted with its token; an existing one gets the token when it differs
+ * and only the fields that differ, keeping its staleness guard (a heal is not a newer change, so
+ * it must not shadow a later changelog entry). Returns whether any field was written. Runs inside
+ * the caller's open write door; the keep-bridge resolution of an unresolved key reuses it.
+ */
+export async function healAnimeFromSnapshot(
+  db: AppDatabase,
+  anime: Anime,
+  bridgeModifiedAt: number,
+  localRow: AnimeRow | undefined,
+): Promise<boolean> {
+  if (!localRow) {
+    await upsertAnime(db, anime, undefined, bridgeModifiedAt);
+    return true;
+  }
+
+  if (localRow.bridgeModifiedAt !== bridgeModifiedAt) {
+    await applyAnimeBridgeToken(db, anime._id, bridgeModifiedAt);
+  }
+
+  const changedFields = deriveChangedFields(anime, localRow);
+
+  if (changedFields.length === 0) {
+    return false;
+  }
+
+  const { columns } = buildPartialUpdate(changedFields, anime);
+  await applyAnimePartial(db, anime._id, columns, localRow.lastAppliedChangeMs ?? 0);
+  return true;
+}
+
+/**
  * Snapshot-authoritative heal: pulls the bridge's full current anime list and reconciles each
  * row against local SQLite by diffing, on the foreground reactive connection (`withLocalWrite`)
  * so `useLiveQuery` refreshes immediately.
@@ -40,7 +79,9 @@ function normalizeFetchedAnime(anime: Anime) {
  *   foreground surfaces them without depending on the staging drain).
  *
  * It never clobbers un-acked local intent: animes with a pending/processing outbox op are
- * skipped (the outbox is the source of truth for those until confirmed). The per-anime guard is
+ * skipped (the outbox is the source of truth for those until confirmed). A key whose rows were
+ * given up (`dead_letter`, `conflict_exhausted`) is healed like any other: an unresolved key
+ * never blocks (ADR 009 R-16b). The per-anime guard is
  * preserved, not advanced, so a heal never shadows a genuinely newer changelog change.
  */
 export async function resyncFromBridgeSnapshot(
@@ -56,11 +97,12 @@ export async function resyncFromBridgeSnapshot(
     port: config.port,
     token: config.token,
   });
-  // `remote` is `IngestedAnime[]` (Decision 10) -- unwrap `entry.anime` to keep this heal path
-  // byte-identical to before the token-ingest change. The token itself is intentionally not
-  // threaded through here: this is the heal/diff path, not a confirmed write-back (see
-  // design.md "Migration / Rollout" -- left as a documented, deliberately out-of-scope option).
-  const normalizedRemote = remote.map((entry) => normalizeFetchedAnime(entry.anime));
+  // The heal stores each anime's token with the fields it writes (ADR 009 R-3): both come from the
+  // same `listAnimes` response, so they describe one bridge state and a later send carries a base.
+  const normalizedRemote = remote.map((entry) => ({
+    anime: normalizeFetchedAnime(entry.anime),
+    bridgeModifiedAt: entry.bridgeModifiedAt,
+  }));
 
   if (normalizedRemote.length === 0) {
     return { healed: 0 };
@@ -75,39 +117,15 @@ export async function resyncFromBridgeSnapshot(
     ]);
     const localById = new Map(localRows.map((row) => [row._id, row]));
 
-    for (const anime of normalizedRemote) {
+    for (const { anime, bridgeModifiedAt } of normalizedRemote) {
       if (pendingOutboxRecordIds.has(anime._id)) {
         continue;
       }
 
-      const localRow = localById.get(anime._id);
-
-      if (!localRow) {
-        // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: writes and the `healed` counter share the single deferred-write transaction; parallelizing rows risks interleaving native SQLite statements on one connection.
-        await upsertAnime(db, anime);
+      // eslint-disable-next-line react-doctor/async-await-in-loop -- sequential by design: writes and the `healed` counter share the single deferred-write transaction; parallelizing rows risks interleaving native SQLite statements on one connection.
+      if (await healAnimeFromSnapshot(db, anime, bridgeModifiedAt, localById.get(anime._id))) {
         healed += 1;
-        continue;
       }
-
-      const changedFields = deriveChangedFields(
-        anime,
-        localRow,
-      );
-
-      if (changedFields.length === 0) {
-        continue;
-      }
-
-      const { columns } = buildPartialUpdate(changedFields, anime);
-      // Preserve the existing guard (don't advance it): the heal is a full-truth correction,
-      // not a newer change, so it must not shadow a later changelog entry.
-      await applyAnimePartial(
-        db,
-        anime._id,
-        columns,
-        (localRow.lastAppliedChangeMs) ?? 0,
-      );
-      healed += 1;
     }
   });
 

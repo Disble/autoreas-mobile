@@ -3,9 +3,7 @@ import {
   CONFLICT_ATTEMPT_CAP,
   REASON_CONFLICT,
   REASON_UNSUPPORTED_OPERATION,
-  STALLED_OPERATION_VISIBILITY_THRESHOLD_MS,
 } from './reconcile-conflict.constants';
-import { recordDiagnosticEvent } from './sync-diagnostic-store/sync-diagnostic-store.helpers';
 import type { ReconcileAppliedOperation } from './reconcile.schema';
 
 /**
@@ -19,7 +17,6 @@ export type RejectedOperationClassification =
       readonly kind: 'conflict_progress';
       readonly bridgeModifiedAt: number;
       readonly nextAttemptCount: number;
-      readonly isStalled: boolean;
     }
   | {
       readonly kind: 'conflict_exhausted';
@@ -37,10 +34,6 @@ export interface ClassifyRejectedOperationParams {
   readonly storedBridgeModifiedAt: number | null;
   /** This operation's `operation_log.conflict_attempt_count` before this response. */
   readonly currentAttemptCount: number;
-  /** This operation's `operation_log.created_at`, used only for the stall-visibility check. */
-  readonly operationCreatedAt: number;
-  /** The instant this response is being processed, injected for deterministic tests. */
-  readonly now: number;
 }
 
 /**
@@ -59,18 +52,11 @@ export interface ClassifyRejectedOperationParams {
  * - Any other `reason` value -> surfaced as unrecognized. An unknown value has no safe default in
  *   either direction: guessing `conflict` burns retry budget on something that can never land;
  *   guessing `unsupported_operation` discards a real edit that might have succeeded.
- *
- * `isStalled` on the `conflict_progress` branch answers a SEPARATE question from the attempt cap:
- * whether this operation has been losing a race -- progressing or not -- for longer than
- * `STALLED_OPERATION_VISIBILITY_THRESHOLD_MS`. It never changes the classification's outcome
- * (the operation stays queued and keeps retrying either way); it only tells the wiring layer to
- * also record a diagnostic event.
  */
 export function classifyRejectedOperation(
   params: ClassifyRejectedOperationParams,
 ): RejectedOperationClassification {
-  const { appliedOperation, storedBridgeModifiedAt, currentAttemptCount, operationCreatedAt, now } =
-    params;
+  const { appliedOperation, storedBridgeModifiedAt, currentAttemptCount } = params;
 
   if (appliedOperation.reason === REASON_UNSUPPORTED_OPERATION) {
     return { kind: 'unsupported' };
@@ -92,21 +78,7 @@ export function classifyRejectedOperation(
     return { kind: 'conflict_exhausted', bridgeModifiedAt, nextAttemptCount };
   }
 
-  return {
-    kind: 'conflict_progress',
-    bridgeModifiedAt,
-    nextAttemptCount,
-    isStalled: isOperationStalled(operationCreatedAt, now),
-  };
-}
-
-/**
- * Reports whether an operation has been queued for at least `STALLED_OPERATION_VISIBILITY_THRESHOLD_MS`
- * without landing. Pure age check -- deliberately independent of `CONFLICT_ATTEMPT_CAP`, which a
- * progressing conflict never reaches (see the module doc above for why both bounds are needed).
- */
-export function isOperationStalled(operationCreatedAt: number, now: number): boolean {
-  return now - operationCreatedAt >= STALLED_OPERATION_VISIBILITY_THRESHOLD_MS;
+  return { kind: 'conflict_progress', bridgeModifiedAt, nextAttemptCount };
 }
 
 /** One resolved write action for a rejected operation that must persist a bridge-authored token. */
@@ -128,8 +100,6 @@ export interface ClassifyUnconfirmedOperationsParams {
   readonly appliedOperations: readonly ReconcileAppliedOperation[];
   /** Each anime's stored token as read before this cycle's request was sent. */
   readonly bridgeTokensByAnimeId: ReadonlyMap<string, number | null>;
-  /** The instant this response is being processed, injected for deterministic tests. */
-  readonly now: number;
 }
 
 /** The three write-shaped buckets `syncPendingOperations` turns into `operation_log`/`animes` writes. */
@@ -147,18 +117,16 @@ export interface ClassifyUnconfirmedOperationsResult {
 /**
  * Classifies every unconfirmed operation in a batch against the bridge's `applied_operations[]`,
  * routing each into exactly one of three write-shaped buckets `syncPendingOperations` consumes
- * inside its write door. Pure with respect to SQLite (it touches no database), but DOES record
- * diagnostic events for the two classifier outcomes that are surfaced rather than acted on --
- * that write targets only the in-memory ring (`sync-diagnostic-store`), never the DB, so it stays
- * safe to run here, outside any transaction (design.md Decision 6).
+ * inside its write door. Pure: it touches no database, so it stays safe to run outside any
+ * transaction (design.md Decision 6).
  *
- * Extracted out of `reconcile.helpers.ts`'s `performSyncPendingOperations` to keep that function's
+ * Extracted out of `reconcile.helpers.ts`'s `syncPendingOperations` to keep that function's
  * cognitive complexity under threshold (constraint: "Complexity Budget Note").
  */
 export function classifyUnconfirmedOperations(
   params: ClassifyUnconfirmedOperationsParams,
 ): ClassifyUnconfirmedOperationsResult {
-  const { unconfirmedIds, pendingOps, appliedOperations, bridgeTokensByAnimeId, now } = params;
+  const { unconfirmedIds, pendingOps, appliedOperations, bridgeTokensByAnimeId } = params;
   const remainingUnconfirmedIds: number[] = [];
   const deadLetterIds: number[] = [];
   const conflictOutcomes: ConflictOutcome[] = [];
@@ -188,8 +156,6 @@ export function classifyUnconfirmedOperations(
       appliedOperation: rejectedEntry,
       storedBridgeModifiedAt: bridgeTokensByAnimeId.get(operation.animeId) ?? null,
       currentAttemptCount: operation.conflictAttemptCount,
-      operationCreatedAt: operation.createdAt,
-      now,
     });
 
     switch (classification.kind) {
@@ -204,14 +170,6 @@ export function classifyUnconfirmedOperations(
           conflictAttemptCount: classification.nextAttemptCount,
           status: 'pending',
         });
-        if (classification.isStalled) {
-          recordDiagnosticEvent({
-            source: 'reconcile_conflict',
-            event: 'conflict_operation_stalled',
-            cause: null,
-            at: now,
-          });
-        }
         break;
       case 'conflict_exhausted':
         conflictOutcomes.push({
@@ -223,21 +181,7 @@ export function classifyUnconfirmedOperations(
         });
         break;
       case 'conflict_missing_token':
-        recordDiagnosticEvent({
-          source: 'reconcile_conflict',
-          event: 'conflict_token_missing',
-          cause: null,
-          at: now,
-        });
-        remainingUnconfirmedIds.push(operationId);
-        break;
       case 'unrecognized_reason':
-        recordDiagnosticEvent({
-          source: 'reconcile_conflict',
-          event: 'conflict_reason_unrecognized',
-          cause: null,
-          at: now,
-        });
         remainingUnconfirmedIds.push(operationId);
         break;
     }

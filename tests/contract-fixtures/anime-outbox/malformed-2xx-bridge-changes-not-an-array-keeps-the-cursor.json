@@ -1,0 +1,81 @@
+{
+  "name": "malformed-2xx-bridge-changes-not-an-array-keeps-the-cursor",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-6",
+    "R-16a"
+  ],
+  "description": "A 2xx whose bridge_changes is not an array: the response is malformed, so the rows stay pending, the attempt fails, and the cursor does not move past changes the device never received.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "accepted",
+            "applied_operations": [],
+            "bridge_changes": {
+              "record_id": "anime-z"
+            },
+            "last_changelog_id": 9
+          }
+        }
+      ],
+      "attempt": "failed"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 0,
+    "tokens": {
+      "anime-a": 7
+    },
+    "staged": []
+  }
+}

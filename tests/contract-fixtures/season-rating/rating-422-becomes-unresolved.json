@@ -1,0 +1,97 @@
+{
+  "name": "rating-422-becomes-unresolved",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5",
+    "R-16b"
+  ],
+  "description": "422: the rating becomes unresolved (dead_letter, rejected), is never sent again, and does not fail the attempt (I4).",
+  "given": {
+    "cursor": 0,
+    "animes": [],
+    "outbox": [
+      {
+        "animeId": "anime-1",
+        "operation": "season_rating",
+        "payload": {
+          "seasonId": "season-1",
+          "grade": 8,
+          "ratedAt": 1700000000000
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "ok",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 0
+          }
+        },
+        {
+          "status": 422,
+          "body": {
+            "error": "rejected"
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    },
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "ok",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 0
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      },
+      {
+        "method": "POST",
+        "path": "/api/seasons/active/ratings",
+        "body": {
+          "anime_id": "anime-1",
+          "grade": 8,
+          "rated_at": 1700000000000
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-1",
+        "status": "dead_letter",
+        "unresolvedReason": "rejected",
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ]
+  }
+}

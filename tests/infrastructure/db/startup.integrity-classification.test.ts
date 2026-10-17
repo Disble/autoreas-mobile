@@ -22,7 +22,7 @@ describe('startup integrity classification', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: 0 })
         .mockResolvedValueOnce({ quick_check: 'database disk image is malformed' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
@@ -48,7 +48,7 @@ describe('startup integrity classification', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -57,6 +57,9 @@ describe('startup integrity classification', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -86,7 +89,7 @@ describe('startup integrity classification', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'database disk image is malformed', count: 9 }),
+        .mockResolvedValue({ quick_check: 'database disk image is malformed', count: 8 }),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -95,6 +98,9 @@ describe('startup integrity classification', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -128,7 +134,7 @@ describe('startup integrity classification', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockImplementation(async () => ({ quick_check: 'ok', count: repaired ? 9 : 8 })),
+        .mockImplementation(async () => ({ quick_check: 'ok', count: repaired ? 8 : 7 })),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -137,6 +143,9 @@ describe('startup integrity classification', () => {
         { name: 'episodes' },
         { name: 'folder_relative' },
         { name: 'conflict_attempt_count' },
+        { name: 'claim_owner' },
+        { name: 'claimed_at' },
+        { name: 'unresolved_reason' },
         { name: 'fence' },
         { name: 'anime_folders_root_uri' },
         { name: 'anime_folders_hint_dismissed_at' },
@@ -159,7 +168,7 @@ describe('startup integrity classification', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 7 }),
       getAllAsync: jest.fn().mockResolvedValue([{ name: 'last_cycle_id' }]),
     } as unknown as SQLiteDatabase;
     (runMigrations as jest.Mock).mockReset();

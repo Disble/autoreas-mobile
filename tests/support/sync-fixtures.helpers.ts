@@ -1,3 +1,4 @@
+import type { OperationLogRow } from '../../src/infrastructure/db/schema';
 import { FIXTURE_EPOCH_MS, FIXTURE_SEQUENCE } from './sync-fixtures.constants';
 import type {
   AnimeRowFixture,
@@ -51,6 +52,27 @@ export function buildOperationLogRow(
     status: 'pending',
     created_at: FIXTURE_EPOCH_MS + sequence,
     ...rest,
+  };
+}
+
+/**
+ * Builds an `operation_log` row in its Drizzle entity shape (camelCase), the shape helpers and
+ * mocked queries hand around. Every column a later migration adds is defaulted HERE, so a schema
+ * change touches one fixture instead of every suite that spells a row out by hand.
+ */
+export function buildOperationLogEntity(overrides: Partial<OperationLogRow> = {}): OperationLogRow {
+  return {
+    id: 1,
+    animeId: 'anime-1',
+    operation: 'update',
+    payload: '{}',
+    status: 'pending',
+    createdAt: FIXTURE_EPOCH_MS,
+    conflictAttemptCount: 0,
+    claimOwner: null,
+    claimedAt: null,
+    unresolvedReason: null,
+    ...overrides,
   };
 }
 

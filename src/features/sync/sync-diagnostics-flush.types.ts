@@ -4,11 +4,6 @@ import type {
 } from '../../infrastructure/api/bridge-client/bridge-client.types';
 import type { SyncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox';
 
-/** Dependencies `captureSyncDiagnosticsEnvelope` needs; `store` defaults to the shared instance. */
-export interface CaptureSyncDiagnosticsEnvelopeParams {
-  readonly store?: SyncDiagnosticsOutboxStore;
-}
-
 /**
  * Dependencies one bounded flush pass needs. `connection` is mandatory (there is no shared
  * default -- it is per-pairing); `store`, `client` and `now` default to their production

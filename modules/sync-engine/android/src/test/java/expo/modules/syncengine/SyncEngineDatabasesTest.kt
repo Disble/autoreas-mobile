@@ -375,6 +375,31 @@ class SyncEngineDatabasesTest {
     assertEquals(AppDatabaseReadiness.SchemaNotReady, probeAppDatabaseReadiness(context))
   }
 
+  @Test
+  fun aDeviceStampedBeforeTheDeadColumnDropWaitsForTheForegroundAndRunsAfterIt() {
+    // Migration 0020 (convergent-sync T18) drops the dead `sync_runtime_status` columns in the
+    // foreground repair step. Until that step stamps 21, the file may still hold them, so the native
+    // owner must refuse a device stamped 20 and run only once the stamp reads 21.
+    val context = RuntimeEnvironment.getApplication()
+    assertEquals(21, EXPECTED_SCHEMA_READINESS_VERSION)
+
+    val db = openAppDatabase(context)
+    try {
+      db.execSQL("PRAGMA user_version = 20")
+    } finally {
+      db.close()
+    }
+    assertEquals(AppDatabaseReadiness.SchemaNotReady, probeAppDatabaseReadiness(context))
+
+    val stamped = openAppDatabase(context)
+    try {
+      stamped.execSQL("PRAGMA user_version = 21")
+    } finally {
+      stamped.close()
+    }
+    assertEquals(AppDatabaseReadiness.Ready, probeAppDatabaseReadiness(context))
+  }
+
   // ---- deleteAppDatabaseAndSidecars ----
 
   /**

@@ -1,13 +1,15 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { inArray } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
-import { operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
+import { operationLog, syncRuntimeStatus } from '../../infrastructure/db/schema';
+import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
-import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
-import { fetchActiveSeasonFromBridge } from './season-sync.helpers';
+import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
+import { healSnapshotOnDemand } from './snapshot-heal.helpers';
+import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -26,10 +28,13 @@ import type {
   RunCoordinatedForegroundSyncCycleInput,
   SyncPrerequisiteVerdict,
 } from './sync-facade.types';
+import type { SyncFlushRequest } from './sync-flush.types';
 
 /**
  * Starts a cover sweep once a foreground sync cycle's own attempt has settled -- success, the
- * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`.
+ * `hasMorePending` early return, or failure -- for a trigger source in `COVER_SWEEP_TRIGGER_SOURCES`,
+ * or for a cycle that always heals the snapshot (mount and resume), whose sweep runs after the heal
+ * so newly healed rows get their covers.
  * Never awaited: image downloads must never hold the caller's returned promise (the manual refresh
  * spinner included).
  *
@@ -41,8 +46,12 @@ import type {
  * unforced sweep instead of starting a second one; a forced call never joins one running unforced
  * (see `runCoverSweep`'s own doc comment).
  */
-function triggerCoverSweepForSource(rawDb: SQLiteDatabase, source: SyncRuntimeTriggerSource): void {
-  if (!COVER_SWEEP_TRIGGER_SOURCES.has(source)) {
+function triggerCoverSweep(
+  rawDb: SQLiteDatabase,
+  source: SyncRuntimeTriggerSource,
+  healSnapshot: SnapshotHealDemand,
+): void {
+  if (!COVER_SWEEP_TRIGGER_SOURCES.has(source) && healSnapshot !== 'always') {
     return;
   }
 
@@ -90,27 +99,26 @@ async function persistSyncFailureTelemetrySafely(
 
 /**
  * Runs every step owned by one foreground sync cycle and publishes exactly one terminal outcome.
- * Reconcile alone is not success: season-rating delivery and telemetry must complete first.
+ * Reconcile alone is not success: a row still queued for retry keeps the cycle pending, and
+ * telemetry must complete first. A failing rating never fails the cycle (ADR 009 R-5, I4).
  *
- * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
- * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
- * the destruction and reap counters cost ZERO extra status transactions here. That is the reason the
- * headless cycle's `recordBacklogReadCount` call is NOT mirrored into this path -- mirroring it
- * would add one status write per foreground cycle and would also pull the whole operation-log
- * convergence projection and the outbox failed-write count into a path that reads neither (they are
- * `recordBacklogReadCount`'s other inputs), widening what THIS runtime reports far beyond the
- * counters that were being dropped.
- *
- * Deliberate consequence of folding: the counters are written only where this path writes status at
- * all. A cycle that returns early on `hasMorePending` -- and one that throws after reconcile, since
- * the failure write carries no flush evidence -- leaves the columns at the previous cycle's
- * measurement rather than reporting a fresh one. Neither path fabricates a zero (design.md
- * Decision 7), and both are pinned by tests so adding a write there is a conscious contract change.
+ * This cycle is the JS dispatcher (ADR 009 R-2). Every outbound kind leaves through ONE pass,
+ * `syncPendingOperations`: anime edits through the reconcile (which also carries the diagnostics
+ * outbox) and season ratings through their own endpoint, interleaved per anime in queue order
+ * (L28). Callers never run it directly; they enqueue and call `requestFlush`, which runs it
+ * through `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating
+ * (or one the bridge refused with 404/409), or when the request demands it (the WebSocket season
+ * events and the app returning to the foreground, I8); that refresh is best effort and never fails
+ * the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
+ * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
+ * best effort too, and it runs even when the sends failed, before the failure is published.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
   source,
   setActiveSeasonSnapshot,
+  refreshActiveSeason = false,
+  healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
 
@@ -118,55 +126,48 @@ export async function runCoordinatedForegroundSyncCycle({
     const attemptedAt = Date.now();
     await publishSyncConnectionAttempt({
       attempt,
-      persistTelemetry: () => recordSyncAttemptStarted(rawDb, source, attemptedAt),
+      persistTelemetry: () => recordSyncAttemptStarted(rawDb, attemptedAt),
       publishConnection: () => undefined,
     });
+    // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
+    // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
     const result = await syncPendingOperations(rawDb);
-    const seasonDrainResult = await drainSeasonRatingQueue(rawDb);
 
-    if (seasonDrainResult.failure) {
-      throw seasonDrainResult.failure;
+    if (refreshActiveSeason || result.shouldRefreshActiveSeason) {
+      await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
     }
 
-    if (seasonDrainResult.shouldRefreshActiveSeason) {
-      setActiveSeasonSnapshot(await fetchActiveSeasonFromBridge(rawDb));
-    }
+    await healSnapshotOnDemand(rawDb, healSnapshot);
 
     if (result.hasMorePending) {
-      markSyncConnectionPending(attempt);
-      triggerCoverSweepForSource(rawDb, source);
+      // The reconcile above was answered, so this cycle reached the bridge (ADR 009 R-9).
+      markSyncConnectionPending(attempt, Date.now());
+      triggerCoverSweep(rawDb, source, healSnapshot);
       return result.syncedCount;
     }
 
     const syncedAt = Date.now();
 
-    // `result.diagnosticsFlush` is the only place a destruction is visible on the foreground path:
-    // when the native engine owns background, this cycle is the one performing the discarding.
     await publishSyncConnectionAttempt({
       attempt,
-      persistTelemetry: () =>
-        recordSyncAttemptSucceeded(
-          rawDb,
-          source,
-          syncedAt,
-          result.syncedCount,
-          null,
-          result.diagnosticsFlush,
-        ),
+      persistTelemetry: () => recordSyncAttemptSucceeded(rawDb, syncedAt),
       publishConnection: () => markSyncConnectionSucceeded(attempt, syncedAt),
     });
 
-    triggerCoverSweepForSource(rawDb, source);
+    triggerCoverSweep(rawDb, source, healSnapshot);
     return result.syncedCount;
   } catch (error) {
     const failure = error instanceof Error ? error : new Error('Sync failed');
 
-    triggerCoverSweepForSource(rawDb, source);
+    // The heal demand is served even when the sends failed (ADR 009 R-7): the snapshot is a
+    // separate read, rows that failed stay unconfirmed so the heal skips them, and it never throws.
+    await healSnapshotOnDemand(rawDb, healSnapshot);
+    triggerCoverSweep(rawDb, source, healSnapshot);
     await publishSyncConnectionAttempt({
       attempt,
       persistTelemetry: () =>
         persistSyncFailureTelemetrySafely(() =>
-          recordSyncAttemptFailed(rawDb, source, Date.now(), failure.message),
+          recordSyncAttemptFailed(rawDb, Date.now()),
         ),
       publishConnection: () => markSyncConnectionFailed(attempt, failure),
     });
@@ -175,7 +176,22 @@ export async function runCoordinatedForegroundSyncCycle({
 }
 
 /**
- * Builds the live query used to count pending outbox operations.
+ * The JS dispatcher the foreground runtime registers with `registerSyncFlushDispatcher`: one
+ * flush request becomes one coordinated cycle, publishing season truth to the shared store.
+ */
+export function dispatchForegroundSyncFlush(request: SyncFlushRequest): Promise<number> {
+  return runCoordinatedForegroundSyncCycle({
+    rawDb: request.database,
+    source: request.source,
+    refreshActiveSeason: request.refreshActiveSeason,
+    healSnapshot: request.healSnapshot,
+    setActiveSeasonSnapshot: useActiveSeasonStore.getState().setActiveSeasonSnapshot,
+  });
+}
+
+/**
+ * Builds the live query used to count pending outbox operations: anime edits and season ratings
+ * alike, since both wait in the one outbox (L28); a given-up row is unresolved, not pending.
  * The facade exposes this count so the UI can reflect offline-first sync backlog without touching SQL.
  */
 export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizzleDb>[0]) {
@@ -187,15 +203,15 @@ export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizz
 }
 
 /**
- * Builds the live query for every durable season-rating row that still requires resolution.
- * Failed rows remain unresolved because they need explicit repair and retry before current truth is safe.
+ * Builds the live query for the reachability evidence in `sync_runtime_status` (ADR 009 R-9): the
+ * singleton row both runtimes write, read so a native success the JS store never saw still counts.
  */
-export function buildUnresolvedSeasonRatingQuery(
-  rawDb: Parameters<typeof createDrizzleDb>[0],
-) {
+export function buildRuntimeReachabilityQuery(rawDb: Parameters<typeof createDrizzleDb>[0]) {
   return createDrizzleDb(rawDb)
-    .select({ id: seasonRatingQueue.id })
-    .from(seasonRatingQueue)
-    .where(inArray(seasonRatingQueue.status, ['pending', 'syncing', 'failed']))
-    .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
+    .select({
+      lastAttemptAt: syncRuntimeStatus.lastAttemptAt,
+      lastSuccessAt: syncRuntimeStatus.lastSuccessAt,
+    })
+    .from(syncRuntimeStatus)
+    .limit(1);
 }

@@ -1,6 +1,5 @@
 import { BridgeUnreachableError } from '../../../infrastructure/api';
 import {
-  FOREGROUND_SYNC_CYCLES,
   INITIAL_SYNC_CONNECTION_SNAPSHOT,
   syncConnectionStore,
   SYNC_CONNECTION_ATTEMPT_STATE,
@@ -25,8 +24,8 @@ export function subscribeSyncConnection(listener: () => void): () => void {
 export function beginSyncConnectionAttempt(): number {
   SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
   syncConnectionStore.setState((current) => ({
+    ...current,
     kind: 'syncing',
-    lastSyncAt: current.lastSyncAt,
     message: null,
   }));
 
@@ -43,26 +42,37 @@ export function markSyncConnectionSucceeded(attempt: number, syncedAt: number): 
     kind: 'online',
     lastSyncAt: syncedAt,
     message: null,
+    bridgeContact: { at: syncedAt, reached: true },
   });
 }
 
-/** Publishes a transport or reachable sync failure without erasing prior success history. */
+/**
+ * Publishes a transport or reachable sync failure without erasing prior success history.
+ * Only a transport failure is evidence that the bridge was not reached (ADR 009 R-9); any other
+ * failure keeps the previous reachability evidence, because it does not prove either way.
+ */
 export function markSyncConnectionFailed(attempt: number, error: unknown): void {
   if (attempt !== SYNC_CONNECTION_ATTEMPT_STATE.current) {
     return;
   }
 
   const message = error instanceof Error ? error.message : 'Sync failed';
+  const isUnreachable = error instanceof BridgeUnreachableError;
 
   syncConnectionStore.setState((current) => ({
-    kind: error instanceof BridgeUnreachableError ? 'unreachable' : 'sync_error',
+    kind: isUnreachable ? 'unreachable' : 'sync_error',
     lastSyncAt: current.lastSyncAt,
     message,
+    bridgeContact: isUnreachable ? { at: Date.now(), reached: false } : current.bridgeContact,
   }));
 }
 
-/** Completes the latest attempt as pending/local rather than claiming current bridge truth. */
-export function markSyncConnectionPending(attempt: number): void {
+/**
+ * Completes the latest attempt as pending/local rather than claiming current bridge truth. The
+ * attempt did reach the bridge at `reachedAt` (its reconcile was answered), so that is recorded as
+ * reachability evidence even though work remains (ADR 009 R-9).
+ */
+export function markSyncConnectionPending(attempt: number, reachedAt: number): void {
   if (attempt !== SYNC_CONNECTION_ATTEMPT_STATE.current) {
     return;
   }
@@ -71,16 +81,34 @@ export function markSyncConnectionPending(attempt: number): void {
     kind: 'idle',
     lastSyncAt: current.lastSyncAt,
     message: null,
+    bridgeContact: { at: reachedAt, reached: true },
   }));
 }
 
-/** Invalidates online truth because new durable work exists or sync prerequisites disappeared. */
+/**
+ * Invalidates online truth because new durable work exists. New work says nothing about the
+ * bridge, so the reachability evidence is kept.
+ */
 export function invalidateSyncConnectionOnline(): void {
   SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
   syncConnectionStore.setState((current) => ({
+    ...current,
     kind: 'idle',
-    lastSyncAt: current.lastSyncAt,
     message: null,
+  }));
+}
+
+/**
+ * Invalidates online truth because the sync prerequisites disappeared (unpaired, no database),
+ * and forgets the reachability evidence: it belonged to a pairing that no longer exists.
+ */
+export function forgetSyncConnectionBridge(): void {
+  SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
+  syncConnectionStore.setState((current) => ({
+    ...current,
+    kind: 'idle',
+    message: null,
+    bridgeContact: null,
   }));
 }
 
@@ -117,34 +145,8 @@ export function publishSyncConnectionAttempt({
   return publication;
 }
 
-/**
- * Runs at most one coordinated foreground sync cycle for a database and shares its exact promise.
- * Full-cycle ownership here prevents independent hook instances from publishing overlapping outcomes.
- */
-export function runSharedForegroundSyncCycle(
-  database: object,
-  createCycle: () => Promise<number>,
-): Promise<number> {
-  const activeCycle = FOREGROUND_SYNC_CYCLES.get(database);
-
-  if (activeCycle) {
-    return activeCycle;
-  }
-
-  const cycle = createCycle();
-  const trackedCycle = cycle.finally(() => {
-    if (FOREGROUND_SYNC_CYCLES.get(database) === trackedCycle) {
-      FOREGROUND_SYNC_CYCLES.delete(database);
-    }
-  });
-
-  FOREGROUND_SYNC_CYCLES.set(database, trackedCycle);
-  return trackedCycle;
-}
-
 /** Resets module state so tests cannot leak connection truth between cases. */
 export function resetSyncConnectionStore(): void {
-  FOREGROUND_SYNC_CYCLES.clear();
   SYNC_CONNECTION_ATTEMPT_STATE.current = 0;
   SYNC_CONNECTION_PUBLICATION_QUEUE_STATE.current = Promise.resolve();
   syncConnectionStore.setState(INITIAL_SYNC_CONNECTION_SNAPSHOT, true);

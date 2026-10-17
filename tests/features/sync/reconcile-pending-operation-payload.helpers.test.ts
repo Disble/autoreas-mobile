@@ -1,16 +1,13 @@
 import { buildReconcileRequestBody } from '../../../src/features/sync/reconcile-request.helpers';
 import { getConfirmedOperationIds } from '../../../src/features/sync/reconcile-confirmation.helpers';
+import { buildOperationLogEntity } from '../../support/sync-fixtures.helpers';
 
 describe('reconcile pending operation payload helpers', () => {
-  const baseOperation = {
-    id: 1,
-    animeId: 'anime-1',
-    operation: 'update',
+  const baseOperation = buildOperationLogEntity({
     payload: JSON.stringify({ episodesWatched: 5, lastWatchedAt: 1710000000000 }),
     status: 'processing',
     createdAt: 1710000000000,
-    conflictAttemptCount: 0,
-  };
+  });
 
   it('omits device_id when missing and keeps malformed payloads on the safe empty-object fallback', () => {
     expect(

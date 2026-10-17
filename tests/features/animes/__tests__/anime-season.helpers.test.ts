@@ -1,11 +1,12 @@
-import type { SeasonRatingQueueRow } from "../../../../src/infrastructure/db/schema";
+import type { SeasonRatingIntent } from "../../../../src/features/sync/season-rating-event.types";
 import { LOCAL_ACTIVE_SEASON_ID } from "../../../../src/features/animes/anime-season.constants";
 import {
   buildAnimeSeasonProjection,
   selectLatestSeasonRatingIntent,
 } from "../../../../src/features/animes/anime-season.helpers";
 
-function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRatingQueueRow {
+/** Builds one queued season-rating intent with every field defaulted, so each test states only what it varies. */
+function buildQueueRow(overrides: Partial<SeasonRatingIntent> = {}): SeasonRatingIntent {
   return {
     id: 1,
     seasonId: "season-2026-q3",
@@ -14,9 +15,7 @@ function buildQueueRow(overrides: Partial<SeasonRatingQueueRow> = {}): SeasonRat
     ratedAt: 1_752_000_000_000,
     status: "pending",
     createdAt: 1_752_000_100_000,
-    updatedAt: 1_752_000_100_000,
-    lastAttemptAt: null,
-    lastFailureKind: null,
+    failureKind: null,
     ...overrides,
   };
 }
@@ -28,7 +27,7 @@ describe("anime season helpers", () => {
       ["season-2026-q3", LOCAL_ACTIVE_SEASON_ID],
       [
         buildQueueRow({ id: 1, nota: 3, createdAt: 1_752_000_100_000 }),
-        buildQueueRow({ id: 2, nota: 6, createdAt: 1_752_000_200_000, status: "failed", lastFailureKind: "auth_repair" }),
+        buildQueueRow({ id: 2, nota: 6, createdAt: 1_752_000_200_000, status: "failed", failureKind: "auth_repair" }),
       ],
     );
 
@@ -77,7 +76,7 @@ describe("anime season helpers", () => {
           },
         },
       },
-      seasonRatingQueueRows: [buildQueueRow({ nota: 6 })],
+      seasonRatingIntents: [buildQueueRow({ nota: 6 })],
     });
 
     expect(projection).toEqual({
@@ -100,7 +99,7 @@ describe("anime season helpers", () => {
           candidates: [],
           candidatesByAnimeId: {},
         },
-        seasonRatingQueueRows: [],
+        seasonRatingIntents: [],
       }),
     ).toBeNull();
   });
@@ -109,7 +108,7 @@ describe("anime season helpers", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
       activeSeasonSnapshot: null,
-      seasonRatingQueueRows: [],
+      seasonRatingIntents: [],
     });
 
     expect(projection).toBeNull();
@@ -123,7 +122,7 @@ describe("anime season helpers", () => {
         candidates: [],
         candidatesByAnimeId: {},
       },
-      seasonRatingQueueRows: [
+      seasonRatingIntents: [
         buildQueueRow({
           seasonId: "season-2026-q3",
           animeId: "anime-1",

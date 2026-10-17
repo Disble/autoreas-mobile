@@ -1,5 +1,3 @@
-import type { Anime } from '../../infrastructure/validation/anime-schema';
-
 /** Defines the data contract for bridge connection config. */
 export interface BridgeConnectionConfig {
   readonly ip: string;
@@ -16,7 +14,3 @@ export interface BridgeFetchCredentials {
   readonly token: string;
 }
 
-/** Defines the data contract for initial sync snapshot. */
-export interface InitialSyncSnapshot {
-  readonly animes: readonly Anime[];
-}

@@ -212,6 +212,12 @@ export function createBridgeClient(
         path: BRIDGE_API_PATHS.animes,
         token: connection.token,
       }),
+    getAnime: (connection, animeId) =>
+      request(connection, {
+        method: 'GET',
+        path: `${BRIDGE_API_PATHS.animes}/${encodeURIComponent(animeId)}`,
+        token: connection.token,
+      }),
     getActiveSeason: (connection) =>
       request(connection, {
         method: 'GET',
@@ -242,16 +248,6 @@ export function createBridgeClient(
         path: BRIDGE_API_PATHS.syncDiagnostics,
         token: connection.token,
         body: envelope,
-        timeoutMs: options?.timeoutMs,
-      }),
-    getStatus: (connection, options?: BridgeRequestOptions) =>
-      request(connection, {
-        method: 'GET',
-        // Bridge liveness route (T6 presence probe), registered as an authenticated, side-effect-
-        // free endpoint in the bridge's router (internal/api/router.go). Inlined rather than
-        // added to BRIDGE_API_PATHS because the T6 edit surface covers this file only.
-        path: '/api/status',
-        token: connection.token,
         timeoutMs: options?.timeoutMs,
       }),
     openWebSocket: (connection) =>

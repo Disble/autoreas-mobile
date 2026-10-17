@@ -1,0 +1,100 @@
+{
+  "name": "server-error-500-keeps-the-round-pending",
+  "runtimes": [
+    "js",
+    "kotlin"
+  ],
+  "covers": [
+    "R-5"
+  ],
+  "description": "500: the rows stay pending; the attempt fails; no message is re-sent alone.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      {
+        "id": "anime-a",
+        "token": 7
+      },
+      {
+        "id": "anime-b",
+        "token": 7
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "payload": {
+          "episodesWatched": 5
+        }
+      },
+      {
+        "animeId": "anime-b",
+        "payload": {
+          "episodesWatched": 5
+        }
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        {
+          "status": 500,
+          "body": {
+            "error": "rejected"
+          }
+        }
+      ],
+      "attempt": "failed"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": [
+          {
+            "anime_id": "anime-a",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          },
+          {
+            "anime_id": "anime-b",
+            "operation": "update",
+            "payload": {
+              "episodesWatched": 5
+            },
+            "base": 7
+          }
+        ]
+      }
+    ],
+    "outbox": [
+      {
+        "animeId": "anime-a",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      },
+      {
+        "animeId": "anime-b",
+        "status": "pending",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ],
+    "cursor": 0,
+    "tokens": {
+      "anime-a": 7,
+      "anime-b": 7
+    },
+    "staged": []
+  }
+}

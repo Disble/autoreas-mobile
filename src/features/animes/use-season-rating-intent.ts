@@ -5,7 +5,7 @@ import {
 } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
 import { LOCAL_ACTIVE_SEASON_ID } from "./anime-season.constants";
-import { enqueueSeasonRatingIntent } from "../sync/season-rating-queue.helpers";
+import { enqueueSeasonRatingIntent } from "../sync/season-rating-intent.helpers";
 import type { SeasonRatingValue } from "./ui/SeasonRatingSheet";
 
 /** Coordinates season rating intent state and actions. */

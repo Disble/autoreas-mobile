@@ -1,9 +1,4 @@
 import { normalizeBridgeChange } from '../../../src/features/sync/bridge-change.helpers';
-import { recordDiagnosticEvent } from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
-
-jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
-  recordDiagnosticEvent: jest.fn(),
-}));
 
 /** Minimal valid wire snapshot for `anime-1`. */
 const SNAPSHOT = {
@@ -19,11 +14,7 @@ const SNAPSHOT = {
 };
 
 describe('normalizeBridgeChange', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('maps known wire field names to local names and records nothing', () => {
+  it('maps known wire field names to local names', () => {
     const change = normalizeBridgeChange({
       record_id: 'anime-1',
       change_type: 'update',
@@ -40,10 +31,9 @@ describe('normalizeBridgeChange', () => {
         timestamp: 1710000001000,
       }),
     );
-    expect(recordDiagnosticEvent).not.toHaveBeenCalled();
   });
 
-  it('drops unknown field names and records the change as rejected', () => {
+  it('drops unknown field names, never guessing at them', () => {
     const change = normalizeBridgeChange({
       record_id: 'anime-1',
       change_type: 'update',
@@ -53,11 +43,5 @@ describe('normalizeBridgeChange', () => {
     } as never);
 
     expect(change.changedFields).toEqual([]);
-    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
-      source: 'sync_cycle',
-      event: 'remote_change_rejected',
-      cause: null,
-      at: expect.any(Number),
-    });
   });
 });

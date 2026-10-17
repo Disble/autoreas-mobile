@@ -1,6 +1,7 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AppDatabase } from '../../../infrastructure/db/client';
 import { animes, operationLog } from '../../../infrastructure/db/schema';
+import { ANIME_UPDATE_OPERATION } from '../outbox-operation.constants';
 
 /**
  * Reads the per-anime staleness guard for the given record ids. A missing entry in the
@@ -25,9 +26,10 @@ export async function loadGuardMap(
 }
 
 /**
- * Reads the set of anime ids with an unresolved local outbox operation (status `pending`
- * or `processing`), used by `decideMerge` to protect un-acked local intent from being
- * overwritten by an incoming remote change for the same anime.
+ * Reads the set of anime ids with an unconfirmed local edit (an `update` row, `pending` or
+ * `processing`), used by `decideMerge` to protect un-acked local intent from being
+ * overwritten by an incoming remote change for the same anime. A queued season rating is not
+ * an edit of the anime's fields, so it never defers a remote change (L28).
  */
 export async function loadPendingOutboxRecordIds(
   db: AppDatabase,
@@ -35,7 +37,7 @@ export async function loadPendingOutboxRecordIds(
   const rows = await db
     .select({ animeId: operationLog.animeId })
     .from(operationLog)
-    .where(inArray(operationLog.status, ['pending', 'processing']));
+    .where(and(eq(operationLog.operation, ANIME_UPDATE_OPERATION), inArray(operationLog.status, ['pending', 'processing'])));
 
   return new Set(rows.map((row) => row.animeId));
 }

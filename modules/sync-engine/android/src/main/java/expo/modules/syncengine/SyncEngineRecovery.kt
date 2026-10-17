@@ -6,7 +6,8 @@ import android.util.Log
 private const val RECOVERY_LOG_TAG = "SyncEngine"
 
 private const val RETURN_ORPHANED_CLAIMS_SQL =
-  "UPDATE operation_log SET status = 'pending' WHERE status = 'processing' AND " +
+  "UPDATE operation_log SET status = 'pending', claim_owner = NULL, claimed_at = NULL " +
+    "WHERE status = 'processing' AND (claimed_at IS NULL OR claimed_at <= ?) AND " +
     LEASE_OWNERSHIP_GUARD_SQL
 
 /**
@@ -44,10 +45,10 @@ data class RecoveryResult(
  *    the cycle lease ([ENGINE_LEASE_MS], 60 s), an `abandoned` transition is appended for that
  *    cycle id, naming this attempt as the recoverer. Terminal states and fresh states are
  *    left alone.
- * 2. **Return the orphaned claim.** Every `operation_log` row still in `processing` goes back
- *    to `pending` inside one `BEGIN IMMEDIATE` transaction (the JS cycle already re-includes
- *    `processing` rows in its backlog read for exactly this reason; this makes the recovery
- *    explicit and durable).
+ * 2. **Return the orphaned claim.** Every `operation_log` row still in `processing` whose
+ *    claim EXPIRED (or that predates claims) goes back to `pending`, unclaimed, inside one
+ *    `BEGIN IMMEDIATE` transaction. A live claim belongs to a runtime that is still sending --
+ *    the JS runtime never holds this lease -- so it is left alone (ADR 009 R-13).
  *
  * **A sweep error never fails the attempt**: every failure is logged under the `SyncEngine`
  * tag and reported through [RecoveryResult]'s zero/`null` defaults, and the attempt continues
@@ -105,8 +106,8 @@ class SyncEngineRecovery(
   }
 
   /**
-   * Returns every orphaned `processing` row to `pending` inside one `BEGIN IMMEDIATE`
-   * transaction, answering the number of rows reclaimed; `0` on any failure. The statement is
+   * Returns every `processing` row with an expired or absent claim to `pending` inside one
+   * `BEGIN IMMEDIATE` transaction, answering the number of rows reclaimed; `0` on any failure. The statement is
    * fenced: when this attempt's lease was reclaimed, the ownership guard selects nothing and the
    * update affects zero rows instead of clobbering the new owner's claims.
    */
@@ -114,8 +115,9 @@ class SyncEngineRecovery(
     return try {
       inImmediateTransaction(appDb) {
         appDb.compileStatement(RETURN_ORPHANED_CLAIMS_SQL).apply {
-          bindString(1, lease.owner)
-          bindString(2, lease.fence)
+          bindLong(1, liveClaimFloor(System.currentTimeMillis()))
+          bindString(2, lease.owner)
+          bindString(3, lease.fence)
         }.executeUpdateDelete()
       }
     } catch (error: Throwable) {

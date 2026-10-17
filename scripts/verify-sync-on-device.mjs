@@ -136,10 +136,9 @@ function runChecks(workDir) {
   record(checkEngineInvoked(sqlite3, workDir));
   record(checkJournalWritten(sqlite3, workDir));
   record(checkAttemptFreshness(sqlite3, workDir));
-  // The cycle-closure check sits right after Attempt freshness on purpose: it reads the same
-  // pulled database and carries the primary acceptance metric of
-  // docs/mobile-sync-architecture.md §9 — consecutive_unclosed_cycles = 0 — plus the journal
-  // FSM's per-cycle newest transitions.
+  // The cycle-closure check sits right after Attempt freshness on purpose: it carries the primary
+  // acceptance metric of docs/mobile-sync-architecture.md §9 — no unfinished cycles — read from
+  // the journal FSM's per-cycle newest transitions.
   record(checkCycleClosure(sqlite3, workDir));
   record(checkExecutionGuardBurns());
   record(checkStandbyBucket());

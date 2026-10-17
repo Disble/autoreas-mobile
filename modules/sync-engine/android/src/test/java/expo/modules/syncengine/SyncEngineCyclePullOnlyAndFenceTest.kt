@@ -27,7 +27,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
     // no-op attempt always issues the reconcile request, so remote changes still arrive.
     SyncEngineTestDatabase().use { fixture ->
       insertBridgeConfigOnly(fixture, port = 0) // port patched below once the server is up
-      val response = """{"bridge_changes":[{"record_id":"remote-x","change_type":"create","changed_fields":["name"],"timestamp":9,"snapshot":{"id":"remote-x","name":"Remote","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":30}"""
+      val response = """{"status":"accepted","bridge_changes":[{"record_id":"remote-x","change_type":"create","changed_fields":["name"],"timestamp":9,"snapshot":{"id":"remote-x","name":"Remote","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"modified_at":0}}],"last_changelog_id":30}"""
       SyncEngineTestHttpServer(200, response).use { server ->
         fixture.appDatabase.execSQL("UPDATE bridge_config SET port = ? WHERE id = 1", arrayOf(server.port.toString()))
         val states = mutableListOf<String>()
@@ -146,10 +146,11 @@ class SyncEngineCyclePullOnlyAndFenceTest {
   }
 
   @Test
-  fun aClaimedAnimeWithNoStoredTokenRowIsOmittedFromTheOptimisticBaseMap() {
+  fun aClaimedAnimeWithNoAnimesRowIsNeverSentWithoutABase() {
     // readAnimeBridgeTokens: covers BOTH the present-token row (existing insertCycleInput
     // fixture, anime-k6) and an anime with no `animes` row at all in the SAME backlog, so the
-    // `_id IN (...)` query's absent-entry case is exercised alongside the present one.
+    // `_id IN (...)` query's absent-entry case is exercised alongside the present one. The absent
+    // one is fetched first (ADR 009 R-3); this bridge returns no token, so it is never sent.
     SyncEngineTestDatabase().use { fixture ->
       insertCycleInput(fixture, port = 0)
       fixture.appDatabase.execSQL(
@@ -158,13 +159,14 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         arrayOf(System.currentTimeMillis()),
       )
       SyncEngineTestHttpServer(200, "{}") { request ->
+        if (request.path != "/api/sync/reconcile") return@SyncEngineTestHttpServer
         val operations = JSONObject(request.body).getJSONArray("pending_operations")
         val byAnimeId = (0 until operations.length()).associate {
           val op = operations.getJSONObject(it)
           op.getString("anime_id") to op.has("base")
         }
         assertEquals(true, byAnimeId["anime-k6"])
-        assertEquals(false, byAnimeId["anime-no-token"])
+        assertEquals(null, byAnimeId["anime-no-token"])
       }.use { server ->
         fixture.appDatabase.execSQL("UPDATE bridge_config SET port = ? WHERE id = 1", arrayOf(server.port.toString()))
 
@@ -208,7 +210,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
   }
 
   @Test
-  fun anAnimeRowWithNoStoredTokenYetIsAPresentNullEntryNotAnAbsentOne() {
+  fun anAnimeRowWithNoStoredTokenYetIsNeverSentWithoutABase() {
     // Distinct from `aClaimedAnimeWithNoStoredTokenRowIsOmittedFromTheOptimisticBaseMap`: THIS
     // anime's `animes` row EXISTS (so the cursor visits it), but `bridge_modified_at IS NULL`
     // -- readAnimeBridgeTokens' own doc comment calls this "a present null entry", distinct
@@ -224,13 +226,15 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         arrayOf(System.currentTimeMillis()),
       )
       SyncEngineTestHttpServer(200, "{}") { request ->
+        if (request.path != "/api/sync/reconcile") return@SyncEngineTestHttpServer
         val operations = JSONObject(request.body).getJSONArray("pending_operations")
         val byAnimeId = (0 until operations.length()).associate {
           val op = operations.getJSONObject(it)
           op.getString("anime_id") to op.has("base")
         }
         assertEquals(true, byAnimeId["anime-k6"])
-        assertEquals(false, byAnimeId["anime-null-token"])
+        // Fetched first (ADR 009 R-3); this bridge returns no token, so it is never sent.
+        assertEquals(null, byAnimeId["anime-null-token"])
       }.use { server ->
         fixture.appDatabase.execSQL("UPDATE bridge_config SET port = ? WHERE id = 1", arrayOf(server.port.toString()))
 

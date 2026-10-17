@@ -28,9 +28,9 @@ data class BacklogRow(
  * - `base` is OMITTED when the stored token is NULL and PRESENT (including 0) when known —
  *   never `"base": null`, because the bridge unmarshals null into a real zero token
  *   (see `buildOptimisticBaseKey`);
- * - a minimal `client_telemetry` envelope rides along. The full snapshot/events telemetry of
- *   the JS cycle is deliberately DEFERRED (documented in the module's KDoc), not silently
- *   dropped: the bridge tolerates the reduced envelope, and T5 unifies the two telemetry paths.
+ * - a minimal `client_telemetry` envelope rides along: `{ cycle_id, trigger_source, counters }`.
+ *   It is the only envelope either engine sends -- the JS cycle's richer one was removed
+ *   (convergent-sync T18) -- and the bridge requires nothing beyond `counters`.
  */
 object ReconcileRequestBody {
 
@@ -42,6 +42,7 @@ object ReconcileRequestBody {
     tokensByAnimeId: Map<String, Long?>,
     cycleId: String,
     triggerSource: String,
+    includeTelemetry: Boolean = true,
   ): JSONObject {
     val body = JSONObject()
     body.put("device_id", deviceId)
@@ -62,12 +63,16 @@ object ReconcileRequestBody {
     }
     body.put("pending_operations", operations)
 
-    val counters = JSONObject().put("pending_ops_count", rows.size)
-    val telemetry = JSONObject()
-      .put("cycle_id", cycleId)
-      .put("trigger_source", triggerSource)
-      .put("counters", counters)
-    body.put("client_telemetry", telemetry)
+    // A chained cycle sends several requests; like JS, only its first one carries the telemetry,
+    // so the bridge sees one envelope per cycle (ADR 009 R-14).
+    if (includeTelemetry) {
+      val counters = JSONObject().put("pending_ops_count", rows.size)
+      val telemetry = JSONObject()
+        .put("cycle_id", cycleId)
+        .put("trigger_source", triggerSource)
+        .put("counters", counters)
+      body.put("client_telemetry", telemetry)
+    }
 
     return body
   }
