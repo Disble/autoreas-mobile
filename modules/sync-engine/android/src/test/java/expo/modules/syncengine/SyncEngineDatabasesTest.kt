@@ -375,6 +375,31 @@ class SyncEngineDatabasesTest {
     assertEquals(AppDatabaseReadiness.SchemaNotReady, probeAppDatabaseReadiness(context))
   }
 
+  @Test
+  fun aDeviceStampedBeforeTheRatingQueueMoveWaitsForTheForegroundAndRunsAfterIt() {
+    // Migration 0019 (ADR 009 L28) moves `season_rating_queue` into `operation_log` in the
+    // foreground repair step. Until that step stamps 20, the file still holds the old queue, so the
+    // native owner must refuse a device stamped 19 and run only once the stamp reads 20.
+    val context = RuntimeEnvironment.getApplication()
+    assertEquals(20, EXPECTED_SCHEMA_READINESS_VERSION)
+
+    val db = openAppDatabase(context)
+    try {
+      db.execSQL("PRAGMA user_version = 19")
+    } finally {
+      db.close()
+    }
+    assertEquals(AppDatabaseReadiness.SchemaNotReady, probeAppDatabaseReadiness(context))
+
+    val stamped = openAppDatabase(context)
+    try {
+      stamped.execSQL("PRAGMA user_version = 20")
+    } finally {
+      stamped.close()
+    }
+    assertEquals(AppDatabaseReadiness.Ready, probeAppDatabaseReadiness(context))
+  }
+
   // ---- deleteAppDatabaseAndSidecars ----
 
   /**

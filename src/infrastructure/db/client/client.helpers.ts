@@ -15,13 +15,13 @@ import {
 import { withDeadline } from '../../async/deadline.helpers';
 import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
+import { moveSeasonRatingQueueIntoOperationLog } from './season-rating-queue-move.helpers';
 
 import {
   ACTIVE_SEASON_CACHE_TABLE_SQL,
   ANIMES_COLUMN_DEFINITIONS,
   APP_PREFERENCES_COLUMN_DEFINITIONS,
   PENDING_REMOTE_CHANGES_TABLE_SQL,
-  SEASON_RATING_QUEUE_TABLE_SQL,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   DATABASE_NAME,
   LOCAL_WRITE_DEADLINE_MS,
@@ -33,7 +33,6 @@ import {
   MIGRATION_LEDGER_PIN_SQL,
   MIGRATION_LEDGER_SEED_SQL,
   OPERATION_LOG_COLUMN_DEFINITIONS,
-  SEASON_RATING_QUEUE_COLUMN_DEFINITIONS,
   SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
   WRITE_QUEUE_BY_DATABASE,
@@ -249,18 +248,6 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(PENDING_REMOTE_CHANGES_TABLE_SQL);
 }
 
-/** Creates the durable season-rating queue for installs that predate it, then adds later columns. */
-async function ensureSeasonRatingQueueTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(SEASON_RATING_QUEUE_TABLE_SQL);
-
-  await rawDb.runAsync(
-    'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
-  );
-
-  const columns = await rawDb.getAllAsync<{ name: string }>('PRAGMA table_info(season_rating_queue)');
-  await ensureMissingColumns(rawDb, new Set(columns.map((column) => column.name)), SEASON_RATING_QUEUE_COLUMN_DEFINITIONS);
-}
-
 /** Creates the single-row active-season cache. Exists in no migration file; only here. */
 async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(ACTIVE_SEASON_CACHE_TABLE_SQL);
@@ -378,7 +365,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureAnimesColumns(rawDb);
   await ensureOperationLogColumns(rawDb);
   await ensurePendingRemoteChangesTable(rawDb);
-  await ensureSeasonRatingQueueTable(rawDb);
+  await moveSeasonRatingQueueIntoOperationLog(rawDb);
   await ensureActiveSeasonCacheTable(rawDb);
   await ensureSyncCycleLockTable(rawDb);
   await ensureSyncCycleLockColumns(rawDb);
@@ -412,7 +399,6 @@ export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   await withLocalWrite(rawDb, async (db) => {
     await db.delete(schema.bridgeConfig);
     await db.delete(schema.operationLog);
-    await db.delete(schema.seasonRatingQueue);
     await db.delete(schema.pendingRemoteChanges);
     await db.update(schema.animes).set({ bridgeModifiedAt: null });
   });

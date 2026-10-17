@@ -224,17 +224,6 @@ export const OPERATION_LOG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
 ];
 
 /**
- * Lists the `season_rating_queue` columns added after the table first shipped (migration 0018):
- * the ADR 009 R-13 per-key claim, keyed by season. Nullable with no default, because NULL means
- * unclaimed. The CREATE in `SEASON_RATING_QUEUE_TABLE_SQL` stays at its migration-0009 shape, so a
- * fresh install's migration 0018 never collides with a column the repair step already created.
- */
-export const SEASON_RATING_QUEUE_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
-  { columnName: 'claim_owner', sql: 'ALTER TABLE season_rating_queue ADD COLUMN claim_owner TEXT' },
-  { columnName: 'claimed_at', sql: 'ALTER TABLE season_rating_queue ADD COLUMN claimed_at INTEGER' },
-];
-
-/**
  * Lists the `sync_cycle_lock` columns added after the table first shipped, mirroring
  * `ANIMES_COLUMN_DEFINITIONS` for the advisory-lock table's one legacy repair.
  *
@@ -306,20 +295,6 @@ export const PENDING_REMOTE_CHANGES_TABLE_SQL =
   'snapshot TEXT, ' +
   'timestamp INTEGER NOT NULL, ' +
   'created_at INTEGER NOT NULL)';
-
-/** Creates the durable season-rating queue for installs that predate it. */
-export const SEASON_RATING_QUEUE_TABLE_SQL =
-  'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
-  'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-  'season_id TEXT NOT NULL, ' +
-  'anime_id TEXT NOT NULL, ' +
-  'nota INTEGER NOT NULL, ' +
-  'rated_at INTEGER NOT NULL, ' +
-  "status TEXT NOT NULL DEFAULT 'pending', " +
-  'created_at INTEGER NOT NULL, ' +
-  'updated_at INTEGER NOT NULL, ' +
-  'last_attempt_at INTEGER, ' +
-  'last_failure_kind TEXT)';
 
 /** Creates the single-row active-season cache. Exists in no migration file; only as a repair step. */
 export const ACTIVE_SEASON_CACHE_TABLE_SQL =

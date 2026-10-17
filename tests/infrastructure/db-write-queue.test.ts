@@ -8,7 +8,6 @@ import {
   bridgeConfig,
   operationLog,
   pendingRemoteChanges,
-  seasonRatingQueue,
 } from "../../src/infrastructure/db/schema";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
@@ -91,7 +90,7 @@ describe("db client write-door helpers", () => {
 
     expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
     expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
-    expect(rawDb.__state.deletes).toEqual([bridgeConfig, operationLog, seasonRatingQueue, pendingRemoteChanges]);
+    expect(rawDb.__state.deletes).toEqual([bridgeConfig, operationLog, pendingRemoteChanges]);
     expect(rawDb.__state.updates).toEqual([{ table: animes, values: { bridgeModifiedAt: null } }]);
     expect(rawDb.runAsync).not.toHaveBeenCalled();
   });

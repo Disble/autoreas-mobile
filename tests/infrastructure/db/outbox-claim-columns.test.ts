@@ -16,12 +16,6 @@ describe('migration 0018 on a fresh install (ADR 009 claims and unresolved reaso
     );
   });
 
-  it('gives season_rating_queue the claim owner and claim time columns', async () => {
-    await expect(readColumnNames('season_rating_queue')).resolves.toEqual(
-      expect.arrayContaining(['claim_owner', 'claimed_at']),
-    );
-  });
-
   it('leaves every pre-existing queued row unclaimed and not unresolved', async () => {
     const adapter = createTestSqliteAdapter();
     await applyMigrationFiles(adapter);

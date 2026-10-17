@@ -42,8 +42,9 @@ async function openPairedDatabase(): Promise<SQLiteDatabase> {
       status,
     );
   }
+  // A queued season rating is an operation_log row too (ADR 009 L28).
   await adapter.runAsync(
-    "INSERT INTO season_rating_queue (season_id, anime_id, nota, rated_at, created_at, updated_at) VALUES ('season-1', 'anime-1', 3, 1, 1, 1)",
+    "INSERT INTO operation_log (anime_id, operation, payload, status, created_at) VALUES ('anime-1', 'season_rating', '{\"seasonId\":\"season-1\",\"grade\":3,\"ratedAt\":1}', 'pending', 1)",
   );
   await adapter.runAsync(
     "INSERT INTO pending_remote_changes (record_id, change_type, changed_fields, timestamp, created_at) VALUES ('anime-1', 'update', '[]', 1, 1)",
@@ -65,7 +66,6 @@ describe('unpairing a bridge (ADR 009 R-11)', () => {
 
     expect(await countRows(adapter, 'bridge_config')).toBe(0);
     expect(await countRows(adapter, 'operation_log')).toBe(0);
-    expect(await countRows(adapter, 'season_rating_queue')).toBe(0);
     expect(await countRows(adapter, 'pending_remote_changes')).toBe(0);
     expect(await adapter.getAllAsync('SELECT _id, nrocapvisto, bridge_modified_at FROM animes')).toEqual([
       { _id: 'anime-1', nrocapvisto: 4, bridge_modified_at: null },

@@ -235,11 +235,11 @@ added a Kotlin twin of the readiness stamp and a probe that never creates the fi
 
 ```mermaid
 flowchart TD
-  F["foreground: runMigrations + validate + stamp user_version = 16"] -->|"stamp happens last"| S["stamped = durable proof"]
+  F["foreground: runMigrations + validate + stamp user_version = 20"] -->|"stamp happens last"| S["stamped = durable proof"]
   A["SyncEngineRunner.runOnce"] --> B{"probeAppDatabaseReadiness"}
   B -->|"file absent: NotProvisioned"| R["refuse: not_applicable / idle / SchemaNotReady - no watchdog, no queue, no lease, no write"]
-  B -->|"user_version not exactly 16: SchemaNotReady"| R
-  B -->|"user_version exactly 16: Ready"| O["arm watchdog, queue, open the long-lived connection"]
+  B -->|"user_version not exactly 20: SchemaNotReady"| R
+  B -->|"user_version exactly 20: Ready"| O["arm watchdog, queue, open the long-lived connection"]
   C["SyncEngineRuntimeStatus.record"] --> D{"probeAppDatabaseReadiness"}
   D -->|"not Ready"| Q["returns before opening a connection"]
   D -->|"Ready"| W["opens its own connection to write sync_runtime_status"]
@@ -247,7 +247,7 @@ flowchart TD
 ```
 
 - [`SyncEngineDatabases.kt`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/SyncEngineDatabases.kt)
-  owns `EXPECTED_SCHEMA_READINESS_VERSION` (16), the pure `resolveAppDatabaseReadiness` decision, a
+  owns `EXPECTED_SCHEMA_READINESS_VERSION` (20, the journal length since migration 0019), the pure `resolveAppDatabaseReadiness` decision, a
   read-only `user_version` reader and `probeAppDatabaseReadiness`. Only an exact match is `Ready`;
   `null` and every other number are `SchemaNotReady`.
 - [`SyncEngineRunner.runOnce`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/SyncEngineRunner.kt)
@@ -258,6 +258,11 @@ flowchart TD
 - The JS twin guard
   ([`native-schema-readiness-twin.test.ts`](../tests/infrastructure/db/native-schema-readiness-twin.test.ts))
   fails when a new migration raises the journal length without bumping the Kotlin constant.
+- The gate also covers data moves in the repair window. Migration 0019 retires
+  `season_rating_queue`: on an installed device the repair step
+  `moveSeasonRatingQueueIntoOperationLog` moves its rows into `operation_log` and drops it in one
+  exclusive transaction before the stamp. Until the stamp reads 20 the native owner refuses, so it
+  never reads `operation_log` while the move is pending (ADR 009 L28).
 - Honest limit: the stamp is trusted. A database stamped ready but missing a table is not refused
   early; the write fails and the runner's never-throws catch swallows it. That is why the foreground
   validates every required table and column before stamping.

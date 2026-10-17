@@ -5,7 +5,6 @@ import {
   APP_PREFERENCES_COLUMN_DEFINITIONS,
   BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   OPERATION_LOG_COLUMN_DEFINITIONS,
-  SEASON_RATING_QUEUE_COLUMN_DEFINITIONS,
   SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
 } from "../../../src/infrastructure/db/client/client.constants";
@@ -35,7 +34,6 @@ const REPAIR_DEFINITIONS_BY_TABLE: Readonly<Record<string, readonly { columnName
   app_preferences: APP_PREFERENCES_COLUMN_DEFINITIONS,
   bridge_config: BRIDGE_CONFIG_COLUMN_DEFINITIONS,
   operation_log: OPERATION_LOG_COLUMN_DEFINITIONS,
-  season_rating_queue: SEASON_RATING_QUEUE_COLUMN_DEFINITIONS,
   sync_cycle_lock: SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   sync_runtime_status: SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
 };
@@ -55,22 +53,40 @@ function readMigrationSql(file: string): string {
     .join("\n");
 }
 
-/** Every `ALTER TABLE ... ADD COLUMN` any migration after the baseline declares. */
-function readDeclaredColumns(): readonly { file: string; table: string; column: string }[] {
-  return listMigrationFiles().flatMap((file) =>
-    [...readMigrationSql(file).matchAll(/ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/gu)].map(
-      (match) => ({ file, table: match[1], column: match[2] }),
+/**
+ * Every table a migration drops. A dropped table is retired on BOTH routes: a fresh install runs
+ * the `DROP`, and an installed device runs the repair step that retires it (for
+ * `season_rating_queue`, `moveSeasonRatingQueueIntoOperationLog`). Its earlier `CREATE` and
+ * `ADD COLUMN`s therefore need no repair twin and no readiness proof: the net schema lacks it.
+ */
+function readDroppedTables(): ReadonlySet<string> {
+  return new Set(
+    listMigrationFiles().flatMap((file) =>
+      [...readMigrationSql(file).matchAll(/DROP TABLE (?:IF EXISTS )?`?(\w+)`?/gu)].map((match) => match[1]),
     ),
   );
 }
 
-/** Every `CREATE TABLE` any migration after the baseline declares. */
+/** Every `ALTER TABLE ... ADD COLUMN` any migration after the baseline declares on a table it keeps. */
+function readDeclaredColumns(): readonly { file: string; table: string; column: string }[] {
+  const dropped = readDroppedTables();
+
+  return listMigrationFiles().flatMap((file) =>
+    [...readMigrationSql(file).matchAll(/ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/gu)].map(
+      (match) => ({ file, table: match[1], column: match[2] }),
+    ),
+  ).filter(({ table }) => !dropped.has(table));
+}
+
+/** Every `CREATE TABLE` any migration after the baseline declares for a table it keeps. */
 function readDeclaredTables(): readonly { file: string; table: string }[] {
+  const dropped = readDroppedTables();
+
   return listMigrationFiles().flatMap((file) =>
     [...readMigrationSql(file).matchAll(/CREATE TABLE (?:IF NOT EXISTS )?`?(\w+)`?/gu)].map(
       (match) => ({ file, table: match[1] }),
     ),
-  );
+  ).filter(({ table }) => !dropped.has(table));
 }
 
 /**
@@ -126,6 +142,16 @@ describe("migration / repair parity", () => {
 
     expect(declared.length).toBeGreaterThan(0);
     expect(missing).toEqual([]);
+  });
+
+  it("keeps every table a migration drops out of the required-schema set", () => {
+    // Readiness must never demand a table the net schema retired: a fresh install's DROP and an
+    // installed device's retiring repair step would both leave it failing validation forever.
+    const dropped = [...readDroppedTables()];
+
+    expect(dropped).toEqual(["season_rating_queue"]);
+    expect(dropped.filter((table) => REQUIRED_SCHEMA_TABLES.includes(table as never))).toEqual([]);
+    expect(dropped.filter((table) => table in REQUIRED_SCHEMA_COLUMNS)).toEqual([]);
   });
 
   it("still covers a migration that packed several statements into one chunk", () => {

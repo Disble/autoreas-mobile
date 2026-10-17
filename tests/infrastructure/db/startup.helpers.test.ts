@@ -32,7 +32,7 @@ describe('database startup helpers', () => {
         })
         .mockImplementationOnce(async () => {
           events.push('table-check');
-          return { count: 9 };
+          return { count: 8 };
         }),
       getAllAsync: jest.fn().mockImplementation(async () => {
         events.push('column-check');
@@ -71,8 +71,7 @@ describe('database startup helpers', () => {
       'column-check',
       'column-check',
       'column-check',
-      'column-check',
-      // season_rating_queue joined REQUIRED_SCHEMA_COLUMNS with migration 0018 (ADR 009 claims).
+      // season_rating_queue left REQUIRED_SCHEMA_COLUMNS with migration 0019 (ADR 009 L28).
       'column-check',
       `PRAGMA user_version = ${EXPECTED_SCHEMA_READINESS_VERSION};`,
     ]);
@@ -89,7 +88,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: 0 })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           // Missing `last_cycle_id`: the table exists, but a skipped migration never added it.
@@ -114,7 +113,7 @@ describe('database startup helpers', () => {
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
         .mockResolvedValueOnce({ quick_check: 'ok' })
-        .mockResolvedValueOnce({ count: 9 }),
+        .mockResolvedValueOnce({ count: 8 }),
       getAllAsync: jest.fn().mockResolvedValue([
         { name: 'last_cycle_id' },
         { name: 'is_sync_telemetry_enabled' },
@@ -151,7 +150,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return repaired ? [{ name: 'last_cycle_id' }] : [{ name: 'id' }];
@@ -194,7 +193,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(sync_runtime_status)') {
           return [{ name: 'id' }];
@@ -290,7 +289,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }];
@@ -313,7 +312,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(animes)') {
           return [{ name: '_id' }, { name: 'last_applied_change_ms' }, { name: 'bridge_modified_at' }, { name: 'episodes' }, { name: 'folder_relative' }];
@@ -330,10 +329,10 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
     // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0018`
-    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`. Pinned as a
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`, 20 with `0019`. Pinned as a
     // literal rather than against the exported constant so a migration that silently fails to
     // register in the journal is caught here instead of agreeing with itself.
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(19);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(20);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });
@@ -344,7 +343,7 @@ describe('database startup helpers', () => {
       getFirstAsync: jest
         .fn()
         .mockResolvedValueOnce({ user_version: EXPECTED_SCHEMA_READINESS_VERSION })
-        .mockResolvedValue({ quick_check: 'ok', count: 9 }),
+        .mockResolvedValue({ quick_check: 'ok', count: 8 }),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === 'PRAGMA table_info(operation_log)') {
           return [{ name: 'id' }];

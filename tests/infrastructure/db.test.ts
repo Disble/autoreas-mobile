@@ -273,8 +273,9 @@ describe("db client tracer helpers", () => {
 
     await runMigrations(rawDb as never);
 
-    // 9 + the five ADR 009 claim/unresolved columns this mock reports missing (migration 0018 twins).
-    expect(rawDb.runAsync).toHaveBeenCalledTimes(14);
+    // 7 + the three operation_log claim/unresolved columns this mock reports missing (migration 0018
+    // twins). The retired rating queue adds none: with no table there is nothing to move (0019).
+    expect(rawDb.runAsync).toHaveBeenCalledTimes(10);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "UPDATE bridge_config SET last_changelog_id = 0 WHERE last_changelog_id IS NULL OR typeof(last_changelog_id) NOT IN ('integer', 'real') OR last_changelog_id < 0 OR last_changelog_id > 1000000000000"
     );
@@ -294,22 +295,8 @@ describe("db client tracer helpers", () => {
         'timestamp INTEGER NOT NULL, ' +
         'created_at INTEGER NOT NULL)'
     );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'CREATE TABLE IF NOT EXISTS season_rating_queue (' +
-        'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-        'season_id TEXT NOT NULL, ' +
-        'anime_id TEXT NOT NULL, ' +
-        'nota INTEGER NOT NULL, ' +
-        'rated_at INTEGER NOT NULL, ' +
-        "status TEXT NOT NULL DEFAULT 'pending', " +
-        'created_at INTEGER NOT NULL, ' +
-        'updated_at INTEGER NOT NULL, ' +
-        'last_attempt_at INTEGER, ' +
-        'last_failure_kind TEXT)'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'CREATE INDEX IF NOT EXISTS season_rating_queue_status_created_at_idx ON season_rating_queue(status, created_at, id)'
-    );
+    // ADR 009 L28: the retired rating queue is never created again, only moved and dropped.
+    expect(rawDb.runAsync).not.toHaveBeenCalledWith(expect.stringMatching(/season_rating_queue/));
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE TABLE IF NOT EXISTS active_season_cache (' +
         'id INTEGER PRIMARY KEY CHECK (id = 1), ' +

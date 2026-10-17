@@ -84,7 +84,7 @@ Three consequences follow, and they are load-bearing:
 
 | Store | Owner of writes | Contents |
 |---|---|---|
-| `autoreas.db` | everything, through one door | `operation_log` (outbox: anime edits and season ratings, ADR 009 L28), `sync_runtime_status`, `sync_cycle_lock`, `animes`, `pending_remote_changes`, `bridge_config`, `active_season_cache`, `season_rating_queue` (retired since T17: nothing reads or writes it; a later migration drops it) |
+| `autoreas.db` | everything, through one door | `operation_log` (outbox: anime edits and season ratings, ADR 009 L28), `sync_runtime_status`, `sync_cycle_lock`, `animes`, `pending_remote_changes`, `bridge_config`, `active_season_cache` |
 | `autoreas-telemetry.db` | the checkpoint instrument only | `sync_cycle_checkpoint`, `sync_diagnostics_outbox` |
 
 **The write door.** `WRITE_QUEUE_BY_DATABASE` (`client.helpers.ts`) is a module-level `Map` keyed by

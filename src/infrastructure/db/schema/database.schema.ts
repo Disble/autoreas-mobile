@@ -80,34 +80,6 @@ export const operationLog = sqliteTable(
   ],
 );
 
-/** Provides the shared season rating queue value. */
-
-export const seasonRatingQueue = sqliteTable(
-  'season_rating_queue',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    seasonId: text('season_id').notNull(),
-    animeId: text('anime_id').notNull(),
-    nota: integer('nota').notNull(),
-    ratedAt: integer('rated_at').notNull(),
-    status: text('status').notNull().default('pending'),
-    createdAt: integer('created_at').notNull(),
-    updatedAt: integer('updated_at').notNull(),
-    lastAttemptAt: integer('last_attempt_at'),
-    lastFailureKind: text('last_failure_kind'),
-    // ADR 009 R-13 per-key claim, keyed by season. NULL means unclaimed.
-    claimOwner: text('claim_owner'),
-    claimedAt: integer('claimed_at'),
-  },
-  (table) => [
-    index('season_rating_queue_status_created_at_idx').on(
-      table.status,
-      table.createdAt,
-      table.id,
-    ),
-  ],
-);
-
 /** Provides the durable bridge-owned active season snapshot for offline startup. */
 export const activeSeasonCache = sqliteTable('active_season_cache', {
   id: integer('id').primaryKey().default(1),
@@ -244,10 +216,6 @@ export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 /** Defines the insert operation log row value shape. */
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
-/** Defines the season rating queue row value shape. */
-export type SeasonRatingQueueRow = typeof seasonRatingQueue.$inferSelect;
-/** Defines the insert season rating queue row value shape. */
-export type InsertSeasonRatingQueueRow = typeof seasonRatingQueue.$inferInsert;
 /** Defines the active season cache row value shape. */
 export type ActiveSeasonCacheRow = typeof activeSeasonCache.$inferSelect;
 /** Defines the new active season cache row value shape. */

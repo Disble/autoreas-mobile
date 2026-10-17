@@ -134,6 +134,13 @@
       "when": 1792108800000,
       "tag": "0018_add_outbox_claims_and_unresolved",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792195200000,
+      "tag": "0019_drop_season_rating_queue",
+      "breakpoints": true
     }
   ]
 }

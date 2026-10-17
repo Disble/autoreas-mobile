@@ -58,6 +58,8 @@ const CORE_FILES = [
   'src/features/animes/anime-mutation.helpers.ts',
   'src/infrastructure/db/anime-repository/anime-repository.ts',
   'src/infrastructure/db/anime-repository/anime-repository.helpers.ts',
+  // Moves every queued season rating into operation_log (migration 0019, ADR 009 L28).
+  'src/infrastructure/db/client/season-rating-queue-move.helpers.ts',
 ];
 
 /** IMPORTANT-tier files: user-visible sync features and orchestration with real branching. */
