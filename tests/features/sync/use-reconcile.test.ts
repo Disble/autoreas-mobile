@@ -83,6 +83,17 @@ describe('syncPendingOperations', () => {
     };
   }
 
+  /**
+   * Serves `rows` as the claimed backlog, and nothing as still held once the reconcile was sent:
+   * a failed reconcile gives its own rows their fate, so the cycle's final release of whatever its
+   * claim still holds (ADR 009 L28) finds nothing and takes no write door.
+   */
+  function mockBacklogSettledByTheFailedReconcile(rows: unknown[]): void {
+    rawDb.getAllAsync.mockImplementation(async (sql: string) =>
+      reconcileMock.mock.calls.length > 0 && sql.includes("status = 'processing' AND claim_owner = ?") ? [] : rows,
+    );
+  }
+
   function buildPendingOp(overrides: Partial<{
     id: number;
     animeId: string;
@@ -196,7 +207,7 @@ describe('syncPendingOperations', () => {
       token: 'token123',
     });
 
-    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
+    mockBacklogSettledByTheFailedReconcile([buildPendingOp()]);
 
     reconcileMock.mockRejectedValueOnce(new TypeError('Network Error'));
 
@@ -214,7 +225,7 @@ describe('syncPendingOperations', () => {
       token: 'token123',
     });
 
-    rawDb.getAllAsync.mockResolvedValue([buildPendingOp()]);
+    mockBacklogSettledByTheFailedReconcile([buildPendingOp()]);
 
     reconcileMock.mockResolvedValue(
       reconcileResult({ ok: false, status: 500, data: null, rawBody: null }),
@@ -238,7 +249,7 @@ describe('syncPendingOperations', () => {
       deviceId: 'device-abc',
     });
 
-    rawDb.getAllAsync.mockResolvedValue([
+    mockBacklogSettledByTheFailedReconcile([
       buildPendingOp({ payload: JSON.stringify({ nrocapvisto: -1 }), createdAt: 1710000000000 }),
     ]);
 

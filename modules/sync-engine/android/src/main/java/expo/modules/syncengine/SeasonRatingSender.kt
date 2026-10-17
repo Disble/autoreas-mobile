@@ -1,9 +1,12 @@
 package expo.modules.syncengine
 
 import android.database.sqlite.SQLiteDatabase
+import android.util.Log
 import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONTokener
+
+private const val TAG = "SeasonRatingSender"
 
 /** The `operation_log.operation` of an anime edit, sent through reconcile (ADR 009 R-3). */
 internal const val ANIME_UPDATE_OPERATION = "update"
@@ -73,7 +76,11 @@ internal data class SeasonRatingPassResult(val confirmedCount: Int, val successo
  * - a 4xx: the row is unresolved with its reason, and its key stops this cycle;
  * - anything else: the row goes back to `pending`, released, and its key stops this cycle.
  *
- * A rating's answer never fails the attempt (I4): every other message is still sent.
+ * A rating's answer never fails the attempt (I4): every other message is still sent. Neither does
+ * a local write failure while settling one: that row is released to `pending` in a separate
+ * best-effort write (a resend is a 204 no-op at the bridge) and the pass goes on. Every successor
+ * a delivery claims is reported through [onClaimed] as soon as its transaction commits, so the
+ * attempt can release it if anything later fails.
  */
 internal class SeasonRatingSender(
   private val appDb: SQLiteDatabase,
@@ -81,6 +88,7 @@ internal class SeasonRatingSender(
   private val fence: () -> LeaseFence,
   private val claim: () -> OutboxClaim,
   private val clock: () -> Long,
+  private val onClaimed: (List<BacklogRow>) -> Unit,
 ) {
   fun send(
     ratings: List<BacklogRow>,
@@ -98,13 +106,42 @@ internal class SeasonRatingSender(
         // Transport failure: retryable, never given up.
         SeasonRatingFate.Pending
       }
-      val next = settle(row, fate, chainDeadline)
+      val next = settleSafely(row, fate, chainDeadline)
       if (next != null) {
+        onClaimed(next)
         confirmed += 1
         successors += next
       }
     }
     return SeasonRatingPassResult(confirmed, successors)
+  }
+
+  /**
+   * Settles [row], or answers `null` when its local write failed: the failed transaction rolled
+   * back, so the row is still held, and it is released to `pending` in a separate write. A lost
+   * lease is not a write failure; it still ends the attempt.
+   */
+  private fun settleSafely(row: BacklogRow, fate: SeasonRatingFate, chainDeadline: Long): List<BacklogRow>? = try {
+    settle(row, fate, chainDeadline)
+  } catch (error: LeaseLostException) {
+    throw error
+  } catch (error: Exception) {
+    Log.w(TAG, "could not record a rating answer; releasing it to pending", error)
+    release(row)
+    null
+  }
+
+  /**
+   * Releases [row] to `pending`, compare-and-set on the claim. Best effort: when this write fails
+   * too, the row stays `processing` until its claim expires (60 s, R-13), and the next attempt
+   * that claims it re-sends it.
+   */
+  private fun release(row: BacklogRow) {
+    try {
+      inImmediateTransaction(appDb) { heldRows.updateOperationStatus(listOf(row.id), "pending") }
+    } catch (error: Exception) {
+      Log.w(TAG, "could not release a rating; its claim expiry releases it", error)
+    }
   }
 
   /**

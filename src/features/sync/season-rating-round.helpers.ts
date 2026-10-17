@@ -64,7 +64,8 @@ function settleSeasonRating(
 
 /**
  * Settles one rating, or answers `null` when its local write failed: a failed write never fails
- * the attempt (I4), and the next rating is still sent.
+ * the attempt (I4), and the next rating is still sent. The failed write rolled back, so the row is
+ * still held; it is released to `pending` in a separate write (a resend is a 204 no-op).
  */
 async function settleSafely(
   rawDb: SQLiteDatabase,
@@ -75,10 +76,11 @@ async function settleSafely(
   try {
     return await settleSeasonRating(rawDb, row, fate, context.claim, context.chainDeadline);
   } catch (error) {
-    console.warn('[sendSeasonRatingRound] Could not record a rating answer; it is re-sent once its claim expires', {
+    console.warn('[sendSeasonRatingRound] Could not record a rating answer; releasing it to pending', {
       operationId: row.id,
       error,
     });
+    await releaseHeldRows(rawDb, [row.id], context.claim);
     return null;
   }
 }
@@ -93,11 +95,18 @@ async function settleSafely(
  * - a 4xx: the row is unresolved (`dead_letter`) with its reason, and its key stops this cycle;
  * - anything else: the row goes back to `pending`, released, and its key stops this cycle.
  *
- * A rating's answer never fails the attempt (I4): every other message is still sent.
+ * A rating's answer never fails the attempt (I4): every other message is still sent, as it is after
+ * a local write failure while settling one (`settleSafely`). Each successor a delivery claims is
+ * reported through `onClaimed` at once, so the caller can release it if anything later fails.
  */
 export async function sendSeasonRatingRound(
   rawDb: SQLiteDatabase,
-  context: { readonly connection: BridgeConnection; readonly claim: OutboxClaim; readonly chainDeadline: number },
+  context: {
+    readonly connection: BridgeConnection;
+    readonly claim: OutboxClaim;
+    readonly chainDeadline: number;
+    readonly onClaimed: (rows: readonly OperationLogRow[]) => void;
+  },
   ratings: readonly OperationLogRow[],
 ): Promise<SeasonRatingRoundOutcome> {
   let confirmedCount = 0;
@@ -116,9 +125,10 @@ export async function sendSeasonRatingRound(
     const fate = await postSeasonRating(context.connection, row);
     const settled = await settleSafely(rawDb, row, fate, context);
     logAutomaticResolutions(settled?.resolutions ?? []);
+    context.onClaimed(settled?.successors ?? []);
 
     confirmedCount += settled?.confirmed ? 1 : 0;
-    // A row whose fate could not be written stays held until its claim expires, then is re-sent.
+    // A row whose fate could not be written was released to `pending`: it is still to send.
     pendingCount += fate.kind === 'pending' || settled === null ? 1 : 0;
     // A delivery, or a rejection that says the bridge's season differs (404, 409), changes what
     // the active-season snapshot should show.
@@ -131,22 +141,26 @@ export async function sendSeasonRatingRound(
 }
 
 /**
- * Releases a round's ratings unsent, back to `pending` (L28): their round's reconcile failed, so
- * the cycle stops before any of them goes out. Compare-and-set on the claim.
+ * Releases every row of `ids` this claim still holds back to `pending`, compare-and-set on the
+ * claim (R-13), so a row already settled or taken over is never touched: a failed cycle's unsent
+ * ratings and successors (L28), or one rating whose answer could not be written. Best effort, it
+ * never throws: when this write fails too, the rows stay `processing` until their claim expires
+ * (60 s) and the next cycle that claims them re-sends them.
  */
-export async function releaseSeasonRatings(
-  rawDb: SQLiteDatabase,
-  ratings: readonly OperationLogRow[],
-  claim: OutboxClaim,
-): Promise<void> {
-  if (ratings.length === 0) {
-    return;
-  }
+export async function releaseHeldRows(rawDb: SQLiteDatabase, ids: readonly number[], claim: OutboxClaim): Promise<void> {
+  try {
+    // Read first: after a failed reconcile its rows already have their fate, and a cycle that
+    // holds nothing more should not take the write lock just to change nothing.
+    const held = await readHeldOperationIds(rawDb, ids, claim);
 
-  await withLocalWrite(rawDb, async (writeDb) => {
-    await writeDb
-      .update(operationLog)
-      .set({ status: 'pending', ...RELEASED_CLAIM })
-      .where(heldOperationsWhere(ratings.map((row) => row.id), claim));
-  });
+    if (held.length === 0) {
+      return;
+    }
+
+    await withLocalWrite(rawDb, async (writeDb) => {
+      await writeDb.update(operationLog).set({ status: 'pending', ...RELEASED_CLAIM }).where(heldOperationsWhere(held, claim));
+    });
+  } catch (error) {
+    console.warn('[releaseHeldRows] Could not release claimed rows; their claim expiry releases them', { ids, error });
+  }
 }

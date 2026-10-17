@@ -77,7 +77,9 @@ class SyncEngineCycle(
    */
   private val heldRows = HeldRowWriter(appDb, { requireOwned() }, { claim })
   private val missingTokens = MissingTokenResolver(appDb, heldRows) { requireOwned() }
-  private val ratings = SeasonRatingSender(appDb, heldRows, { requireOwned() }, { claim }, clock)
+  private val ratings = SeasonRatingSender(appDb, heldRows, { requireOwned() }, { claim }, clock) { rows ->
+    attemptClaimedIds += rows.map { it.id }
+  }
   private val responseApplier = SyncEngineResponseApplier(
     appDb,
     heldRows::updateOperationStatus,
@@ -87,6 +89,14 @@ class SyncEngineCycle(
   private var cycleId: String = ""
   private var lastState: String = "idle"
   private var claimedRows: List<BacklogRow> = emptyList()
+
+  /**
+   * Every row this attempt claimed: the backlog and each successor a round or a rating claimed
+   * (ADR 009 R-13, R-14). An unexpected failure releases all of them still held, so no row this
+   * attempt claimed stays `processing` when it ends -- [claimedRows] alone names only the edits
+   * of the round in flight, not its ratings or earlier successors.
+   */
+  private val attemptClaimedIds = linkedSetOf<Long>()
   private var onState: (String) -> Unit = {}
 
   /**
@@ -131,9 +141,10 @@ class SyncEngineCycle(
       transition("abandoned", "cycle lease lost: ${error.message}")
       outcome("abandoned", lastState, 0, 0, "LeaseLost")
     } catch (error: Throwable) {
-      // Unexpected failure after the claim: revert the batch to `pending` (never dead-letter —
-      // only the bridge's own 4xx classifies content as rejected), name the failure, terminal.
-      revertClaimedRows(deadLetter = false)
+      // Unexpected failure after the claim: release every row this attempt still holds to
+      // `pending` (never dead-letter — only the bridge's own 4xx classifies content as rejected),
+      // name the failure, terminal.
+      revertClaimedRows(deadLetter = false, ids = attemptClaimedIds.toList())
       transition("failed", error.message ?: error.javaClass.simpleName)
       outcome("failed", lastState, 0, 0, error.javaClass.simpleName)
     } finally {
@@ -215,6 +226,7 @@ class SyncEngineCycle(
       taken to claimOperationLogBacklog(appDb, taken, BACKLOG_BATCH_LIMIT)
     }
     claim = cycleClaim
+    attemptClaimedIds += backlog.map { it.id }
 
     // The first round always goes out, even with nothing claimed: it is also this attempt's pull,
     // exactly like the JS no-op attempt, so remote changes reach the device with nothing to push.
@@ -247,6 +259,7 @@ class SyncEngineCycle(
       }
       // A settled round is applied: `settleRejection` never answers a rejection.
       val applied = result as RoundResult.Applied
+      attemptClaimedIds += applied.successors.map { it.id }
       claimedRows = seasonRatings
       val rated = ratings.send(seasonRatings, target.chainDeadline) { body ->
         SyncEngineHttp.postJson("http://${target.ip}:${target.port}$SEASON_RATING_PATH", target.token, body, BRIDGE_REQUEST_TIMEOUT_MS)
@@ -421,21 +434,18 @@ class SyncEngineCycle(
   /**
    * Reverts the claimed batch on failure: to `dead_letter` when the bridge's 4xx response said
    * the batch's content was rejected, to `pending` for every retryable failure. No-ops for an
-   * empty batch. Mirrors `revertPendingOperationsOnFailure`.
+   * empty batch. Mirrors `revertPendingOperationsOnFailure`. The writes are compare-and-set on
+   * the claim, so a row already settled -- or taken over by the JS runtime -- is never touched.
    */
-  private fun revertClaimedRows(deadLetter: Boolean) {
-    val rows = claimedRows
-    if (rows.isEmpty()) return
+  private fun revertClaimedRows(deadLetter: Boolean, ids: List<Long> = claimedRows.map { it.id }) {
+    if (ids.isEmpty()) return
     try {
       inImmediateTransaction(appDb) {
-        heldRows.updateOperationStatus(
-          rows.map { it.id },
-          if (deadLetter) "dead_letter" else "pending",
-        )
+        heldRows.updateOperationStatus(ids, if (deadLetter) "dead_letter" else "pending")
       }
     } catch (error: Throwable) {
-      // A revert failure must not replace the attempt's own terminal outcome; the lease's
-      // expiry and the recovery sweep are the designed backstops.
+      // A revert failure must not replace the attempt's own terminal outcome; the claim's 60 s
+      // expiry, the lease's expiry and the recovery sweep are the designed backstops.
       Log.w(TAG, "failed to revert claimed rows", error)
     }
   }

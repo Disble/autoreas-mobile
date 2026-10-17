@@ -115,7 +115,7 @@ class SeasonRatingSenderTest {
       )
     }
     val writer = HeldRowWriter(fixture.appDatabase, { fence }, { claim })
-    return SeasonRatingSender(fixture.appDatabase, writer, { fence }, { claim }, System::currentTimeMillis)
+    return SeasonRatingSender(fixture.appDatabase, writer, { fence }, { claim }, System::currentTimeMillis) {}
   }
 
   private fun insertRow(fixture: SyncEngineTestDatabase, row: BacklogRow, status: String) {

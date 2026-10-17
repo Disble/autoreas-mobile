@@ -175,8 +175,9 @@ describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; 
 
     expect(paths(fakeBridge)).toHaveLength(3);
     expect(result).toMatchObject({ syncedCount: 1, hasMorePending: true });
+    // The row whose answer could not be written is released to pending in a separate write.
     expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
-      ['processing', 'js'],
+      ['pending', null],
       ['synced', null],
     ]);
   });

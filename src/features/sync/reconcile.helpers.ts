@@ -19,7 +19,7 @@ import type {
   SyncCycleCheckpointRecorder,
   SyncPendingOperationsResult,
 } from './reconcile.types';
-import { releaseSeasonRatings, sendSeasonRatingRound } from './season-rating-round.helpers';
+import { releaseHeldRows, sendSeasonRatingRound } from './season-rating-round.helpers';
 import {
   captureSyncDiagnosticsEnvelope,
   flushSyncDiagnosticsOutbox,
@@ -203,25 +203,36 @@ async function performSyncPendingOperations(
   let shouldRefreshActiveSeason = false;
   let firstRound = true;
 
+  // Every row this cycle claims -- the batch and each successor a reconcile or a rating claims --
+  // so a failure releases all of them still held: none stays `processing` once the cycle ends.
+  const claimedIds = new Set(claimedOps.map((row) => row.id));
+
   // The first round always reconciles, even with no edit: it is also this cycle's pull. Every
   // later round is a chain step and carries only the successors the previous round claimed
   // (ADR 009 R-14).
-  do {
-    // Sequential by definition: each send waits for the previous confirmation and its token.
-    const outcome = await sendSplitRound(rawDb, roundContext, round, firstRound);
+  try {
+    do {
+      // Sequential by definition: each send waits for the previous confirmation and its token.
+      const outcome = await sendSplitRound(rawDb, roundContext, round, firstRound, claimedIds);
 
-    syncedCount += outcome.confirmedCount;
-    backlogReadCount += outcome.sentCount;
-    unconfirmedCount += outcome.unconfirmedCount;
-    shouldRefreshActiveSeason ||= outcome.shouldRefreshActiveSeason;
-    round = outcome.successors;
-    roundContext = {
-      ...roundContext,
-      lastChangelogId: outcome.nextLastChangelogId,
-      clientTelemetry: null,
-    };
-    firstRound = false;
-  } while (round.length > 0);
+      syncedCount += outcome.confirmedCount;
+      backlogReadCount += outcome.sentCount;
+      unconfirmedCount += outcome.unconfirmedCount;
+      shouldRefreshActiveSeason ||= outcome.shouldRefreshActiveSeason;
+      round = outcome.successors;
+      roundContext = {
+        ...roundContext,
+        lastChangelogId: outcome.nextLastChangelogId,
+        clientTelemetry: null,
+      };
+      firstRound = false;
+    } while (round.length > 0);
+  } catch (error) {
+    // A failed reconcile already gave its own rows their fate; whatever this claim still holds --
+    // the round's ratings, successors an earlier delivery claimed -- goes back unsent.
+    await releaseHeldRows(rawDb, [...claimedIds], claim);
+    throw error;
+  }
 
   return {
     syncedCount,
@@ -236,26 +247,26 @@ async function performSyncPendingOperations(
  * Sends one round of a chain (ADR 009 R-14, L28). Each key holds one row per round, so a key's
  * rows still go in queue order across both endpoints: its `update` rows share one reconcile, sent
  * on the first round even with no edit (it is the cycle's pull) and on a later round only when it
- * holds an edit; then its season ratings go one per request. A failed reconcile releases the
- * round's ratings unsent and rethrows. A refused rating is unresolved, not pending: only a
- * retryable rating answer counts as unconfirmed.
+ * holds an edit; then its season ratings go one per request. A failed reconcile throws before any
+ * rating is sent, and the caller releases them. A refused rating is unresolved, not pending: only
+ * a retryable rating answer counts as unconfirmed. Every successor either endpoint claims is added
+ * to `claimedIds` as soon as it is claimed.
  */
 async function sendSplitRound(
   rawDb: SQLiteDatabase,
   context: ReconcileRoundContext,
   round: readonly OperationLogRow[],
   firstRound: boolean,
+  claimedIds: Set<number>,
 ): Promise<SplitRoundOutcome> {
   const ratings = round.filter((row) => row.operation === SEASON_RATING_OPERATION);
   const edits = round.filter((row) => row.operation !== SEASON_RATING_OPERATION);
+  const onClaimed = (rows: readonly OperationLogRow[]) => rows.forEach((row) => claimedIds.add(row.id));
   const applied = firstRound || edits.length > 0
-    ? await sendReconcileRound(rawDb, context, edits).catch(async (error: unknown) => {
-        // The reconcile released its own rows; the round's ratings go back unsent with them.
-        await releaseSeasonRatings(rawDb, ratings, context.claim);
-        throw error;
-      })
+    ? await sendReconcileRound(rawDb, context, edits)
     : { sentCount: 0, confirmedCount: 0, unconfirmedCount: 0, nextLastChangelogId: context.lastChangelogId, successors: [] };
-  const rated = await sendSeasonRatingRound(rawDb, context, ratings);
+  onClaimed(applied.successors);
+  const rated = await sendSeasonRatingRound(rawDb, { ...context, onClaimed }, ratings);
 
   return {
     sentCount: applied.sentCount + rated.attemptedCount,
