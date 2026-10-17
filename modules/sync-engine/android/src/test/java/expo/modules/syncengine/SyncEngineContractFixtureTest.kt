@@ -7,7 +7,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.ParameterizedRobolectricTestRunner
@@ -24,8 +23,8 @@ import org.robolectric.annotation.SQLiteMode
  * `unscripted` 500, so a request the fixture did not intend is recorded and fails the comparison.
  * A refused request reaches no bridge, so it is never part of `expect.requests` in either runner.
  *
- * A fixture without `kotlin` in `runtimes` is skipped; only season-rating fixtures may be, until
- * T17 moves ratings into `operation_log` and this runtime sends them.
+ * Every fixture runs in both runtimes (`runtimes` lists both): a fixture this runtime would skip
+ * is a failure, never an assumption.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
@@ -34,10 +33,7 @@ class SyncEngineContractFixtureTest(private val resourcePath: String) {
   @Test
   fun matchesTheSharedExpectation() {
     val fixture = JSONObject(readResource(resourcePath))
-    if (!fixture.getJSONArray("runtimes").toStringList().contains("kotlin")) {
-      assertEquals("only season ratings may skip Kotlin", "season_rating", fixture.optString("kind"))
-      assumeTrue("JS-only until T17", false)
-    }
+    assertEquals("every fixture runs in both runtimes", listOf("js", "kotlin"), fixture.getJSONArray("runtimes").toStringList().sorted())
 
     val given = fixture.getJSONObject("given")
     val cycles = fixture.getJSONArray("cycles")
@@ -211,7 +207,7 @@ class SyncEngineContractFixtureTest(private val resourcePath: String) {
 
   companion object {
     private const val RECONCILE_PATH = "/api/sync/reconcile"
-    private val STATE_KEYS = listOf("outbox", "cursor", "tokens", "staged", "ratings")
+    private val STATE_KEYS = listOf("outbox", "cursor", "tokens", "staged")
     private val GROUPS = listOf("anime-outbox", "season-rating")
     private val UNSCRIPTED = SyncEngineTestHttpServer.Response(500, """{"error":"unscripted request"}""")
 

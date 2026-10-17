@@ -1,4 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
+import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
 import { applyMigrationFiles, createTestSqliteAdapter } from '../../support/sqlite-adapter.helpers';
 import { buildAppliedOperation, buildReconcileResponseBody } from '../../support/sync-fixtures.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
@@ -12,12 +14,12 @@ export interface StoredOperationRow {
   readonly claim_owner: string | null;
 }
 
-/** One `season_rating_queue` row as read back from the real database. */
+/** One `season_rating` row of `operation_log` as read back from the real database. */
 export interface StoredRatingRow {
   readonly id: number;
   readonly anime_id: string;
   readonly status: string;
-  readonly last_failure_kind: string | null;
+  readonly unresolved_reason: string | null;
 }
 
 /**
@@ -107,11 +109,34 @@ export function readOperationRows(adapter: SQLiteDatabase): Promise<StoredOperat
   );
 }
 
-/** Reads every season-rating row back, oldest first. */
+/** Reads every season-rating row of the outbox back, oldest first. */
 export function readRatingRows(adapter: SQLiteDatabase): Promise<StoredRatingRow[]> {
   return adapter.getAllAsync<StoredRatingRow>(
-    'SELECT id, anime_id, status, last_failure_kind FROM season_rating_queue ORDER BY id',
+    "SELECT id, anime_id, status, unresolved_reason FROM operation_log WHERE operation = 'season_rating' ORDER BY id",
   );
+}
+
+/** A reconcile 202 that confirms nothing and pulls nothing: the pull every cycle starts with. */
+export function emptyReconcile() {
+  return { status: 202, body: buildReconcileResponseBody({ lastChangelogId: 1 }) };
+}
+
+/**
+ * Queues one season rating of `animeId` in `season-1` and runs one cycle whose pull is empty and
+ * whose rating request the bridge answers with `status` (L28).
+ */
+export async function rateAndSync(adapter: SQLiteDatabase, fakeBridge: FakeBridge, animeId: string, status: number): Promise<void> {
+  await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId, nota: 5, ratedAt: 1_700_000_000_000 });
+  fakeBridge.queueResponse(emptyReconcile());
+  fakeBridge.queueResponse({ status, body: status === 204 ? null : { error: 'rejected' } });
+  await syncPendingOperations(adapter);
+}
+
+/** Every rating request the bridge received. */
+export function sentRatings(fakeBridge: FakeBridge): unknown[] {
+  return fakeBridge.requests
+    .filter((request) => request.url.endsWith('/api/seasons/active/ratings'))
+    .map((request) => request.body);
 }
 
 /** Reads `anime-1`'s name, watched count and token, or `null` once the row is gone. */

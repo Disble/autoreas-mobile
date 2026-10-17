@@ -1,29 +1,40 @@
 {
   "name": "rating-204-is-delivered",
-  "kind": "season_rating",
   "runtimes": [
-    "js"
+    "js",
+    "kotlin"
   ],
-  "given": {
-    "cursor": 0,
-    "animes": [],
-    "outbox": [],
-    "ratings": [
-      {
-        "seasonId": "season-1",
-        "animeId": "anime-1",
-        "nota": 8,
-        "ratedAt": 1700000000000
-      }
-    ]
-  },
   "covers": [
     "R-5"
   ],
-  "description": "A 204 delivers the rating; its row is removed.",
+  "description": "A 204 delivers the rating, sent after the cycle's reconcile; its row becomes synced.",
+  "given": {
+    "cursor": 0,
+    "animes": [],
+    "outbox": [
+      {
+        "animeId": "anime-1",
+        "operation": "season_rating",
+        "payload": {
+          "seasonId": "season-1",
+          "grade": 8,
+          "ratedAt": 1700000000000
+        }
+      }
+    ]
+  },
   "cycles": [
     {
       "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "ok",
+            "applied_operations": [],
+            "bridge_changes": [],
+            "last_changelog_id": 0
+          }
+        },
         {
           "status": 204,
           "body": null
@@ -36,6 +47,12 @@
     "requests": [
       {
         "method": "POST",
+        "path": "/api/sync/reconcile",
+        "lastChangelogId": 0,
+        "operations": []
+      },
+      {
+        "method": "POST",
         "path": "/api/seasons/active/ratings",
         "body": {
           "anime_id": "anime-1",
@@ -44,6 +61,14 @@
         }
       }
     ],
-    "ratings": []
+    "outbox": [
+      {
+        "animeId": "anime-1",
+        "status": "synced",
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
+      }
+    ]
   }
 }

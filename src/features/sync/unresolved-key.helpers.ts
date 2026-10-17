@@ -1,12 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { ANIME_UPDATE_OPERATION, SEASON_RATING_OPERATION } from './outbox-operation.constants';
+import { parseSeasonRatingPayload } from './season-rating-event.helpers';
 import {
   BOTH_CHOICES,
   GIVEN_UP_OPERATION_STATUSES,
   KEEP_BRIDGE_ONLY_CHOICES,
   KEEP_BRIDGE_ONLY_OPERATION_REASONS,
-  KEEP_BRIDGE_ONLY_RATING_FAILURE_KIND,
+  KEEP_BRIDGE_ONLY_RATING_REASON,
   UNRESOLVED_LOG_TAG,
-  UNRESOLVED_RATING_FAILURE_KINDS,
   UNRESOLVED_RESOLUTION_ERROR_CODE,
 } from './unresolved-key.constants';
 import { UnresolvedResolutionError } from './unresolved-key.errors';
@@ -36,14 +37,15 @@ function addToGroup<Row>(groups: Map<string, Row[]>, key: string, row: Row): voi
   groups.set(key, group);
 }
 
-/** Reads the unresolved anime keys: every anime with a given-up `operation_log` row. */
+/** Reads the unresolved anime keys: every anime with a given-up `update` row. */
 async function readUnresolvedAnimeKeys(rawDb: SQLiteDatabase): Promise<UnresolvedKey[]> {
   const rows = await rawDb.getAllAsync<{ id: number; anime_id: string; status: string; unresolved_reason: string | null }>(
     [
       'SELECT id, anime_id, status, unresolved_reason FROM operation_log',
-      `WHERE status IN (${GIVEN_UP_OPERATION_STATUSES.map(() => '?').join(', ')})`,
+      `WHERE operation = ? AND status IN (${GIVEN_UP_OPERATION_STATUSES.map(() => '?').join(', ')})`,
       'ORDER BY id',
     ].join(' '),
+    ANIME_UPDATE_OPERATION,
     ...GIVEN_UP_OPERATION_STATUSES,
   );
   const groups = new Map<string, UnresolvedOperationRow[]>();
@@ -61,28 +63,29 @@ async function readUnresolvedAnimeKeys(rawDb: SQLiteDatabase): Promise<Unresolve
   }));
 }
 
-/** Reads the unresolved rating keys: every anime and season with a rating the bridge answered 4xx. */
+/**
+ * Reads the unresolved rating keys (L28): every anime and season with a `season_rating` row the
+ * bridge refused (`dead_letter`). The season lives in the payload and is grouped here, not in SQL,
+ * so no JSON1 support is assumed.
+ */
 async function readUnresolvedRatingKeys(rawDb: SQLiteDatabase): Promise<UnresolvedKey[]> {
-  const rows = await rawDb.getAllAsync<{ id: number; season_id: string; anime_id: string; last_failure_kind: string }>(
-    [
-      'SELECT id, season_id, anime_id, last_failure_kind FROM season_rating_queue',
-      `WHERE status = 'failed' AND last_failure_kind IN (${UNRESOLVED_RATING_FAILURE_KINDS.map(() => '?').join(', ')})`,
-      'ORDER BY id',
-    ].join(' '),
-    ...UNRESOLVED_RATING_FAILURE_KINDS,
+  const rows = await rawDb.getAllAsync<{ id: number; anime_id: string; payload: string; unresolved_reason: string | null }>(
+    "SELECT id, anime_id, payload, unresolved_reason FROM operation_log WHERE operation = ? AND status = 'dead_letter' ORDER BY id",
+    SEASON_RATING_OPERATION,
   );
   const groups = new Map<string, { seasonId: string; animeId: string; rows: UnresolvedRatingRow[] }>();
   for (const row of rows) {
-    const groupKey = keyIdentity({ kind: 'season_rating', seasonId: row.season_id, animeId: row.anime_id });
-    const group = groups.get(groupKey) ?? { seasonId: row.season_id, animeId: row.anime_id, rows: [] };
-    group.rows.push({ id: row.id, lastFailureKind: row.last_failure_kind });
+    const seasonId = String(parseSeasonRatingPayload(row.payload).seasonId);
+    const groupKey = keyIdentity({ kind: 'season_rating', seasonId, animeId: row.anime_id });
+    const group = groups.get(groupKey) ?? { seasonId, animeId: row.anime_id, rows: [] };
+    group.rows.push({ id: row.id, unresolvedReason: row.unresolved_reason });
     groups.set(groupKey, group);
   }
 
   return [...groups.values()].map((group) => ({
     kind: 'season_rating',
     ...group,
-    offeredChoices: group.rows.some((row) => row.lastFailureKind === KEEP_BRIDGE_ONLY_RATING_FAILURE_KIND)
+    offeredChoices: group.rows.some((row) => row.unresolvedReason === KEEP_BRIDGE_ONLY_RATING_REASON)
       ? KEEP_BRIDGE_ONLY_CHOICES
       : BOTH_CHOICES,
   }));
@@ -110,9 +113,11 @@ function isSameKey(candidate: UnresolvedKey, ref: UnresolvedKeyRef): boolean {
 /**
  * The one resolution entry point (ADR 009 R-16b). It acts on the whole key:
  * - `keep_local` re-queues the key's given-up rows; an anime key is re-chained from a fresh base
- *   (its token is cleared, so fetch-first asks the bridge for one before the next send);
+ *   (its token is cleared, so fetch-first asks the bridge for one before the next send), while a
+ *   rating key is simply sent again (a rating carries no base);
  * - `keep_bridge` drops the key's queued rows and applies the bridge's state; an anime the bridge
- *   answers 404 for is removed by the delete rule.
+ *   answers 404 for is removed by the delete rule. An anime key and a rating key of the same anime
+ *   are separate keys: resolving one never touches the other's rows.
  *
  * A key the bridge has no anime for (404) or returned without a token, and a rating the bridge
  * answered 404, offer only `keep_bridge`. Writes go through the write door and refuse a key the

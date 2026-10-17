@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import { drainSeasonRatingQueue } from '../../../src/features/sync/season-rating-queue.helpers';
 import {
   answeredContractRequests,
   loadContractFixtures,
@@ -8,7 +7,7 @@ import {
   queueContractCycle,
   readContractState,
 } from '../../support/contract-fixture.helpers';
-import type { ContractAttemptOutcome, ContractFixture, ContractRequest } from '../../support/contract-fixture.types';
+import type { ContractAttemptOutcome, ContractRequest } from '../../support/contract-fixture.types';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 
@@ -26,11 +25,9 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
 /** Every shared fixture, read once at collection time so each one becomes its own test. */
 const fixtures = loadContractFixtures();
 
-/** Runs one attempt of the queue the fixture is about and reports how it ended. */
-function runAttempt(adapter: SQLiteDatabase, fixture: ContractFixture): Promise<ContractAttemptOutcome> {
-  const attempt = fixture.kind === 'season_rating' ? drainSeasonRatingQueue(adapter) : syncPendingOperations(adapter);
-
-  return attempt.then(
+/** Runs one attempt of the outbox and reports how it ended. */
+function runAttempt(adapter: SQLiteDatabase): Promise<ContractAttemptOutcome> {
+  return syncPendingOperations(adapter).then(
     () => 'succeeded',
     () => 'failed',
   );
@@ -54,12 +51,9 @@ describe('shared contract fixtures, JS runtime (ADR 009 R-4, R-10)', () => {
     jest.restoreAllMocks();
   });
 
-  it('runs every anime fixture in both runtimes; only season ratings may be JS-only until T17', () => {
-    const jsOnly = fixtures.filter((fixture) => !fixture.runtimes.includes('kotlin'));
-
+  it('runs every fixture, ratings included, in both runtimes', () => {
     expect(fixtures.length).toBeGreaterThan(0);
-    expect(jsOnly.filter((fixture) => fixture.kind !== 'season_rating').map((fixture) => fixture.name)).toEqual([]);
-    expect(fixtures.filter((fixture) => !fixture.runtimes.includes('js')).map((fixture) => fixture.name)).toEqual([]);
+    expect(fixtures.filter((fixture) => [...fixture.runtimes].sort().join() !== 'js,kotlin').map((fixture) => fixture.name)).toEqual([]);
   });
 
   it.each(fixtures.map((fixture) => [fixture.name, fixture] as const))('%s', async (_name, fixture) => {
@@ -71,7 +65,7 @@ describe('shared contract fixtures, JS runtime (ADR 009 R-4, R-10)', () => {
       const before = fakeBridge.requests.length;
       queueContractCycle(fakeBridge, cycle.bridge);
       // Sequential by definition: each attempt starts from the state the previous one left.
-      const outcome = await runAttempt(adapter, fixture);
+      const outcome = await runAttempt(adapter);
       outcomes.push(cycle.attempt === undefined ? undefined : outcome);
       requests.push(...answeredContractRequests(fakeBridge.requests.slice(before), cycle.bridge));
     }

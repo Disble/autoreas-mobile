@@ -5,20 +5,19 @@ import {
   UnresolvedResolutionError,
 } from '../../../src/features/sync';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import {
-  drainSeasonRatingQueue,
-  enqueueSeasonRatingIntent,
-} from '../../../src/features/sync/season-rating-queue.helpers';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import {
   animeAnswer,
   confirmedAt,
+  emptyReconcile,
   openPairedDatabase,
+  rateAndSync,
   readAnime,
   readOperationRows,
   readRatingRows,
   sentOperations,
+  sentRatings,
 } from './unresolved-fixtures.helpers';
 
 // Same seam as `outbox-chain.behaviour.test.ts`: only the drizzle factory is swapped.
@@ -53,9 +52,7 @@ async function openWithGivenUpRow(status = 'dead_letter', reason: string | null 
 /** Opens a database whose `anime-1` rating in `season-1` the bridge answered with `status`. */
 async function openWithUnresolvedRating(fakeBridge: FakeBridge, status: number): Promise<SQLiteDatabase> {
   const adapter = await openPairedDatabase({ episodes: [] });
-  await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 5, ratedAt: 1_700_000_000_000 });
-  fakeBridge.queueResponse({ status, body: { error: 'rejected' } });
-  await drainSeasonRatingQueue(adapter);
+  await rateAndSync(adapter, fakeBridge, 'anime-1', status);
 
   return adapter;
 }
@@ -116,18 +113,23 @@ describe('the single resolution entry point acts on the whole key (ADR 009 R-16b
       expect((await readOperationRows(adapter)).map((row) => row.status)).toEqual(['synced', 'synced']);
     });
 
-    it('re-queues an unresolved 409 rating, and the next drain sends it again', async () => {
+    it('re-queues an unresolved 409 rating, and the next cycle sends it again', async () => {
       const adapter = await openWithUnresolvedRating(fakeBridge, 409);
 
       await resolveUnresolvedKey(adapter, RATING_KEY, 'keep_local');
 
       expect(await readRatingRows(adapter)).toEqual([
-        { id: 1, anime_id: 'anime-1', status: 'pending', last_failure_kind: null },
+        { id: 1, anime_id: 'anime-1', status: 'pending', unresolved_reason: null },
       ]);
+      // A rating carries no base: the anime's token is left as it was.
+      expect((await readAnime(adapter))?.bridge_modified_at).toBe(7);
+      fakeBridge.queueResponse(emptyReconcile());
       fakeBridge.queueResponse({ status: 204, body: null });
-      await drainSeasonRatingQueue(adapter);
-      expect(fakeBridge.requests).toHaveLength(2);
-      expect(await readRatingRows(adapter)).toEqual([]);
+      await syncPendingOperations(adapter);
+      expect(sentRatings(fakeBridge)).toHaveLength(2);
+      expect(await readRatingRows(adapter)).toEqual([
+        { id: 1, anime_id: 'anime-1', status: 'synced', unresolved_reason: null },
+      ]);
     });
 
     it.each([
@@ -145,7 +147,7 @@ describe('the single resolution entry point acts on the whole key (ADR 009 R-16b
       const adapter = await openWithUnresolvedRating(fakeBridge, 404);
 
       expect(await refusalCode(resolveUnresolvedKey(adapter, RATING_KEY, 'keep_local'))).toBe('choice_not_offered');
-      expect((await readRatingRows(adapter))[0].status).toBe('failed');
+      expect((await readRatingRows(adapter))[0].status).toBe('dead_letter');
     });
   });
 
@@ -179,7 +181,8 @@ describe('the single resolution entry point acts on the whole key (ADR 009 R-16b
       await resolveUnresolvedKey(adapter, RATING_KEY, 'keep_bridge');
 
       expect(await readRatingRows(adapter)).toEqual([]);
-      expect(fakeBridge.requests).toHaveLength(1);
+      // Keep bridge for a rating asks the bridge nothing: the season refresh shows its rating.
+      expect(fakeBridge.requests).toHaveLength(2);
     });
 
     it('writes nothing when the bridge cannot be reached', async () => {
@@ -242,17 +245,28 @@ describe('the single resolution entry point acts on the whole key (ADR 009 R-16b
       expect((await readOperationRows(adapter)).map((row) => row.status)).toEqual(['dead_letter', 'processing']);
     });
 
-    it('refuses a rating while its season holds a live claim (R-13)', async () => {
+    it('refuses a rating while its anime holds a live claim (R-13)', async () => {
       const adapter = await openWithUnresolvedRating(fakeBridge, 409);
-      await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-9', nota: 2, ratedAt: 1 });
       await adapter.runAsync(
-        "UPDATE season_rating_queue SET status = 'syncing', claim_owner = 'native', claimed_at = ? WHERE id = 2",
+        "INSERT INTO operation_log (anime_id, operation, payload, status, created_at, claim_owner, claimed_at) VALUES ('anime-1', 'update', '{}', 'processing', 1, 'native', ?)",
         Date.now(),
       );
 
       expect(await refusalCode(resolveUnresolvedKey(adapter, RATING_KEY, 'keep_local'))).toBe('key_claimed');
       expect(await refusalCode(resolveUnresolvedKey(adapter, RATING_KEY, 'keep_bridge'))).toBe('key_claimed');
-      expect((await readRatingRows(adapter))[0].status).toBe('failed');
+      expect((await readRatingRows(adapter))[0].status).toBe('dead_letter');
+    });
+
+    it('lets a rating be resolved while only another anime holds a claim', async () => {
+      const adapter = await openWithUnresolvedRating(fakeBridge, 409);
+      await adapter.runAsync(
+        "INSERT INTO operation_log (anime_id, operation, payload, status, created_at, claim_owner, claimed_at) VALUES ('anime-9', 'season_rating', '{\"seasonId\":\"season-1\"}', 'processing', 1, 'native', ?)",
+        Date.now(),
+      );
+
+      await resolveUnresolvedKey(adapter, RATING_KEY, 'keep_bridge');
+
+      expect((await readRatingRows(adapter)).map((row) => row.anime_id)).toEqual(['anime-9']);
     });
   });
 });

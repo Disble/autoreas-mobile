@@ -1,9 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import {
-  GIVEN_UP_OPERATION_STATUSES,
-  UNRESOLVED_LOG_TAG,
-  UNRESOLVED_RATING_FAILURE_KINDS,
-} from './unresolved-key.constants';
+import { ANIME_UPDATE_OPERATION, SEASON_RATING_OPERATION } from './outbox-operation.constants';
+import { parseSeasonRatingPayload } from './season-rating-event.helpers';
+import { GIVEN_UP_OPERATION_STATUSES, UNRESOLVED_LOG_TAG } from './unresolved-key.constants';
 import type {
   AutomaticResolution,
   ConfirmedOperation,
@@ -20,7 +18,8 @@ function placeholders(values: readonly unknown[]): string {
  * Resolves, inside the caller's open write door, every unresolved anime key that a row this
  * transaction confirms supersedes (ADR 009 R-16b): every event is an absolute `update`, so a later
  * local edit the bridge confirmed carries the key past each edit given up before it. Those given-up
- * rows (`dead_letter`, `conflict_exhausted`, queued before the confirmed row) are deleted. Returns
+ * `update` rows (`dead_letter`, `conflict_exhausted`, queued before the confirmed row) are deleted;
+ * a given-up rating of the same anime is another key and stays. Returns
  * what was resolved, for {@link logAutomaticResolutions} to report once the transaction commits.
  */
 export async function resolveSupersededOperations(
@@ -34,11 +33,12 @@ export async function resolveSupersededOperations(
     const rows = await tx.getAllAsync<{ id: number; status: string; unresolved_reason: string | null }>(
       [
         'SELECT id, status, unresolved_reason FROM operation_log',
-        `WHERE anime_id = ? AND id < ? AND status IN (${placeholders(GIVEN_UP_OPERATION_STATUSES)})`,
+        `WHERE anime_id = ? AND id < ? AND operation = ? AND status IN (${placeholders(GIVEN_UP_OPERATION_STATUSES)})`,
         'ORDER BY id',
       ].join(' '),
       operation.animeId,
       operation.id,
+      ANIME_UPDATE_OPERATION,
       ...GIVEN_UP_OPERATION_STATUSES,
     );
 
@@ -61,39 +61,40 @@ export async function resolveSupersededOperations(
 }
 
 /**
- * Resolves, inside the caller's open write door, the unresolved rating key a confirmed rating
- * supersedes: the same anime in the same season, rated again later and accepted by the bridge.
- * Its given-up rows (any 4xx, queued before the confirmed one) are deleted.
+ * Resolves, inside the caller's open write door, the unresolved rating key a delivered rating
+ * supersedes (ADR 009 R-16b, L28): the `season_rating` rows of the same anime and season given up
+ * (`dead_letter`) before it are deleted. The season lives in the payload and is compared here, not
+ * in SQL, so no JSON1 support is assumed (mirrors the Kotlin `resolveSupersededRatings`).
  */
 export async function resolveSupersededRatings(
   tx: SQLiteDatabase,
-  confirmed: { readonly id: number; readonly seasonId: string; readonly animeId: string },
+  confirmed: { readonly id: number; readonly animeId: string; readonly payload: string },
 ): Promise<AutomaticResolution[]> {
-  const rows = await tx.getAllAsync<{ id: number; last_failure_kind: string }>(
+  const seasonId = parseSeasonRatingPayload(confirmed.payload).seasonId;
+  const candidates = await tx.getAllAsync<{ id: number; payload: string; unresolved_reason: string | null }>(
     [
-      'SELECT id, last_failure_kind FROM season_rating_queue',
-      "WHERE season_id = ? AND anime_id = ? AND id < ? AND status = 'failed'",
-      `AND last_failure_kind IN (${placeholders(UNRESOLVED_RATING_FAILURE_KINDS)})`,
+      'SELECT id, payload, unresolved_reason FROM operation_log',
+      "WHERE anime_id = ? AND id < ? AND operation = ? AND status = 'dead_letter'",
       'ORDER BY id',
     ].join(' '),
-    confirmed.seasonId,
     confirmed.animeId,
     confirmed.id,
-    ...UNRESOLVED_RATING_FAILURE_KINDS,
+    SEASON_RATING_OPERATION,
   );
+  const rows = candidates.filter((row) => parseSeasonRatingPayload(row.payload).seasonId === seasonId);
 
   if (rows.length === 0) {
     return [];
   }
 
   const ids = rows.map((row) => row.id);
-  await tx.runAsync(`DELETE FROM season_rating_queue WHERE id IN (${placeholders(ids)})`, ...ids);
+  await tx.runAsync(`DELETE FROM operation_log WHERE id IN (${placeholders(ids)})`, ...ids);
 
   return [
     {
-      key: { kind: 'season_rating', seasonId: confirmed.seasonId, animeId: confirmed.animeId },
+      key: { kind: 'season_rating', seasonId: String(seasonId), animeId: confirmed.animeId },
       reason: `superseded by confirmed rating ${confirmed.id}`,
-      rows: rows.map((row): UnresolvedRatingRow => ({ id: row.id, lastFailureKind: row.last_failure_kind })),
+      rows: rows.map((row): UnresolvedRatingRow => ({ id: row.id, unresolvedReason: row.unresolved_reason })),
     },
   ];
 }

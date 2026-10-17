@@ -21,10 +21,10 @@ export interface UnresolvedOperationRow {
   readonly unresolvedReason: string | null;
 }
 
-/** One given-up `season_rating_queue` row of an unresolved rating key. */
+/** One given-up `season_rating` row of an unresolved rating key, with why the bridge refused it. */
 export interface UnresolvedRatingRow {
   readonly id: number;
-  readonly lastFailureKind: string;
+  readonly unresolvedReason: string | null;
 }
 
 /**

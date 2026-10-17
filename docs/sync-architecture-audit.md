@@ -2,7 +2,9 @@
 
 Input for [ADR 009](adr/009-convergent-sync.md), which decides the design. This is a read-only audit; no code was changed.
 
-> **Status 2026-10-16 (T11):** I2 and I8 are fixed and I1 is fixed for JS: every outbound path now goes through one entry point and one exit per runtime (ADR 009, R-2 section). The native rating sender waits for T17. The diagrams below still show the audited state.
+> **Status 2026-10-16 (T11):** I2 and I8 are fixed and I1 is fixed for JS: every outbound path now goes through one entry point and one exit per runtime (ADR 009, R-2 section). The diagrams below still show the audited state.
+>
+> **Status 2026-10-16 (T17):** I1 is fixed in both runtimes. A season rating is a `season_rating` row of `operation_log` (ADR 009 L28), sent by both cycles after its round's reconcile; `season_rating_queue` and `drainSeasonRatingQueue` are gone from the send path, so the rows in the diagrams that name them describe the audited state only.
 >
 > **Corrected on 2026-10-16** after a dual review. I7 was withdrawn. The flow diagram now draws all six drainers. The sequence diagram now shows the presence probe before the lease, and the second writer of `bridge_modified_at` (Kotlin). The I6 citation was fixed. Section 5 is superseded by ADR 009.
 

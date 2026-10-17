@@ -1,4 +1,4 @@
-import type { SeasonRatingFailureKind } from "../../../sync/season-rating-queue.types";
+import type { SeasonRatingFailureKind } from "../../../sync/season-rating-event.types";
 
 /** Defines the season rating value value shape. */
 export type SeasonRatingValue = 1 | 2 | 3 | 4 | 5 | 6;

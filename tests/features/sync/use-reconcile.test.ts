@@ -165,6 +165,7 @@ describe('syncPendingOperations', () => {
       syncedCount: 0,
       backlogReadCount: 0,
       hasMorePending: false,
+      shouldRefreshActiveSeason: false,
       diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0, undeliverable: 0, unclassified: 0, reaped: 0 },
     });
     // Backlog includes 'processing' so ops orphaned by a crashed/killed cycle are recovered
@@ -362,6 +363,7 @@ describe('syncPendingOperations', () => {
       syncedCount: 1,
       backlogReadCount: 1,
       hasMorePending: false,
+      shouldRefreshActiveSeason: false,
       diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0, undeliverable: 0, unclassified: 0, reaped: 0 },
     });
     expect(reconcileMock).toHaveBeenCalledWith(

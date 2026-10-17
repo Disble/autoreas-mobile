@@ -5,7 +5,7 @@
  * same `expect` block, so behaviour both runtimes share is pinned once.
  */
 
-/** A runtime a fixture runs in. Anime fixtures run in both; ratings are JS-only until T17. */
+/** A runtime a fixture runs in. Every fixture runs in both. */
 export type ContractRuntime = 'js' | 'kotlin';
 
 /** What one attempt reported: the JS promise resolved or rejected, Kotlin `closed` or `failed`. */
@@ -25,20 +25,11 @@ export interface ContractOutboxRow {
   readonly conflictAttemptCount?: number;
 }
 
-/** One queued season rating. */
-export interface ContractRating {
-  readonly seasonId: string;
-  readonly animeId: string;
-  readonly nota: number;
-  readonly ratedAt: number;
-}
-
-/** The stored precondition: the cursor, the animes, the anime outbox and the rating queue. */
+/** The stored precondition: the cursor, the animes and the outbox (edits and ratings alike). */
 export interface ContractGiven {
   readonly cursor: number;
   readonly animes: readonly ContractAnime[];
   readonly outbox: readonly ContractOutboxRow[];
-  readonly ratings?: readonly ContractRating[];
 }
 
 /** One scripted bridge answer: a status and a JSON body, or a refused connection. */
@@ -70,13 +61,6 @@ export interface ContractOutboxState {
   readonly conflictAttemptCount: number;
 }
 
-/** One `season_rating_queue` row as read back. */
-export interface ContractRatingState {
-  readonly animeId: string;
-  readonly status: string;
-  readonly lastFailureKind: string | null;
-}
-
 /** The expected end state; only the keys a fixture names are compared. */
 export interface ContractExpectation {
   readonly requests: readonly ContractRequest[];
@@ -84,13 +68,11 @@ export interface ContractExpectation {
   readonly cursor?: number;
   readonly tokens?: Readonly<Record<string, number | null>>;
   readonly staged?: readonly string[];
-  readonly ratings?: readonly ContractRatingState[];
 }
 
-/** One whole scenario file. `kind` is `season_rating` for rating fixtures, absent for anime ones. */
+/** One whole scenario file. */
 export interface ContractFixture {
   readonly name: string;
-  readonly kind?: 'season_rating';
   readonly covers: readonly string[];
   readonly description: string;
   readonly runtimes: readonly ContractRuntime[];

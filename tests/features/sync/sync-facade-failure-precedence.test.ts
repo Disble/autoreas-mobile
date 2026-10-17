@@ -1,5 +1,4 @@
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
-import { drainSeasonRatingQueue } from '../../../src/features/sync/season-rating-queue.helpers';
 import {
   ActiveSeasonSyncError,
   fetchActiveSeasonFromBridge,
@@ -18,10 +17,6 @@ import {
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
@@ -69,15 +64,10 @@ describe('foreground sync failure precedence', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const setActiveSeasonSnapshot = jest.fn();
     (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount,
+      syncedCount: deliveredCount,
       backlogReadCount: 1,
-      shouldRefreshActiveSeason: true,
       hasMorePending: false,
+      shouldRefreshActiveSeason: true,
     });
     (fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValue(refreshFailure);
 
@@ -87,7 +77,7 @@ describe('foreground sync failure precedence', () => {
         source: 'manual',
         setActiveSeasonSnapshot,
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(deliveredCount);
 
     expect(fetchActiveSeasonFromBridge).toHaveBeenCalledTimes(1);
     expect(setActiveSeasonSnapshot).not.toHaveBeenCalled();

@@ -21,10 +21,15 @@ export const SYNC_FLUSH_REASON_SOURCES: Readonly<Record<SyncFlushReason, SyncRun
   season_rating: 'local_mutation',
 };
 
-/** The reasons that also demand an active-season refresh from the dispatched cycle (ADR 009 I8). */
+/**
+ * The reasons that also demand an active-season refresh from the dispatched cycle (ADR 009 I8).
+ * `app_active` is one because the Kotlin engine may have delivered a rating while the app was in
+ * the background, and only a refresh shows the bridge's recorded value (L28).
+ */
 export const ACTIVE_SEASON_REFRESH_FLUSH_REASONS: ReadonlySet<SyncFlushReason> = new Set<SyncFlushReason>([
   'ws_season_changed',
   'ws_preferences_changed',
+  'app_active',
 ]);
 
 /**

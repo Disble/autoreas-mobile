@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as chapterActionDiagnostics from '../../../src/features/animes/chapter-action-diagnostics.helpers';
 import { applyAnimeMutationPatch, buildCapPlusPatch } from '../../../src/features/animes/anime-mutation.helpers';
-import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-queue.helpers';
+import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
 import { getSyncConnectionSnapshot, resetSyncConnectionStore } from '../../../src/features/sync/sync-connection-store';
 import {
   readDiagnosticEvents,
@@ -228,7 +228,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     await requestFlush(adapter, 'network_regained');
 
-    expect(await readRatingRows(adapter)).toEqual([]);
+    expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
     expect(getSyncConnectionSnapshot().kind).toBe('online');
   });
 
@@ -252,7 +252,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     const recordSync = jest.spyOn(chapterActionDiagnostics, 'recordChapterActionSync');
     const adapter = await openRepairedDatabase();
     await adapter.runAsync(
-      "INSERT INTO season_rating_queue (season_id, anime_id, nota, rated_at, status, created_at, updated_at) VALUES ('season-1', 'anime-1', 7, 1, 'pending', 1, 1)",
+      "INSERT INTO operation_log (anime_id, operation, payload, status, created_at) VALUES ('anime-2', 'season_rating', '{\"seasonId\":\"season-1\",\"grade\":7,\"ratedAt\":1}', 'pending', 1)",
     );
     registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
     fakeBridge.queueResponse(confirmedAt(8));
@@ -264,7 +264,10 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     await waitForSyncFlushIdle(adapter);
     await flushMicrotasks();
 
-    expect(await readOperationRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
+    expect(await readOperationRows(adapter)).toEqual([
+      expect.objectContaining({ status: 'synced' }),
+      expect.objectContaining({ status: 'synced' }),
+    ]);
     expect(recordSync).toHaveBeenCalledWith(actionContext, 'ok');
     expect(recordSync).not.toHaveBeenCalledWith(actionContext, 'failed');
     expect(readDiagnosticEvents().map((event) => event.event)).not.toContain('mutation_sync_failed');

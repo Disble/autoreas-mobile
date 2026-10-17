@@ -1,9 +1,9 @@
 import type { ActiveSeasonRatingSource, ActiveSeasonSnapshot } from "../../infrastructure/api";
-import type { SeasonRatingQueueRow } from "../../infrastructure/db/schema";
 import type {
   SeasonRatingFailureKind,
-  SeasonRatingQueueStatus,
-} from "../sync/season-rating-queue.types";
+  SeasonRatingIntent,
+  SeasonRatingIntentStatus,
+} from "../sync/season-rating-event.types";
 import type { Anime } from "../../infrastructure/validation/anime-schema";
 
 /** Defines the data contract for anime season local intent. */
@@ -11,7 +11,7 @@ export interface AnimeSeasonLocalIntent {
   readonly nota: number;
   readonly ratedAt: number;
   readonly createdAt: number;
-  readonly status: SeasonRatingQueueStatus;
+  readonly status: SeasonRatingIntentStatus;
   readonly failureKind: SeasonRatingFailureKind | null;
 }
 
@@ -32,5 +32,5 @@ export interface AnimeListItem extends Anime {
 export interface BuildAnimeSeasonProjectionInput {
   readonly animeId: string;
   readonly activeSeasonSnapshot: ActiveSeasonSnapshot | null;
-  readonly seasonRatingQueueRows: readonly SeasonRatingQueueRow[];
+  readonly seasonRatingIntents: readonly SeasonRatingIntent[];
 }

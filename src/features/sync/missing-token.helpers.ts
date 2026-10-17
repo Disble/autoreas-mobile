@@ -10,6 +10,7 @@ import { UNRESOLVED_REASON } from './missing-token.constants';
 import type { MissingTokenOutcome, UnresolvedReason } from './missing-token.types';
 import { RELEASED_CLAIM } from './outbox-claim.constants';
 import { heldOperationsWhere, readHeldOperationIds } from './outbox-claim.helpers';
+import { ANIME_UPDATE_OPERATION } from './outbox-operation.constants';
 import type { OutboxClaim } from './outbox-claim.types';
 
 /** Reads the `modified_at` token of a fetched `MobileAnime`, or `null` when it carries none. */
@@ -56,8 +57,9 @@ export async function fetchMissingTokenOutcome(
 }
 
 /**
- * Gives a key up: its held rows and its unclaimed pending rows become `dead_letter` with the reason,
- * all released. The whole key goes, since none of its rows can be sent without a base.
+ * Gives a key up: its held rows and its unclaimed pending `update` rows become `dead_letter` with
+ * the reason, all released. Every edit of the key goes, since none can be sent without a base; its
+ * queued ratings stay, since a rating carries no base (L28).
  */
 async function giveKeyUp(
   db: AppDatabase,
@@ -72,7 +74,14 @@ async function giveKeyUp(
   await db
     .update(operationLog)
     .set(unresolved)
-    .where(and(eq(operationLog.animeId, animeId), eq(operationLog.status, 'pending'), isNull(operationLog.claimedAt)));
+    .where(
+      and(
+        eq(operationLog.animeId, animeId),
+        eq(operationLog.operation, ANIME_UPDATE_OPERATION),
+        eq(operationLog.status, 'pending'),
+        isNull(operationLog.claimedAt),
+      ),
+    );
 }
 
 /** True while `claim` still holds a `processing` row of the `animes` row being updated. */

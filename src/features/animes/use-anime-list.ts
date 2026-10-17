@@ -7,11 +7,12 @@ import {
 } from "../../infrastructure/db/native-runtime/native-runtime.helpers";
 import {
   animes,
-  seasonRatingQueue,
   type AnimeRow,
-  type SeasonRatingQueueRow,
+  type OperationLogRow,
 } from "../../infrastructure/db/schema";
 import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
+import { mapSeasonRatingIntents } from "../sync/season-rating-event.helpers";
+import { buildSeasonRatingIntentsQuery } from "../sync/season-rating-intent.helpers";
 import { buildAnimeSeasonProjection } from "./anime-season.helpers";
 import {
   parseAnimeRow,
@@ -36,18 +37,19 @@ export function useAnimeList(filter: AnimeDayFilter) {
     return db.select().from(animes).where(eq(animes.activo, 1));
   }, [db]);
 
-  const seasonRatingQueueQuery = useMemo(() => {
-    if (!db) {
-      return null;
-    }
-
-    return db.select().from(seasonRatingQueue);
-  }, [db]);
+  const seasonRatingIntentsQuery = useMemo(
+    () => (db ? buildSeasonRatingIntentsQuery(db) : null),
+    [db],
+  );
 
   const { data } = useOptionalLiveQuery<AnimeRow[]>(animeQuery, []);
-  const { data: seasonRatingQueueRows } = useOptionalLiveQuery<SeasonRatingQueueRow[]>(
-    seasonRatingQueueQuery,
+  const { data: seasonRatingRows } = useOptionalLiveQuery<OperationLogRow[]>(
+    seasonRatingIntentsQuery,
     [],
+  );
+  const seasonRatingIntents = useMemo(
+    () => mapSeasonRatingIntents(seasonRatingRows ?? []),
+    [seasonRatingRows],
   );
   const allActiveAnimes = useMemo<AnimeListItem[]>(() => {
     if (!data) return [];
@@ -59,11 +61,11 @@ export function useAnimeList(filter: AnimeDayFilter) {
           seasonProjection: buildAnimeSeasonProjection({
             animeId: anime._id,
             activeSeasonSnapshot,
-            seasonRatingQueueRows,
+            seasonRatingIntents,
           }),
         };
       });
-  }, [activeSeasonSnapshot, data, seasonRatingQueueRows]);
+  }, [activeSeasonSnapshot, data, seasonRatingIntents]);
 
   const parsedData = useMemo(
     () => sortAnimesBySelectedDay(allActiveAnimes, filter),

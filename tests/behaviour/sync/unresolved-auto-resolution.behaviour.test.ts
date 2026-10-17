@@ -1,10 +1,5 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { readUnresolvedKeyCount } from '../../../src/features/sync';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import {
-  drainSeasonRatingQueue,
-  enqueueSeasonRatingIntent,
-} from '../../../src/features/sync/season-rating-queue.helpers';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { buildReconcileResponseBody } from '../../support/sync-fixtures.helpers';
@@ -12,6 +7,7 @@ import {
   confirmedAt,
   openPairedDatabase,
   queueEdit,
+  rateAndSync,
   readOperationRows,
   readRatingRows,
   reconcileAnswer,
@@ -28,13 +24,6 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
   useOptionalSQLiteContext: () => null,
   useOptionalLiveQuery: (_query: unknown, fallback: unknown) => ({ data: fallback }),
 }));
-
-/** Queues one season rating of `animeId` and drains it against a bridge answering `status`. */
-async function rateAndDrain(adapter: SQLiteDatabase, fakeBridge: FakeBridge, animeId: string, status: number) {
-  await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId, nota: 5, ratedAt: 1_700_000_000_000 });
-  fakeBridge.queueResponse({ status, body: status === 204 ? null : { error: 'rejected' } });
-  await drainSeasonRatingQueue(adapter);
-}
 
 describe('a later confirmed edit resolves an unresolved key automatically, and says why (L18)', () => {
   let fakeBridge: FakeBridge;
@@ -119,26 +108,29 @@ describe('a later confirmed edit resolves an unresolved key automatically, and s
 
   it('removes an unresolved rating once a later rating of the same anime and season is confirmed, and logs it', async () => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', 409);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', 409);
 
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', 204);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', 204);
 
-    expect(await readRatingRows(adapter)).toEqual([]);
+    expect(await readRatingRows(adapter)).toEqual([
+      { id: 2, anime_id: 'anime-1', status: 'synced', unresolved_reason: null },
+    ]);
     expect(info).toHaveBeenCalledWith('[unresolved] resolved automatically', {
       key: { kind: 'season_rating', seasonId: 'season-1', animeId: 'anime-1' },
       reason: 'superseded by confirmed rating 2',
-      rows: [{ id: 1, lastFailureKind: 'conflict' }],
+      rows: [{ id: 1, unresolvedReason: 'conflict' }],
     });
   });
 
   it('never resolves an unresolved rating of another anime', async () => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', 404);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', 404);
 
-    await rateAndDrain(adapter, fakeBridge, 'anime-2', 204);
+    await rateAndSync(adapter, fakeBridge, 'anime-2', 204);
 
     expect(await readRatingRows(adapter)).toEqual([
-      { id: 1, anime_id: 'anime-1', status: 'failed', last_failure_kind: 'not_found' },
+      { id: 1, anime_id: 'anime-1', status: 'dead_letter', unresolved_reason: 'not_found' },
+      { id: 2, anime_id: 'anime-2', status: 'synced', unresolved_reason: null },
     ]);
     expect(info).not.toHaveBeenCalled();
   });

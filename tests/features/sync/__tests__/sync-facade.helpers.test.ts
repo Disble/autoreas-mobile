@@ -2,7 +2,6 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { runCoordinatedForegroundSyncCycle } from '../../../../src/features/sync/sync-facade.helpers';
 import { resetSyncConnectionStore } from '../../../../src/features/sync/sync-connection-store';
 import { syncPendingOperations } from '../../../../src/features/sync/reconcile.helpers';
-import { drainSeasonRatingQueue } from '../../../../src/features/sync/season-rating-queue.helpers';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -14,10 +13,6 @@ import type { SyncRuntimeTriggerSource } from '../../../../src/features/sync/syn
 
 jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
-}));
-
-jest.mock('../../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
 }));
 
 jest.mock('../../../../src/features/sync/season-sync.helpers', () => ({
@@ -89,9 +84,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
       });
-      (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-        deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
-      });
 
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
@@ -106,9 +98,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
     it('starts runCoverSweep(rawDb, undefined, { force }) on the hasMorePending early return', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 0, backlogReadCount: 5, hasMorePending: true,
-      });
-      (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-        deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -128,9 +117,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 0, backlogReadCount: 5, hasMorePending: true,
         diagnosticsFlush: FOREGROUND_DIAGNOSTICS_FLUSH,
-      });
-      (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-        deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -165,9 +151,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
         syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
       });
-      (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-        deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
-      });
 
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
@@ -198,9 +181,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
     });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
-    });
     (runCoverSweep as jest.Mock).mockReturnValue(new Promise<never>(() => undefined));
 
     const result = await runCoordinatedForegroundSyncCycle({
@@ -216,9 +196,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
   it('swallows a rejected cover sweep instead of throwing out of the cycle', async () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
     });
     (runCoverSweep as jest.Mock).mockRejectedValue(new Error('sweep boom'));
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -247,9 +224,6 @@ describe('runCoordinatedForegroundSyncCycle diagnostics flush counters', () => {
     (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0, backlogReadCount: 0, shouldRefreshActiveSeason: false, hasMorePending: false,
-    });
     (runCoverSweep as jest.Mock).mockResolvedValue({
       fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
     });

@@ -1,17 +1,15 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { and, eq, inArray, not } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
-import { operationLog, seasonRatingQueue, syncRuntimeStatus } from '../../infrastructure/db/schema';
+import { operationLog, syncRuntimeStatus } from '../../infrastructure/db/schema';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
-import { drainSeasonRatingQueue } from './season-rating-queue.helpers';
 import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
 import { healSnapshotOnDemand } from './snapshot-heal.helpers';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
-import { UNRESOLVED_RATING_FAILURE_KINDS } from './unresolved-key.constants';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -101,16 +99,17 @@ async function persistSyncFailureTelemetrySafely(
 
 /**
  * Runs every step owned by one foreground sync cycle and publishes exactly one terminal outcome.
- * Reconcile alone is not success: a season rating still queued for retry keeps the cycle pending,
- * and telemetry must complete first. A failing rating never fails the cycle (ADR 009 R-5).
+ * Reconcile alone is not success: a row still queued for retry keeps the cycle pending, and
+ * telemetry must complete first. A failing rating never fails the cycle (ADR 009 R-5, I4).
  *
- * This cycle is the JS dispatcher (ADR 009 R-2) and the one place its outbound kinds are listed,
- * in send order: anime operations (`syncPendingOperations`, whose pass also carries the
- * diagnostics outbox), then season ratings (`drainSeasonRatingQueue`). Callers never run it
- * directly; they enqueue and call `requestFlush`, which runs it through
- * `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating, or when
- * the request demands it (the WebSocket season events, I8); that refresh is best effort and never
- * fails the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
+ * This cycle is the JS dispatcher (ADR 009 R-2). Every outbound kind leaves through ONE pass,
+ * `syncPendingOperations`: anime edits through the reconcile (which also carries the diagnostics
+ * outbox) and season ratings through their own endpoint, interleaved per anime in queue order
+ * (L28). Callers never run it directly; they enqueue and call `requestFlush`, which runs it
+ * through `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating
+ * (or one the bridge refused with 404/409), or when the request demands it (the WebSocket season
+ * events and the app returning to the foreground, I8); that refresh is best effort and never fails
+ * the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
  * best effort too, and it runs even when the sends failed, before the failure is published.
  *
@@ -145,18 +144,17 @@ export async function runCoordinatedForegroundSyncCycle({
       persistTelemetry: () => recordSyncAttemptStarted(rawDb, source, attemptedAt),
       publishConnection: () => undefined,
     });
-    const result = await syncPendingOperations(rawDb);
     // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
     // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
-    const seasonDrainResult = await drainSeasonRatingQueue(rawDb);
+    const result = await syncPendingOperations(rawDb);
 
-    if (refreshActiveSeason || seasonDrainResult.shouldRefreshActiveSeason) {
+    if (refreshActiveSeason || result.shouldRefreshActiveSeason) {
       await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
     }
 
     await healSnapshotOnDemand(rawDb, healSnapshot);
 
-    if (result.hasMorePending || seasonDrainResult.hasMorePending) {
+    if (result.hasMorePending) {
       // The reconcile above was answered, so this cycle reached the bridge (ADR 009 R-9).
       markSyncConnectionPending(attempt, Date.now());
       triggerCoverSweep(rawDb, source, healSnapshot);
@@ -217,7 +215,8 @@ export function dispatchForegroundSyncFlush(request: SyncFlushRequest): Promise<
 }
 
 /**
- * Builds the live query used to count pending outbox operations.
+ * Builds the live query used to count pending outbox operations: anime edits and season ratings
+ * alike, since both wait in the one outbox (L28); a given-up row is unresolved, not pending.
  * The facade exposes this count so the UI can reflect offline-first sync backlog without touching SQL.
  */
 export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizzleDb>[0]) {
@@ -225,32 +224,6 @@ export function buildPendingOperationsQuery(rawDb: Parameters<typeof createDrizz
     .select({ id: operationLog.id })
     .from(operationLog)
     .where(inArray(operationLog.status, ['pending', 'processing']))
-    .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
-}
-
-/**
- * Builds the live query for every durable season-rating row that is still pending work.
- * Every `pending` or `syncing` row counts; an unresolved rating
- * (`failed` with a failure kind in `UNRESOLVED_RATING_FAILURE_KINDS`, ADR 009 R-16b) is never
- * sent again, so it is excluded with the same predicate `readSeasonRatingQueueBacklog` uses.
- */
-export function buildUnresolvedSeasonRatingQuery(
-  rawDb: Parameters<typeof createDrizzleDb>[0],
-) {
-  return createDrizzleDb(rawDb)
-    .select({ id: seasonRatingQueue.id })
-    .from(seasonRatingQueue)
-    .where(
-      and(
-        inArray(seasonRatingQueue.status, ['pending', 'syncing', 'failed']),
-        not(
-          and(
-            eq(seasonRatingQueue.status, 'failed'),
-            inArray(seasonRatingQueue.lastFailureKind, [...UNRESOLVED_RATING_FAILURE_KINDS]),
-          )!,
-        ),
-      ),
-    )
     .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
 }
 

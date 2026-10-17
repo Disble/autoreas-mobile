@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { applyAnimeMutationPatch, buildCapPlusPatch } from '../../../src/features/animes/anime-mutation.helpers';
-import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-queue.helpers';
+import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
 import { runMigrations } from '../../../src/infrastructure/db/client';
 import { getSyncConnectionSnapshot, resetSyncConnectionStore } from '../../../src/features/sync/sync-connection-store';
 import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
@@ -100,13 +100,13 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
       'POST /api/seasons/active/ratings',
       'GET /api/seasons/active',
     ]);
-    expect(await readRatingRows(adapter)).toEqual([]);
+    expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ anime_id: 'anime-1', status: 'synced' })]);
   });
 
   it('runs an episode edit through the coordinated cycle: drains ratings, records the attempt and reaches online (I2)', async () => {
     const adapter = await openRepairedDatabase();
     await adapter.runAsync(
-      "INSERT INTO season_rating_queue (season_id, anime_id, nota, rated_at, status, created_at, updated_at) VALUES ('season-1', 'anime-1', 7, 1, 'pending', 1, 1)",
+      "INSERT INTO operation_log (anime_id, operation, payload, status, created_at) VALUES ('anime-2', 'season_rating', '{\"seasonId\":\"season-1\",\"grade\":7,\"ratedAt\":1}', 'pending', 1)",
     );
     fakeBridge.queueResponse(confirmedAt(8));
     fakeBridge.queueResponse({ status: 204, body: null });
@@ -122,8 +122,8 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     ]);
     expect(await readOperationRows(adapter)).toEqual([
       expect.objectContaining({ status: 'synced' }),
+      expect.objectContaining({ status: 'synced' }),
     ]);
-    expect(await readRatingRows(adapter)).toEqual([]);
     expect(await readRuntimeStatus(adapter)).toEqual({
       last_trigger_source: 'local_mutation',
       last_attempt_at: expect.any(Number),
@@ -165,7 +165,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
 
     await expect(
       enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1_700_000_000_000 }),
-    ).resolves.toEqual(expect.objectContaining({ animeId: 'anime-1', status: 'pending' }));
+    ).resolves.toBeUndefined();
     await waitForSyncFlushIdle(adapter);
 
     expect(await readRatingRows(adapter)).toEqual([

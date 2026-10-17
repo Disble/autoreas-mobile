@@ -3,13 +3,13 @@ import type {
   AnimeSeasonProjection,
   BuildAnimeSeasonProjectionInput,
 } from "./anime-season.types";
-import type {
-  SeasonRatingFailureKind,
-  SeasonRatingQueueStatus,
-} from "../sync/season-rating-queue.types";
-import type { SeasonRatingQueueRow } from "../../infrastructure/db/schema";
+import type { SeasonRatingIntent } from "../sync/season-rating-event.types";
 import { LOCAL_ACTIVE_SEASON_ID } from "./anime-season.constants";
 
+/**
+ * The season ids whose local intents count for `seasonId`: the season itself and, for a bridge
+ * season, the local placeholder a rating made before any season was known is queued under.
+ */
 function buildSeasonIntentLookupIds(seasonId: string): readonly string[] {
   if (seasonId === LOCAL_ACTIVE_SEASON_ID) {
     return [seasonId];
@@ -25,10 +25,10 @@ function buildSeasonIntentLookupIds(seasonId: string): readonly string[] {
 export function selectLatestSeasonRatingIntent(
   animeId: string,
   seasonIds: readonly string[],
-  seasonRatingQueueRows: readonly SeasonRatingQueueRow[],
+  seasonRatingIntents: readonly SeasonRatingIntent[],
 ): AnimeSeasonLocalIntent | null {
   const seasonIdSet = new Set(seasonIds);
-  const matchingRows = seasonRatingQueueRows.filter(
+  const matchingRows = seasonRatingIntents.filter(
     (row) => row.animeId === animeId && seasonIdSet.has(row.seasonId),
   );
 
@@ -41,7 +41,7 @@ export function selectLatestSeasonRatingIntent(
       return right.createdAt - left.createdAt;
     }
 
-    return (right.id ?? 0) - (left.id ?? 0);
+    return right.id - left.id;
   });
 
   const latestRow = matchingRows[0];
@@ -50,8 +50,8 @@ export function selectLatestSeasonRatingIntent(
     nota: latestRow.nota,
     ratedAt: latestRow.ratedAt,
     createdAt: latestRow.createdAt,
-    status: latestRow.status as SeasonRatingQueueStatus,
-    failureKind: latestRow.lastFailureKind as SeasonRatingFailureKind | null,
+    status: latestRow.status,
+    failureKind: latestRow.failureKind,
   };
 }
 
@@ -66,14 +66,14 @@ export function buildAnimeSeasonProjection(
   const {
     activeSeasonSnapshot,
     animeId,
-    seasonRatingQueueRows,
+    seasonRatingIntents,
   } = input;
   const candidate = activeSeasonSnapshot?.candidatesByAnimeId[animeId] ?? null;
   const seasonId = activeSeasonSnapshot?.seasonId ?? LOCAL_ACTIVE_SEASON_ID;
   const localIntent = selectLatestSeasonRatingIntent(
     animeId,
     buildSeasonIntentLookupIds(seasonId),
-    seasonRatingQueueRows,
+    seasonRatingIntents,
   );
 
   if (!candidate) {

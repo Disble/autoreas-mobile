@@ -67,7 +67,7 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
   };
 }
 
-/** Queues the fixture anime + season-rating-queue rows the next `useOptionalLiveQuery` calls return. */
+/** Queues the fixture anime rows and outbox `season_rating` rows the next `useOptionalLiveQuery` calls return. */
 function mockLiveQueryData(animeRows: AnimeRow[], seasonQueueRows: readonly unknown[] = []) {
   mockUseOptionalLiveQuery
     .mockImplementationOnce(() => ({ data: animeRows }))
@@ -118,7 +118,8 @@ describe("useAnimeList", () => {
       "anime-3",
     ]);
     expect(mockCreateDrizzleDb).toHaveBeenCalledWith({ name: "raw-db" });
-    expect(mockWhere).toHaveBeenCalledTimes(1);
+    // One filter for the active animes, one for the queued season ratings of the outbox (L28).
+    expect(mockWhere).toHaveBeenCalledTimes(2);
   });
 
   it("filtra pseudo-días de estrenos usando dias[].dia", () => {
@@ -208,5 +209,35 @@ describe("useAnimeList", () => {
     const { result } = renderHook(() => useAnimeList("Jueves"));
 
     expect(result.current.data[0]?.seasonProjection).toBeNull();
+  });
+
+  it("projects a queued season rating from the outbox as the anime's local intent", () => {
+    mockLiveQueryData(
+      [buildRow({ _id: "anime-1", dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]) })],
+      [
+        {
+          id: 4,
+          animeId: "anime-1",
+          operation: "season_rating",
+          payload: JSON.stringify({ seasonId: "__local_active_season__", grade: 5, ratedAt: 10 }),
+          status: "dead_letter",
+          createdAt: 20,
+          conflictAttemptCount: 0,
+          claimOwner: null,
+          claimedAt: null,
+          unresolvedReason: "conflict",
+        },
+      ],
+    );
+
+    const { result } = renderHook(() => useAnimeList("Jueves"));
+
+    expect(result.current.data[0]?.seasonProjection?.localIntent).toEqual({
+      nota: 5,
+      ratedAt: 10,
+      createdAt: 20,
+      status: "failed",
+      failureKind: "conflict",
+    });
   });
 });

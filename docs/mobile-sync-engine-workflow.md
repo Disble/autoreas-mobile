@@ -345,24 +345,27 @@ flowchart TD
   E --> E1["read backlog pending plus processing, dedupe per anime"]
   E1 --> E2["claim rows processing"]
   E2 --> E3["captureSyncDiagnosticsEnvelope, flushSyncDiagnosticsOutbox to autoreas-telemetry.db"]
-  E3 --> E4["bridgeClient.reconcile POST /api/sync/reconcile"]
+  E3 --> E3a["split the round: update rows reconcile, season_rating rows follow"]
+  E3a --> E4["bridgeClient.reconcile POST /api/sync/reconcile - first round always, as the pull"]
   E4 --> E5{"result.ok"}
-  E5 -->|no| E6["revert - 4xx dead_letter else pending, then throw"]
+  E5 -->|no| E6["revert - 4xx dead_letter else pending; release the round ratings unsent; throw"]
   E5 -->|yes| F["applyReconcileResponseWrites inside withLocalWrite"]
   F --> F1{"applyMode"}
   F1 -->|deferred| F2["applyRemoteChanges to animes - useLiveQuery sees it"]
   F1 -->|staged| F3["stagePendingRemoteChanges into pending_remote_changes"]
   F2 --> F4["persist tokens, op statuses, advance cursor"]
   F3 --> F4
-  F4 --> G["drainSeasonRatingQueue"]
-  G --> H{"hasMorePending"}
+  F4 --> G["sendSeasonRatingRound - one POST /api/seasons/active/ratings per rating, claim re-checked; 204 synced, 4xx dead_letter, else pending"]
+  G --> G1["next round: successors of confirmed keys, until none or the 20 s chain budget"]
+  G1 --> G2["refresh the active season after a delivered rating, a 404/409, a season event or app_active"]
+  G2 --> H{"hasMorePending"}
   H -->|yes| H1["markSyncConnectionPending, cover sweep"]
   H -->|no| I["recordSyncAttemptSucceeded with diagnosticsFlush"]
   I --> J["cover sweep"]
   E6 --> K["recordSyncAttemptFailed, markSyncConnectionFailed"]
   subgraph FG["Foreground-only, on mount and app resume"]
     R1["useRemoteChangeDrain to drainPendingRemoteChanges"] --> R2["load pending_remote_changes, apply via merge boundary, delete in same transaction"]
-    R3["bootstrap / app_active / ws_reconnected flush (heal demand)"] --> R4["resyncFromBridgeSnapshot full heal inside the dispatched cycle, skips animes with a pending outbox op; ws_reconnected only if the last successful heal is over 5 min old"]
+    R3["bootstrap / app_active / ws_reconnected flush (heal demand)"] --> R4["resyncFromBridgeSnapshot full heal inside the dispatched cycle, skips animes with an unconfirmed edit (an update row; a queued rating never blocks it); ws_reconnected only if the last successful heal is over 5 min old"]
     R3 --> R5["runCoverSweep after an always heal"]
   end
   subgraph OUT["Local mutation outbox"]

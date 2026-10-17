@@ -5,6 +5,7 @@ import {
 import { animes, operationLog } from "../../../../src/infrastructure/db/schema";
 
 jest.mock("drizzle-orm", () => ({
+  and: jest.fn((...conditions) => ({ and: conditions })),
   eq: jest.fn((column, value) => ({ column, value })),
   inArray: jest.fn((column, values) => ({ column, values })),
 }));

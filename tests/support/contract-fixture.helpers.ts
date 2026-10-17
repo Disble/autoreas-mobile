@@ -116,18 +116,6 @@ export async function openContractDatabase(given: ContractGiven, now: number): P
     );
   }
 
-  for (const rating of given.ratings ?? []) {
-    await adapter.runAsync(
-      "INSERT INTO season_rating_queue (season_id, anime_id, nota, rated_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-      rating.seasonId,
-      rating.animeId,
-      rating.nota,
-      rating.ratedAt,
-      now,
-      now,
-    );
-  }
-
   return adapter;
 }
 
@@ -174,13 +162,6 @@ export async function readContractState(
   if (expectation.staged) {
     const staged = await adapter.getAllAsync<{ record_id: string }>('SELECT record_id FROM pending_remote_changes ORDER BY id');
     state.staged = staged.map((row) => row.record_id);
-  }
-
-  if (expectation.ratings) {
-    const ratings = await adapter.getAllAsync<Record<string, unknown>>(
-      'SELECT anime_id, status, last_failure_kind FROM season_rating_queue ORDER BY id',
-    );
-    state.ratings = ratings.map((row) => ({ animeId: row.anime_id, status: row.status, lastFailureKind: row.last_failure_kind }));
   }
 
   return state;

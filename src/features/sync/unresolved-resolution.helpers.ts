@@ -11,11 +11,9 @@ import { WireAnimeSchema } from '../../infrastructure/validation/anime-schema/an
 import { healAnimeFromSnapshot } from './full-resync.helpers';
 import { applyRemoteChanges } from './merge/apply-remote-changes.helpers';
 import { liveClaimFloor } from './outbox-claim.helpers';
-import {
-  GIVEN_UP_OPERATION_STATUSES,
-  UNRESOLVED_RATING_FAILURE_KINDS,
-  UNRESOLVED_RESOLUTION_ERROR_CODE,
-} from './unresolved-key.constants';
+import { ANIME_UPDATE_OPERATION, SEASON_RATING_OPERATION } from './outbox-operation.constants';
+import { parseSeasonRatingPayload } from './season-rating-event.helpers';
+import { GIVEN_UP_OPERATION_STATUSES, UNRESOLVED_RESOLUTION_ERROR_CODE } from './unresolved-key.constants';
 import { UnresolvedResolutionError } from './unresolved-key.errors';
 import type { UnresolvedKey, UnresolvedKeyRef } from './unresolved-key.types';
 
@@ -40,12 +38,16 @@ function refOf(key: UnresolvedKey): UnresolvedKeyRef {
     : { kind: 'season_rating', seasonId: key.seasonId, animeId: key.animeId };
 }
 
-/** True while the key's queue holds a live claim (ADR 009 R-13): the other runtime owns it now. */
+/**
+ * True while the anime's queue holds a live claim (ADR 009 R-13): the other runtime owns it now.
+ * Ratings and edits share the anime's queue, so both kinds of key check the anime.
+ */
 async function isKeyClaimed(tx: SQLiteDatabase, key: UnresolvedKey): Promise<boolean> {
-  const floor = liveClaimFloor(Date.now());
-  const claimed = key.kind === 'anime'
-    ? await tx.getFirstAsync('SELECT 1 FROM operation_log WHERE anime_id = ? AND claimed_at > ? LIMIT 1', key.animeId, floor)
-    : await tx.getFirstAsync('SELECT 1 FROM season_rating_queue WHERE season_id = ? AND claimed_at > ? LIMIT 1', key.seasonId, floor);
+  const claimed = await tx.getFirstAsync(
+    'SELECT 1 FROM operation_log WHERE anime_id = ? AND claimed_at > ? LIMIT 1',
+    key.animeId,
+    liveClaimFloor(Date.now()),
+  );
 
   return claimed !== null;
 }
@@ -74,18 +76,19 @@ async function writeUnclaimedKey(
 }
 
 /**
- * Keep local for an anime key: its given-up rows go back to `pending` with a fresh conflict count
- * and no reason, and the anime's token is cleared, so the next cycle fetches a fresh base first
- * (ADR 009 R-3) and re-chains the key from it.
+ * Keep local for an anime key: its given-up `update` rows go back to `pending` with a fresh
+ * conflict count and no reason, and the anime's token is cleared, so the next cycle fetches a
+ * fresh base first (ADR 009 R-3) and re-chains the key from it.
  */
 export async function keepLocalForAnime(rawDb: SQLiteDatabase, key: AnimeKey): Promise<void> {
   await writeUnclaimedKey(rawDb, key, async (_db, tx) => {
     await tx.runAsync(
       [
         "UPDATE operation_log SET status = 'pending', unresolved_reason = NULL, conflict_attempt_count = 0",
-        `WHERE anime_id = ? AND status IN (${placeholders(GIVEN_UP_OPERATION_STATUSES)})`,
+        `WHERE anime_id = ? AND operation = ? AND status IN (${placeholders(GIVEN_UP_OPERATION_STATUSES)})`,
       ].join(' '),
       key.animeId,
+      ANIME_UPDATE_OPERATION,
       ...GIVEN_UP_OPERATION_STATUSES,
     );
     await tx.runAsync('UPDATE animes SET bridge_modified_at = NULL WHERE _id = ?', key.animeId);
@@ -133,15 +136,20 @@ async function fetchRemoteAnimeState(rawDb: SQLiteDatabase, key: AnimeKey): Prom
 }
 
 /**
- * Keep bridge for an anime key: every queued row of the key (all but `synced` history) is
- * dropped and the bridge's state is applied in the same transaction. A 404 applies the delete
+ * Keep bridge for an anime key: every queued `update` row of the key (all but `synced` history)
+ * is dropped and the bridge's state is applied in the same transaction; the anime's queued
+ * ratings are another key and stay. A 404 applies the delete
  * rule through the merge boundary; an anime is written the way the heal writes it, token included.
  */
 export async function keepBridgeForAnime(rawDb: SQLiteDatabase, key: AnimeKey): Promise<void> {
   const remote = await fetchRemoteAnimeState(rawDb, key);
 
   await writeUnclaimedKey(rawDb, key, async (db, tx) => {
-    await tx.runAsync("DELETE FROM operation_log WHERE anime_id = ? AND status <> 'synced'", key.animeId);
+    await tx.runAsync(
+      "DELETE FROM operation_log WHERE anime_id = ? AND operation = ? AND status <> 'synced'",
+      key.animeId,
+      ANIME_UPDATE_OPERATION,
+    );
 
     if (remote.kind === 'deleted') {
       await applyRemoteChanges(
@@ -157,30 +165,52 @@ export async function keepBridgeForAnime(rawDb: SQLiteDatabase, key: AnimeKey): 
   });
 }
 
-/** Keep local for a rating key: its given-up ratings go back to `pending`, to be sent again. */
+/** The ids of the key's `season_rating` rows in `statuses`, matched on the season in the payload. */
+async function readRatingKeyRowIds(tx: SQLiteDatabase, key: RatingKey, statuses: readonly string[]): Promise<number[]> {
+  const rows = await tx.getAllAsync<{ id: number; payload: string }>(
+    `SELECT id, payload FROM operation_log WHERE anime_id = ? AND operation = ? AND status IN (${placeholders(statuses)})`,
+    key.animeId,
+    SEASON_RATING_OPERATION,
+    ...statuses,
+  );
+
+  const ids: number[] = [];
+  for (const row of rows) {
+    if (String(parseSeasonRatingPayload(row.payload).seasonId) === key.seasonId) {
+      ids.push(row.id);
+    }
+  }
+
+  return ids;
+}
+
+/**
+ * Keep local for a rating key (L28): its given-up ratings go back to `pending`, with no reason and
+ * a fresh count, to be sent again. The anime's token is left alone: a rating carries no base.
+ */
 export async function keepLocalForRating(rawDb: SQLiteDatabase, key: RatingKey): Promise<void> {
   await writeUnclaimedKey(rawDb, key, async (_db, tx) => {
+    const ids = await readRatingKeyRowIds(tx, key, ['dead_letter']);
+
     await tx.runAsync(
       [
-        "UPDATE season_rating_queue SET status = 'pending', last_failure_kind = NULL, updated_at = ?",
-        "WHERE season_id = ? AND anime_id = ? AND status = 'failed'",
-        `AND last_failure_kind IN (${placeholders(UNRESOLVED_RATING_FAILURE_KINDS)})`,
+        "UPDATE operation_log SET status = 'pending', unresolved_reason = NULL, conflict_attempt_count = 0",
+        `WHERE id IN (${placeholders(ids)})`,
       ].join(' '),
-      Date.now(),
-      key.seasonId,
-      key.animeId,
-      ...UNRESOLVED_RATING_FAILURE_KINDS,
+      ...ids,
     );
   });
 }
 
 /**
- * Keep bridge for a rating key: every queued rating of the key is dropped. The bridge's rating is
- * what the active-season snapshot shows (refreshed right after a 404/409, on the next refresh after
- * any other 4xx); with no local intent left, nothing overrides it.
+ * Keep bridge for a rating key: every queued rating of the key (all but `synced` history) is
+ * dropped. The bridge's rating is what the active-season snapshot shows (refreshed right after a
+ * 404/409, on the next refresh after any other 4xx); with no local intent left, nothing overrides it.
  */
 export async function keepBridgeForRating(rawDb: SQLiteDatabase, key: RatingKey): Promise<void> {
   await writeUnclaimedKey(rawDb, key, async (_db, tx) => {
-    await tx.runAsync('DELETE FROM season_rating_queue WHERE season_id = ? AND anime_id = ?', key.seasonId, key.animeId);
+    const ids = await readRatingKeyRowIds(tx, key, ['pending', 'processing', 'dead_letter']);
+
+    await tx.runAsync(`DELETE FROM operation_log WHERE id IN (${placeholders(ids)})`, ...ids);
   });
 }

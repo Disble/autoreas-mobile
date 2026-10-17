@@ -74,7 +74,7 @@ The architecture is named **convergent sync**. It combines five standard pattern
 
 **R-5: one fate per failure class**
 
-Both runtimes apply the same fate to the anime outbox; JS applies it to season ratings too, since only JS sends them. Added 2026-10-16 with task T10.
+Both runtimes apply the same fate to every row of the outbox, anime edits and season ratings alike (T17, L28). Added 2026-10-16 with task T10.
 
 | Failure class | Fate |
 |---------------|------|
@@ -82,13 +82,13 @@ Both runtimes apply the same fate to the anime outbox; JS applies it to season r
 | 5xx | The rows stay `pending`; the attempt fails. |
 | Malformed response | The rows stay `pending`; the attempt fails. |
 | Local write failure | The rows stay `pending`, released or retaken when their claim expires; the attempt fails. |
-| 401 | Terminal (I3): every row of the request becomes unresolved (`dead_letter`; a rating `failed` with `auth_repair`). A 401 rejects the pairing, never a message, so it is never isolated. The attempt fails. |
-| Any other 4xx (400, 403, 404, 409, 422, ...) | The message is rejected, so it becomes unresolved (`dead_letter`; a rating `failed` with `not_found`, `conflict` or `rejected`). When the request carried several messages, they are re-sent one per request first, so only the message that caused it takes this fate. |
+| 401 | Terminal (I3): every row of the request becomes unresolved (`dead_letter`; a rating's reason is `auth_repair`). A 401 rejects the pairing, never a message, so it is never isolated. The attempt fails, except for a rating (see below). |
+| Any other 4xx (400, 403, 404, 409, 422, ...) | The message is rejected, so it becomes unresolved (`dead_letter`; a rating's reason is `not_found`, `conflict` or `rejected`). When the request carried several messages, they are re-sent one per request first, so only the message that caused it takes this fate. |
 | A message rejected inside a 2xx (`applied: false`) | The conflict rule (R-15), or `dead_letter` for an unsupported operation; only that key stops. |
 
 A response is malformed when the JS `ReconcileResponseSchema` rejects it: for example a missing `status`, or a present `applied_operations` or `bridge_changes` that is not an array. Missing or null collections are empty. The Kotlin parser accepts the same envelope, so neither runtime advances the cursor on a malformed answer (aligned with task T15). Two gaps remain that the bridge never produces: Kotlin accepts a `modified_at` beyond the safe-integer range, and Android `org.json` ignores text after the first JSON value. The snapshot fields inside `bridge_changes` are not aligned yet: `reconcile-response-divergence-cases.json` records them.
 
-When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating never fails the foreground cycle (I4): a rating left `pending` only keeps the cycle from reporting success.
+When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating's own answer never fails the attempt, in either runtime (I4): a 204 makes it `synced`; a 401, 404, 409 or other 4xx makes it unresolved with that reason; anything else, a transport failure included, leaves it `pending`, and only that keeps the cycle from reporting success. A rating is sent only after its round's reconcile, so a reconcile that fails the attempt releases the round's ratings unsent.
 
 **R-4, R-10: the shared contract fixtures**
 
@@ -97,18 +97,18 @@ Added 2026-10-16 with task T15.
 - **Where.** `tests/contract-fixtures/<queue>/*.json`, one scenario per file: the stored precondition, the bridge's scripted answers per attempt, and the expected end state (the requests the bridge answered, each row's status, unresolved reason, claim and conflict count, the cursor, the tokens, and the staged remote changes).
 - **Who runs them.** Jest runs every file (`tests/behaviour/sync/contract-fixtures.behaviour.test.ts`, real SQLite). Robolectric runs the same files (`SyncEngineContractFixtureTest.kt`; the directory is a test resources dir in `modules/sync-engine/android/build.gradle`, never copied). Both assert the same expectation, so a fixture never holds one expectation per runtime.
 - **What they pin.** Every R-5 failure class, the R-3 fetch outcomes, the R-15 conflict rule, and R-4: an identical resend carries the same absolute payload and base, and identical absolute events are each sent, never coalesced. The device's own echo is staged, never applied in the cycle that confirmed it, and its snapshot never supplies the token. The bridge's own idempotency is the bridge team's fact; the fixtures pin only what the device sends and how it ends.
-- **Ratings.** The rating fixtures (`season-rating/`) run in JS only (`"runtimes": ["js"]`) until T17 moves ratings into `operation_log`; adding `kotlin` to that list is how T17 runs them natively. Only rating fixtures may skip a runtime.
+- **Ratings.** Since T17 the rating fixtures (`season-rating/`) are outbox fixtures like any other: a `season_rating` row in `given.outbox`, the cycle's reconcile pull before the rating request, and the row's end state in `expect.outbox`. Every fixture runs in both runtimes (`"runtimes": ["js", "kotlin"]`); both runners fail a fixture that skips one.
 
 **R-2: one entry point, one exit per runtime**
 
 Added 2026-10-16 with task T11.
 
-- **JS entry point.** Callers write their intent durably, then call `requestFlush(database, reason)` (`sync-flush.helpers.ts`): the episode and estado mutations, a season rating (I1, JS half), every runtime trigger, and the WebSocket `season_changed` and `preferences_changed` events (I8). Switching season mode off is only a local clear; it sends nothing.
+- **JS entry point.** Callers write their intent durably, then call `requestFlush(database, reason)` (`sync-flush.helpers.ts`): the episode and estado mutations, a season rating (I1, JS half: a `season_rating` row of `operation_log`, written by `enqueueSeasonRatingIntent`), every runtime trigger, and the WebSocket `season_changed` and `preferences_changed` events (I8). Switching season mode off is only a local clear; it sends nothing.
 - **Single flight.** One cycle runs per database. A request during a running cycle schedules exactly one follow-up, which every later request joins; cycles never overlap.
-- **JS dispatcher.** The foreground runtime registers the coordinated cycle (`runCoordinatedForegroundSyncCycle`) as the only dispatcher while it is mounted. That cycle is the one place the JS kinds are listed, in send order: anime operations (whose pass also carries the diagnostics outbox), then season ratings, then the active-season refresh. The episode kick runs it too (I2), so it drains ratings, records started and succeeded status, and can reach `online`. With no dispatcher registered, a request sends nothing: the rows wait for the native engine or the next foreground trigger.
+- **JS dispatcher.** The foreground runtime registers the coordinated cycle (`runCoordinatedForegroundSyncCycle`) as the only dispatcher while it is mounted. That cycle has one outbound pass, `syncPendingOperations`: anime edits through the reconcile (whose pass also carries the diagnostics outbox) and season ratings through their own endpoint (`season-rating-round.helpers.ts`), then the active-season refresh. The episode kick runs it too (I2), so it sends ratings, records started and succeeded status, and can reach `online`. The refresh runs after a delivered rating or one refused with 404/409, and on the season events and a resume (`app_active`), so a rating the native engine delivered in the background shows when the app returns. With no dispatcher registered, a request sends nothing: the rows wait for the native engine or the next foreground trigger.
 - **Kotlin exit.** Every request of the `:sync` process leaves through `SyncEngineHttp`, the diagnostics courier included.
-- **Pinned by** `tests/features/sync/single-exit.architecture.test.ts`: each drain and each `BridgeClient` send method has exactly one caller, and only `SyncEngineHttp.kt` opens a connection.
-- **Kotlin rating sender (I1, Kotlin half; T17).** The `:sync` cycle sends `season_rating` rows of `operation_log` (L20, L28) through `SyncEngineHttp` to `POST /api/seasons/active/ratings`, one message per request (`SeasonRatingSender.kt`). Each round holds at most one row per anime: its `update` rows share one reconcile, then its ratings follow, so a key's rows leave in order across both endpoints. A failed reconcile releases the round's ratings unsent. Before each rating send the holder re-checks its claim. A 204 makes the row `synced`, resolves the given-up ratings of the same anime and season queued before it, and claims the key's next row within the chain budget; any other answer stops the key for this cycle. A rating's answer never fails the attempt. Fetch-first and the automatic resolution of anime keys touch only `update` rows. Until the JS half and the migration land, JS still sends the ratings in `season_rating_queue`.
+- **Pinned by** `tests/features/sync/single-exit.architecture.test.ts`: the outbox pass, the rating pass and each `BridgeClient` send method have exactly one caller, and only `SyncEngineHttp.kt` opens a connection.
+- **Rating sender, both runtimes (I1; T17).** Both cycles send the `season_rating` rows of `operation_log` (L20, L28; payload `{seasonId, grade, ratedAt}`) to `POST /api/seasons/active/ratings`, one message per request: Kotlin through `SyncEngineHttp` (`SeasonRatingSender.kt`), JS through `BridgeClient` (`season-rating-round.helpers.ts`). Each round holds at most one row per anime: its `update` rows share one reconcile (the first round always reconciles, as the pull; a later round only when it holds an edit), then its ratings follow, so a key's rows leave in order across both endpoints. A failed reconcile releases the round's ratings unsent. Before each rating send the holder re-checks its claim. A 204 makes the row `synced`, resolves the given-up ratings of the same anime and season queued before it, and claims the key's next row within the chain budget; any other answer stops the key for this cycle. A rating's answer never fails the attempt. Every "unconfirmed anime edit" predicate reads only `update` rows: the merge's deferral, the heal's skip, fetch-first's give-up and the automatic resolution of anime keys (`ANIME_UPDATE_OPERATION`). `season_rating_queue` is no longer read or written by either runtime; its table is dropped by a later migration.
 
 **R-7: bounds on the reconnect catch-up**
 
@@ -136,7 +136,7 @@ The status waits for the Bridge only while no runtime has evidence that it is re
 
 **R-13: the claim mechanism**
 
-- The queue key is the anime for `operation_log` and the season for `season_rating_queue`.
+- The queue key is the anime. A season rating is a row of its anime's key in `operation_log` (L28), so one claim covers the anime's edits and ratings alike.
 - Each claim records an owner and a time, stored in added columns. Adding columns migrates no data.
 - The other runtime skips any key with a live claim. It does not wait.
 - A claim expires after 60 s.
@@ -153,14 +153,15 @@ The claim is released when the chain stops.
 
 **R-16(b): the unresolved contract**
 
-- **Which failures:** `dead_letter`, `conflict_exhausted`, rating 404/409, and the R-3 outcomes 404 and no-token.
+- **Which failures:** `dead_letter`, `conflict_exhausted`, a rating refused with any 4xx, and the R-3 outcomes 404 and no-token.
+- **Two kinds of key (L28):** an `anime` key holds the given-up `update` rows of an anime; a `season_rating` key, `{seasonId, animeId}`, holds the given-up (`dead_letter`) `season_rating` rows of that anime in that season, with the refusal in `unresolved_reason`. The season is read from the payload. Resolving one kind never touches the other's rows, and both refuse while the anime holds a live claim.
 - **Merge and heal:** an unresolved key never blocks; both treat it like any other key. A later local edit of that key confirmed by the bridge resolves it automatically, and every automatic resolution is logged with its reason. Amended 2026-10-16 by the maintainer: holding the key would freeze the anime with no way out while the UI is a separate track.
 - **Status:** status counts unresolved keys.
 - **Retention:** an unresolved key is never pruned. Its `dead_letter` and `conflict_exhausted` rows, and its rating rows, stay until the key is resolved, automatically or through the entry point. Only `synced` rows keep the 7-day / 1000-row cleanup, in both runtimes. Amended 2026-10-16 by the maintainer: the earlier 30-day / 500-row cleanup of given-up rows would drop an unresolved key silently, which R-16 forbids.
 - **Resolution:** there is one entry point, and it acts on the whole key.
-  - Keep local: release the held rows and re-chain them from a fresh base.
-  - Keep bridge: drop every row for the key and apply the remote state.
-  - For the 404 and no-token outcomes, only keep bridge is offered. A 404 uses the delete rule.
+  - Keep local: release the held rows and re-chain them from a fresh base. For a rating key, its given-up rows go back to `pending` with no reason; the anime's token is not cleared, since a rating carries no base.
+  - Keep bridge: drop every row for the key and apply the remote state. For a rating key, its non-`synced` rows are dropped and the active-season snapshot shows the bridge's rating.
+  - For the 404 and no-token outcomes, and a rating refused with 404, only keep bridge is offered. An anime 404 uses the delete rule.
 - **UI:** the user interface is a separate design track.
 
 ### Rejected

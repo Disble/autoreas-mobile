@@ -1,26 +1,28 @@
 {
   "name": "rating-transport-failure-stays-pending",
-  "kind": "season_rating",
   "runtimes": [
-    "js"
+    "js",
+    "kotlin"
   ],
-  "given": {
-    "cursor": 0,
-    "animes": [],
-    "outbox": [],
-    "ratings": [
-      {
-        "seasonId": "season-1",
-        "animeId": "anime-1",
-        "nota": 8,
-        "ratedAt": 1700000000000
-      }
-    ]
-  },
   "covers": [
     "R-5"
   ],
-  "description": "A network error keeps the rating pending (unreachable) without failing the attempt (I4).",
+  "description": "A refused connection fails the attempt on its reconcile; the rating is released unsent and stays pending, never given up.",
+  "given": {
+    "cursor": 0,
+    "animes": [],
+    "outbox": [
+      {
+        "animeId": "anime-1",
+        "operation": "season_rating",
+        "payload": {
+          "seasonId": "season-1",
+          "grade": 8,
+          "ratedAt": 1700000000000
+        }
+      }
+    ]
+  },
   "cycles": [
     {
       "bridge": [
@@ -28,16 +30,18 @@
           "transport": "refused"
         }
       ],
-      "attempt": "succeeded"
+      "attempt": "failed"
     }
   ],
   "expect": {
     "requests": [],
-    "ratings": [
+    "outbox": [
       {
         "animeId": "anime-1",
         "status": "pending",
-        "lastFailureKind": "unreachable"
+        "unresolvedReason": null,
+        "claimOwner": null,
+        "conflictAttemptCount": 0
       }
     ]
   }

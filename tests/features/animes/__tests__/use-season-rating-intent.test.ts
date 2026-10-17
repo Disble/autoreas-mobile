@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react-native';
 import { useActiveSeasonStore } from '../../../../src/infrastructure/store/active-season-store';
-import { enqueueSeasonRatingIntent } from '../../../../src/features/sync/season-rating-queue.helpers';
+import { enqueueSeasonRatingIntent } from '../../../../src/features/sync/season-rating-intent.helpers';
 import { LOCAL_ACTIVE_SEASON_ID } from '../../../../src/features/animes/anime-season.constants';
 import { useSeasonRatingIntent } from '../../../../src/features/animes/use-season-rating-intent';
 import { createMockRawDb } from './use-season-rating-intent.helpers';
@@ -10,7 +10,7 @@ jest.mock('../../../../src/infrastructure/db/native-runtime/native-runtime.helpe
   useOptionalSQLiteContext: jest.fn(),
 }));
 
-jest.mock('../../../../src/features/sync/season-rating-queue.helpers', () => ({
+jest.mock('../../../../src/features/sync/season-rating-intent.helpers', () => ({
   enqueueSeasonRatingIntent: jest.fn(),
 }));
 

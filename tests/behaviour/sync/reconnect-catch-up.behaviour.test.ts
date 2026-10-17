@@ -14,6 +14,7 @@ import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-s
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { openPairedDatabase, readAnime } from './unresolved-fixtures.helpers';
+import { ACTIVE_SEASON_ANSWER } from './unresolved-fixtures.constants';
 
 // Same seam as `single-exit.behaviour.test.ts`: only the drizzle factory is swapped.
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
@@ -130,16 +131,20 @@ describe('reconnect catch-up (ADR 009 R-7)', () => {
     fakeBridge.queueResponse(EMPTY_RECONCILE);
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
     fakeBridge.queueResponse(EMPTY_RECONCILE);
+    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
 
     await requestFlush(adapter, 'bootstrap');
     now += 1_000;
     await requestFlush(adapter, 'app_active');
 
+    // A resume also refreshes the active season (L28): a rating the native engine delivered in
+    // the background shows only once the snapshot is read again.
     expect(sentPaths(fakeBridge)).toEqual([
       'POST /api/sync/reconcile',
       'GET /api/animes',
       'POST /api/sync/reconcile',
+      'GET /api/seasons/active',
       'GET /api/animes',
     ]);
   });
@@ -222,6 +227,7 @@ describe('reconnect catch-up (ADR 009 R-7)', () => {
     now += 1_000;
     const held = fakeBridge.queueDeferredResponse();
     fakeBridge.queueResponse(EMPTY_RECONCILE);
+    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
 
     const reconnect = requestFlush(adapter, 'ws_reconnected');
@@ -237,10 +243,12 @@ describe('reconnect catch-up (ADR 009 R-7)', () => {
     await resume;
     await waitForSyncFlushIdle(adapter);
 
-    // The reconnect pulled alone (its heal was recent); the follow-up serves the resume's heal.
+    // The reconnect pulled alone (its heal was recent); the follow-up serves the resume's season
+    // refresh and heal.
     expect(sentPaths(fakeBridge).slice(2)).toEqual([
       'POST /api/sync/reconcile',
       'POST /api/sync/reconcile',
+      'GET /api/seasons/active',
       'GET /api/animes',
     ]);
   });

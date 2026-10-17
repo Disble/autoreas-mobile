@@ -3,7 +3,6 @@ import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
-import * as seasonQueueModule from '../../../src/features/sync/season-rating-queue.helpers';
 import * as seasonSyncModule from '../../../src/features/sync/season-sync.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
@@ -35,9 +34,6 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
-}));
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
@@ -94,11 +90,6 @@ describe('useSyncFacade', () => {
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
-      backlogReadCount: 0,
-      shouldRefreshActiveSeason: false,
-    });
   });
 
   it('stays passive on mount so root runtime owns bootstrap and websocket wiring', () => {
@@ -127,7 +118,6 @@ describe('useSyncFacade', () => {
 
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
     expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
-    expect(seasonQueueModule.drainSeasonRatingQueue).toHaveBeenCalledWith(rawDb);
   });
 
   it('collapses a trigger storm into one running cycle plus exactly one follow-up, never in parallel', async () => {
@@ -204,21 +194,19 @@ describe('useSyncFacade', () => {
     warnSpy.mockRestore();
   });
 
-  it('keeps the coordinated cycle syncing until work after reconcile also succeeds', async () => {
-    let resolveSeasonDrain!: (value: {
-      deliveredCount: number;
-      backlogReadCount: number;
-      shouldRefreshActiveSeason: boolean;
-    }) => void;
+  it('keeps the coordinated cycle syncing until the season refresh after the pass also settles', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let failSeasonRefresh!: (error: Error) => void;
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
       backlogReadCount: 1,
       hasMorePending: false,
+      shouldRefreshActiveSeason: true,
     });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockImplementationOnce(
+    (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
-          resolveSeasonDrain = resolve;
+        new Promise((_resolve, reject) => {
+          failSeasonRefresh = reject;
         }),
     );
 
@@ -234,15 +222,13 @@ describe('useSyncFacade', () => {
     expect(result.current.connectionStatus).toBe('syncing');
 
     await act(async () => {
-      resolveSeasonDrain({
-        deliveredCount: 0,
-        backlogReadCount: 0,
-        shouldRefreshActiveSeason: false,
-      });
+      failSeasonRefresh(new BridgeUnreachableError('http://bridge.test/api/seasons/active', 'offline'));
       await syncPromise;
     });
 
+    // The refresh is best effort (I8): its failure never fails the cycle.
     expect(result.current.connectionStatus).toBe('online');
+    warn.mockRestore();
   });
 
   it('publishes reachable reconcile rejection as sync_error rather than unreachable', async () => {
@@ -306,64 +292,13 @@ describe('useSyncFacade', () => {
     expect(secondFacade.result.current.connectionStatus).toBe('online');
   });
 
-  it('never publishes online, and never fails, while a season rating stays queued for retry', async () => {
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
-      deliveredCount: 0,
-      backlogReadCount: 1,
-      shouldRefreshActiveSeason: false,
-      hasMorePending: true,
-    });
-
-    const { result } = renderHook(() => useSyncFacade());
-
-    await act(async () => {
-      await expect(result.current.manualSync()).resolves.toBe(0);
-    });
-
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-    expect(result.current.connectionStatus).not.toBe('online');
-  });
-
-  it('never fails the cycle over a season rating kept as unresolved (ADR 009 R-5)', async () => {
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
-      deliveredCount: 0,
-      backlogReadCount: 1,
-      shouldRefreshActiveSeason: false,
-      hasMorePending: false,
-    });
-
-    const { result } = renderHook(() => useSyncFacade());
-
-    await act(async () => {
-      await expect(result.current.manualSync()).resolves.toBe(0);
-    });
-
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-    expect(result.current.connectionStatus).toBe('online');
-  });
-
   it('stays online when the active-season refresh fails after confirmed delivery', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
       backlogReadCount: 1,
       hasMorePending: false,
-    });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
-      deliveredCount: 1,
-      backlogReadCount: 1,
       shouldRefreshActiveSeason: true,
-      hasMorePending: false,
     });
     (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValueOnce(
       new BridgeUnreachableError('http://bridge.test/api/seasons/active', 'offline'),
@@ -380,12 +315,11 @@ describe('useSyncFacade', () => {
     warn.mockRestore();
   });
 
-  it('includes unresolved season ratings in visible count so prior online cannot appear current', () => {
+  it('includes a queued season rating in the visible count so prior online cannot appear current', () => {
     const attempt = beginSyncConnectionAttempt();
     markSyncConnectionSucceeded(attempt, 1_000);
-    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
-      .mockReturnValueOnce({ data: [] })
-      .mockReturnValueOnce({ data: [{ id: 7 }] });
+    // A rating waits in the one outbox (L28), so the outbox count already holds it.
+    (nativeRuntime.useOptionalLiveQuery as jest.Mock).mockReturnValueOnce({ data: [{ id: 7 }] });
 
     const { result } = renderHook(() => useSyncFacade());
     const visible = deriveVisibleSyncStatus(
@@ -423,20 +357,10 @@ describe('useSyncFacade', () => {
   });
 
   it('does not let an older paused facade overwrite a newer standalone failure', async () => {
-    let resolveSeasonDrain!: (value: {
-      deliveredCount: number;
-      backlogReadCount: number;
-      shouldRefreshActiveSeason: boolean;
-      hasMorePending: boolean;
-    }) => void;
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-      syncedCount: 0,
-      backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockImplementationOnce(
+    let resolvePass!: (value: { syncedCount: number; backlogReadCount: number; hasMorePending: boolean }) => void;
+    (syncModule.syncPendingOperations as jest.Mock).mockImplementationOnce(
       () => new Promise((resolve) => {
-        resolveSeasonDrain = resolve;
+        resolvePass = resolve;
       }),
     );
     const { result } = renderHook(() => useSyncFacade());
@@ -457,12 +381,7 @@ describe('useSyncFacade', () => {
     });
 
     await act(async () => {
-      resolveSeasonDrain({
-        deliveredCount: 0,
-        backlogReadCount: 0,
-        shouldRefreshActiveSeason: false,
-        hasMorePending: false,
-      });
+      resolvePass({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
       await olderFacadePromise;
     });
 
@@ -470,16 +389,10 @@ describe('useSyncFacade', () => {
     expect(result.current.connectionStatus).not.toBe('online');
   });
 
-  it('allows online only when operation and season work are fully resolved', async () => {
+  it('allows online only when the outbox pass leaves nothing pending', async () => {
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
       backlogReadCount: 1,
-      hasMorePending: false,
-    });
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValueOnce({
-      deliveredCount: 1,
-      backlogReadCount: 1,
-      shouldRefreshActiveSeason: false,
       hasMorePending: false,
     });
     const { result } = renderHook(() => useSyncFacade());

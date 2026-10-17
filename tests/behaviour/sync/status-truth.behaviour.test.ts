@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-queue.helpers';
+import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
 import { writeCachedActiveSeasonSnapshot } from '../../../src/features/sync/season-sync.helpers';
 import { resolveSyncFacadeConnectionStatus } from '../../../src/features/sync/bridge-reachability.helpers';
 import { runMigrations } from '../../../src/infrastructure/db/client';
@@ -151,7 +151,7 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
       await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1 });
       await waitForSyncFlushIdle(adapter);
 
-      expect(await readRatingRows(adapter)).toEqual([]);
+      expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
       expect(useActiveSeasonStore.getState().activeSeasonSnapshot?.seasonId).toBe('season-2');
       expect(await readCachedSeason(adapter)).toEqual({ season_id: 'season-2' });
     });
@@ -167,7 +167,7 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
       await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1 });
       await waitForSyncFlushIdle(adapter);
 
-      expect(await readRatingRows(adapter)).toEqual([]);
+      expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
       expect(await readCachedSeason(adapter)).toEqual({ season_id: 'season-1' });
       expect(getSyncConnectionSnapshot().kind).toBe('online');
     });

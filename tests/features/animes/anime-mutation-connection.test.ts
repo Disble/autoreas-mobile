@@ -8,7 +8,6 @@ import {
   buildCapPlusPatch,
 } from '../../../src/features/animes/anime-mutation.helpers';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import { drainSeasonRatingQueue } from '../../../src/features/sync/season-rating-queue.helpers';
 import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
 import {
   registerSyncFlushDispatcher,
@@ -35,10 +34,6 @@ jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
 
 jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
 }));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
@@ -173,12 +168,6 @@ describe('anime mutation connection truth', () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 0,
       backlogReadCount: 0,
-      hasMorePending: false,
-    });
-    (drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
-      backlogReadCount: 0,
-      shouldRefreshActiveSeason: false,
       hasMorePending: false,
     });
     (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);

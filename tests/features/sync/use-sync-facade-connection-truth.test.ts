@@ -3,7 +3,6 @@ import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
-import * as seasonQueueModule from '../../../src/features/sync/season-rating-queue.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
@@ -34,9 +33,6 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../src/features/sync/season-rating-queue.helpers', () => ({
-  drainSeasonRatingQueue: jest.fn(),
-}));
 
 jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
   fetchActiveSeasonFromBridge: jest.fn(),
@@ -91,11 +87,6 @@ describe('useSyncFacade shared connection truth', () => {
     (runtimeStatusModule.recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
     (runtimeStatusModule.recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
-    (seasonQueueModule.drainSeasonRatingQueue as jest.Mock).mockResolvedValue({
-      deliveredCount: 0,
-      backlogReadCount: 0,
-      shouldRefreshActiveSeason: false,
-    });
   });
 
   it('shares the latest unreachable failure across mounted facade consumers', async () => {
@@ -226,7 +217,6 @@ describe('useSyncFacade shared connection truth', () => {
     const failedAt = getSyncConnectionSnapshot().bridgeContact?.at ?? 0;
     (nativeRuntime.useOptionalLiveQuery as jest.Mock)
       .mockReturnValueOnce({ data: [{ id: 1 }] })
-      .mockReturnValueOnce({ data: [] })
       .mockReturnValueOnce({ data: [{ lastAttemptAt: failedAt + 1, lastSuccessAt: failedAt + 1 }] });
 
     const { result } = renderHook(() => useSyncFacade());

@@ -44,12 +44,12 @@ const typeScriptSources = listSourceFiles(join(REPOSITORY_ROOT, 'src'), ['.ts', 
 const kotlinSources = listSourceFiles(KOTLIN_SOURCE_ROOT, ['.kt']);
 
 describe('one registry, one exit per runtime (ADR 009 R-2)', () => {
-  it('lets only the dispatcher cycle run the anime-operation and season-rating drains', () => {
+  it('lets only the dispatcher cycle run the outbox pass, and only that pass send ratings (L28)', () => {
     expect(filesMatching(typeScriptSources, callOf('syncPendingOperations'))).toEqual([
       'src/features/sync/sync-facade.helpers.ts',
     ]);
-    expect(filesMatching(typeScriptSources, callOf('drainSeasonRatingQueue'))).toEqual([
-      'src/features/sync/sync-facade.helpers.ts',
+    expect(filesMatching(typeScriptSources, callOf('sendSeasonRatingRound'))).toEqual([
+      'src/features/sync/reconcile.helpers.ts',
     ]);
   });
 
@@ -70,7 +70,7 @@ describe('one registry, one exit per runtime (ADR 009 R-2)', () => {
       'src/features/sync/reconcile-round.helpers.ts',
     ]);
     expect(filesMatching(typeScriptSources, /\.postActiveSeasonRating\s*\(/)).toEqual([
-      'src/features/sync/season-rating-queue.helpers.ts',
+      'src/features/sync/season-rating-round.helpers.ts',
     ]);
     expect(filesMatching(typeScriptSources, /\.postSyncDiagnostics\s*\(/)).toEqual([
       'src/features/sync/sync-diagnostics-flush.helpers.ts',

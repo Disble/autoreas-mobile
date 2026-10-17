@@ -5,6 +5,7 @@ import { getLastChangelogId } from './last-changelog.helpers';
 import { countOperationLogBacklogRows } from './operation-log-retention.helpers';
 import { JS_OUTBOX_CLAIM_OWNER, OUTBOX_CHAIN_BUDGET_MS } from './outbox-claim.constants';
 import { claimOperationLogBatch } from './outbox-claim.helpers';
+import { SEASON_RATING_OPERATION } from './outbox-operation.constants';
 import { publishCheckpoint, sendReconcileRound } from './reconcile-round.helpers';
 import {
   RECONCILE_BACKLOG_BATCH_LIMIT,
@@ -13,10 +14,12 @@ import {
 import type {
   ReconcileApplyMode,
   ReconcileRoundContext,
+  SplitRoundOutcome,
   ReconcileTelemetryContext,
   SyncCycleCheckpointRecorder,
   SyncPendingOperationsResult,
 } from './reconcile.types';
+import { releaseSeasonRatings, sendSeasonRatingRound } from './season-rating-round.helpers';
 import {
   captureSyncDiagnosticsEnvelope,
   flushSyncDiagnosticsOutbox,
@@ -65,6 +68,7 @@ export async function syncPendingOperations(
     let totalConfirmed = 0;
     let totalBacklogRead = 0;
     let hasMorePending: boolean;
+    let shouldRefreshActiveSeason = false;
     // Reruns replace, rather than accumulate, the diagnostics-flush outcome: each batch flushes
     // whatever the outbox holds AT THAT MOMENT, and the caller cares about the most recent state.
     let diagnosticsFlush: SyncDiagnosticsFlushResult;
@@ -81,6 +85,7 @@ export async function syncPendingOperations(
       totalConfirmed += batch.syncedCount;
       totalBacklogRead += batch.backlogReadCount;
       hasMorePending = batch.hasMorePending;
+      shouldRefreshActiveSeason ||= batch.shouldRefreshActiveSeason;
       diagnosticsFlush = batch.diagnosticsFlush;
     } while (syncState.rerunRequested);
 
@@ -88,6 +93,7 @@ export async function syncPendingOperations(
       syncedCount: totalConfirmed,
       backlogReadCount: totalBacklogRead,
       hasMorePending,
+      shouldRefreshActiveSeason,
       diagnosticsFlush,
     };
   };
@@ -194,28 +200,69 @@ async function performSyncPendingOperations(
   let syncedCount = 0;
   let backlogReadCount = 0;
   let unconfirmedCount = 0;
+  let shouldRefreshActiveSeason = false;
+  let firstRound = true;
 
-  // The first round always goes out, even empty: it is also this cycle's pull. Every later round
-  // is a chain step and carries only the successors the previous round claimed (ADR 009 R-14).
+  // The first round always reconciles, even with no edit: it is also this cycle's pull. Every
+  // later round is a chain step and carries only the successors the previous round claimed
+  // (ADR 009 R-14).
   do {
     // Sequential by definition: each send waits for the previous confirmation and its token.
-    const outcome = await sendReconcileRound(rawDb, roundContext, round);
+    const outcome = await sendSplitRound(rawDb, roundContext, round, firstRound);
 
     syncedCount += outcome.confirmedCount;
     backlogReadCount += outcome.sentCount;
     unconfirmedCount += outcome.unconfirmedCount;
+    shouldRefreshActiveSeason ||= outcome.shouldRefreshActiveSeason;
     round = outcome.successors;
     roundContext = {
       ...roundContext,
       lastChangelogId: outcome.nextLastChangelogId,
       clientTelemetry: null,
     };
+    firstRound = false;
   } while (round.length > 0);
 
   return {
     syncedCount,
     backlogReadCount,
     hasMorePending: unconfirmedCount > 0 || totalBacklogRowCount > backlogReadCount,
+    shouldRefreshActiveSeason,
     diagnosticsFlush,
+  };
+}
+
+/**
+ * Sends one round of a chain (ADR 009 R-14, L28). Each key holds one row per round, so a key's
+ * rows still go in queue order across both endpoints: its `update` rows share one reconcile, sent
+ * on the first round even with no edit (it is the cycle's pull) and on a later round only when it
+ * holds an edit; then its season ratings go one per request. A failed reconcile releases the
+ * round's ratings unsent and rethrows. A refused rating is unresolved, not pending: only a
+ * retryable rating answer counts as unconfirmed.
+ */
+async function sendSplitRound(
+  rawDb: SQLiteDatabase,
+  context: ReconcileRoundContext,
+  round: readonly OperationLogRow[],
+  firstRound: boolean,
+): Promise<SplitRoundOutcome> {
+  const ratings = round.filter((row) => row.operation === SEASON_RATING_OPERATION);
+  const edits = round.filter((row) => row.operation !== SEASON_RATING_OPERATION);
+  const applied = firstRound || edits.length > 0
+    ? await sendReconcileRound(rawDb, context, edits).catch(async (error: unknown) => {
+        // The reconcile released its own rows; the round's ratings go back unsent with them.
+        await releaseSeasonRatings(rawDb, ratings, context.claim);
+        throw error;
+      })
+    : { sentCount: 0, confirmedCount: 0, unconfirmedCount: 0, nextLastChangelogId: context.lastChangelogId, successors: [] };
+  const rated = await sendSeasonRatingRound(rawDb, context, ratings);
+
+  return {
+    sentCount: applied.sentCount + rated.attemptedCount,
+    confirmedCount: applied.confirmedCount + rated.confirmedCount,
+    unconfirmedCount: applied.unconfirmedCount + rated.pendingCount,
+    nextLastChangelogId: applied.nextLastChangelogId,
+    successors: [...applied.successors, ...rated.successors],
+    shouldRefreshActiveSeason: rated.shouldRefreshActiveSeason,
   };
 }

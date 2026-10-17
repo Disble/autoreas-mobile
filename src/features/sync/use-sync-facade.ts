@@ -6,7 +6,6 @@ import type { SyncRuntimeReachabilityEvidence } from './bridge-reachability.type
 import {
   buildPendingOperationsQuery,
   buildRuntimeReachabilityQuery,
-  buildUnresolvedSeasonRatingQuery,
   resolveSyncPrerequisites,
 } from './sync-facade.helpers';
 import type { UseSyncFacadeResult } from './sync-facade.types';
@@ -40,14 +39,6 @@ export function useSyncFacade(): UseSyncFacadeResult {
     pendingOperationsQuery,
     [] as { id: number }[],
   );
-  const unresolvedSeasonRatingsQuery = useMemo(
-    () => (rawDb ? buildUnresolvedSeasonRatingQuery(rawDb) : null),
-    [rawDb],
-  );
-  const { data: unresolvedSeasonRatingRows } = useOptionalLiveQuery(
-    unresolvedSeasonRatingsQuery,
-    [] as { id: number }[],
-  );
   const runtimeReachabilityQuery = useMemo(
     () => (rawDb ? buildRuntimeReachabilityQuery(rawDb) : null),
     [rawDb],
@@ -58,7 +49,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   );
 
   // 5. Derived State (`useMemo`)
-  const pendingOpsCount = pendingOperationRows.length + unresolvedSeasonRatingRows.length;
+  const pendingOpsCount = pendingOperationRows.length;
   // ADR 009 R-9: "waiting for the bridge" only while no runtime has evidence it is reachable.
   const connectionStatus = resolveSyncFacadeConnectionStatus(
     syncConnection,

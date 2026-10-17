@@ -1,22 +1,20 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { listUnresolvedKeys, readUnresolvedKeyCount } from '../../../src/features/sync';
 import { resyncFromBridgeSnapshot } from '../../../src/features/sync/full-resync.helpers';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
-import {
-  drainSeasonRatingQueue,
-  enqueueSeasonRatingIntent,
-} from '../../../src/features/sync/season-rating-queue.helpers';
-import { buildUnresolvedSeasonRatingQuery } from '../../../src/features/sync/sync-facade.helpers';
+import { buildPendingOperationsQuery } from '../../../src/features/sync/sync-facade.helpers';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { buildReconcileResponseBody } from '../../support/sync-fixtures.helpers';
 import {
   animeAnswer,
+  emptyReconcile,
   openPairedDatabase,
+  rateAndSync,
   readAnime,
   readOperationRows,
   readRatingRows,
   reconcileAnswer,
+  sentRatings,
 } from './unresolved-fixtures.helpers';
 
 // Same seam as `outbox-chain.behaviour.test.ts`: only the drizzle factory is swapped.
@@ -29,13 +27,6 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
   useOptionalSQLiteContext: () => null,
   useOptionalLiveQuery: (_query: unknown, fallback: unknown) => ({ data: fallback }),
 }));
-
-/** Queues one season rating of `animeId` and drains it against a bridge answering `status`. */
-async function rateAndDrain(adapter: SQLiteDatabase, fakeBridge: FakeBridge, animeId: string, status: number) {
-  await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId, nota: 5, ratedAt: 1_700_000_000_000 });
-  fakeBridge.queueResponse({ status, body: status === 204 ? null : { error: 'rejected' } });
-  await drainSeasonRatingQueue(adapter);
-}
 
 /** A reconcile 202 that confirms nothing and carries the PC's rename of `anime-1`. */
 function remoteRename(timestamp: number) {
@@ -127,30 +118,31 @@ describe('every covered failure becomes a durable, counted unresolved key (ADR 0
     [409, 'conflict', ['keep_local', 'keep_bridge']],
   ])('keeps a rating the bridge answered %i as unresolved and never sends it again', async (status, kind, choices) => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', status);
 
-    await drainSeasonRatingQueue(adapter);
+    fakeBridge.queueResponse(emptyReconcile());
+    await syncPendingOperations(adapter);
 
-    expect(fakeBridge.requests).toHaveLength(1);
+    expect(sentRatings(fakeBridge)).toHaveLength(1);
     expect(await readRatingRows(adapter)).toEqual([
-      { id: 1, anime_id: 'anime-1', status: 'failed', last_failure_kind: kind },
+      { id: 1, anime_id: 'anime-1', status: 'dead_letter', unresolved_reason: kind },
     ]);
     expect(await listUnresolvedKeys(adapter)).toEqual([
-      { kind: 'season_rating', seasonId: 'season-1', animeId: 'anime-1', rows: [{ id: 1, lastFailureKind: kind }], offeredChoices: choices },
+      { kind: 'season_rating', seasonId: 'season-1', animeId: 'anime-1', rows: [{ id: 1, unresolvedReason: kind }], offeredChoices: choices },
     ]);
   });
 
   it('counts keys, not rows: two given-up rows of one anime and one rating make two', async () => {
     const adapter = await openPairedDatabase({ episodes: [5, 6] });
     await adapter.runAsync("UPDATE operation_log SET status = 'dead_letter'");
-    await rateAndDrain(adapter, fakeBridge, 'anime-2', 404);
+    await rateAndSync(adapter, fakeBridge, 'anime-2', 404);
 
     expect(await readUnresolvedKeyCount(adapter)).toBe(2);
   });
 
   it('counts nothing while nothing is given up', async () => {
     const adapter = await openPairedDatabase();
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', 500);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', 500);
 
     expect(await readUnresolvedKeyCount(adapter)).toBe(0);
   });
@@ -170,19 +162,19 @@ describe('an unresolved rating is never counted as pending work (B1)', () => {
   // Every 4xx is unresolved since ADR 009 R-5 gave 401 and any other 4xx a terminal fate.
   it.each([404, 409, 401, 422])('drops a rating the bridge answered %i from the pending count', async (status) => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', status);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', status);
 
-    expect(await buildUnresolvedSeasonRatingQuery(adapter)).toHaveLength(0);
+    expect(await buildPendingOperationsQuery(adapter)).toHaveLength(0);
   });
 
-  it('still counts a rating the bridge answered 500 (pending, unexpected_response)', async () => {
+  it('still counts a rating the bridge answered 500 (pending)', async () => {
     const adapter = await openPairedDatabase({ episodes: [] });
-    await rateAndDrain(adapter, fakeBridge, 'anime-1', 500);
+    await rateAndSync(adapter, fakeBridge, 'anime-1', 500);
 
     expect(await readRatingRows(adapter)).toEqual([
-      { id: 1, anime_id: 'anime-1', status: 'pending', last_failure_kind: 'unexpected_response' },
+      { id: 1, anime_id: 'anime-1', status: 'pending', unresolved_reason: null },
     ]);
-    expect(await buildUnresolvedSeasonRatingQuery(adapter)).toEqual([{ id: 1 }]);
+    expect(await buildPendingOperationsQuery(adapter)).toEqual([{ id: 1 }]);
   });
 });
 

@@ -3,7 +3,7 @@ import type { BridgeAnimeCoverResult, BridgeClient } from '../../../infrastructu
 import type { BridgeConfig } from '../../../infrastructure/db/schema';
 import type { CoverManifest } from '../../../infrastructure/cover-files';
 
-/** Clock seam for the cover sweep's timing decisions, mirroring the season-rating-queue clock. */
+/** Clock seam for the cover sweep's timing decisions, mirroring the season-rating clock. */
 export interface CoverSweepClock {
   readonly now: () => number;
 }

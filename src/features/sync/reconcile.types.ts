@@ -80,8 +80,21 @@ export interface SyncPendingOperationsResult {
    */
   readonly backlogReadCount: number;
   readonly hasMorePending: boolean;
+  /**
+   * A season rating was delivered, or refused with a 404 or 409, so the active-season snapshot
+   * no longer matches what the bridge holds and should be fetched again (L28).
+   */
+  readonly shouldRefreshActiveSeason: boolean;
   /** The diagnostics-outbox flush outcome for this cycle (design.md Decision 2/3). */
   readonly diagnosticsFlush: SyncDiagnosticsFlushResult;
+}
+
+/**
+ * What one round of a chain did across both endpoints (L28): its reconcile's outcome plus its
+ * season ratings', and whether a rating answer calls for an active-season refresh.
+ */
+export interface SplitRoundOutcome extends ReconcileRoundOutcome {
+  readonly shouldRefreshActiveSeason: boolean;
 }
 
 /** What one reconcile round needs that stays fixed, or is carried forward, across a chain. */

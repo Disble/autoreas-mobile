@@ -8,7 +8,7 @@ import type {
   SyncVisibleStatusTone,
 } from '../../../sync/sync-visible-status.types';
 import type { AnimeListItem } from '../../anime-season.types';
-import type { SeasonRatingFailureKind } from '../../../sync/season-rating-queue.types';
+import type { SeasonRatingFailureKind } from '../../../sync/season-rating-event.types';
 import type { SeasonRatingValue } from '../SeasonRatingSheet';
 import type { AnimeDayFilter, AnimeDayFilterOption } from '../../anime.types';
 import type { AnimeCardProps } from '../AnimeCard';
