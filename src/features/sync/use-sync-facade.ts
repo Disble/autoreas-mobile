@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useOptionalLiveQuery, useOptionalSQLiteContext } from '../../infrastructure/db/native-runtime/native-runtime.helpers';
 import { useBridgeConfig } from '../settings/use-bridge-config';
+import { resolveSyncFacadeConnectionStatus } from './bridge-reachability.helpers';
+import type { SyncRuntimeReachabilityEvidence } from './bridge-reachability.types';
 import {
   buildPendingOperationsQuery,
+  buildRuntimeReachabilityQuery,
   buildUnresolvedSeasonRatingQuery,
   resolveSyncPrerequisites,
 } from './sync-facade.helpers';
@@ -10,8 +13,8 @@ import type { UseSyncFacadeResult } from './sync-facade.types';
 import { requestFlush } from './sync-flush.helpers';
 import type { SyncFlushReason } from './sync-flush.types';
 import {
+  forgetSyncConnectionBridge,
   getSyncConnectionSnapshot,
-  invalidateSyncConnectionOnline,
   subscribeSyncConnection,
 } from './sync-connection-store/sync-connection-store.helpers';
 
@@ -45,9 +48,22 @@ export function useSyncFacade(): UseSyncFacadeResult {
     unresolvedSeasonRatingsQuery,
     [] as { id: number }[],
   );
+  const runtimeReachabilityQuery = useMemo(
+    () => (rawDb ? buildRuntimeReachabilityQuery(rawDb) : null),
+    [rawDb],
+  );
+  const { data: runtimeReachabilityRows } = useOptionalLiveQuery(
+    runtimeReachabilityQuery,
+    [] as SyncRuntimeReachabilityEvidence[],
+  );
 
   // 5. Derived State (`useMemo`)
   const pendingOpsCount = pendingOperationRows.length + unresolvedSeasonRatingRows.length;
+  // ADR 009 R-9: "waiting for the bridge" only while no runtime has evidence it is reachable.
+  const connectionStatus = resolveSyncFacadeConnectionStatus(
+    syncConnection,
+    runtimeReachabilityRows[0] ?? null,
+  );
   const syncPrerequisites = resolveSyncPrerequisites({
     hasDatabase: rawDb !== null,
     configStatus,
@@ -57,7 +73,7 @@ export function useSyncFacade(): UseSyncFacadeResult {
   // 6. Callbacks (`useCallback` calling pure helpers)
   const requestSync = useCallback((reason: SyncFlushReason) => {
     if (syncPrerequisites === 'missing') {
-      invalidateSyncConnectionOnline();
+      forgetSyncConnectionBridge();
       return Promise.resolve(0);
     }
 
@@ -84,11 +100,11 @@ export function useSyncFacade(): UseSyncFacadeResult {
       return;
     }
 
-    invalidateSyncConnectionOnline();
+    forgetSyncConnectionBridge();
   }, [syncPrerequisites]);
 
   return {
-    connectionStatus: syncConnection.kind,
+    connectionStatus,
     lastSyncAt: syncConnection.lastSyncAt,
     pendingOpsCount,
     requestSync,

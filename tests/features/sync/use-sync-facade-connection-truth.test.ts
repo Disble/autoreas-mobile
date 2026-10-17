@@ -11,6 +11,8 @@ import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-fac
 import { registerSyncFlushDispatcher, resetSyncFlush } from '../../../src/features/sync/sync-flush.helpers';
 import {
   beginSyncConnectionAttempt,
+  getSyncConnectionSnapshot,
+  markSyncConnectionFailed,
   markSyncConnectionSucceeded,
   resetSyncConnectionStore,
 } from '../../../src/features/sync/sync-connection-store';
@@ -216,5 +218,28 @@ describe('useSyncFacade shared connection truth', () => {
     const { result } = renderHook(() => useSyncFacade());
 
     expect(result.current.connectionStatus).toBe('idle');
+  });
+
+  it('reads a native success newer than its own unreachable failure as reachable (ADR 009 R-9)', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionFailed(attempt, new BridgeUnreachableError('http://bridge.test/api/sync/reconcile', 'offline'));
+    const failedAt = getSyncConnectionSnapshot().bridgeContact?.at ?? 0;
+    (nativeRuntime.useOptionalLiveQuery as jest.Mock)
+      .mockReturnValueOnce({ data: [{ id: 1 }] })
+      .mockReturnValueOnce({ data: [] })
+      .mockReturnValueOnce({ data: [{ lastAttemptAt: failedAt + 1, lastSuccessAt: failedAt + 1 }] });
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    expect(result.current.connectionStatus).toBe('reachable');
+  });
+
+  it('keeps an unreachable failure when the native row holds no newer success', () => {
+    const attempt = beginSyncConnectionAttempt();
+    markSyncConnectionFailed(attempt, new BridgeUnreachableError('http://bridge.test/api/sync/reconcile', 'offline'));
+
+    const { result } = renderHook(() => useSyncFacade());
+
+    expect(result.current.connectionStatus).toBe('unreachable');
   });
 });

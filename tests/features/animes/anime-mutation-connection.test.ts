@@ -210,6 +210,7 @@ describe('anime mutation connection truth', () => {
       kind: 'unreachable',
       lastSyncAt: now - 1_000,
       message: unreachableError.message,
+      bridgeContact: { at: expect.any(Number), reached: false },
     });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }));
   });
@@ -233,6 +234,7 @@ describe('anime mutation connection truth', () => {
       kind: 'unreachable',
       lastSyncAt: null,
       message: unreachableError.message,
+      bridgeContact: { at: expect.any(Number), reached: false },
     });
   });
 
@@ -295,6 +297,7 @@ describe('anime mutation connection truth', () => {
       kind: 'sync_error',
       lastSyncAt: null,
       message: 'Sync failed',
+      bridgeContact: null,
     });
   });
 });

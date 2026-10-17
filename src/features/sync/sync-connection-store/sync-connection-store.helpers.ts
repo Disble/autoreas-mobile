@@ -24,8 +24,8 @@ export function subscribeSyncConnection(listener: () => void): () => void {
 export function beginSyncConnectionAttempt(): number {
   SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
   syncConnectionStore.setState((current) => ({
+    ...current,
     kind: 'syncing',
-    lastSyncAt: current.lastSyncAt,
     message: null,
   }));
 
@@ -42,26 +42,37 @@ export function markSyncConnectionSucceeded(attempt: number, syncedAt: number): 
     kind: 'online',
     lastSyncAt: syncedAt,
     message: null,
+    bridgeContact: { at: syncedAt, reached: true },
   });
 }
 
-/** Publishes a transport or reachable sync failure without erasing prior success history. */
+/**
+ * Publishes a transport or reachable sync failure without erasing prior success history.
+ * Only a transport failure is evidence that the bridge was not reached (ADR 009 R-9); any other
+ * failure keeps the previous reachability evidence, because it does not prove either way.
+ */
 export function markSyncConnectionFailed(attempt: number, error: unknown): void {
   if (attempt !== SYNC_CONNECTION_ATTEMPT_STATE.current) {
     return;
   }
 
   const message = error instanceof Error ? error.message : 'Sync failed';
+  const isUnreachable = error instanceof BridgeUnreachableError;
 
   syncConnectionStore.setState((current) => ({
-    kind: error instanceof BridgeUnreachableError ? 'unreachable' : 'sync_error',
+    kind: isUnreachable ? 'unreachable' : 'sync_error',
     lastSyncAt: current.lastSyncAt,
     message,
+    bridgeContact: isUnreachable ? { at: Date.now(), reached: false } : current.bridgeContact,
   }));
 }
 
-/** Completes the latest attempt as pending/local rather than claiming current bridge truth. */
-export function markSyncConnectionPending(attempt: number): void {
+/**
+ * Completes the latest attempt as pending/local rather than claiming current bridge truth. The
+ * attempt did reach the bridge at `reachedAt` (its reconcile was answered), so that is recorded as
+ * reachability evidence even though work remains (ADR 009 R-9).
+ */
+export function markSyncConnectionPending(attempt: number, reachedAt: number): void {
   if (attempt !== SYNC_CONNECTION_ATTEMPT_STATE.current) {
     return;
   }
@@ -70,16 +81,34 @@ export function markSyncConnectionPending(attempt: number): void {
     kind: 'idle',
     lastSyncAt: current.lastSyncAt,
     message: null,
+    bridgeContact: { at: reachedAt, reached: true },
   }));
 }
 
-/** Invalidates online truth because new durable work exists or sync prerequisites disappeared. */
+/**
+ * Invalidates online truth because new durable work exists. New work says nothing about the
+ * bridge, so the reachability evidence is kept.
+ */
 export function invalidateSyncConnectionOnline(): void {
   SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
   syncConnectionStore.setState((current) => ({
+    ...current,
     kind: 'idle',
-    lastSyncAt: current.lastSyncAt,
     message: null,
+  }));
+}
+
+/**
+ * Invalidates online truth because the sync prerequisites disappeared (unpaired, no database),
+ * and forgets the reachability evidence: it belonged to a pairing that no longer exists.
+ */
+export function forgetSyncConnectionBridge(): void {
+  SYNC_CONNECTION_ATTEMPT_STATE.current += 1;
+  syncConnectionStore.setState((current) => ({
+    ...current,
+    kind: 'idle',
+    message: null,
+    bridgeContact: null,
   }));
 }
 

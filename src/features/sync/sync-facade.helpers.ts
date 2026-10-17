@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { and, eq, inArray, not } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
-import { operationLog, seasonRatingQueue } from '../../infrastructure/db/schema';
+import { operationLog, seasonRatingQueue, syncRuntimeStatus } from '../../infrastructure/db/schema';
 import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
@@ -157,7 +157,8 @@ export async function runCoordinatedForegroundSyncCycle({
     await healSnapshotOnDemand(rawDb, healSnapshot);
 
     if (result.hasMorePending || seasonDrainResult.hasMorePending) {
-      markSyncConnectionPending(attempt);
+      // The reconcile above was answered, so this cycle reached the bridge (ADR 009 R-9).
+      markSyncConnectionPending(attempt, Date.now());
       triggerCoverSweep(rawDb, source, healSnapshot);
       return result.syncedCount;
     }
@@ -251,4 +252,18 @@ export function buildUnresolvedSeasonRatingQuery(
       ),
     )
     .limit(PENDING_OPERATIONS_LIVE_QUERY_LIMIT);
+}
+
+/**
+ * Builds the live query for the reachability evidence in `sync_runtime_status` (ADR 009 R-9): the
+ * singleton row both runtimes write, read so a native success the JS store never saw still counts.
+ */
+export function buildRuntimeReachabilityQuery(rawDb: Parameters<typeof createDrizzleDb>[0]) {
+  return createDrizzleDb(rawDb)
+    .select({
+      lastAttemptAt: syncRuntimeStatus.lastAttemptAt,
+      lastSuccessAt: syncRuntimeStatus.lastSuccessAt,
+    })
+    .from(syncRuntimeStatus)
+    .limit(1);
 }

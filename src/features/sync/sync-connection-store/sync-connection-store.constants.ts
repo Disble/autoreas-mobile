@@ -6,6 +6,7 @@ export const INITIAL_SYNC_CONNECTION_SNAPSHOT: SyncConnectionSnapshot = {
   kind: 'idle',
   lastSyncAt: null,
   message: null,
+  bridgeContact: null,
 };
 
 /** Provides the shared vanilla store behind every foreground sync facade consumer. */

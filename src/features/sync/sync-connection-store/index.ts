@@ -1,5 +1,6 @@
 export {
   beginSyncConnectionAttempt,
+  forgetSyncConnectionBridge,
   getSyncConnectionSnapshot,
   markSyncConnectionFailed,
   invalidateSyncConnectionOnline,
@@ -10,6 +11,7 @@ export {
   subscribeSyncConnection,
 } from './sync-connection-store.helpers';
 export type {
+  SyncBridgeContact,
   SyncConnectionAttemptPublication,
   SyncConnectionSnapshot,
   SyncConnectionStatus,

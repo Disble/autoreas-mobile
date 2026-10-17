@@ -88,6 +88,14 @@ export function formatLastSyncRecency(lastSyncAt: number | null, now: Date): str
 }
 
 /**
+ * Tells whether the latest exchange reached the bridge (ADR 009 R-9): a cycle that fully succeeded
+ * (`online`), or the facade's `reachable`. Only then may the status stop waiting for the bridge.
+ */
+function isBridgeKnownReachable(facts: SyncVisibleStatusFacts): boolean {
+  return facts.connectionStatus === 'online' || facts.connectionStatus === 'reachable';
+}
+
+/**
  * Derives the visible status when nothing is waiting to be sent.
  * Every variant is neutral: a PC that is off or a device without Wi-Fi is the normal state of a local-first app.
  */
@@ -112,12 +120,17 @@ function deriveNoPendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sy
   }
 
   const lastSyncRecency = formatLastSyncRecency(facts.lastSyncAt, now);
+  let description = 'La PC todavía no respondió.';
+
+  if (lastSyncRecency) {
+    description = `Último sync ${lastSyncRecency}.`;
+  } else if (isBridgeKnownReachable(facts)) {
+    description = 'El Bridge está conectado.';
+  }
 
   return {
     chipLabel: 'Nada por enviar',
-    description: lastSyncRecency
-      ? `Último sync ${lastSyncRecency}.`
-      : 'La PC todavía no respondió.',
+    description,
     title: 'Nada por enviar',
     tone: 'default',
   };
@@ -165,6 +178,17 @@ function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sync
       chipLabel: 'Sin Wi-Fi',
       description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} cuando vuelvas a conectarte.`,
       title: 'Sin Wi-Fi',
+      tone: 'default',
+    };
+  }
+
+  // A reachable bridge is not one to wait for (ADR 009 R-9), however old the last full sync is:
+  // the changes leave with the next cycle.
+  if (isBridgeKnownReachable(facts)) {
+    return {
+      chipLabel: 'Por enviar',
+      description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} en el próximo sync.`,
+      title: 'Bridge conectado',
       tone: 'default',
     };
   }

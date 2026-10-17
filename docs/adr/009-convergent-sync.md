@@ -113,6 +113,15 @@ How JS implements it (task T12, 2026-10-16):
 - The last successful heal is kept in memory, per database. It only has to outlive a resume within one process, and a cold start always heals on mount. A failed heal never writes it.
 - `useWebSocket` reports `onReconnected` for every open of a connection session except a first attempt that succeeds, which the mount or resume flush already covered. An open after failed attempts counts as a reconnect, so a Bridge that was down at mount still gets its catch-up.
 
+**R-9: what "reachable" means**
+
+The status waits for the Bridge only while no runtime has evidence that it is reachable. The evidence is what the app already holds; nothing probes or polls for it. How JS implements it (task T13, 2026-10-16):
+
+- The connection store records the latest exchange (`bridgeContact`): a cycle that succeeded, or that the Bridge answered but left work pending, reached it; only a transport failure did not. A rejection keeps the previous evidence. New work keeps it. Unpairing forgets it.
+- The sync facade reads `last_attempt_at` and `last_success_at` from `sync_runtime_status`, which both runtimes write. A success there that is the row's latest attempt and is newer than the store's evidence overrides it, so a native delivery after a JS failure counts. With no JS evidence yet, the row is not trusted.
+- When the Bridge is reachable and no cycle runs, the facade reports `reachable`. Pending changes then read "Bridge conectado / Por enviar", never "Esperando a la PC", however old the last full sync is.
+- I6: the season refresh after a delivered rating writes `active_season_cache`, and a failed refresh keeps it (fixed by T11, pinned by T13).
+
 **R-13: the claim mechanism**
 
 - The queue key is the anime for `operation_log` and the season for `season_rating_queue`.

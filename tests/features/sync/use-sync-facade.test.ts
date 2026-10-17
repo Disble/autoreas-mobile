@@ -400,7 +400,9 @@ describe('useSyncFacade', () => {
     );
 
     expect(result.current.pendingOpsCount).toBe(1);
-    expect(visible.title).toBe('Esperando a la PC');
+    // The bridge answered at 1_000, so it is not one to wait for (ADR 009 R-9, S11).
+    expect(visible.title).toBe('Bridge conectado');
+    expect(visible.chipLabel).not.toBe('Esperando a la PC');
     expect(visible.tone).not.toBe('success');
   });
 

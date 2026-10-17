@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 import type { SyncFlushReason } from './sync-flush.types';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
-import type { SyncConnectionStatus } from './sync-connection-store/sync-connection-store.types';
+import type { SyncFacadeConnectionStatus } from './bridge-reachability.types';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 import type { OptionalLiveQueryStatus } from '../../infrastructure/db/native-runtime/native-runtime.types';
 
@@ -33,7 +33,7 @@ export interface RunCoordinatedForegroundSyncCycleInput {
 
 /** Defines the data contract for use sync facade result. */
 export interface UseSyncFacadeResult {
-  readonly connectionStatus: SyncConnectionStatus;
+  readonly connectionStatus: SyncFacadeConnectionStatus;
   readonly lastSyncAt: number | null;
   readonly pendingOpsCount: number;
   readonly requestSync: (reason: SyncFlushReason) => Promise<number>;
