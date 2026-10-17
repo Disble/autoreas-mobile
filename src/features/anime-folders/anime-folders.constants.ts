@@ -87,3 +87,6 @@ export const EMPTY_ANIME_FOLDER_ARRIVAL_SOURCES: readonly AnimeFolderArrivalSour
 
 /** Name of the native folder lister in modules/saf-lister. */
 export const SAF_LISTER_MODULE_NAME = 'SafLister';
+
+/** Name of the native fire-and-forget activity launcher in modules/activity-launcher. */
+export const ACTIVITY_LAUNCHER_MODULE_NAME = 'ActivityLauncher';

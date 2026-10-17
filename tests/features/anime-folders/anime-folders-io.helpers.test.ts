@@ -1,5 +1,4 @@
 import { Directory } from 'expo-file-system';
-import { startActivityAsync } from 'expo-intent-launcher';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Alert, Linking } from 'react-native';
 import {
@@ -13,16 +12,15 @@ jest.mock('expo-file-system', () => ({
   Directory: { pickDirectoryAsync: jest.fn() },
 }));
 
-jest.mock('expo-intent-launcher', () => ({
-  startActivityAsync: jest.fn(),
-}));
-
 jest.mock('expo-modules-core', () => ({
   requireOptionalNativeModule: jest.fn(),
 }));
 
 /** Stands in for the native `SafLister.listChildren`. */
 const mockListChildren = jest.fn();
+
+/** Stands in for the native `ActivityLauncher.startActivity`. */
+const mockStartActivity = jest.fn();
 
 /** Picker start location used by these tests. */
 const INITIAL_URI =
@@ -87,31 +85,58 @@ describe('pickSafRoot', () => {
 });
 
 describe('openDeviceFolder', () => {
-  it('opens My Files at the path, adjacent in split screen', () => {
-    jest.mocked(startActivityAsync).mockResolvedValue({ resultCode: 0 } as never);
+  /** A folder on the SD card, as the card hands it over. */
+  const FOLDER_PATH = '/storage/0123-4567/Videos/Anime/Bleach';
 
-    openDeviceFolder('/storage/0123-4567/Videos/Anime/Bleach');
+  it('opens My Files at the path, adjacent in split screen, without waiting for a result', () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue({ startActivity: mockStartActivity });
+    mockStartActivity.mockResolvedValue(undefined);
 
-    expect(startActivityAsync).toHaveBeenCalledWith(
+    openDeviceFolder(FOLDER_PATH);
+
+    expect(requireOptionalNativeModule).toHaveBeenCalledWith('ActivityLauncher');
+    expect(mockStartActivity).toHaveBeenCalledWith(
       'samsung.myfiles.intent.action.LAUNCH_MY_FILES',
-      {
-        extra: {
-          'samsung.myfiles.intent.extra.START_PATH': '/storage/0123-4567/Videos/Anime/Bleach',
-        },
-        flags: 0x10000000 | 0x00001000,
-      },
+      { 'samsung.myfiles.intent.extra.START_PATH': FOLDER_PATH },
+      0x10000000 | 0x00001000,
     );
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it('opens it again on every tap, since nothing stays pending between taps', async () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue({ startActivity: mockStartActivity });
+    mockStartActivity.mockResolvedValue(undefined);
+
+    openDeviceFolder(FOLDER_PATH);
+    openDeviceFolder(FOLDER_PATH);
+    await flushPromises();
+
+    expect(mockStartActivity).toHaveBeenCalledTimes(2);
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it('tells the user when My Files cannot open it', async () => {
-    jest.mocked(startActivityAsync).mockRejectedValue(new Error('No Activity found'));
+    jest.mocked(requireOptionalNativeModule).mockReturnValue({ startActivity: mockStartActivity });
+    mockStartActivity.mockRejectedValue(new Error('No Activity found'));
 
-    openDeviceFolder('/storage/0123-4567/Videos/Anime/Bleach');
+    openDeviceFolder(FOLDER_PATH);
     await flushPromises();
 
     expect(Alert.alert).toHaveBeenCalledWith(
       'No se pudo abrir la carpeta',
       'Error: No Activity found',
+    );
+  });
+
+  it('tells the user when the native launcher is not in this build', async () => {
+    jest.mocked(requireOptionalNativeModule).mockReturnValue(null);
+
+    openDeviceFolder(FOLDER_PATH);
+    await flushPromises();
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'No se pudo abrir la carpeta',
+      'Error: ActivityLauncher is not in this build',
     );
   });
 });

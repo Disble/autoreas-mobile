@@ -124,3 +124,13 @@ export interface AnimeFoldersView extends AnimeFoldersIndexState {
 export interface SafListerModule {
   readonly listChildren: (uri: string) => Promise<FolderTreeChild[]>;
 }
+
+/** The native `ActivityLauncher` module (modules/activity-launcher). */
+export interface ActivityLauncherModule {
+  /** Resolves once Android accepted the launch; never waits for the started activity. */
+  readonly startActivity: (
+    action: string,
+    extras: Readonly<Record<string, string>>,
+    flags: number,
+  ) => Promise<void>;
+}
