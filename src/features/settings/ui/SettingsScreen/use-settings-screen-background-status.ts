@@ -6,8 +6,7 @@ import type { SettingsBackgroundStatus } from './settings-screen.types';
 /**
  * Reads the live runtime snapshot and derives what the background card shows. Extracted as a
  * facade hook (per the project's Facade Hook pattern) so `useSettingsScreen` stays a thin
- * orchestrator. Only the registration, execution mode and notification facts are read here; the
- * cycle counters stay in the snapshot for the telemetry that reaches the bridge.
+ * orchestrator. Only the registration, execution mode and notification facts are read here.
  */
 export function useSettingsScreenBackgroundStatus(
   isConfigured: boolean,

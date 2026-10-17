@@ -2,13 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { runMigrations } from '../../../src/infrastructure/db/client';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import { flushSyncDiagnosticsOutbox } from '../../../src/features/sync/sync-diagnostics-flush.helpers';
-import {
-  getSyncRuntimeStatusSnapshot,
-  recordSyncAttemptSucceeded,
-} from '../../../src/features/sync/sync-runtime-status.helpers';
 import { syncDiagnosticsOutboxStore } from '../../../src/infrastructure/db/sync-diagnostics-outbox';
-import type { ReconcileTelemetryContext } from '../../../src/features/sync/reconcile.types';
-import type { SyncRuntimeStatusSnapshot } from '../../../src/features/sync/sync-runtime-status.types';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { applyMigrationFiles, createTestSqliteAdapter } from '../../support/sqlite-adapter.helpers';
@@ -23,7 +17,7 @@ let mockTelemetryAdapter: SQLiteDatabase | null = null;
 
 // The ONLY production modules mocked in this suite, and only to hand drizzle a node:sqlite
 // handle instead of expo-sqlite -- everything else (the write door, the reconcile logic, the
-// diagnostics capture/flush algorithm, the schema, the wire mapping, the bridgeClient singleton)
+// diagnostics flush algorithm, the schema, the wire mapping, the bridgeClient singleton)
 // runs for real, exactly like `outbox-round-trip.behaviour.test.ts`.
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   getDrizzleFactory: () =>
@@ -97,62 +91,12 @@ async function plantStoredRow(cycleId: string, payload: string, ageMs: number): 
   );
 }
 
-/** Builds a neutral runtime snapshot so the test only states the fields it actually exercises. */
-function buildSnapshot(): SyncRuntimeStatusSnapshot {
-  return {
-    registrationStatus: 'registered',
-    executionMode: 'best_effort_background_task',
-    isForegroundServiceRunning: false,
-    canShowPersistentNotification: false,
-    lastAttemptAt: null,
-    lastSuccessAt: null,
-    lastFailureMessage: null,
-    lastTriggerSource: null,
-    lastSyncedCount: 0,
-    isCycleActive: false,
-    lastBacklogReadCount: 0,
-    lastPrunedOperationsCount: 0,
-    isBackgroundTaskRegistered: false,
-    lastCycleId: null,
-    lastCycleStage: null,
-    lastErrorName: null,
-    lastNativeErrcodeByte: null,
-    lastErrorStage: null,
-    consecutiveUnclosedCycles: 0,
-    lastCycleStageAt: null,
-    lastFailedCheckpointCount: 0,
-    lastDiagnosticsDiscardedCount: null,
-    lastDiagnosticsUndeliverableCount: null,
-    lastDiagnosticsUnclassifiedCount: null,
-    lastDiagnosticsReapedCount: null,
-    lastDiagnosticsFailedRemovalCount: null,
-    lastOutboxFailedWriteCount: null,
-    lastDeadLetterCount: null,
-    lastConflictExhaustedCount: null,
-    lastStuckProcessingCount: null,
-    lastOldestPendingAgeMs: null,
-    lastPendingRowCount: null,
-  };
-}
-
-/** Builds one cycle's telemetry context, varying only the cycle id between calls. */
-function buildTelemetryContext(cycleId: string): ReconcileTelemetryContext {
-  return {
-    cycleId,
-    triggerSource: 'background_task',
-    appState: 'background',
-    snapshot: buildSnapshot(),
-    recentEvents: [],
-  };
-}
-
 /**
  * Opens a migrated database wired to a paired bridge, with no pending outbox operations.
  *
  * `runMigrations` runs AFTER the migration files for the same reason a device needs both: the
- * migration files are a fresh install's route, while several `sync_runtime_status` columns (and the
- * tables created imperatively) exist only as idempotent repairs on an installed device -- and this
- * suite reaches those columns through `getSyncRuntimeStatusSnapshot`.
+ * migration files are a fresh install's route, while the tables created imperatively exist only as
+ * idempotent repairs on an installed device.
  */
 async function openPairedDatabase() {
   const adapter: SQLiteDatabase = createTestSqliteAdapter();
@@ -169,6 +113,19 @@ async function openPairedDatabase() {
   );
 
   return adapter;
+}
+
+/** Bridge coordinates the paired database above carries, for the cases that drive the flush directly. */
+const CONNECTION = { ip: '192.168.0.10', port: 8080, token: 'token-1' };
+
+/**
+ * Wakes the production outbox store: its first connect is what creates the private telemetry
+ * database, its schema and the raw handle these cases plant and read through.
+ */
+function wakeOutbox(): SQLiteDatabase {
+  syncDiagnosticsOutboxStore.getShedCount();
+
+  return mockTelemetryAdapter!;
 }
 
 /** Queues a trivial accepted reconcile response -- no pending operations to confirm. */
@@ -193,9 +150,13 @@ describe('diagnostics outbox round trip against a real database and a faked wire
 
   it('survives a failing diagnostics POST and clears once a later cycle gets a success', async () => {
     const adapter = await openPairedDatabase();
+    // A row a build before convergent-sync T18 queued: nothing captures cycle envelopes any more,
+    // but a device updated with rows still queued must drain them through the cycle's flush.
+    wakeOutbox();
+    await plantStoredRow('cycle-1', JSON.stringify({ cycle_id: 'cycle-1' }), 0);
 
-    // Cycle 1: the envelope is captured, then the diagnostics POST fails -- the row must
-    // survive. Reconcile itself still succeeds; the two are independent (Decision 5).
+    // Cycle 1: the diagnostics POST fails -- the row must survive. Reconcile itself still
+    // succeeds; the two are independent (Decision 5).
     //
     // `500`, deliberately NOT `503`. A header-less `503` is the bridge's own backpressure verdict
     // and now defers the next pass by its declared wait (`SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS`,
@@ -208,7 +169,7 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     fakeBridge.queueResponse({ status: 500, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    await syncPendingOperations(adapter, buildTelemetryContext('cycle-1'));
+    await syncPendingOperations(adapter);
 
     expect(mockTelemetryAdapter).not.toBeNull();
     const afterCycleOne = await mockTelemetryAdapter!.getAllAsync<StoredDiagnosticsOutboxRow>(
@@ -219,13 +180,12 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     expect(afterCycleOne[0].cycle_id).toBe('cycle-1');
     expect(JSON.parse(afterCycleOne[0].payload)).toMatchObject({ cycle_id: 'cycle-1' });
 
-    // Cycle 2: a fresh envelope is captured (cycle-2), and THIS cycle's diagnostics POSTs all
-    // succeed -- both the row surviving from cycle 1 and the new one must clear.
-    fakeBridge.queueResponse({ status: 200, body: {} });
+    // Cycle 2: THIS cycle's diagnostics POST succeeds -- the row surviving from cycle 1 clears,
+    // and the cycle captures no envelope of its own.
     fakeBridge.queueResponse({ status: 200, body: {} });
     queueAcceptedReconcileResponse(fakeBridge);
 
-    await syncPendingOperations(adapter, buildTelemetryContext('cycle-2'));
+    await syncPendingOperations(adapter);
 
     const afterCycleTwo = await mockTelemetryAdapter!.getAllAsync<StoredDiagnosticsOutboxRow>(
       'SELECT cycle_id, payload FROM sync_diagnostics_outbox',
@@ -238,14 +198,13 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     const diagnosticsRequestCount = urls.filter((url) => url.includes('/api/sync/diagnostics')).length;
     const reconcileRequestCount = urls.filter((url) => url.includes('/api/sync/reconcile')).length;
 
-    expect(diagnosticsRequestCount).toBe(3);
+    expect(diagnosticsRequestCount).toBe(2);
     expect(reconcileRequestCount).toBe(2);
   });
 
   it('reaps a parked row older than the bound, delivers the routable row behind it, and sheds nothing', async () => {
-    const adapter = await openPairedDatabase();
-    // A row this build cannot name, planted eight days ago, ahead of the routable envelope this
-    // same cycle captures. Before the age bound this row occupied the batch's oldest slot on EVERY
+    wakeOutbox();
+    // A row this build cannot name, planted eight days ago, ahead of a routable envelope. Before the age bound this row occupied the batch's oldest slot on EVERY
     // pass, and the cap (which sheds the newest overflow) eventually spent the whole retained window
     // on rows that could never drain.
     await plantStoredRow(
@@ -253,15 +212,15 @@ describe('diagnostics outbox round trip against a real database and a faked wire
       JSON.stringify({ kind: 'watch_session', phase: 'received' }),
       STALE_AGE_MS,
     );
+    await plantStoredRow('cycle-1', JSON.stringify({ cycle_id: 'cycle-1' }), 0);
     fakeBridge.queueResponse({ status: 200, body: {} });
-    queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-1'));
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
 
     // The park was retired by the CLOCK -- its own counter, and neither a discard (the bridge
     // refused nothing: it never saw this row) nor a shed (the cap dropped nothing) -- and the
     // routable row behind it still went out, which is the liveness the bound exists for.
-    expect(result.diagnosticsFlush).toEqual({
+    expect(result).toEqual({
       attempted: 1,
       delivered: 1,
       discarded: 0,
@@ -282,23 +241,15 @@ describe('diagnostics outbox round trip against a real database and a faked wire
     // No row until the first shed, so an empty read IS the cap having dropped nothing.
     expect(shed).toEqual([]);
 
-    // And the counter is PERSISTED, through the write the foreground cycle already performs: the
-    // reap is readable where the destruction counters are, and `discarded` stays a measured zero.
-    await recordSyncAttemptSucceeded(adapter, 'background_task', Date.now(), 0, null, result.diagnosticsFlush);
-    const status = await getSyncRuntimeStatusSnapshot(adapter);
-
-    expect(status.lastDiagnosticsReapedCount).toBe(1);
-    expect(status.lastDiagnosticsDiscardedCount).toBe(0);
-    expect(status.lastDiagnosticsUnclassifiedCount).toBe(0);
   });
 
   it('keeps `reaped` distinct from `discarded` in ONE mixed batch -- two different verdicts, two counters', async () => {
-    const adapter = await openPairedDatabase();
-    // Four candidate shapes in one pass, oldest first:
+    wakeOutbox();
+    // Three candidate shapes in one pass, oldest first:
     // - a stale row this build does not name (PARKED, then retired by the clock);
     // - a stale ROUTABLE row the bridge permanently rejects with a declared code (DISCARDED -- and
     //   proof that a verdict, not the clock, removes a row the bridge answered about);
-    // - this cycle's own fresh envelope, which the bridge accepts (DELIVERED).
+    // - a fresh routable envelope, which the bridge accepts (DELIVERED).
     await plantStoredRow(
       'stale-unknown-kind',
       JSON.stringify({ kind: 'watch_session', phase: 'received' }),
@@ -309,17 +260,17 @@ describe('diagnostics outbox round trip against a real database and a faked wire
       JSON.stringify({ cycle_id: 'stale-refused' }),
       STALE_AGE_MS,
     );
+    await plantStoredRow('cycle-4', JSON.stringify({ cycle_id: 'cycle-4' }), 0);
     fakeBridge.queueResponse({ status: 400, body: { code: 'field_rejected' } });
     fakeBridge.queueResponse({ status: 200, body: {} });
-    queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-4'));
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
 
     // `reaped` moved because a CLOCK expired on a row nothing had judged; `discarded` moved because
     // the BRIDGE condemned bytes it was asked about. Folding either into the other would make a
     // non-zero `discarded` unable to say which of the two happened -- and neither is a `shed`, which
     // is the cap dropping the newest overflow and which this pass did not cause.
-    expect(result.diagnosticsFlush).toEqual({
+    expect(result).toEqual({
       attempted: 2,
       delivered: 1,
       discarded: 1,
@@ -341,20 +292,20 @@ describe('diagnostics outbox round trip against a real database and a faked wire
   });
 
   it('never reaps a row a bridge verdict decided: a stale CHAPTER observation is DELIVERED, not retired', async () => {
-    const adapter = await openPairedDatabase();
+    wakeOutbox();
     // The stored body is a REAL chapter observation -- the kind this build now serves -- so this is
     // the flip end to end: the real classifier routes it and the wire receives it instead of
     // parking it. Eight days old and perfectly deliverable: the bound lands on how long we WAIT,
     // never on the bytes, so a row the bridge accepts must be counted as the delivery it is.
     await plantStoredRow('stale-routable', JSON.stringify({ kind: 'episode_action' }), STALE_AGE_MS);
-    // Two diagnostics POSTs (the planted row and this cycle's own envelope) then the reconcile.
+    await plantStoredRow('cycle-2', JSON.stringify({ cycle_id: 'cycle-2' }), 0);
+    // Two diagnostics POSTs: the stale chapter observation and the fresh envelope behind it.
     fakeBridge.queueResponse({ status: 200, body: {} });
     fakeBridge.queueResponse({ status: 200, body: {} });
-    queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-2'));
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
 
-    expect(result.diagnosticsFlush).toEqual({
+    expect(result).toEqual({
       attempted: 2,
       delivered: 2,
       discarded: 0,
@@ -366,20 +317,20 @@ describe('diagnostics outbox round trip against a real database and a faked wire
   });
 
   it('leaves a parked row YOUNGER than the bound untouched, and still delivers what is behind it', async () => {
-    const adapter = await openPairedDatabase();
+    wakeOutbox();
     await plantStoredRow(
       'young-unknown-kind',
       JSON.stringify({ kind: 'watch_session', phase: 'received' }),
       YOUNG_AGE_MS,
     );
+    await plantStoredRow('cycle-3', JSON.stringify({ cycle_id: 'cycle-3' }), 0);
     fakeBridge.queueResponse({ status: 200, body: {} });
-    queueAcceptedReconcileResponse(fakeBridge);
 
-    const result = await syncPendingOperations(adapter, buildTelemetryContext('cycle-3'));
+    const result = await flushSyncDiagnosticsOutbox({ connection: CONNECTION });
 
     // Still parked: counted as `unclassified`, never as `reaped`, and the row is still queued for
     // the pass that eventually follows a bridge that serves its kind.
-    expect(result.diagnosticsFlush).toEqual({
+    expect(result).toEqual({
       attempted: 1,
       delivered: 1,
       discarded: 0,
@@ -405,18 +356,6 @@ describe('diagnostics outbox round trip against a real database and a faked wire
    * only when the DELETE throws, which no fake store can prove.
    */
   describe('when a removal is not confirmed', () => {
-    const CONNECTION = { ip: '192.168.0.10', port: 8080, token: 'token-1' };
-
-    /**
-     * Wakes the production outbox store: its first connect is what creates the private telemetry
-     * database, its schema and the raw handle these cases plant and read through.
-     */
-    function wakeOutbox(): SQLiteDatabase {
-      syncDiagnosticsOutboxStore.getShedCount();
-
-      return mockTelemetryAdapter!;
-    }
-
     /**
      * Makes every outbox DELETE throw -- the ONLY way the real store answers `'failed'` -- so a case
      * can watch a pass whose removals did not happen. Dropped by the NEXT case's cleanup.

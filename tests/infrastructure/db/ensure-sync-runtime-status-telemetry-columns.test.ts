@@ -32,8 +32,9 @@ jest.mock("../../../src/infrastructure/db/migrations/migrations", () => ({
 /**
  * Devices that already applied migration 0006 before its poisoned `when` (2026-09-20) was
  * discovered had every migration after it -- 0007 through 0010 -- silently skipped by drizzle's
- * gate. 0010's telemetry columns had no idempotent `ensure*` twin, so those devices are stuck with
- * a `sync_runtime_status` table missing all eight columns this repair step exists to backfill.
+ * gate. Of 0010's columns only `last_cycle_id`, `last_cycle_stage` and `last_error_name` still have
+ * a reader, so those three are backfilled; the dead ones (convergent-sync T18) are never re-added,
+ * and the ones the device already carries are dropped.
  */
 describe("ensureSyncRuntimeStatusExecutionColumns telemetry backfill", () => {
   beforeEach(() => {
@@ -45,13 +46,10 @@ describe("ensureSyncRuntimeStatusExecutionColumns telemetry backfill", () => {
 
   function buildRawDb(existingSyncRuntimeStatusColumns: string[]) {
     return {
+      execAsync: jest.fn().mockResolvedValue(undefined),
       getAllAsync: jest.fn().mockImplementation(async (query: string) => {
         if (query === "PRAGMA table_info(sync_runtime_status)") {
           return existingSyncRuntimeStatusColumns.map((name) => ({ name }));
-        }
-
-        if (query === "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'") {
-          return [];
         }
 
         return [];
@@ -61,7 +59,14 @@ describe("ensureSyncRuntimeStatusExecutionColumns telemetry backfill", () => {
     };
   }
 
-  it("adds every skipped 0010 telemetry column when a device stalled on the poisoned 0006 gate", async () => {
+  /** Every `sync_runtime_status` statement `runAsync` received, in order. */
+  function runStatements(rawDb: ReturnType<typeof buildRawDb>): string[] {
+    return rawDb.runAsync.mock.calls
+      .map(([statement]: [string]) => statement)
+      .filter((statement) => statement.includes("sync_runtime_status"));
+  }
+
+  it("adds the three kept 0010 columns to a device stalled on the poisoned 0006 gate, and drops its dead ones", async () => {
     const rawDb = buildRawDb([
       "id",
       "registration_status",
@@ -73,77 +78,38 @@ describe("ensureSyncRuntimeStatusExecutionColumns telemetry backfill", () => {
       "last_failure_message",
       "last_trigger_source",
       "last_synced_count",
-      "foreground_service_callback_started_at",
-      "last_no_op_reason",
-      "last_pending_operations_count_at_start",
-      "is_cycle_active",
-      "last_backlog_read_count",
-      "last_pruned_operations_count",
-      "is_background_task_registered",
     ]);
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.getAllAsync).toHaveBeenCalledWith("PRAGMA table_info(sync_runtime_status)");
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
+    expect(runStatements(rawDb)).toEqual([
       "ALTER TABLE sync_runtime_status ADD COLUMN last_cycle_id TEXT",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE sync_runtime_status ADD COLUMN last_cycle_stage TEXT",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE sync_runtime_status ADD COLUMN last_error_name TEXT",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN last_native_errcode_byte INTEGER",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN last_error_stage TEXT",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN consecutive_unclosed_cycles INTEGER DEFAULT 0 NOT NULL",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN last_cycle_stage_at INTEGER",
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN last_failed_checkpoint_count INTEGER DEFAULT 0 NOT NULL",
-    );
+      "ALTER TABLE sync_runtime_status DROP COLUMN is_foreground_service_running",
+      "ALTER TABLE sync_runtime_status DROP COLUMN last_failure_message",
+      "ALTER TABLE sync_runtime_status DROP COLUMN last_trigger_source",
+      "ALTER TABLE sync_runtime_status DROP COLUMN last_synced_count",
+    ]);
+    expect(rawDb.execAsync.mock.calls).toEqual([["BEGIN EXCLUSIVE"], ["COMMIT"]]);
   });
 
-  it("is idempotent: adds nothing when every telemetry column already exists", async () => {
+  it("is idempotent: touches nothing when the table holds exactly the kept columns", async () => {
     const rawDb = buildRawDb([
       "id",
       "registration_status",
       "execution_mode",
-      "is_foreground_service_running",
       "can_show_persistent_notification",
       "last_attempt_at",
       "last_success_at",
-      "last_failure_message",
-      "last_trigger_source",
-      "last_synced_count",
-      "foreground_service_callback_started_at",
-      "last_no_op_reason",
-      "last_pending_operations_count_at_start",
-      "is_cycle_active",
-      "last_backlog_read_count",
-      "last_pruned_operations_count",
-      "is_background_task_registered",
       "last_cycle_id",
       "last_cycle_stage",
       "last_error_name",
-      "last_native_errcode_byte",
-      "last_error_stage",
-      "consecutive_unclosed_cycles",
-      "last_cycle_stage_at",
-      "last_failed_checkpoint_count",
     ]);
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).not.toHaveBeenCalledWith(
-      expect.stringContaining("sync_runtime_status ADD COLUMN last_cycle_id"),
-    );
+    expect(runStatements(rawDb)).toEqual([]);
+    expect(rawDb.execAsync).not.toHaveBeenCalled();
   });
 });

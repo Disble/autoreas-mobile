@@ -1,7 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getSyncConnectionSnapshot } from '../../../src/features/sync/sync-connection-store/sync-connection-store.helpers';
 import * as coverSweep from '../../../src/features/sync/cover-sweep/cover-sweep.helpers';
-import * as diagnosticStore from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { resetSyncConnectionStore } from '../../../src/features/sync/sync-connection-store';
 import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
 import {
@@ -262,8 +261,8 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     ).toEqual([{ status: 'pending' }]);
   });
 
-  it('P3d reports resync_failed when the bridge is down at mount, as the independent heal did', async () => {
-    const recordDiagnosticEvent = jest.spyOn(diagnosticStore, 'recordDiagnosticEvent');
+  it('P3d warns that the resync failed when the bridge is down at mount, as the independent heal did', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const adapter = await openRepairedDatabase();
     // Nothing queued for the snapshot: the fake bridge fails that request like an unreachable host.
     fakeBridge.queueResponse({ status: 503, body: null });
@@ -271,9 +270,7 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     await requestFlush(adapter, 'bootstrap').catch(() => undefined);
 
     expect(sentPaths(fakeBridge)).toEqual(['POST /api/sync/reconcile', 'GET /api/animes']);
-    expect(recordDiagnosticEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ source: 'foreground_resync', event: 'resync_failed', at: START_AT }),
-    );
+    expect(warn).toHaveBeenCalledWith('[useForegroundResync] Resync failed', expect.anything());
   });
 
   it('D-healthy mount matches baseline: same requests (modulo order), drift healed, one sweep', async () => {

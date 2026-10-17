@@ -30,13 +30,13 @@ const SQLITE3_KNOWN_PATHS = [
 /** Evidence text for Attempt freshness when host sqlite3 is unavailable. */
 const NO_SQLITE3_EVIDENCE = 'host sqlite3 not found; sync_runtime_status cannot be read. Install sqlite3 (SDK platform-tools) to lift this.';
 /** Read-only query for the newest sync_runtime_status row. */
-const RUNTIME_STATUS_SQL = 'SELECT last_attempt_at, last_cycle_stage, is_cycle_active, last_error_name FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
+const RUNTIME_STATUS_SQL = 'SELECT last_attempt_at, last_cycle_stage, last_cycle_id, last_error_name FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
 /** Read-only query for the newest bridge_config row: the T6 presence gate refuses every tick when any of the three coordinates is missing. */
 const BRIDGE_CONFIG_GATE_SQL = 'SELECT ip, port, token FROM bridge_config ORDER BY id DESC LIMIT 1;';
-/** Read-only query for the cycle-closure telemetry on the newest sync_runtime_status row. */
-const CYCLE_STATUS_SQL = 'SELECT is_cycle_active, consecutive_unclosed_cycles, last_cycle_id, last_cycle_stage FROM sync_runtime_status ORDER BY id DESC LIMIT 1;';
-/** Read-only query for every journal cycle whose newest transition is non-terminal (`closed`, `failed` and `abandoned` are the attempt FSM's terminal states). */
-const JOURNAL_OPEN_CYCLES_SQL = "SELECT cycle_id, to_state FROM journal WHERE id IN (SELECT MAX(id) FROM journal GROUP BY cycle_id) AND to_state NOT IN ('closed', 'failed', 'abandoned') ORDER BY id;";
+/** Read-only query for every journal cycle's newest transition, newest cycle first. */
+const JOURNAL_CYCLES_SQL = 'SELECT cycle_id, to_state FROM journal WHERE id IN (SELECT MAX(id) FROM journal GROUP BY cycle_id) ORDER BY id DESC;';
+/** The journal states that finish a cycle: it closed, or it failed and reported why. */
+const FINISHED_CYCLE_STATES = new Set(['closed', 'failed']);
 
 /** Builds one check outcome object in the shape the entry point records and prints; shared by both check modules. */
 export function outcome(name, verdict, evidence) {
@@ -77,18 +77,13 @@ export function checkAttemptFreshness(sqlite3, workDir) {
   return runtimeStatusOutcome(sqlite3, workDir, pulled.names);
 }
 
-/** Check 10: the primary acceptance metric of docs/mobile-sync-architecture.md §9 — `consecutive_unclosed_cycles = 0`.
- * Reads the newest sync_runtime_status row plus every journal cycle whose newest transition is non-terminal; FAIL
- * names the counter value and the offending cycle ids; missing sqlite3 or unreadable databases degrade to UNKNOWN. */
+/** Check 10: the primary acceptance metric of docs/mobile-sync-architecture.md §9 — no unfinished cycles.
+ * Reads the native journal only: a cycle that never finished is one the engine marked `abandoned`, or one
+ * still parked in a non-terminal state that is not the newest (possibly in-flight) cycle. FAIL names the
+ * offending cycle ids; missing sqlite3 or an unreadable journal degrade to UNKNOWN. */
 export function checkCycleClosure(sqlite3, workDir) {
   if (!sqlite3) return outcome('Cycle closure', 'UNKNOWN', NO_SQLITE3_EVIDENCE);
-  const pulled = pullDatabaseWithSidecars(workDir);
-  if (!pulled.hasMain) return outcome('Cycle closure', 'UNKNOWN', pullFailureEvidence(pulled.names));
-  const res = querySqlite(sqlite3, path.join(workDir, 'autoreas.db'), CYCLE_STATUS_SQL);
-  if (!res.ok || !res.out) {
-    return outcome('Cycle closure', 'UNKNOWN', `sync_runtime_status cycle telemetry query failed or returned nothing:\n${res.out || '(empty result)'}`);
-  }
-  return cycleClosureOutcome(parseCycleStatusRow(res.out), readOpenJournalCycles(sqlite3, workDir));
+  return cycleClosureOutcome(readJournalCycles(sqlite3, workDir));
 }
 
 /** Reads the newest bridge_config row from the pulled app database for check 7's T6 presence-gate awareness:
@@ -109,14 +104,8 @@ export function parseBridgeConfigRow(out) {
   return { ip, port, token };
 }
 
-/** Splits one pipe-delimited cycle telemetry row into its named fields, '' for missing columns. */
-export function parseCycleStatusRow(out) {
-  const [isCycleActive = '', consecutiveUnclosedCycles = '', lastCycleId = '', lastCycleStage = ''] = out.split('|');
-  return { isCycleActive, consecutiveUnclosedCycles, lastCycleId, lastCycleStage };
-}
-
-/** Parses the open-cycle query output (`cycle_id|to_state` lines) into {cycleId, toState} pairs; [] when none. */
-export function parseOpenJournalCycles(out) {
+/** Parses the journal query output (`cycle_id|to_state` lines, newest first) into {cycleId, toState} pairs; [] when none. */
+export function parseJournalCycles(out) {
   return out
     .split(/\r?\n/)
     .filter(Boolean)
@@ -126,67 +115,55 @@ export function parseOpenJournalCycles(out) {
     });
 }
 
-/** Builds the Cycle closure verdict from the newest runtime-status row and the journal read: FAIL when
- * `consecutive_unclosed_cycles > 0` (naming the counter and the offending cycle ids) or when
- * `is_cycle_active = 1` with no attempt actually in flight; PASS otherwise; UNKNOWN when the counter
- * itself is unparseable, so a broken read can never manufacture a green metric. */
-export function cycleClosureOutcome(statusRow, journal) {
-  const counter = Number.parseInt(statusRow.consecutiveUnclosedCycles, 10);
-  if (Number.isNaN(counter)) {
-    return outcome('Cycle closure', 'UNKNOWN', `consecutive_unclosed_cycles is unparseable: '${statusRow.consecutiveUnclosedCycles}'`);
+/** Counts the unfinished cycles at the head of the journal, newest first, stopping at the first finished
+ * one -- the same streak the retired `consecutive_unclosed_cycles` counter measured. The newest cycle is
+ * skipped while it is still non-terminal, because it may be the attempt in flight right now. */
+export function unfinishedCycleStreak(cycles) {
+  const [newest, ...older] = cycles;
+  const isNewestInFlight = newest !== undefined && newest.toState !== 'abandoned' && !FINISHED_CYCLE_STATES.has(newest.toState);
+  const streak = [];
+  for (const cycle of isNewestInFlight ? older : cycles) {
+    if (FINISHED_CYCLE_STATES.has(cycle.toState)) break;
+    streak.push(cycle);
   }
-  if (counter > 0) return cycleClosureFailure(counter, statusRow, journal);
-  if (statusRow.isCycleActive === '1' && !attemptInFlight(statusRow, journal)) {
+  return streak;
+}
+
+/** Builds the Cycle closure verdict from the journal read: FAIL when the newest cycles never finished
+ * (naming them), PASS otherwise, UNKNOWN when the journal is unreadable or empty, so a broken or absent
+ * read can never manufacture a green metric. */
+export function cycleClosureOutcome(journal) {
+  if (!journal.readable) {
+    return outcome('Cycle closure', 'UNKNOWN', `journal unreadable (${journal.note}) — cycle closure cannot be proven`);
+  }
+  if (journal.cycles.length === 0) {
+    return outcome('Cycle closure', 'UNKNOWN', 'journal is empty (no transitions recorded — the SyncJournal seam may be a no-op; see check 5)');
+  }
+  const streak = unfinishedCycleStreak(journal.cycles);
+  const newest = journal.cycles[0];
+  const newestLine = `newest cycle: ${newest.cycleId} (${newest.toState})`;
+  if (streak.length > 0) {
+    const offenders = streak.map((cycle) => `${cycle.cycleId} (newest transition: ${cycle.toState})`).join(', ');
     return outcome('Cycle closure', 'FAIL',
-      `is_cycle_active=1 with no attempt actually in flight — the active flag is stuck (last_cycle_id=${statusRow.lastCycleId || '(null)'}, last_cycle_stage=${statusRow.lastCycleStage || '(null)'}).\n${journalEvidence(journal)}`);
+      `unfinished cycles=${streak.length} (the acceptance metric requires 0 — docs/mobile-sync-architecture.md §9).\n` +
+      `Offending cycle ids: ${offenders}\n${newestLine}`);
   }
-  const inFlight = statusRow.isCycleActive === '1' ? 'attempt in flight' : 'no attempt in flight';
   return outcome('Cycle closure', 'PASS',
-    `consecutive_unclosed_cycles=${counter} (metric requires 0), is_cycle_active=${statusRow.isCycleActive} (${inFlight})\n${journalEvidence(journal)}`);
+    `unfinished cycles=0 (metric requires 0) across ${journal.cycles.length} journal cycle(s)\n${newestLine}`);
 }
 
-/** Builds the Cycle closure FAIL evidence for a non-zero unclosed counter: the counter value, the offending
- * cycle ids with their newest (non-terminal) states, and the runtime row the counter was read from. */
-function cycleClosureFailure(counter, statusRow, journal) {
-  const offenders = journal.readable && journal.openCycles.length > 0
-    ? journal.openCycles.map((cycle) => `${cycle.cycleId} (newest transition: ${cycle.toState})`).join(', ')
-    : `not enumerable — ${journal.note ?? 'the journal holds no open cycle'}`;
-  return outcome('Cycle closure', 'FAIL',
-    `consecutive_unclosed_cycles=${counter} (the acceptance metric requires 0 — docs/mobile-sync-architecture.md §9).\n` +
-    `Offending cycle ids: ${offenders}\n` +
-    `is_cycle_active=${statusRow.isCycleActive}, last_cycle_id=${statusRow.lastCycleId || '(null)'}, last_cycle_stage=${statusRow.lastCycleStage || '(null)'}`);
-}
-
-/** Tells whether an attempt is actually in flight: the journal proves it whenever it holds any
- * non-terminal cycle; with an unreadable or empty journal the newest recorded stage stands in
- * (anything other than '' or the terminal 'closed' stage). */
-function attemptInFlight(statusRow, journal) {
-  if (journal.readable && journal.rowCount !== null && journal.rowCount > 0) return journal.openCycles.length > 0;
-  const stage = statusRow.lastCycleStage;
-  return stage !== '' && stage !== 'closed';
-}
-
-/** Renders the journal read as a Cycle closure evidence line, naming what could and could not be proven. */
-function journalEvidence(journal) {
-  if (!journal.readable) return `journal unreadable (${journal.note}) — offending cycles could not be enumerated from the FSM`;
-  if (journal.rowCount === 0) return 'journal is empty (no transitions recorded — the SyncJournal seam may be a no-op; see check 5)';
-  if (journal.openCycles.length === 0) return `every journal cycle's newest transition is terminal (${journal.rowCount} row(s))`;
-  return `non-terminal journal cycles: ${journal.openCycles.map((cycle) => `${cycle.cycleId} (${cycle.toState})`).join(', ')}`;
-}
-
-/** Pulls the journal database and reads its row count plus every cycle whose newest transition is
- * non-terminal; `{readable, rowCount, openCycles, note}` with note set when unreadable. */
-function readOpenJournalCycles(sqlite3, workDir) {
+/** Pulls the journal database and reads every cycle's newest transition, newest first;
+ * `{readable, cycles, note}` with note set when unreadable. */
+function readJournalCycles(sqlite3, workDir) {
   const local = path.join(workDir, 'sync-journal.db');
   if (!pullDeviceFile('files/sync-journal.db', local)) {
-    return { readable: false, rowCount: null, openCycles: [], note: 'pull of files/sync-journal.db failed' };
+    return { readable: false, cycles: [], note: 'pull of files/sync-journal.db failed' };
   }
-  const count = querySqlite(sqlite3, local, 'SELECT COUNT(*) FROM journal;');
-  const open = querySqlite(sqlite3, local, JOURNAL_OPEN_CYCLES_SQL);
-  if (!open.ok) {
-    return { readable: false, rowCount: null, openCycles: [], note: `journal open-cycle query failed: ${open.out}` };
+  const res = querySqlite(sqlite3, local, JOURNAL_CYCLES_SQL);
+  if (!res.ok) {
+    return { readable: false, cycles: [], note: `journal cycle query failed: ${res.out}` };
   }
-  return { readable: true, rowCount: count.ok ? Number.parseInt(count.out, 10) : null, openCycles: parseOpenJournalCycles(open.out), note: null };
+  return { readable: true, cycles: parseJournalCycles(res.out), note: null };
 }
 
 /** Pulls the live app database with its WAL and SHM sidecars; reports labels and whether the main db arrived. */
@@ -224,14 +201,14 @@ function formatRuntimeStatusEvidence(rawRow, pulledNames) {
   const row = parseRuntimeStatusRow(rawRow);
   const age = parseAttemptAge(row.lastAttemptAt);
   return `last_attempt_at=${row.lastAttemptAt} (age: ${age ?? 'unparseable'})\n` +
-    `last_cycle_stage=${row.lastCycleStage || '(null)'}, is_cycle_active=${row.isCycleActive}, last_error_name=${row.lastErrorName || '(null)'}\n` +
+    `last_cycle_stage=${row.lastCycleStage || '(null)'}, last_cycle_id=${row.lastCycleId || '(null)'}, last_error_name=${row.lastErrorName || '(null)'}\n` +
     `pulled with sidecars: ${pulledNames.join(', ')}`;
 }
 
 /** Splits one pipe-delimited sync_runtime_status row into its named fields, '' for missing columns. */
 function parseRuntimeStatusRow(out) {
-  const [lastAttemptAt = '', lastCycleStage = '', isCycleActive = '', lastErrorName = ''] = out.split('|');
-  return { lastAttemptAt, lastCycleStage, isCycleActive, lastErrorName };
+  const [lastAttemptAt = '', lastCycleStage = '', lastCycleId = '', lastErrorName = ''] = out.split('|');
+  return { lastAttemptAt, lastCycleStage, lastCycleId, lastErrorName };
 }
 
 /** Turns a raw last_attempt_at value into a human age (seconds/ms epochs, ISO strings); null when unparseable. */

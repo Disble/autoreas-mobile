@@ -36,9 +36,7 @@ const nativeFacts = {
 const SETTLED_PROJECTION = {
   registrationStatus: "registered",
   executionMode: "android_foreground_service",
-  isForegroundServiceRunning: true,
   canShowPersistentNotification: true,
-  isBackgroundTaskRegistered: true,
 };
 
 /** Captured `AppState` listeners the mocked `addEventListener` registers, driven via `emitAppState`. */

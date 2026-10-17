@@ -8,7 +8,6 @@ import {
   recordSyncAttemptSucceeded,
 } from '../../../../src/features/sync/sync-runtime-status.helpers';
 import { runCoverSweep } from '../../../../src/features/sync/cover-sweep/cover-sweep.helpers';
-import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
 import type { SyncRuntimeTriggerSource } from '../../../../src/features/sync/sync-runtime-status.types';
 
 jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
@@ -45,24 +44,7 @@ const NON_TRIGGER_SOURCES: readonly SyncRuntimeTriggerSource[] = [
   'bootstrap',
   'app_active',
   'local_mutation',
-  'local_mutation_write',
-  'foreground_service',
-  'background_task',
 ];
-
-/**
- * One cycle's diagnostics flush result, with the three counters deliberately distinct so a test
- * cannot pass while two columns share a value.
- */
-const FOREGROUND_DIAGNOSTICS_FLUSH: SyncDiagnosticsFlushResult = {
-  attempted: 4,
-  delivered: 1,
-  discarded: 2,
-  failedRemovals: 1,
-  undeliverable: 3,
-  unclassified: 4,
-  reaped: 5,
-};
 
 describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
   beforeEach(() => {
@@ -82,7 +64,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
 
     it('starts runCoverSweep(rawDb, undefined, { force }) after a successful sync', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
-        syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
+        syncedCount: 1, hasMorePending: false,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -97,7 +79,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
 
     it('starts runCoverSweep(rawDb, undefined, { force }) on the hasMorePending early return', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
-        syncedCount: 0, backlogReadCount: 5, hasMorePending: true,
+        syncedCount: 0, hasMorePending: true,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -110,13 +92,11 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       expect(runCoverSweep).toHaveBeenCalledWith(RAW_DB, undefined, { force: expectedForce });
     });
 
-    it('never writes status for the hasMorePending early return, so its flush counters stay unpersisted', async () => {
+    it('never writes an attempt outcome for the hasMorePending early return', async () => {
       // CONTRACT (deliberate, not an oversight): the early return sits BEFORE the
-      // attempt-succeeded write, and the flush counters ride that write -- see
-      // `runCoordinatedForegroundSyncCycle`'s own doc comment for the cost/coverage trade-off.
+      // attempt-succeeded write, so a cycle that hands off to its follow-up records nothing yet.
       (syncPendingOperations as jest.Mock).mockResolvedValue({
-        syncedCount: 0, backlogReadCount: 5, hasMorePending: true,
-        diagnosticsFlush: FOREGROUND_DIAGNOSTICS_FLUSH,
+        syncedCount: 0, hasMorePending: true,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -149,7 +129,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
   describe.each(NON_TRIGGER_SOURCES)('source: %s', (source) => {
     it('never starts runCoverSweep after a successful sync', async () => {
       (syncPendingOperations as jest.Mock).mockResolvedValue({
-        syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
+        syncedCount: 1, hasMorePending: false,
       });
 
       await runCoordinatedForegroundSyncCycle({
@@ -179,7 +159,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
 
   it('never awaits the sweep -- a never-resolving runCoverSweep must not block the returned promise', async () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
+      syncedCount: 1, hasMorePending: false,
     });
     (runCoverSweep as jest.Mock).mockReturnValue(new Promise<never>(() => undefined));
 
@@ -195,7 +175,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
 
   it('swallows a rejected cover sweep instead of throwing out of the cycle', async () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
-      syncedCount: 1, backlogReadCount: 0, hasMorePending: false,
+      syncedCount: 1, hasMorePending: false,
     });
     (runCoverSweep as jest.Mock).mockRejectedValue(new Error('sweep boom'));
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -217,7 +197,7 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
   });
 });
 
-describe('runCoordinatedForegroundSyncCycle diagnostics flush counters', () => {
+describe('runCoordinatedForegroundSyncCycle attempt bookkeeping', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSyncConnectionStore();
@@ -229,12 +209,10 @@ describe('runCoordinatedForegroundSyncCycle diagnostics flush counters', () => {
     });
   });
 
-  it('hands the cycle flush result to the attempt-succeeded write it already performs', async () => {
+  it('records the attempt start and its success with nothing but the database and the instant', async () => {
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 1,
-      backlogReadCount: 1,
       hasMorePending: false,
-      diagnosticsFlush: FOREGROUND_DIAGNOSTICS_FLUSH,
     });
 
     await runCoordinatedForegroundSyncCycle({
@@ -243,13 +221,8 @@ describe('runCoordinatedForegroundSyncCycle diagnostics flush counters', () => {
       setActiveSeasonSnapshot: jest.fn(),
     });
 
-    expect(recordSyncAttemptSucceeded).toHaveBeenCalledWith(
-      RAW_DB,
-      'manual',
-      expect.any(Number),
-      1,
-      null,
-      FOREGROUND_DIAGNOSTICS_FLUSH,
-    );
+    expect(recordSyncAttemptStarted).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
+    expect(recordSyncAttemptSucceeded).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
+    expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
   });
 });

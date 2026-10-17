@@ -174,10 +174,8 @@ describe('syncPendingOperations', () => {
 
     expect(result).toEqual({
       syncedCount: 0,
-      backlogReadCount: 0,
       hasMorePending: false,
       shouldRefreshActiveSeason: false,
-      diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0, undeliverable: 0, unclassified: 0, reaped: 0 },
     });
     // Backlog includes 'processing' so ops orphaned by a crashed/killed cycle are recovered
     // (re-sent + confirmed), instead of perpetually blocking their anime via defer_outbox.
@@ -372,10 +370,8 @@ describe('syncPendingOperations', () => {
 
     expect(result).toEqual({
       syncedCount: 1,
-      backlogReadCount: 1,
       hasMorePending: false,
       shouldRefreshActiveSeason: false,
-      diagnosticsFlush: { attempted: 0, delivered: 0, discarded: 0, failedRemovals: 0, undeliverable: 0, unclassified: 0, reaped: 0 },
     });
     expect(reconcileMock).toHaveBeenCalledWith(
       { ip: '192.168.1.10', port: 9876, token: 'token123' },

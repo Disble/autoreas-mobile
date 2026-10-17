@@ -9,90 +9,34 @@ import {
   buildSyncAttemptSucceededPatch,
   createEmptySyncRuntimeStatusSnapshot,
 } from './sync-runtime-status-patch.helpers';
-import type { SyncDiagnosticsFlushResult } from './sync-diagnostics-flush.types';
 import type {
-  SyncAttemptFailureDetail,
   SyncRuntimeStatusPatch,
   SyncRuntimeStatusSnapshot,
-  SyncRuntimeTriggerSource,
 } from './sync-runtime-status.types';
 
 /**
  * Applies the neutral fallback for a persisted column value using nullish coalescing, so a
  * legitimate `0` (or `false`) survives instead of being replaced the way `||` would.
- * Factored out so the per-column mapping below reads as a flat list of calls -- with no `??`
- * of its own, that mapping stays a single, unbranched path.
  */
 export function withColumnDefault<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
 /**
- * Maps the diagnostics counters that answer "was anything destroyed, parked or retired?" --
- * `discarded` (a permanent rejection by the bridge's own verdict), `undeliverable` (destroyed
- * by declaration), `unclassified` (parked, and recoverable by roll-forward) and `reaped` (retired
- * by the age bound) -- under the `?? null` rule they share: NULL means "never measured", which is
- * not the same fact as a measured zero (design.md Decision 7), and a destruction counter reading 0
- * because it was never written is the exact false answer that rule forbids.
- *
- * Extracted rather than left inline: four consecutive `withColumnDefault(row.x, null)` runs in
- * one flat mapping are textually indistinguishable from each other, which the repository's
- * duplicate-block audit flags as introduced duplication. Naming this call site also keeps the
- * counters that must NEVER be conflated visible as one group.
- */
-function mapDiagnosticsCountersFromRow(row: SyncRuntimeStatusRow) {
-  return {
-    lastDiagnosticsDiscardedCount: withColumnDefault(row.lastDiagnosticsDiscardedCount, null),
-    lastDiagnosticsUndeliverableCount: withColumnDefault(
-      row.lastDiagnosticsUndeliverableCount,
-      null,
-    ),
-    lastDiagnosticsUnclassifiedCount: withColumnDefault(row.lastDiagnosticsUnclassifiedCount, null),
-    lastDiagnosticsReapedCount: withColumnDefault(row.lastDiagnosticsReapedCount, null),
-  };
-}
-
-/**
  * Maps a persisted runtime-status row into its snapshot shape, applying the neutral default
- * for every optional column. Extracted from `getSyncRuntimeStatusSnapshot` so the per-column
- * default tail does not inflate that function's own complexity budget. Exported so
- * `useBackgroundSyncStatus` maps its own live-query row through the SAME defaults instead of
- * duplicating this per-column tail (`bun run audit` flagged the duplicate).
+ * for every optional column. Exported so `useBackgroundSyncStatus` maps its own live-query row
+ * through the SAME defaults instead of duplicating this per-column tail.
  */
 export function mapSyncRuntimeStatusRowToSnapshot(row: SyncRuntimeStatusRow): SyncRuntimeStatusSnapshot {
   return {
     registrationStatus: row.registrationStatus,
     executionMode: row.executionMode,
-    isForegroundServiceRunning: row.isForegroundServiceRunning,
     canShowPersistentNotification: row.canShowPersistentNotification,
     lastAttemptAt: withColumnDefault(row.lastAttemptAt, null),
     lastSuccessAt: withColumnDefault(row.lastSuccessAt, null),
-    lastFailureMessage: withColumnDefault(row.lastFailureMessage, null),
-    lastTriggerSource: withColumnDefault(row.lastTriggerSource, null),
-    lastSyncedCount: withColumnDefault(row.lastSyncedCount, 0),
-    isCycleActive: withColumnDefault(row.isCycleActive, false),
-    lastBacklogReadCount: withColumnDefault(row.lastBacklogReadCount, 0),
-    lastPrunedOperationsCount: withColumnDefault(row.lastPrunedOperationsCount, 0),
-    isBackgroundTaskRegistered: withColumnDefault(row.isBackgroundTaskRegistered, false),
     lastCycleId: withColumnDefault(row.lastCycleId, null),
     lastCycleStage: withColumnDefault(row.lastCycleStage, null),
     lastErrorName: withColumnDefault(row.lastErrorName, null),
-    lastNativeErrcodeByte: withColumnDefault(row.lastNativeErrcodeByte, null),
-    lastErrorStage: withColumnDefault(row.lastErrorStage, null),
-    consecutiveUnclosedCycles: withColumnDefault(row.consecutiveUnclosedCycles, 0),
-    lastCycleStageAt: withColumnDefault(row.lastCycleStageAt, null),
-    lastFailedCheckpointCount: withColumnDefault(row.lastFailedCheckpointCount, 0),
-    ...mapDiagnosticsCountersFromRow(row),
-    lastDiagnosticsFailedRemovalCount: withColumnDefault(
-      row.lastDiagnosticsFailedRemovalCount,
-      null,
-    ),
-    lastOutboxFailedWriteCount: withColumnDefault(row.lastOutboxFailedWriteCount, null),
-    lastDeadLetterCount: withColumnDefault(row.lastDeadLetterCount, null),
-    lastConflictExhaustedCount: withColumnDefault(row.lastConflictExhaustedCount, null),
-    lastStuckProcessingCount: withColumnDefault(row.lastStuckProcessingCount, null),
-    lastOldestPendingAgeMs: withColumnDefault(row.lastOldestPendingAgeMs, null),
-    lastPendingRowCount: withColumnDefault(row.lastPendingRowCount, null),
   };
 }
 
@@ -123,11 +67,7 @@ export function withPatchOverride<T>(patchValue: T | null | undefined, currentVa
   return patchValue === undefined ? currentValue : patchValue;
 }
 
-/**
- * Merges a runtime-status patch onto the current snapshot, one column at a time. Extracted
- * from `persistSyncRuntimeStatusPatch` so the per-column merge tail does not inflate that
- * function's own complexity budget.
- */
+/** Merges a runtime-status patch onto the current snapshot, one column at a time. */
 function mergeSyncRuntimeStatusPatch(
   current: SyncRuntimeStatusSnapshot,
   patch: SyncRuntimeStatusPatch,
@@ -135,133 +75,30 @@ function mergeSyncRuntimeStatusPatch(
   return {
     registrationStatus: withColumnDefault(patch.registrationStatus, current.registrationStatus),
     executionMode: withColumnDefault(patch.executionMode, current.executionMode),
-    isForegroundServiceRunning: withColumnDefault(
-      patch.isForegroundServiceRunning,
-      current.isForegroundServiceRunning,
-    ),
     canShowPersistentNotification: withColumnDefault(
       patch.canShowPersistentNotification,
       current.canShowPersistentNotification,
     ),
-    lastAttemptAt: withPatchOverride(patch.lastAttemptAt, current.lastAttemptAt),
-    lastSuccessAt: withPatchOverride(patch.lastSuccessAt, current.lastSuccessAt),
-    lastFailureMessage: withPatchOverride(patch.lastFailureMessage, current.lastFailureMessage),
-    lastTriggerSource: withPatchOverride(patch.lastTriggerSource, current.lastTriggerSource),
-    lastSyncedCount: withColumnDefault(patch.lastSyncedCount, current.lastSyncedCount),
-    isCycleActive: withColumnDefault(patch.isCycleActive, current.isCycleActive),
-    lastBacklogReadCount: withColumnDefault(patch.lastBacklogReadCount, current.lastBacklogReadCount),
-    lastPrunedOperationsCount: withColumnDefault(
-      patch.lastPrunedOperationsCount,
-      current.lastPrunedOperationsCount,
-    ),
-    isBackgroundTaskRegistered: withColumnDefault(
-      patch.isBackgroundTaskRegistered,
-      current.isBackgroundTaskRegistered,
-    ),
     // Nullable columns use `withPatchOverride` rather than `withColumnDefault`: a patch that
     // deliberately CLEARS a field to null must survive, and a nullish-coalescing default would
-    // silently fall through to the current value instead, making "no error this cycle" unrepresentable.
+    // silently fall through to the current value instead.
+    lastAttemptAt: withPatchOverride(patch.lastAttemptAt, current.lastAttemptAt),
+    lastSuccessAt: withPatchOverride(patch.lastSuccessAt, current.lastSuccessAt),
     lastCycleId: withPatchOverride(patch.lastCycleId, current.lastCycleId),
     lastCycleStage: withPatchOverride(patch.lastCycleStage, current.lastCycleStage),
     lastErrorName: withPatchOverride(patch.lastErrorName, current.lastErrorName),
-    lastNativeErrcodeByte: withPatchOverride(patch.lastNativeErrcodeByte, current.lastNativeErrcodeByte),
-    lastErrorStage: withPatchOverride(patch.lastErrorStage, current.lastErrorStage),
-    consecutiveUnclosedCycles: withColumnDefault(
-      patch.consecutiveUnclosedCycles,
-      current.consecutiveUnclosedCycles,
-    ),
-    lastCycleStageAt: withPatchOverride(patch.lastCycleStageAt, current.lastCycleStageAt),
-    lastFailedCheckpointCount: withColumnDefault(
-      patch.lastFailedCheckpointCount,
-      current.lastFailedCheckpointCount,
-    ),
-    // `withPatchOverride`, not `withColumnDefault`: `lastOldestPendingAgeMs` in particular can be
-    // a legitimate `null` at write time (an empty queue), and `??` would silently fall back to
-    // the previous cycle's value instead of persisting that fresh, honest `null`.
-    lastDiagnosticsDiscardedCount: withPatchOverride(
-      patch.lastDiagnosticsDiscardedCount,
-      current.lastDiagnosticsDiscardedCount,
-    ),
-    lastDiagnosticsUndeliverableCount: withPatchOverride(
-      patch.lastDiagnosticsUndeliverableCount,
-      current.lastDiagnosticsUndeliverableCount,
-    ),
-    lastDiagnosticsUnclassifiedCount: withPatchOverride(
-      patch.lastDiagnosticsUnclassifiedCount,
-      current.lastDiagnosticsUnclassifiedCount,
-    ),
-    lastDiagnosticsReapedCount: withPatchOverride(
-      patch.lastDiagnosticsReapedCount,
-      current.lastDiagnosticsReapedCount,
-    ),
-    lastDiagnosticsFailedRemovalCount: withPatchOverride(
-      patch.lastDiagnosticsFailedRemovalCount,
-      current.lastDiagnosticsFailedRemovalCount,
-    ),
-    lastOutboxFailedWriteCount: withPatchOverride(
-      patch.lastOutboxFailedWriteCount,
-      current.lastOutboxFailedWriteCount,
-    ),
-    lastDeadLetterCount: withPatchOverride(patch.lastDeadLetterCount, current.lastDeadLetterCount),
-    lastConflictExhaustedCount: withPatchOverride(
-      patch.lastConflictExhaustedCount,
-      current.lastConflictExhaustedCount,
-    ),
-    lastStuckProcessingCount: withPatchOverride(
-      patch.lastStuckProcessingCount,
-      current.lastStuckProcessingCount,
-    ),
-    lastOldestPendingAgeMs: withPatchOverride(
-      patch.lastOldestPendingAgeMs,
-      current.lastOldestPendingAgeMs,
-    ),
-    lastPendingRowCount: withPatchOverride(patch.lastPendingRowCount, current.lastPendingRowCount),
   };
 }
 
 /**
- * Writes the merged runtime-status snapshot into the singleton row via upsert. Extracted from
- * `persistSyncRuntimeStatusPatch` so that function's own line count and complexity stay within
- * budget; the insert and update columns are built once and shared between both clauses.
+ * Writes the merged runtime-status snapshot into the singleton row via upsert; the insert and
+ * update columns are built once and shared between both clauses.
  */
 async function writeSyncRuntimeStatusRow(
   rawDb: SQLiteDatabase,
   next: SyncRuntimeStatusSnapshot,
 ): Promise<void> {
-  const columns = {
-    registrationStatus: next.registrationStatus,
-    executionMode: next.executionMode,
-    isForegroundServiceRunning: next.isForegroundServiceRunning,
-    canShowPersistentNotification: next.canShowPersistentNotification,
-    lastAttemptAt: next.lastAttemptAt,
-    lastSuccessAt: next.lastSuccessAt,
-    lastFailureMessage: next.lastFailureMessage,
-    lastTriggerSource: next.lastTriggerSource,
-    lastSyncedCount: next.lastSyncedCount,
-    isCycleActive: next.isCycleActive,
-    lastBacklogReadCount: next.lastBacklogReadCount,
-    lastPrunedOperationsCount: next.lastPrunedOperationsCount,
-    isBackgroundTaskRegistered: next.isBackgroundTaskRegistered,
-    lastCycleId: next.lastCycleId,
-    lastCycleStage: next.lastCycleStage,
-    lastErrorName: next.lastErrorName,
-    lastNativeErrcodeByte: next.lastNativeErrcodeByte,
-    lastErrorStage: next.lastErrorStage,
-    consecutiveUnclosedCycles: next.consecutiveUnclosedCycles,
-    lastCycleStageAt: next.lastCycleStageAt,
-    lastFailedCheckpointCount: next.lastFailedCheckpointCount,
-    lastDiagnosticsDiscardedCount: next.lastDiagnosticsDiscardedCount,
-    lastDiagnosticsUndeliverableCount: next.lastDiagnosticsUndeliverableCount,
-    lastDiagnosticsUnclassifiedCount: next.lastDiagnosticsUnclassifiedCount,
-    lastDiagnosticsReapedCount: next.lastDiagnosticsReapedCount,
-    lastDiagnosticsFailedRemovalCount: next.lastDiagnosticsFailedRemovalCount,
-    lastOutboxFailedWriteCount: next.lastOutboxFailedWriteCount,
-    lastDeadLetterCount: next.lastDeadLetterCount,
-    lastConflictExhaustedCount: next.lastConflictExhaustedCount,
-    lastStuckProcessingCount: next.lastStuckProcessingCount,
-    lastOldestPendingAgeMs: next.lastOldestPendingAgeMs,
-    lastPendingRowCount: next.lastPendingRowCount,
-  };
+  const columns = { ...next };
 
   await withLocalWrite(rawDb, async (db) => {
     await db
@@ -300,73 +137,20 @@ export async function updateSyncRuntimeStatusSnapshot(
   await persistSyncRuntimeStatusPatch(rawDb, patch);
 }
 
-/**
- * Persists the start of a sync attempt into the runtime snapshot singleton.
- *
- * This records the latest trigger source and clears any stale visible failure. The pre-cycle
- * snapshot is read here (a second read beyond `persistSyncRuntimeStatusPatch`'s own) because
- * `buildSyncAttemptStartedPatch` needs it BEFORE this cycle's write overwrites the very fields
- * `consecutiveUnclosedCycles` depends on -- the two reads stay outside `withLocalWrite`, so this
- * costs no extra transaction on the shared write door. `cycleId` is optional: a caller outside
- * the headless cycle's stage machine has none to correlate.
- */
-export async function recordSyncAttemptStarted(
-  rawDb: SQLiteDatabase,
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  cycleId: string | null = null,
-) {
-  const previous = await getSyncRuntimeStatusSnapshot(rawDb);
-
-  await persistSyncRuntimeStatusPatch(
-    rawDb,
-    buildSyncAttemptStartedPatch(triggerSource, attemptedAt, previous, cycleId),
-  );
+/** Persists the start of a sync attempt into the runtime snapshot singleton. */
+export async function recordSyncAttemptStarted(rawDb: SQLiteDatabase, attemptedAt: number) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildSyncAttemptStartedPatch(attemptedAt));
 }
 
 /**
- * Persists a successful sync attempt and the confirmed operations count.
- * This is the source used by Settings to report the latest healthy background cycle.
- *
- * `diagnosticsFlush` is optional and carries this cycle's diagnostics-outbox flush result when the
- * caller holds one. Supplying it folds the flush counters (`discarded`, `undeliverable`,
- * `unclassified`, `reaped`) into this SAME write, which is how the foreground coordinated
- * cycle records them without a second status transaction -- that path performs no other status
- * write. A caller with no flush evidence leaves those columns exactly as they were.
+ * Persists a successful sync attempt. Its success instant is the reachability evidence the
+ * status facade reads (ADR 009 R-9).
  */
-export async function recordSyncAttemptSucceeded(
-  rawDb: SQLiteDatabase,
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  syncedCount: number,
-  cycleId: string | null = null,
-  diagnosticsFlush?: SyncDiagnosticsFlushResult,
-) {
-  await persistSyncRuntimeStatusPatch(
-    rawDb,
-    buildSyncAttemptSucceededPatch(
-      triggerSource,
-      attemptedAt,
-      syncedCount,
-      cycleId,
-      diagnosticsFlush,
-    ),
-  );
+export async function recordSyncAttemptSucceeded(rawDb: SQLiteDatabase, attemptedAt: number) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildSyncAttemptSucceededPatch(attemptedAt));
 }
 
-/**
- * Persists a failed sync attempt without fabricating a success timestamp.
- * The failure message is intentionally surfaced later in the Settings diagnostics card.
- */
-export async function recordSyncAttemptFailed(
-  rawDb: SQLiteDatabase,
-  triggerSource: SyncRuntimeTriggerSource,
-  attemptedAt: number,
-  message: string,
-  detail: SyncAttemptFailureDetail = {},
-) {
-  await persistSyncRuntimeStatusPatch(
-    rawDb,
-    buildSyncAttemptFailedPatch(triggerSource, attemptedAt, message, detail),
-  );
+/** Persists a failed sync attempt without fabricating a success timestamp. */
+export async function recordSyncAttemptFailed(rawDb: SQLiteDatabase, attemptedAt: number) {
+  await persistSyncRuntimeStatusPatch(rawDb, buildSyncAttemptFailedPatch(attemptedAt));
 }

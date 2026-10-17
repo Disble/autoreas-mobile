@@ -195,7 +195,7 @@ describe('useMutateAnime', () => {
     expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
   });
 
-  it('persists the write failure as local_mutation_write', async () => {
+  it('records the write failure as a failed attempt', async () => {
     const insertError = new Error('database is locked');
     const selectMock = buildSelectMock(baseAnimeRow);
     const txMocks = createTxDbMocks({ insertError });
@@ -207,12 +207,7 @@ describe('useMutateAnime', () => {
 
     await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
 
-    expect(mockRecordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'local_mutation_write',
-      now,
-      'capPlus: database is locked'
-    );
+    expect(mockRecordSyncAttemptFailed).toHaveBeenCalledWith(rawDb, now);
   });
 
   // Guards the `await` in runTrackedMutation's catch. Two weaker forms of this test do NOT work:

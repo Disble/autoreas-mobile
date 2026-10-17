@@ -12,7 +12,7 @@ import type { AnimeMutationFailureFeedback } from './anime-mutation.types';
 /**
  * Reduces any thrown value to a single trimmed reason string.
  * Mutations reject with plain Errors, rejected strings, and (rarely) undefined, so the
- * normalization has to happen before either the toast or the persisted tile reads it.
+ * normalization has to happen before the toast reads it.
  */
 function toReasonOrUnknown(rawReason: string): string {
   const trimmedReason = rawReason.trim();
@@ -20,6 +20,7 @@ function toReasonOrUnknown(rawReason: string): string {
   return trimmedReason.length > 0 ? trimmedReason : ANIME_MUTATION_FAILURE_UNKNOWN_REASON;
 }
 
+/** Turns any rejection value into the reason the failure toast shows, or the unknown-reason text. */
 function normalizeFailureReason(error: unknown): string {
   // Only Errors and thrown strings carry a reason a user can act on. Everything else (nullish
   // rejections, plain objects) would stringify to noise like "undefined" or "[object Object]",
@@ -36,9 +37,8 @@ function normalizeFailureReason(error: unknown): string {
 }
 
 /**
- * Clamps a failure string to the shared display bound, marking elision with an ellipsis.
- * Shared by the persisted message and the toast description so a long native payload cannot
- * overflow one surface while the other stays bounded.
+ * Clamps a failure string to the shared display bound, marking elision with an ellipsis, so a
+ * long native payload cannot overflow the toast description.
  */
 function truncateToMaxLength(value: string): string {
   if (value.length <= ANIME_MUTATION_FAILURE_MAX_MESSAGE_LENGTH) {
@@ -63,25 +63,15 @@ function readLocalWriteFailureDiagnostics(error: unknown): LocalWriteFailureDiag
 
 /**
  * Surfaces write-failure diagnostics (errcode/elapsedMs/stage) through console telemetry only.
- * This is deliberately separate from the returned copy: the persisted Settings message and the
- * toast must stay byte-identical to their pre-diagnostics rendering
- * (write-failure-diagnostics spec, "User-Facing Failure Copy Remains Unchanged").
+ * This is deliberately separate from the toast copy, which must stay byte-identical to its
+ * pre-diagnostics rendering (write-failure-diagnostics spec, "User-Facing Failure Copy Remains
+ * Unchanged").
  */
-function logLocalWriteFailureDiagnostics(label: string, error: unknown): void {
+export function logLocalWriteFailureDiagnostics(label: string, error: unknown): void {
   const diagnostics = readLocalWriteFailureDiagnostics(error);
   if (!diagnostics) return;
 
   console.warn(`[${label}] Local write failure diagnostics`, diagnostics);
-}
-
-/**
- * Builds the message persisted into the sync runtime status so Settings can show it.
- * The action label is prefixed because every chapter button funnels into the same channel and
- * the failing action is the first thing needed to tell a write failure from a sync failure.
- */
-export function getAnimeMutationFailureMessage(label: string, error: unknown): string {
-  logLocalWriteFailureDiagnostics(label, error);
-  return truncateToMaxLength(`${label}: ${normalizeFailureReason(error)}`);
 }
 
 /**
@@ -109,8 +99,8 @@ export function buildAnimeMutationFailureFeedback(
 
   return {
     label: ANIME_MUTATION_FAILURE_LABEL,
-    // Capped like the persisted message: a native error can carry a very long payload, and an
-    // unbounded description would push the toast off screen.
+    // Capped: a native error can carry a very long payload, and an unbounded description would
+    // push the toast off screen.
     description: truncateToMaxLength(normalizeFailureReason(error)),
   };
 }

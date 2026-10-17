@@ -51,6 +51,8 @@ const CORE_FILES = [
   'src/infrastructure/db/anime-repository/anime-repository.helpers.ts',
   // Moves every queued season rating into operation_log (migration 0019, ADR 009 L28).
   'src/infrastructure/db/client/season-rating-queue-move.helpers.ts',
+  // Drops the dead sync_runtime_status columns on an installed device (migration 0020, T18).
+  'src/infrastructure/db/client/sync-runtime-status-column-drop.helpers.ts',
 ];
 
 /** IMPORTANT-tier files: user-visible sync features and orchestration with real branching. */
@@ -64,8 +66,6 @@ const IMPORTANT_FILES = [
   'src/features/sync/native-foreground-sync-ticker.helpers.ts',
   'src/features/sync/season-sync.helpers.ts',
   'src/features/sync/sync-connection-store/sync-connection-store.helpers.ts',
-  'src/features/sync/sync-diagnostic-events.helpers.ts',
-  'src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers.ts',
   'src/features/sync/sync-diagnostics-flush.helpers.ts',
   'src/features/sync/sync-execution-facade/sync-execution-facade.helpers.ts',
   'src/features/sync/sync-execution-strategy.helpers.ts',

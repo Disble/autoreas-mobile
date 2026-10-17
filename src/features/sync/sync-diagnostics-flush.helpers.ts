@@ -14,7 +14,6 @@ import {
   SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS,
 } from './sync-diagnostics-flush.constants';
 import type {
-  CaptureSyncDiagnosticsEnvelopeParams,
   FlushSyncDiagnosticsOutboxParams,
   SyncDiagnosticsEnvelopeDisposition,
   SyncDiagnosticsFlushResult,
@@ -22,7 +21,6 @@ import type {
   SyncDiagnosticsPayloadClass,
   SyncDiagnosticsPostVerdict,
 } from './sync-diagnostics-flush.types';
-import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
 import type {
   BridgeClient,
   BridgeConnection,
@@ -297,31 +295,6 @@ async function disposeOfEnvelope(
   const disposition = resolveSyncDiagnosticsDisposition(classification, verdict);
 
   return applySyncDiagnosticsDisposition(params, candidate, disposition, verdict);
-}
-
-/**
- * Durably captures one cycle's envelope before transmission is attempted (spec: "Capture
- * happens before the request is attempted, not after"). Synchronous and swallows by contract --
- * the store never throws -- because capture must never be the reason a sync cycle fails.
- *
- * Gated only on `clientTelemetry` being non-null: `resolveClientTelemetry` already applies the
- * telemetry preference AND the "was a context supplied" check upstream (reconcile.helpers.ts),
- * so a null here already means "do not capture" -- there is no second gate to re-implement.
- */
-export function captureSyncDiagnosticsEnvelope(
-  clientTelemetry: WireSyncCycleTelemetry | null,
-  params: CaptureSyncDiagnosticsEnvelopeParams = {},
-): void {
-  if (!clientTelemetry) {
-    return;
-  }
-
-  const store = params.store ?? syncDiagnosticsOutboxStore;
-
-  store.enqueue({
-    cycleId: clientTelemetry.cycle_id,
-    payload: JSON.stringify(clientTelemetry),
-  });
 }
 
 /**

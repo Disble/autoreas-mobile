@@ -48,14 +48,3 @@ export function normalizeWireAnimeChangedFields(
     return normalizedField ? [normalizedField] : [];
   });
 }
-
-/**
- * Returns the `changed_fields` names this build does not know. `normalizeWireAnimeChangedFields`
- * drops them; this lets the caller record that a change was partly or wholly rejected instead of
- * losing that fact silently.
- */
-export function findUnsupportedWireAnimeChangedFields(
-  changedFields: readonly string[],
-): string[] {
-  return changedFields.filter((field) => !Object.hasOwn(LOCAL_FIELD_BY_WIRE_FIELD, field));
-}

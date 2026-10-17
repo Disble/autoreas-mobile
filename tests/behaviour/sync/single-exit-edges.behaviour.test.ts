@@ -4,10 +4,6 @@ import * as chapterActionDiagnostics from '../../../src/features/animes/chapter-
 import { applyAnimeMutationPatch, buildCapPlusPatch } from '../../../src/features/animes/anime-mutation.helpers';
 import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
 import { getSyncConnectionSnapshot, resetSyncConnectionStore } from '../../../src/features/sync/sync-connection-store';
-import {
-  readDiagnosticEvents,
-  resetDiagnosticEvents,
-} from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { dispatchForegroundSyncFlush } from '../../../src/features/sync/sync-facade.helpers';
 import {
   registerSyncFlushDispatcher,
@@ -123,7 +119,6 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     fakeBridge = installFakeBridge();
     resetSyncConnectionStore();
     resetSyncFlush();
-    resetDiagnosticEvents();
     mockSqliteContext = null;
     useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
   });
@@ -248,7 +243,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
   });
 
   it('keeps the chapter push reported as succeeded when its cycle only fails the season refresh after a delivered rating', async () => {
-    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const recordSync = jest.spyOn(chapterActionDiagnostics, 'recordChapterActionSync');
     const adapter = await openRepairedDatabase();
     await adapter.runAsync(
@@ -270,7 +265,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     ]);
     expect(recordSync).toHaveBeenCalledWith(actionContext, 'ok');
     expect(recordSync).not.toHaveBeenCalledWith(actionContext, 'failed');
-    expect(readDiagnosticEvents().map((event) => event.event)).not.toContain('mutation_sync_failed');
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'), expect.anything());
     expect(getSyncConnectionSnapshot().kind).toBe('online');
   });
 

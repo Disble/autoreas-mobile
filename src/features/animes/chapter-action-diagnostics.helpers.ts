@@ -40,9 +40,9 @@ type ChapterActionWireFields = Pick<ChapterActionWirePayload, 'duration_ms'> &
 /**
  * Generates one id when no generator was injected.
  *
- * Backed by `expo-crypto`'s platform CSPRNG rather than `Math.random`, for the same reason
- * `createSyncCycleId` is: two observations that collide would merge two gestures into one
- * correlation, and that wrong answer reads exactly like a valid one.
+ * Backed by `expo-crypto`'s platform CSPRNG rather than `Math.random`: two observations that
+ * collide would merge two gestures into one correlation, and that wrong answer reads exactly
+ * like a valid one.
  */
 function generateChapterActionId(): string {
   return Crypto.randomUUID();

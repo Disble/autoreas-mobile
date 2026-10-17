@@ -5,7 +5,6 @@ import * as animeRepository from '../../../src/infrastructure/db/anime-repositor
 import * as mergeApplyChangesModule from '../../../src/features/sync/merge/apply-remote-changes.helpers';
 import * as mergeContextModule from '../../../src/features/sync/merge/merge-context.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
-import * as diagnosticStore from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { operationLog } from '../../../src/infrastructure/db/schema';
 
 jest.mock('../../../src/infrastructure/api', () => ({
@@ -52,10 +51,6 @@ jest.mock('../../../src/features/sync/operation-log-retention.helpers', () => ({
   countOperationLogBacklogRows: jest.fn().mockResolvedValue(0),
 }));
 
-jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
-  recordDiagnosticEvent: jest.fn(),
-}));
-
 /**
  * Builds a spy `writeDb` that records every `.update(table).set(values).where(cond)` call so
  * assertions can find the exact write that matters without over-mocking drizzle's chain shape.
@@ -87,7 +82,6 @@ describe('syncPendingOperations conflict classification wiring', () => {
   const mockReadBacklog = operationLogRetention.readOperationLogBacklog as jest.Mock;
   const mockReadAnimeBridgeTokens = animeRepository.readAnimeBridgeTokens as jest.Mock;
   const mockApplyAnimeBridgeToken = animeRepository.applyAnimeBridgeToken as jest.Mock;
-  const mockRecordDiagnosticEvent = diagnosticStore.recordDiagnosticEvent as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -268,12 +262,9 @@ describe('syncPendingOperations conflict classification wiring', () => {
     expect(operationLogCalls).toContainEqual(
       expect.objectContaining({ table: operationLog, set: expect.objectContaining({ status: 'pending' }) }),
     );
-    expect(mockRecordDiagnosticEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'conflict_token_missing' }),
-    );
   });
 
-  it('an unrecognized reason is surfaced via a diagnostic event, neither retried as conflict nor discarded as unsupported', async () => {
+  it('an unrecognized reason is reset to pending, neither retried as conflict nor discarded as unsupported', async () => {
     mockReadBacklog.mockResolvedValue([
       {
         id: 5,
@@ -309,12 +300,9 @@ describe('syncPendingOperations conflict classification wiring', () => {
     expect(operationLogCalls).toContainEqual(
       expect.objectContaining({ table: operationLog, set: expect.objectContaining({ status: 'pending' }) }),
     );
-    expect(mockRecordDiagnosticEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'conflict_reason_unrecognized' }),
-    );
   });
 
-  it('surfaces a stalled progressing conflict via a diagnostic event while it remains queued and keeps retrying', async () => {
+  it('keeps a progressing conflict queued however old it is', async () => {
     const farInThePast = 0;
     mockReadBacklog.mockResolvedValue([
       {
@@ -347,13 +335,10 @@ describe('syncPendingOperations conflict classification wiring', () => {
 
     await syncPendingOperations({ name: 'stalled-conflict-db' } as never);
 
-    // The operation still stays queued (status: pending), never terminalised by the stall check.
+    // The operation still stays queued (status: pending): age never terminalises a conflict.
     const operationLogCalls = calls.filter((call) => call.table === operationLog);
     expect(operationLogCalls).toContainEqual(
       expect.objectContaining({ table: operationLog, set: expect.objectContaining({ status: 'pending' }) }),
-    );
-    expect(mockRecordDiagnosticEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'conflict_operation_stalled' }),
     );
   });
 });

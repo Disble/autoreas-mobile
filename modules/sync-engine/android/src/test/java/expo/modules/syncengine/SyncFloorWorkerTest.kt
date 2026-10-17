@@ -23,7 +23,7 @@ private val OUTCOME_CLOSED = CycleOutcome("closed", "closed", 3, 5, null)
  * `ListenableWorker.Result` the floor reported before the extraction.
  *
  * The attempt's own behavior -- ownership gate, exactly-once settlement, bounded wait,
- * `CancellationException` propagation, crash safety, the `background_task` projection -- is
+ * `CancellationException` propagation, crash safety, the status projection -- is
  * asserted in [SyncFloorAttemptTest], driven directly on the collaborator with the same
  * assertions the pre-extraction worker tests used. The base class is now the remote
  * `androidx.work.multiprocess.RemoteCoroutineWorker`, so its local entry point is the suspend
@@ -45,7 +45,7 @@ class SyncFloorWorkerTest {
   private lateinit var context: Context
 
   /** One recorded call to the worker's status-projection seam. */
-  private data class StatusWrite(val triggerSource: String, val outcome: CycleOutcome)
+  private data class StatusWrite(val outcome: CycleOutcome)
 
   @Before
   fun setUp() {
@@ -92,8 +92,8 @@ class SyncFloorWorkerTest {
   ): Pair<SyncFloorWorker, MutableList<StatusWrite>> {
     val worker = TestListenableWorkerBuilder<SyncFloorWorker>(context).build()
     worker.attemptRunner = runner
-    worker.runtimeStatusWriter = { _, _, _, outcome, triggerSource ->
-      writes += StatusWrite(triggerSource, outcome)
+    worker.runtimeStatusWriter = { _, _, _, outcome ->
+      writes += StatusWrite(outcome)
     }
     return worker to writes
   }
@@ -128,7 +128,7 @@ class SyncFloorWorkerTest {
     assertEquals(true, runner.lastRequirePresence)
     assertEquals(
       "the worker's own runtimeStatusWriter seam must reach the collaborator",
-      listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)),
+      listOf(StatusWrite(OUTCOME_CLOSED)),
       writes,
     )
   }

@@ -2,6 +2,7 @@ import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { runMigrations } from "../../src/infrastructure/db/client";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
+import { DEAD_SYNC_RUNTIME_STATUS_COLUMNS } from "../../src/infrastructure/db/client/sync-runtime-status-column-drop.constants";
 
 jest.mock("drizzle-orm", () => ({
   desc: jest.fn((value) => value),
@@ -53,43 +54,21 @@ jest.mock("../../src/infrastructure/db/migrations/migrations", () => ({
 }));
 
 /**
- * `sync_runtime_status` columns present on every device already migrated up through 0013, minus
- * `is_background_task_registered` -- the one column these tests exercise as still missing.
+ * `sync_runtime_status` as a device stamped 20 holds it: the nine kept columns and every column
+ * migration `0020` retires, so the repair pipeline both keeps and drops.
  */
-const SYNC_RUNTIME_STATUS_BASE_COLUMNS = [
-  { name: "id" },
-  { name: "registration_status" },
-  { name: "execution_mode" },
-  { name: "is_foreground_service_running" },
-  { name: "can_show_persistent_notification" },
-  { name: "last_attempt_at" },
-  { name: "last_success_at" },
-  { name: "last_failure_message" },
-  { name: "last_trigger_source" },
-  { name: "last_synced_count" },
-  { name: "foreground_service_callback_started_at" },
-  { name: "last_no_op_reason" },
-  { name: "last_pending_operations_count_at_start" },
-  { name: "is_cycle_active" },
-  { name: "last_backlog_read_count" },
-  { name: "last_pruned_operations_count" },
-  { name: "last_cycle_id" },
-  { name: "last_cycle_stage" },
-  { name: "last_error_name" },
-  { name: "last_native_errcode_byte" },
-  { name: "last_error_stage" },
-  { name: "consecutive_unclosed_cycles" },
-  { name: "last_cycle_stage_at" },
-  { name: "last_failed_checkpoint_count" },
-  { name: "last_diagnostics_discarded_count" },
-  { name: "last_diagnostics_failed_removal_count" },
-  { name: "last_outbox_failed_write_count" },
-  { name: "last_dead_letter_count" },
-  { name: "last_conflict_exhausted_count" },
-  { name: "last_stuck_processing_count" },
-  { name: "last_oldest_pending_age_ms" },
-  { name: "last_pending_row_count" },
-];
+const SYNC_RUNTIME_STATUS_COLUMNS = [
+  "id",
+  "registration_status",
+  "execution_mode",
+  "can_show_persistent_notification",
+  "last_attempt_at",
+  "last_success_at",
+  "last_cycle_id",
+  "last_cycle_stage",
+  "last_error_name",
+  ...DEAD_SYNC_RUNTIME_STATUS_COLUMNS,
+].map((name) => ({ name }));
 
 /** A promise this test can resolve or reject from outside its own executor. */
 interface DeferredPromise<T> {
@@ -113,6 +92,7 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
 /** Builds a mock `rawDb` with a caller-supplied `sync_runtime_status` column set. */
 function createRawDb(syncRuntimeStatusColumns: { name: string }[]) {
   return {
+    execAsync: jest.fn().mockResolvedValue(undefined),
     getAllAsync: jest.fn().mockImplementation(async (query: string) => {
       if (query === "PRAGMA table_info(bridge_config)") {
         return [
@@ -137,7 +117,7 @@ function createRawDb(syncRuntimeStatusColumns: { name: string }[]) {
   };
 }
 
-describe("sync_runtime_status is_background_task_registered migration", () => {
+describe("legacy schema repair writer order", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (nativeRuntime.getOpenDatabaseSync as jest.Mock).mockReturnValue(jest.fn());
@@ -145,33 +125,9 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     (nativeRuntime.getDrizzleFactory as jest.Mock).mockReturnValue(drizzle);
   });
 
-  it("agrega is_background_task_registered de forma idempotente al re-ejecutar migraciones", async () => {
-    const rawDb = createRawDb(SYNC_RUNTIME_STATUS_BASE_COLUMNS);
-
-    await runMigrations(rawDb as never);
-
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL'
-    );
-
-    const rawDbSecondRun = createRawDb([
-      ...SYNC_RUNTIME_STATUS_BASE_COLUMNS,
-      { name: "is_background_task_registered" },
-    ]);
-
-    await runMigrations(rawDbSecondRun as never);
-
-    expect(rawDbSecondRun.runAsync).not.toHaveBeenCalledWith(
-      expect.stringContaining('is_background_task_registered')
-    );
-  });
-
   it("runs legacy schema repairs in deterministic writer order", async () => {
     const firstRepair = createDeferredPromise<{ changes: number }>();
-    const rawDb = createRawDb([
-      ...SYNC_RUNTIME_STATUS_BASE_COLUMNS,
-      { name: "is_background_task_registered" },
-    ]);
+    const rawDb = createRawDb(SYNC_RUNTIME_STATUS_COLUMNS);
     rawDb.runAsync.mockImplementation((statement: string) => {
       if (statement.startsWith("UPDATE bridge_config")) {
         return firstRepair.promise;
@@ -194,19 +150,12 @@ describe("sync_runtime_status is_background_task_registered migration", () => {
     firstRepair.resolve({ changes: 0 });
     await preparation;
 
+    expect(rawDb.execAsync.mock.calls).toEqual([["BEGIN EXCLUSIVE"], ["COMMIT"]]);
     expect(rawDb.runAsync.mock.calls.map(([statement]) => statement)).toEqual([
       expect.stringMatching(/^UPDATE bridge_config/),
-      // The newest diagnostics counters, repaired in the sync_runtime_status step that runs
-      // immediately after the bridge_config one and before the operation_log index.
-      expect.stringMatching(
-        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_undeliverable_count/,
-      ),
-      expect.stringMatching(
-        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_unclassified_count/,
-      ),
-      expect.stringMatching(
-        /^ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count/,
-      ),
+      // The dead-column drop runs right after the sync_runtime_status column backfill (which has
+      // nothing to add here) and before the operation_log index, one column at a time in order.
+      ...DEAD_SYNC_RUNTIME_STATUS_COLUMNS.map((column) => `ALTER TABLE sync_runtime_status DROP COLUMN ${column}`),
       expect.stringMatching(/^CREATE INDEX IF NOT EXISTS operation_log/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN bridge_modified_at/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN episodes/),

@@ -261,10 +261,10 @@ describe('database startup helpers', () => {
     (runMigrations as jest.Mock).mockResolvedValue(undefined);
 
     // CONTRACT CORRECTION: the readiness version IS the journal length, so adding migration `0018`
-    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`, 20 with `0019`. Pinned as a
+    // moves this literal by construction -- 15 shipped with `0014`, 16 with `0015`, 17 with `0016`, 18 with `0017`, 19 with `0018`, 20 with `0019`, 21 with `0020`. Pinned as a
     // literal rather than against the exported constant so a migration that silently fails to
     // register in the journal is caught here instead of agreeing with itself.
-    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(20);
+    expect(EXPECTED_SCHEMA_READINESS_VERSION).toBe(21);
     await expect(prepareForegroundDatabase(rawDb)).resolves.toBeUndefined();
     expect(runMigrations).not.toHaveBeenCalled();
   });

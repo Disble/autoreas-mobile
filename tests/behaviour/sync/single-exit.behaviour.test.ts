@@ -51,7 +51,6 @@ async function openRepairedDatabase(): Promise<SQLiteDatabase> {
 
 /** The persisted status columns a coordinated cycle writes. */
 interface StoredRuntimeStatus {
-  last_trigger_source: string | null;
   last_attempt_at: number | null;
   last_success_at: number | null;
   last_cycle_stage: string | null;
@@ -60,7 +59,7 @@ interface StoredRuntimeStatus {
 /** Reads the singleton runtime-status row the cycle's recorders write. */
 function readRuntimeStatus(adapter: SQLiteDatabase): Promise<StoredRuntimeStatus | null> {
   return adapter.getFirstAsync<StoredRuntimeStatus>(
-    'SELECT last_trigger_source, last_attempt_at, last_success_at, last_cycle_stage FROM sync_runtime_status WHERE id = 1',
+    'SELECT last_attempt_at, last_success_at, last_cycle_stage FROM sync_runtime_status WHERE id = 1',
   );
 }
 
@@ -125,7 +124,6 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
       expect.objectContaining({ status: 'synced' }),
     ]);
     expect(await readRuntimeStatus(adapter)).toEqual({
-      last_trigger_source: 'local_mutation',
       last_attempt_at: expect.any(Number),
       last_success_at: expect.any(Number),
       last_cycle_stage: 'closed',

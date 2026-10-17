@@ -141,6 +141,13 @@
       "when": 1792195200000,
       "tag": "0019_drop_season_rating_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792238400000,
+      "tag": "0020_drop_dead_sync_runtime_status_columns",
+      "breakpoints": true
     }
   ]
 }

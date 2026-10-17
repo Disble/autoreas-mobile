@@ -7,9 +7,7 @@ import androidx.work.multiprocess.RemoteCoroutineWorker
 import expo.modules.foregroundsyncticker.SyncTickerOwnership
 
 /**
- * `triggerSource` every floor attempt journals and projects; mirrors the JS floor's own
- * `BACKGROUND_SYNC_ENGINE_TRIGGER_SOURCE` and the `SyncRuntimeTriggerSource` member
- * `'background_task'` (`src/features/sync/sync-runtime-status.types.ts`).
+ * `triggerSource` every floor attempt journals and sends.
  */
 internal const val SYNC_FLOOR_TRIGGER_SOURCE = "background_task"
 
@@ -57,7 +55,7 @@ internal fun SyncFloorAttemptResult.toListenableWorkerResult(): ListenableWorker
  * **This class is an adapter, on purpose, and that is its whole job.** The attempt itself --
  * ownership gate, one attempt through [SyncEngineRunner] with `requirePresence = true`, the
  * exactly-once settlement race, the bounded wait, the `CancellationException` propagation, the
- * status projection with [SYNC_FLOOR_TRIGGER_SOURCE], and the crash-safety around both injectable
+ * status projection, and the crash-safety around both injectable
  * seams -- lives in [SyncFloorAttempt], which documents every one of those behaviors and their
  * reasons. Here the tick is only: build the collaborator from the seams below, run it, and map
  * its [SyncFloorAttemptResult] with [toListenableWorkerResult]. Nothing is re-decided.
@@ -89,9 +87,9 @@ class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCorout
   }
 
   /** Swappable in tests; defaults to the real [SyncEngineRuntimeStatus.record]. */
-  internal var runtimeStatusWriter: (Context, String, Long, CycleOutcome, String) -> Unit =
-    { context, cycleId, attemptedAtMs, outcome, triggerSource ->
-      SyncEngineRuntimeStatus.record(context, cycleId, attemptedAtMs, outcome, triggerSource)
+  internal var runtimeStatusWriter: (Context, String, Long, CycleOutcome) -> Unit =
+    { context, cycleId, attemptedAtMs, outcome ->
+      SyncEngineRuntimeStatus.record(context, cycleId, attemptedAtMs, outcome)
     }
 
   /** Swappable in tests; defaults to the real, ticker-owned [SyncTickerOwnership.ownsBackground]. */

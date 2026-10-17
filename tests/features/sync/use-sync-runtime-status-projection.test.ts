@@ -119,18 +119,14 @@ const nativeFacts = {
 const STALE_PROJECTION = {
   registrationStatus: "unregistered",
   executionMode: "best_effort_background_task",
-  isForegroundServiceRunning: false,
   canShowPersistentNotification: true,
-  isBackgroundTaskRegistered: false,
 };
 
 /** The persisted row once BOTH native paths have actually settled. */
 const SETTLED_PROJECTION = {
   registrationStatus: "registered",
   executionMode: "android_foreground_service",
-  isForegroundServiceRunning: true,
   canShowPersistentNotification: true,
-  isBackgroundTaskRegistered: true,
 };
 
 /** Captured `AppState` listeners the mocked `addEventListener` registers, driven via `emitAppState`. */
@@ -356,9 +352,7 @@ describe("useSyncRuntime status projection", () => {
       {
         registrationStatus: "registered",
         executionMode: "best_effort_background_task",
-        isForegroundServiceRunning: false,
         canShowPersistentNotification: true,
-        isBackgroundTaskRegistered: true,
       },
     );
     await act(async () => {
@@ -422,9 +416,7 @@ describe("useSyncRuntime status projection", () => {
       {
         registrationStatus: "unregistered",
         executionMode: "best_effort_background_task",
-        isForegroundServiceRunning: false,
         canShowPersistentNotification: false,
-        isBackgroundTaskRegistered: false,
       },
     );
   });

@@ -65,7 +65,6 @@ describe('foreground sync failure precedence', () => {
     const setActiveSeasonSnapshot = jest.fn();
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: deliveredCount,
-      backlogReadCount: 1,
       hasMorePending: false,
       shouldRefreshActiveSeason: true,
     });

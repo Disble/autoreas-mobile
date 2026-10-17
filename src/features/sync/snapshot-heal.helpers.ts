@@ -5,8 +5,6 @@ import {
   SNAPSHOT_HEAL_STALE_AFTER_MS,
 } from './snapshot-heal.constants';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
-import { recordDiagnosticEvent } from './sync-diagnostic-store/sync-diagnostic-store.helpers';
-import { causeFromError } from './sync-telemetry.helpers';
 
 /** Whether `demand` asks for a heal now, given when the last one succeeded. */
 function isSnapshotHealDue(demand: SnapshotHealDemand, lastSuccessAt: number | undefined, now: number): boolean {
@@ -41,11 +39,5 @@ export async function healSnapshotOnDemand(
     LAST_SUCCESSFUL_SNAPSHOT_HEAL_AT.set(rawDb, now());
   } catch (error: unknown) {
     console.warn('[useForegroundResync] Resync failed', error);
-    recordDiagnosticEvent({
-      source: 'foreground_resync',
-      event: 'resync_failed',
-      cause: causeFromError(error),
-      at: now(),
-    });
   }
 }

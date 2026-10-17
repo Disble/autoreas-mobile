@@ -8,6 +8,7 @@ import {
   SYNC_CYCLE_LOCK_COLUMN_DEFINITIONS,
   SYNC_RUNTIME_STATUS_COLUMN_DEFINITIONS,
 } from "../../../src/infrastructure/db/client/client.constants";
+import { DEAD_SYNC_RUNTIME_STATUS_COLUMNS } from "../../../src/infrastructure/db/client/sync-runtime-status-column-drop.constants";
 import {
   REQUIRED_SCHEMA_COLUMNS,
   REQUIRED_SCHEMA_TABLES,
@@ -26,6 +27,15 @@ const BASELINE_MIGRATION_PREFIX = "0000_";
  */
 const BESPOKE_REPAIR_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   bridge_config: ["last_changelog_id"],
+};
+
+/**
+ * Every column a repair step drops, keyed by table: an installed device's route to a migration's
+ * `DROP COLUMN`. It may name more columns than the migration does -- a column only a repair step
+ * ever created, or one in a packed chunk's discarded tail, is not on a fresh install to drop.
+ */
+const REPAIR_DROPPED_COLUMNS_BY_TABLE: Readonly<Record<string, readonly string[]>> = {
+  sync_runtime_status: DEAD_SYNC_RUNTIME_STATUS_COLUMNS,
 };
 
 /** Every repair definition, keyed by the table it repairs. */
@@ -67,15 +77,38 @@ function readDroppedTables(): ReadonlySet<string> {
   );
 }
 
-/** Every `ALTER TABLE ... ADD COLUMN` any migration after the baseline declares on a table it keeps. */
+/**
+ * Every `table.column` a migration drops with `ALTER TABLE ... DROP COLUMN`. Like a dropped table, a
+ * dropped column is retired on BOTH routes -- a fresh install runs the `DROP COLUMN`, an installed
+ * device runs the repair step that drops it (for `sync_runtime_status`,
+ * `dropDeadSyncRuntimeStatusColumns`) -- so its earlier `ADD COLUMN` needs no repair twin. A twin
+ * would in fact re-add it on every startup.
+ */
+function readDroppedColumns(): ReadonlySet<string> {
+  return new Set(
+    listMigrationFiles().flatMap((file) =>
+      [...readMigrationSql(file).matchAll(/ALTER TABLE `?(\w+)`? DROP (?:COLUMN )?`?(\w+)`?/gu)].map(
+        (match) => `${match[1]}.${match[2]}`,
+      ),
+    ),
+  );
+}
+
+/** Every `ALTER TABLE ... ADD COLUMN` any migration after the baseline declares on a table and column it keeps. */
 function readDeclaredColumns(): readonly { file: string; table: string; column: string }[] {
   const dropped = readDroppedTables();
+  const droppedColumns = new Set([
+    ...readDroppedColumns(),
+    ...Object.entries(REPAIR_DROPPED_COLUMNS_BY_TABLE).flatMap(([table, columns]) =>
+      columns.map((column) => `${table}.${column}`),
+    ),
+  ]);
 
   return listMigrationFiles().flatMap((file) =>
     [...readMigrationSql(file).matchAll(/ALTER TABLE `?(\w+)`? ADD (?:COLUMN )?`?(\w+)`?/gu)].map(
       (match) => ({ file, table: match[1], column: match[2] }),
     ),
-  ).filter(({ table }) => !dropped.has(table));
+  ).filter(({ table, column }) => !dropped.has(table) && !droppedColumns.has(`${table}.${column}`));
 }
 
 /** Every `CREATE TABLE` any migration after the baseline declares for a table it keeps. */
@@ -152,6 +185,49 @@ describe("migration / repair parity", () => {
     expect(dropped).toEqual(["season_rating_queue"]);
     expect(dropped.filter((table) => REQUIRED_SCHEMA_TABLES.includes(table as never))).toEqual([]);
     expect(dropped.filter((table) => table in REQUIRED_SCHEMA_COLUMNS)).toEqual([]);
+  });
+
+  it("gives no dropped column a repair twin or a readiness proof", () => {
+    // A repair twin for a dropped column would re-add it on every startup, undoing the drop on
+    // every installed device; a readiness proof for one would refuse every database forever.
+    const dropped = [...readDroppedColumns()];
+    const twinned = dropped.filter((entry) => {
+      const [table, column] = entry.split(".");
+
+      return (REPAIR_DEFINITIONS_BY_TABLE[table] ?? []).some((definition) => definition.columnName === column);
+    });
+    const proven = dropped.filter((entry) => {
+      const [table, column] = entry.split(".");
+
+      return (REQUIRED_SCHEMA_COLUMNS[table] ?? []).includes(column);
+    });
+
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(twinned).toEqual([]);
+    expect(proven).toEqual([]);
+  });
+
+  it("gives every migration-dropped column a repair step that drops it", () => {
+    // The drop's own parity: a column only the migration drops stays on every installed device.
+    const missing = [...readDroppedColumns()].filter((entry) => {
+      const [table, column] = entry.split(".");
+
+      return !(REPAIR_DROPPED_COLUMNS_BY_TABLE[table] ?? []).includes(column);
+    });
+
+    expect(missing).toEqual([]);
+  });
+
+  it("gives no repair-dropped column a repair twin or a readiness proof", () => {
+    const retired = Object.entries(REPAIR_DROPPED_COLUMNS_BY_TABLE).flatMap(([table, columns]) =>
+      columns.filter(
+        (column) =>
+          (REPAIR_DEFINITIONS_BY_TABLE[table] ?? []).some((definition) => definition.columnName === column) ||
+          (REQUIRED_SCHEMA_COLUMNS[table] ?? []).includes(column),
+      ),
+    );
+
+    expect(retired).toEqual([]);
   });
 
   it("still covers a migration that packed several statements into one chunk", () => {

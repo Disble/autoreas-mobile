@@ -167,7 +167,6 @@ describe('anime mutation connection truth', () => {
     jest.spyOn(Date, 'now').mockReturnValue(now);
     (syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 0,
-      backlogReadCount: 0,
       hasMorePending: false,
     });
     (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
@@ -230,7 +229,6 @@ describe('anime mutation connection truth', () => {
   it('sends a mutation made during a running cycle in one follow-up, and the stale cycle publishes nothing', async () => {
     type SyncResult = {
       syncedCount: number;
-      backlogReadCount: number;
       hasMorePending: boolean;
     };
     let resolveOlderSync!: (value: SyncResult) => void;
@@ -252,17 +250,12 @@ describe('anime mutation connection truth', () => {
     configureMutationWrite();
 
     await applyChapterIncrement();
-    resolveOlderSync({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
+    resolveOlderSync({ syncedCount: 1, hasMorePending: false });
     await expect(olderFlush).resolves.toBe(1);
     await waitForSyncFlushIdle(rawDb as never);
 
     expect(syncPendingOperations).toHaveBeenCalledTimes(2);
-    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'local_mutation',
-      now,
-      unreachableError.message,
-    );
+    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(rawDb, now);
     expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
     expect(getSyncConnectionSnapshot().kind).toBe('unreachable');
   });
@@ -276,12 +269,7 @@ describe('anime mutation connection truth', () => {
     await waitForCalls(recordSyncAttemptFailed as jest.Mock, 1);
     await waitForConnectionKind('sync_error');
 
-    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(
-      rawDb,
-      'local_mutation',
-      now,
-      'Sync failed',
-    );
+    expect(recordSyncAttemptFailed).toHaveBeenCalledWith(rawDb, now);
     expect(getSyncConnectionSnapshot()).toEqual({
       kind: 'sync_error',
       lastSyncAt: null,

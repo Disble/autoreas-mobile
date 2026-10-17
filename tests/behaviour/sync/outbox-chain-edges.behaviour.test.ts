@@ -176,7 +176,7 @@ describe('chained sends per key, edge cases (ADR 009 R-14)', () => {
     const bodies = sentBodies(fakeBridge);
     expect(bodies.map((body) => body.last_changelog_id)).toEqual([0, 1, 2]);
     expect(bodies.map((body) => body.pending_operations[0].base)).toEqual([7, 14, 15]);
-    expect(result).toEqual(expect.objectContaining({ syncedCount: 3, backlogReadCount: 3, hasMorePending: false }));
+    expect(result).toEqual(expect.objectContaining({ syncedCount: 3, hasMorePending: false }));
     expect((await readRows(adapter)).map((row) => row.status)).toEqual(['synced', 'synced', 'synced']);
   });
 

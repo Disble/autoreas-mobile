@@ -97,8 +97,7 @@ private const val LOG_TAG = "SyncEngine"
  * Deferred, documented as such (not silently skipped):
  * - the conflict-exhaustion policy (`conflict_attempt_count` caps and the token re-base) --
  *   conflicts fall back to the generic "reset to pending" retry;
- * - the diagnostics flush (`POST /api/sync/diagnostics`);
- * - `client_telemetry` beyond the minimal `{ cycle_id, trigger_source, counters }` envelope.
+ * - the diagnostics flush (`POST /api/sync/diagnostics`).
  *
  * The engine owns its OWN connection to the app database `autoreas.db` (same file expo-sqlite
  * uses, WAL already on) with `PRAGMA busy_timeout = 5000`, and performs each transaction with

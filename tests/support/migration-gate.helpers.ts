@@ -12,6 +12,8 @@ import { createTestDrizzleFactory } from './drizzle-test-factory.helpers';
 import {
   CRASHING_PROXY_TARGETS,
   GATE_MIGRATOR_LOG,
+  READINESS_20_LAST_MIGRATION,
+  READINESS_20_VERSION,
   V1_12_0_LAST_MIGRATION,
   V1_12_0_READINESS_VERSION,
 } from './migration-gate.constants';
@@ -81,26 +83,47 @@ export function createCrashingAdapter(adapter: SQLiteDatabase, fails: (source: s
 }
 
 /**
- * Builds the database a device on v1.12.0 holds, from the shipped migration files alone: 0000-0017,
- * the repair-only tables, the ledger as `reconcileMigrationLedger` leaves it (one row per migration,
- * every one pinned to 0017's `when`) and readiness 18. No git history or old source is read.
+ * Builds the database a device holds after a release whose last migration is `lastMigration`, from
+ * the shipped migration files alone: those migrations, the repair-only tables, the ledger as
+ * `reconcileMigrationLedger` leaves it (one row per migration, every one pinned to the last one's
+ * `when`) and `readiness`. No git history or old source is read.
  */
-export async function openV1120Device(): Promise<SQLiteDatabase> {
+async function openShippedDevice(lastMigration: string, readiness: number): Promise<SQLiteDatabase> {
   const adapter = createTestSqliteAdapter();
-  await applyMigrationFiles(adapter, { through: V1_12_0_LAST_MIGRATION });
+  await applyMigrationFiles(adapter, { through: lastMigration });
 
   for (const tableSql of [ACTIVE_SEASON_CACHE_TABLE_SQL, SYNC_CYCLE_LOCK_TABLE_SQL, APP_PREFERENCES_TABLE_SQL]) {
     await adapter.execAsync(tableSql);
   }
 
-  const shipped = journal.entries.filter((entry) => entry.tag.slice(0, 4) <= V1_12_0_LAST_MIGRATION);
+  const shipped = journal.entries.filter((entry) => entry.tag.slice(0, 4) <= lastMigration);
   const pinnedAt = Math.max(...shipped.map((entry) => entry.when));
   await adapter.execAsync(MIGRATION_LEDGER_CREATE_SQL);
   await shipped.reduce(
     (previous) => previous.then(() => adapter.runAsync(MIGRATION_LEDGER_SEED_SQL, '', pinnedAt)).then(() => undefined),
     Promise.resolve(),
   );
-  await adapter.execAsync(`PRAGMA user_version = ${V1_12_0_READINESS_VERSION}`);
+  await adapter.execAsync(`PRAGMA user_version = ${readiness}`);
+
+  return adapter;
+}
+
+/** Builds the database a device on v1.12.0 holds: migrations 0000-0017, readiness 18. */
+export function openV1120Device(): Promise<SQLiteDatabase> {
+  return openShippedDevice(V1_12_0_LAST_MIGRATION, V1_12_0_READINESS_VERSION);
+}
+
+/**
+ * Builds the database a device stamped 20 holds: migrations 0000-0019, readiness 20, and every
+ * `sync_runtime_status` column the repair steps of that build created. `applyMigrationFiles` runs
+ * each file whole, so the packed 0003/0004 tails are already there; the one column no migration
+ * ever declared, `is_background_task_registered`, is added the way that build's repair step did.
+ */
+export async function openReadiness20Device(): Promise<SQLiteDatabase> {
+  const adapter = await openShippedDevice(READINESS_20_LAST_MIGRATION, READINESS_20_VERSION);
+  await adapter.execAsync(
+    'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL',
+  );
 
   return adapter;
 }

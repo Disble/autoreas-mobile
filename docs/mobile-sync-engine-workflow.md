@@ -319,8 +319,8 @@ Reading the cycle:
   stages `pending_remote_changes`, writes `animes.bridge_modified_at` from `applied_operations`
   only (never from `bridge_changes[].snapshot.modified_at`, which the bridge hardcodes to 0), sets
   operation statuses, and advances the cursor. **Deferred, not silently skipped:** conflict
-  exhaustion and the full `client_telemetry` envelope are not implemented here — conflicts fall
-  back to the generic "reset to pending" retry.
+  exhaustion is not implemented here — conflicts fall back to the generic "reset to pending"
+  retry.
 - **Prune.** [`OperationLogPruner`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/OperationLogPruner.kt)
   runs fenced; a prune failure is swallowed, but a lease loss during the prune is rethrown and
   classified `abandoned`.
@@ -342,7 +342,7 @@ flowchart TD
   D1 --> E["syncPendingOperations"]
   E --> E1["read backlog pending plus processing, dedupe per anime"]
   E1 --> E2["claim rows processing"]
-  E2 --> E3["captureSyncDiagnosticsEnvelope, flushSyncDiagnosticsOutbox to autoreas-telemetry.db"]
+  E2 --> E3["flushSyncDiagnosticsOutbox from autoreas-telemetry.db"]
   E3 --> E3a["split the round: update rows reconcile, season_rating rows follow"]
   E3a --> E4["bridgeClient.reconcile POST /api/sync/reconcile - first round always, as the pull"]
   E4 --> E5{"result.ok"}
@@ -475,7 +475,7 @@ Named so a reader does not mistake absence for behavior:
 
 - **Conflict-exhaustion policy** (`conflict_attempt_count` caps and the token re-base) is deferred
   in the native cycle; the JS cycle implements it.
-- **`client_telemetry`** is minimal (`cycle_id`, `trigger_source`, counters) natively.
+- **`client_telemetry`** is minimal (`cycle_id`, `trigger_source`, counters) and sent only by the native cycle; the JS reconcile body carries none.
 - The retired JS background cycle, `expo-background-task` floor, and Notifee-owned foreground service are intentionally absent; they are not current paths.
 
 ## Next step

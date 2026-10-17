@@ -163,12 +163,19 @@ function untouchedTables(dump: DatabaseDump): Record<string, readonly unknown[]>
 
 /**
  * The database a startup leaves when it dies right before the move's transaction begins: the idempotent
- * repairs that run earlier (columns, ledger pin) have committed, the move has touched nothing. A crash
+ * repairs that run earlier (columns, the dead-column drop, ledger pin) have committed, the move has touched nothing. A crash
  * inside the move must leave exactly this, byte for byte.
  */
 async function dumpStartupStoppedBeforeTheMove(): Promise<DatabaseDump> {
   const adapter = await openSeededDevice();
-  const crashing = createCrashingAdapter(adapter, (source) => /^\s*BEGIN EXCLUSIVE/.test(source));
+  // The dead-column drop (migration 0020's repair twin) runs earlier in its own exclusive
+  // transaction, so the move's BEGIN is the first one after a `DROP COLUMN`.
+  let columnsDropped = false;
+  const crashing = createCrashingAdapter(adapter, (source) => {
+    columnsDropped ||= /DROP COLUMN/.test(source);
+
+    return columnsDropped && /^\s*BEGIN EXCLUSIVE/.test(source);
+  });
   await expect(prepareForegroundDatabase(crashing)).rejects.toThrow('injected failure');
 
   return dumpDatabase(adapter);
@@ -201,7 +208,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
     expect(await readLedger(adapter)).toEqual(Array.from({ length: 18 }, () => 1789310400000));
   });
 
-  it('moves the whole queue while the real gate applies nothing, and stamps readiness 20', async () => {
+  it('moves the whole queue while the real gate applies nothing, and stamps the current readiness (21)', async () => {
     const adapter = await openSeededDevice();
     const expected = await expectedMovedRows();
     const animeOperations = await readAnimeOperations(adapter);
@@ -212,7 +219,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
     const after = await dumpDatabase(adapter);
 
     expect(GATE_MIGRATOR_LOG).toEqual([[]]);
-    expect(await readUserVersion(adapter)).toBe(20);
+    expect(await readUserVersion(adapter)).toBe(21);
     expect(await readRatings(adapter)).toEqual(expected);
     expect(await readAnimeOperations(adapter)).toEqual(animeOperations);
     expect(untouchedTables(after)).toEqual(untouchedTables(before));
@@ -230,7 +237,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
 
     expect(GATE_MIGRATOR_LOG).toEqual([]);
     expect(await dumpDatabase(adapter)).toEqual(upgraded);
-    expect(await readUserVersion(adapter)).toBe(20);
+    expect(await readUserVersion(adapter)).toBe(21);
   });
 
   it('rolls the whole move back at readiness 18 when the DROP crashes, and the next startup completes', async () => {
@@ -253,7 +260,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
 
     await prepareForegroundDatabase(adapter);
 
-    expect(await readUserVersion(adapter)).toBe(20);
+    expect(await readUserVersion(adapter)).toBe(21);
     expect(await readRatings(adapter)).toEqual(expected);
     expect(await readAnimeOperations(adapter)).toEqual(animeOperations);
   });

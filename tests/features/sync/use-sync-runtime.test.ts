@@ -135,6 +135,11 @@ function buildStatus(
   };
 }
 
+/** The registration columns the runtime persists from an execution status: nothing else is written. */
+function buildPersistedPatch({ registrationStatus, executionMode, canShowPersistentNotification }: SyncExecutionStatus) {
+  return { registrationStatus, executionMode, canShowPersistentNotification };
+}
+
 describe("useSyncRuntime", () => {
   const mockRequestSync = jest.fn();
   const mockRegisterConcurrentStrategies = jest.fn();
@@ -223,7 +228,7 @@ describe("useSyncRuntime", () => {
     expect(floorStrategy.getStatus).toBe(mockNativeFloorGetStatus);
     expect(
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
-    ).toHaveBeenCalledWith({ id: "raw-db" }, buildStatus());
+    ).toHaveBeenCalledWith({ id: "raw-db" }, buildPersistedPatch(buildStatus()));
     expect(mockRequestSync).toHaveBeenCalledWith("bootstrap");
     expect(useWebSocket).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -265,10 +270,10 @@ describe("useSyncRuntime", () => {
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
     ).toHaveBeenCalledWith(
       { id: "raw-db" },
-      buildStatus({
+      buildPersistedPatch(buildStatus({
         registrationStatus: "unregistered",
         isBackgroundTaskRegistered: false,
-      }),
+      })),
     );
     expect(mockRequestSync).not.toHaveBeenCalled();
     expect(useWebSocket).toHaveBeenCalledWith(
@@ -461,11 +466,11 @@ describe("useSyncRuntime", () => {
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
     ).toHaveBeenCalledWith(
       { id: "raw-db" },
-      buildStatus({
+      buildPersistedPatch(buildStatus({
         executionMode: "android_foreground_service",
         isForegroundServiceRunning: true,
         canShowPersistentNotification: true,
-      }),
+      })),
     );
   });
 

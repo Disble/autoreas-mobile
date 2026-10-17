@@ -93,7 +93,6 @@ describe('useSyncFacade shared connection truth', () => {
     (syncModule.syncPendingOperations as jest.Mock)
       .mockResolvedValueOnce({
         syncedCount: 0,
-        backlogReadCount: 0,
         hasMorePending: false,
       })
       .mockRejectedValueOnce(

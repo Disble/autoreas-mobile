@@ -1,7 +1,6 @@
 import { applyRemoteChanges } from "../../../../src/features/sync/merge/apply-remote-changes.helpers";
 import { applyAnimePartial, upsertAnime } from "../../../../src/infrastructure/db/anime-repository";
 import { animes } from "../../../../src/infrastructure/db/schema";
-import { recordDiagnosticEvent } from "../../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers";
 import type {
   MergeContext,
   RemoteAnimeChange,
@@ -9,10 +8,6 @@ import type {
 
 jest.mock("drizzle-orm", () => ({
   eq: jest.fn((column, value) => ({ column, value })),
-}));
-
-jest.mock("../../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers", () => ({
-  recordDiagnosticEvent: jest.fn(),
 }));
 
 jest.mock("../../../../src/infrastructure/db/anime-repository", () => ({
@@ -117,7 +112,7 @@ describe("applyRemoteChanges", () => {
     expect(result.applied).toBe(1);
   });
 
-  it("rechaza un update sin ningún campo conocido sobre una fila existente: no escribe, lo cuenta y lo registra", async () => {
+  it("rechaza un update sin ningún campo conocido sobre una fila existente: no escribe y lo cuenta", async () => {
     // An empty list after normalization means nothing in this change is understood (the bridge
     // never sends an empty list for an update). Fail closed: no write, not even the guard.
     const db = stubDbSelecting([{ _id: "anime-1", estado: 0, nrocapvisto: 12 }]);
@@ -133,12 +128,6 @@ describe("applyRemoteChanges", () => {
     expect(applyAnimePartial).not.toHaveBeenCalled();
     expect(upsertAnime).not.toHaveBeenCalled();
     expect(result).toEqual({ applied: 0, dropped: 0, deferred: 0, rejected: 1 });
-    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
-      source: "sync_cycle",
-      event: "remote_change_rejected",
-      cause: null,
-      at: expect.any(Number),
-    });
   });
 
   it("update con changed_fields vacío y fila inexistente hace cold insert vía upsertAnime", async () => {

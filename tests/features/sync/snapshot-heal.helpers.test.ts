@@ -1,15 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as fullResyncHelpers from '../../../src/features/sync/full-resync.helpers';
-import * as diagnosticStoreHelpers from '../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { SNAPSHOT_HEAL_STALE_AFTER_MS } from '../../../src/features/sync/snapshot-heal.constants';
 import { healSnapshotOnDemand } from '../../../src/features/sync/snapshot-heal.helpers';
 
 jest.mock('../../../src/features/sync/full-resync.helpers', () => ({
   resyncFromBridgeSnapshot: jest.fn(),
-}));
-
-jest.mock('../../../src/features/sync/sync-diagnostic-store/sync-diagnostic-store.helpers', () => ({
-  recordDiagnosticEvent: jest.fn(),
 }));
 
 /** A fresh database handle per call: the last-heal timestamp is kept per database. */
@@ -31,7 +26,6 @@ function manualClock(start: number): { readonly now: () => number; readonly adva
 
 describe('snapshot heal on demand (ADR 009 R-7)', () => {
   const resyncFromBridgeSnapshot = fullResyncHelpers.resyncFromBridgeSnapshot as jest.Mock;
-  const recordDiagnosticEvent = diagnosticStoreHelpers.recordDiagnosticEvent as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -94,7 +88,7 @@ describe('snapshot heal on demand (ADR 009 R-7)', () => {
     warnSpy.mockRestore();
   });
 
-  it('keeps a failed heal best effort: it resolves and reports the existing failure payload', async () => {
+  it('keeps a failed heal best effort: it resolves and warns with the failure', async () => {
     const failure = new Error('resync boom');
     resyncFromBridgeSnapshot.mockRejectedValue(failure);
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -102,12 +96,6 @@ describe('snapshot heal on demand (ADR 009 R-7)', () => {
     await expect(healSnapshotOnDemand(freshDatabase(), 'always', () => 5)).resolves.toBeUndefined();
 
     expect(warnSpy).toHaveBeenCalledWith('[useForegroundResync] Resync failed', failure);
-    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
-      source: 'foreground_resync',
-      event: 'resync_failed',
-      cause: expect.anything(),
-      at: 5,
-    });
 
     warnSpy.mockRestore();
   });

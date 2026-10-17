@@ -12,9 +12,7 @@ import { eq } from 'drizzle-orm';
 import { invalidateSyncConnectionOnline } from '../sync/sync-connection-store/sync-connection-store.helpers';
 import { requestFlush } from '../sync/sync-flush.helpers';
 import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
-import { getAnimeMutationFailureMessage } from './anime-mutation-failure.helpers';
-import { recordDiagnosticEvent } from '../sync/sync-diagnostic-store/sync-diagnostic-store.helpers';
-import { causeFromError } from '../sync/sync-telemetry.helpers';
+import { logLocalWriteFailureDiagnostics } from './anime-mutation-failure.helpers';
 import {
   recordChapterActionCommitted,
   recordChapterActionSync,
@@ -193,7 +191,8 @@ export function serializeMutationOperation(
 }
 
 /**
- * Persists a failed local mutation into the shared runtime status so Settings can show it.
+ * Records a failed local mutation: its write-failure diagnostics go to the console, and the
+ * attempt is persisted into the shared runtime status.
  *
  * This exists because a rejected chapter mutation used to vanish: the list screen fires the
  * mutation through `void handleCapPlus(...)`, so the rejection became an unhandled promise and
@@ -208,23 +207,10 @@ export async function recordAnimeMutationFailure(
   label: string,
   error: unknown,
 ): Promise<void> {
-  // Emitted BEFORE the persisted write, because that write is exactly what fails when the
-  // database is unwritable -- which is the case this event most needs to report. The ring is
-  // in memory, so it survives the very failure that swallows the durable record.
-  recordDiagnosticEvent({
-    source: 'mutation',
-    event: 'mutation_failed',
-    cause: causeFromError(error),
-    at: Date.now(),
-  });
+  logLocalWriteFailureDiagnostics(label, error);
 
   try {
-    await recordSyncAttemptFailed(
-      rawDb,
-      'local_mutation_write',
-      Date.now(),
-      getAnimeMutationFailureMessage(label, error),
-    );
+    await recordSyncAttemptFailed(rawDb, Date.now());
   } catch (telemetryError) {
     console.warn(`[${label}] Failed to persist mutation failure telemetry`, telemetryError);
   }
@@ -297,15 +283,6 @@ export async function applyAnimeMutationPatch(
         recordChapterActionSync(actionContext, 'failed');
       }
 
-      // Distinct from `mutation_failed`: the local write LANDED and only the push to the bridge
-      // failed. Same symptom for the user, opposite diagnosis, and today the two are
-      // indistinguishable from anywhere but the device.
-      recordDiagnosticEvent({
-        source: 'mutation',
-        event: 'mutation_sync_failed',
-        cause: causeFromError(err),
-        at: Date.now(),
-      });
       console.warn(`[${label}] Sync failed:`, err);
     });
 

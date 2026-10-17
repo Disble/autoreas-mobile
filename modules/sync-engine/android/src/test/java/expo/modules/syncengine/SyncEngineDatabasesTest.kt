@@ -376,16 +376,16 @@ class SyncEngineDatabasesTest {
   }
 
   @Test
-  fun aDeviceStampedBeforeTheRatingQueueMoveWaitsForTheForegroundAndRunsAfterIt() {
-    // Migration 0019 (ADR 009 L28) moves `season_rating_queue` into `operation_log` in the
-    // foreground repair step. Until that step stamps 20, the file still holds the old queue, so the
-    // native owner must refuse a device stamped 19 and run only once the stamp reads 20.
+  fun aDeviceStampedBeforeTheDeadColumnDropWaitsForTheForegroundAndRunsAfterIt() {
+    // Migration 0020 (convergent-sync T18) drops the dead `sync_runtime_status` columns in the
+    // foreground repair step. Until that step stamps 21, the file may still hold them, so the native
+    // owner must refuse a device stamped 20 and run only once the stamp reads 21.
     val context = RuntimeEnvironment.getApplication()
-    assertEquals(20, EXPECTED_SCHEMA_READINESS_VERSION)
+    assertEquals(21, EXPECTED_SCHEMA_READINESS_VERSION)
 
     val db = openAppDatabase(context)
     try {
-      db.execSQL("PRAGMA user_version = 19")
+      db.execSQL("PRAGMA user_version = 20")
     } finally {
       db.close()
     }
@@ -393,7 +393,7 @@ class SyncEngineDatabasesTest {
 
     val stamped = openAppDatabase(context)
     try {
-      stamped.execSQL("PRAGMA user_version = 20")
+      stamped.execSQL("PRAGMA user_version = 21")
     } finally {
       stamped.close()
     }

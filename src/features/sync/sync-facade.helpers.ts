@@ -112,16 +112,6 @@ async function persistSyncFailureTelemetrySafely(
  * the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
  * best effort too, and it runs even when the sends failed, before the failure is published.
- *
- * The reconciled cycle's own diagnostics flush counters ride the attempt-succeeded write this path
- * already performs: `recordSyncAttemptSucceeded` takes the flush result as an optional argument, so
- * the destruction and reap counters cost ZERO extra status transactions here.
- *
- * Deliberate consequence of folding: the counters are written only where this path writes status at
- * all. A cycle that returns early on `hasMorePending` -- and one that throws after reconcile, since
- * the failure write carries no flush evidence -- leaves the columns at the previous cycle's
- * measurement rather than reporting a fresh one. Neither path fabricates a zero (design.md
- * Decision 7), and both are pinned by tests so adding a write there is a conscious contract change.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
@@ -136,7 +126,7 @@ export async function runCoordinatedForegroundSyncCycle({
     const attemptedAt = Date.now();
     await publishSyncConnectionAttempt({
       attempt,
-      persistTelemetry: () => recordSyncAttemptStarted(rawDb, source, attemptedAt),
+      persistTelemetry: () => recordSyncAttemptStarted(rawDb, attemptedAt),
       publishConnection: () => undefined,
     });
     // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
@@ -158,19 +148,9 @@ export async function runCoordinatedForegroundSyncCycle({
 
     const syncedAt = Date.now();
 
-    // `result.diagnosticsFlush` is the only place a destruction is visible on the foreground path:
-    // when the native engine owns background, this cycle is the one performing the discarding.
     await publishSyncConnectionAttempt({
       attempt,
-      persistTelemetry: () =>
-        recordSyncAttemptSucceeded(
-          rawDb,
-          source,
-          syncedAt,
-          result.syncedCount,
-          null,
-          result.diagnosticsFlush,
-        ),
+      persistTelemetry: () => recordSyncAttemptSucceeded(rawDb, syncedAt),
       publishConnection: () => markSyncConnectionSucceeded(attempt, syncedAt),
     });
 
@@ -187,7 +167,7 @@ export async function runCoordinatedForegroundSyncCycle({
       attempt,
       persistTelemetry: () =>
         persistSyncFailureTelemetrySafely(() =>
-          recordSyncAttemptFailed(rawDb, source, Date.now(), failure.message),
+          recordSyncAttemptFailed(rawDb, Date.now()),
         ),
       publishConnection: () => markSyncConnectionFailed(attempt, failure),
     });

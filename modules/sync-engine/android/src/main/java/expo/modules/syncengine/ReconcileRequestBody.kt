@@ -28,9 +28,9 @@ data class BacklogRow(
  * - `base` is OMITTED when the stored token is NULL and PRESENT (including 0) when known —
  *   never `"base": null`, because the bridge unmarshals null into a real zero token
  *   (see `buildOptimisticBaseKey`);
- * - a minimal `client_telemetry` envelope rides along. The full snapshot/events telemetry of
- *   the JS cycle is deliberately DEFERRED (documented in the module's KDoc), not silently
- *   dropped: the bridge tolerates the reduced envelope, and T5 unifies the two telemetry paths.
+ * - a minimal `client_telemetry` envelope rides along: `{ cycle_id, trigger_source, counters }`.
+ *   It is the only envelope either engine sends -- the JS cycle's richer one was removed
+ *   (convergent-sync T18) -- and the bridge requires nothing beyond `counters`.
  */
 object ReconcileRequestBody {
 

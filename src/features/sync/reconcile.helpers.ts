@@ -10,19 +10,11 @@ import { sendReconcileRound } from './reconcile-round.helpers';
 import { RECONCILE_BACKLOG_BATCH_LIMIT } from './reconcile.constants';
 import type {
   ReconcileRoundContext,
-  ReconcileTelemetryContext,
   SplitRoundOutcome,
   SyncPendingOperationsResult,
 } from './reconcile.types';
 import { releaseHeldRows, sendSeasonRatingRound } from './season-rating-round.helpers';
-import {
-  captureSyncDiagnosticsEnvelope,
-  flushSyncDiagnosticsOutbox,
-} from './sync-diagnostics-flush.helpers';
-import {
-  buildSyncCycleTelemetry,
-  resolveClientTelemetry,
-} from './sync-telemetry.helpers';
+import { flushSyncDiagnosticsOutbox } from './sync-diagnostics-flush.helpers';
 
 /**
  * Runs ONE claim and the chain of reconcile rounds it leads to (ADR 009 R-14): the first round
@@ -41,7 +33,6 @@ import {
  */
 export async function syncPendingOperations(
   rawDb: SQLiteDatabase,
-  telemetryContext?: ReconcileTelemetryContext,
 ): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
@@ -72,33 +63,13 @@ export async function syncPendingOperations(
 
   const connection = { ip: config.ip, port: config.port, token: config.token };
   const lastChangelogId = getLastChangelogId(config);
-  // The caller supplies what only it can know (the pre-write snapshot, the trigger, the cycle
-  // id); this supplies what only it knows (how many operations and which cursor). Passing the
-  // config through means the user's kill switch is evaluated at the single serialization point.
-  const clientTelemetry = telemetryContext
-    ? resolveClientTelemetry(
-        buildSyncCycleTelemetry({
-          cycleId: telemetryContext.cycleId,
-          triggerSource: telemetryContext.triggerSource,
-          appState: telemetryContext.appState,
-          snapshot: telemetryContext.snapshot,
-          pendingOpsCount: claimedOps.length,
-          cursor: lastChangelogId,
-          now: Date.now(),
-          recentEvents: telemetryContext.recentEvents,
-        }),
-        config,
-      )
-    : null;
-  // Both calls sit here, lexically BEFORE the `try` below and outside any `withLocalWrite`
-  // callback (design.md Decision 5). `captureSyncDiagnosticsEnvelope` is synchronous and
-  // swallows by contract; `flushSyncDiagnosticsOutbox` never rejects. Placement, not the
-  // never-rejecting contract alone, is what makes a diagnostics-delivery failure unreachable
-  // from the `catch` below: that `catch` releases the claimed rows, which would otherwise
-  // requeue the user's own pending mutations over a diagnostics POST.
-  captureSyncDiagnosticsEnvelope(clientTelemetry);
-  // The SAME `config` row this cycle already read, so ONE read gates capture AND drain.
-  const diagnosticsFlush = await flushSyncDiagnosticsOutbox({ connection, config });
+  // The drain sits here, lexically BEFORE the `try` below and outside any `withLocalWrite`
+  // callback (design.md Decision 5), and `flushSyncDiagnosticsOutbox` never rejects. Placement,
+  // not the never-rejecting contract alone, is what makes a diagnostics-delivery failure
+  // unreachable from the `catch` below: that `catch` releases the claimed rows, which would
+  // otherwise requeue the user's own pending mutations over a diagnostics POST. The SAME
+  // `config` row this cycle already read gates the drain.
+  await flushSyncDiagnosticsOutbox({ connection, config });
 
   const chainDeadline = claim.claimedAt + OUTBOX_CHAIN_BUDGET_MS;
   let round: readonly OperationLogRow[] = claimedOps;
@@ -107,7 +78,6 @@ export async function syncPendingOperations(
     deviceId: config.deviceId ?? undefined,
     bridgeConfigId: config.id,
     lastChangelogId,
-    clientTelemetry,
     claim,
     chainDeadline,
   };
@@ -137,7 +107,6 @@ export async function syncPendingOperations(
       roundContext = {
         ...roundContext,
         lastChangelogId: outcome.nextLastChangelogId,
-        clientTelemetry: null,
       };
       firstRound = false;
     } while (round.length > 0);
@@ -150,10 +119,8 @@ export async function syncPendingOperations(
 
   return {
     syncedCount,
-    backlogReadCount,
     hasMorePending: unconfirmedCount > 0 || totalBacklogRowCount > backlogReadCount,
     shouldRefreshActiveSeason,
-    diagnosticsFlush,
   };
 }
 

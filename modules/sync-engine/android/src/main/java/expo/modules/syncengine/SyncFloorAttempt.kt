@@ -84,9 +84,7 @@ internal sealed interface SyncFloorAttemptResult {
  * runs with `requirePresence = true` ([SyncEngineRunner] probes `/api/status` inside its own
  * budget before it claims anything) because, like the service, this caller has no JS attempt
  * policy in front of it. The projection is [SyncEngineRuntimeStatus], the same writer the service
- * uses, called with [SYNC_FLOOR_TRIGGER_SOURCE] so `last_trigger_source` names the trigger that
- * actually ran instead of borrowing the service's `foreground_service` -- the value the closed
- * `SyncRuntimeTriggerSource` vocabulary already has for this path.
+ * uses.
  *
  * **Exactly-once completion.** [SyncEngineRunner] guarantees its callback fires exactly once
  * within its budget, but this class does not trust an injected runner to honour that: one
@@ -114,7 +112,7 @@ internal class SyncFloorAttempt(
   /** Swappable in tests; the worker defaults it to the real [SyncEngineRunner.runOnce]. */
   private val attemptRunner: SyncAttemptRunner,
   /** Swappable in tests; the worker defaults it to the real [SyncEngineRuntimeStatus.record]. */
-  private val runtimeStatusWriter: (Context, String, Long, CycleOutcome, String) -> Unit,
+  private val runtimeStatusWriter: (Context, String, Long, CycleOutcome) -> Unit,
   /** Swappable in tests; the worker defaults it to the real, ticker-owned [SyncTickerOwnership.ownsBackground]. */
   private val ownsBackgroundCheck: (Context) -> Boolean,
   /**
@@ -162,7 +160,7 @@ internal class SyncFloorAttempt(
     }
 
     try {
-      runtimeStatusWriter(context, cycleId, startMs, outcome, SYNC_FLOOR_TRIGGER_SOURCE)
+      runtimeStatusWriter(context, cycleId, startMs, outcome)
     } catch (error: Throwable) {
       // SyncEngineRuntimeStatus.record never throws by contract, but this seam is injectable (a
       // test fake, or a future caller that does not honour that contract), so a status-write

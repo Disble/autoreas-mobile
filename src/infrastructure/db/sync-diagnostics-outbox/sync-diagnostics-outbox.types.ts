@@ -49,9 +49,8 @@ export interface SyncDiagnosticsOutboxRecord {
 export type SyncDiagnosticsOutboxWriteOutcome = 'removed' | 'failed';
 
 /**
- * Storage only. It never learns what an HTTP status means -- the same refusal the checkpoint
- * store makes about `SYNC_CYCLE_STAGES`; that vocabulary belongs to the feature layer's flush
- * disposition algorithm.
+ * Storage only. It never learns what an HTTP status means; that vocabulary belongs to the feature
+ * layer's flush disposition algorithm.
  */
 export interface SyncDiagnosticsOutboxStore {
   /** Durably captures one entry. `DO NOTHING` on a repeated `cycleId` (a rerun), never throws. */

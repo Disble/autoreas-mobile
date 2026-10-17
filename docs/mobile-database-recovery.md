@@ -232,11 +232,11 @@ added a Kotlin twin of the readiness stamp and a probe that never creates the fi
 
 ```mermaid
 flowchart TD
-  F["foreground: runMigrations + validate + stamp user_version = 20"] -->|"stamp happens last"| S["stamped = durable proof"]
+  F["foreground: runMigrations + validate + stamp user_version = 21"] -->|"stamp happens last"| S["stamped = durable proof"]
   A["SyncEngineRunner.runOnce"] --> B{"probeAppDatabaseReadiness"}
   B -->|"file absent: NotProvisioned"| R["refuse: not_applicable / idle / SchemaNotReady - no watchdog, no queue, no lease, no write"]
-  B -->|"user_version not exactly 20: SchemaNotReady"| R
-  B -->|"user_version exactly 20: Ready"| O["arm watchdog, queue, open the long-lived connection"]
+  B -->|"user_version not exactly 21: SchemaNotReady"| R
+  B -->|"user_version exactly 21: Ready"| O["arm watchdog, queue, open the long-lived connection"]
   C["SyncEngineRuntimeStatus.record"] --> D{"probeAppDatabaseReadiness"}
   D -->|"not Ready"| Q["returns before opening a connection"]
   D -->|"Ready"| W["opens its own connection to write sync_runtime_status"]
@@ -244,7 +244,7 @@ flowchart TD
 ```
 
 - [`SyncEngineDatabases.kt`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/SyncEngineDatabases.kt)
-  owns `EXPECTED_SCHEMA_READINESS_VERSION` (20, the journal length since migration 0019), the pure `resolveAppDatabaseReadiness` decision, a
+  owns `EXPECTED_SCHEMA_READINESS_VERSION` (21, the journal length since migration 0020), the pure `resolveAppDatabaseReadiness` decision, a
   read-only `user_version` reader and `probeAppDatabaseReadiness`. Only an exact match is `Ready`;
   `null` and every other number are `SchemaNotReady`.
 - [`SyncEngineRunner.runOnce`](../modules/sync-engine/android/src/main/java/expo/modules/syncengine/SyncEngineRunner.kt)
@@ -260,6 +260,14 @@ flowchart TD
   `moveSeasonRatingQueueIntoOperationLog` moves its rows into `operation_log` and drops it in one
   exclusive transaction before the stamp. Until the stamp reads 20 the native owner refuses, so it
   never reads `operation_log` while the move is pending (ADR 009 L28).
+- Migration 0020 (convergent-sync T18) drops the 27 `sync_runtime_status` columns nothing reads any
+  more, keeping `id`, `registration_status`, `execution_mode`, `can_show_persistent_notification`,
+  `last_attempt_at`, `last_success_at`, `last_cycle_id`, `last_cycle_stage` and `last_error_name`.
+  The `.sql` drops the 23 a fresh install's migration chain creates; on an installed device the
+  repair step `dropDeadSyncRuntimeStatusColumns` drops whichever of the 27 it finds in one exclusive
+  transaction, which rolls back whole on failure and is a no-op once none is left. The native writer
+  names only kept columns, so it is correct on both sides of the drop; the stamp still moves to 21
+  so the native owner waits for the drop like any other schema change.
 - Honest limit: the stamp is trusted. A database stamped ready but missing a table is not refused
   early; the write fails and the runner's never-throws catch swallows it. That is why the foreground
   validates every required table and column before stamping.

@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { applyAnimePartial, upsertAnime } from '../../../infrastructure/db/anime-repository';
 import type { AppDatabase } from '../../../infrastructure/db/client';
 import { animes } from '../../../infrastructure/db/schema';
-import { recordDiagnosticEvent } from '../sync-diagnostic-store/sync-diagnostic-store.helpers';
 import { buildPartialUpdate } from './field-merge.helpers';
 import { decideMerge } from './merge-decision.helpers';
 import type { ApplyRemoteChangesResult, MergeContext, RemoteAnimeChange } from './merge.types';
@@ -49,12 +48,6 @@ async function applyAcceptedChange(
   }
 
   if (change.changedFields.length === 0) {
-    recordDiagnosticEvent({
-      source: 'sync_cycle',
-      event: 'remote_change_rejected',
-      cause: null,
-      at: Date.now(),
-    });
     return 'rejected';
   }
 

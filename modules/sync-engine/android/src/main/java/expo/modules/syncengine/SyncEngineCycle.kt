@@ -35,9 +35,8 @@ data class CycleOutcome(
  * semantics each step's TypeScript reference defines. Differences are deliberate and named:
  * - the no-config case returns `not_applicable` instead of throwing (a background attempt is a
  *   probe, not a user-facing failure);
- * - the conflict-exhaustion policy (attempt caps and the token re-base) and the full
- *   `client_telemetry` envelope are DEFERRED, not silently skipped: conflicts fall back to the
- *   generic "reset to pending" retry;
+ * - the conflict-exhaustion policy (attempt caps and the token re-base) is DEFERRED, not
+ *   silently skipped: conflicts fall back to the generic "reset to pending" retry;
  * - the diagnostics flush (`POST /api/sync/diagnostics`) is NOT deferred any more: the attempt
  *   delivers stored envelopes through [SyncEngineDiagnosticsCourier] once the lease is held and
  *   before it reads the backlog, on both the claimed and the pull-only path. It is deliberately

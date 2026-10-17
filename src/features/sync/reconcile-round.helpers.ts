@@ -241,7 +241,7 @@ async function sendOneMessagePerRequest(
     try {
       const single = await sendReconcileRound(
         rawDb,
-        { ...context, clientTelemetry: null, lastChangelogId: total.nextLastChangelogId },
+        { ...context, lastChangelogId: total.nextLastChangelogId },
         [operation],
       );
       total = addRoundOutcome(total, single);
@@ -300,7 +300,6 @@ export async function sendReconcileRound(
     context.deviceId,
     lastChangelogId,
     pendingOps,
-    context.clientTelemetry,
     bridgeTokensByAnimeId,
   );
 
@@ -355,7 +354,6 @@ export async function sendReconcileRound(
         pendingOps,
         appliedOperations: applied_operations,
         bridgeTokensByAnimeId,
-        now: Date.now(),
       });
 
     const normalizedChanges = bridge_changes.map(normalizeBridgeChange);

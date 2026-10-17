@@ -6,7 +6,6 @@ import {
   normalizeWireAnimeChangedFields,
 } from '../../../src/infrastructure/validation/anime-schema/anime-wire.helpers';
 import type { OperationLogRow } from '../../../src/infrastructure/db/schema';
-import type { WireSyncCycleTelemetry } from '../../../src/features/sync/sync-telemetry.types';
 import type { ReconcileAppliedOperation, ReconcileAnimeChange } from '../../../src/features/sync/reconcile.schema';
 
 /**
@@ -20,12 +19,9 @@ import type { ReconcileAppliedOperation, ReconcileAnimeChange } from '../../../s
  * `bridgeChanges[]` compares `recordId`/`changeType`/`timestamp` verbatim, `changedFields` in the
  * LOCAL (Spanish) vocabulary via `normalizeWireAnimeChangedFields`, and `snapshot` mapped to the
  * legacy shape via `mapWireAnimeToLegacyAnime` (or `null` when the change carried none). A request
- * case's `expectedTelemetryProjection`, when present, compares only `cycle_id`/`trigger_source`/
- * `counters.pending_ops_count` -- the fields both engines' `client_telemetry` envelopes actually
- * share. The two envelopes otherwise differ on purpose (JS forwards a caller-supplied
- * `WireSyncCycleTelemetry`; Kotlin always builds its own deliberately minimal one -- see
- * `ReconcileRequestBody.kt`'s header comment; unifying them is T5, not T2), so full-shape equality
- * across languages is never asserted for that field.
+ * case's `expectedTelemetryProjection` is Kotlin's alone: only the Kotlin engine attaches its
+ * deliberately minimal `client_telemetry` envelope (see `ReconcileRequestBody.kt`'s header comment).
+ * The JS body never carries that key, so this suite asserts its absence for every case.
  */
 
 /** One pending-operation-log fixture row, widened to a real `OperationLogRow` for the helpers. */
@@ -54,7 +50,6 @@ interface RequestCase {
     lastChangelogId: number;
     pendingOperations: { id: number; animeId: string; operation: string; payload: string; createdAt: number }[];
     bridgeTokensByAnimeId?: Record<string, number | null>;
-    clientTelemetry?: WireSyncCycleTelemetry;
   };
   expected: {
     device_id: string;
@@ -77,7 +72,6 @@ describe('reconcile request wire contract (shared fixtures)', () => {
       testCase.input.deviceId,
       testCase.input.lastChangelogId,
       rows,
-      testCase.input.clientTelemetry,
       tokenMap,
     );
 
@@ -85,14 +79,7 @@ describe('reconcile request wire contract (shared fixtures)', () => {
     expect(body.last_changelog_id).toBe(testCase.expected.last_changelog_id);
     expect(body.pending_operations).toEqual(testCase.expected.pending_operations);
 
-    if (testCase.expectedTelemetryProjection) {
-      const telemetry = (body as { client_telemetry?: WireSyncCycleTelemetry }).client_telemetry;
-      expect(telemetry?.cycle_id).toBe(testCase.expectedTelemetryProjection.cycle_id);
-      expect(telemetry?.trigger_source).toBe(testCase.expectedTelemetryProjection.trigger_source);
-      expect(telemetry?.counters.pending_ops_count).toBe(
-        testCase.expectedTelemetryProjection.counters.pending_ops_count,
-      );
-    }
+    expect('client_telemetry' in body).toBe(false);
   });
 });
 

@@ -17,3 +17,12 @@ export const V1_12_0_LAST_MIGRATION = '0017';
 
 /** The readiness stamp v1.12.0 wrote: its journal held 18 migrations. */
 export const V1_12_0_READINESS_VERSION = 18;
+
+/**
+ * The last migration a device stamped 20 holds (`0019_drop_season_rating_queue`): migrations
+ * 0000-0019, readiness 20 and a ledger pinned to 0019's `when` -- the device migration `0020` upgrades.
+ */
+export const READINESS_20_LAST_MIGRATION = '0019';
+
+/** The readiness stamp a build whose journal held 20 migrations wrote. */
+export const READINESS_20_VERSION = 20;

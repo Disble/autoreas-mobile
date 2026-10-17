@@ -5,6 +5,7 @@ import {
   runMigrations,
 } from "../../src/infrastructure/db/client";
 import { ensureMissingColumns } from "../../src/infrastructure/db/client/client.helpers";
+import { DEAD_SYNC_RUNTIME_STATUS_COLUMNS } from "../../src/infrastructure/db/client/sync-runtime-status-column-drop.constants";
 import * as nativeRuntime from "../../src/infrastructure/db/native-runtime/native-runtime.helpers";
 
 jest.mock("drizzle-orm", () => ({
@@ -207,43 +208,17 @@ describe("db client tracer helpers", () => {
         }
 
         if (query === "PRAGMA table_info(sync_runtime_status)") {
+          // A table already at its post-0020 shape: nothing to add and nothing to drop.
           return [
             { name: "id" },
             { name: "registration_status" },
             { name: "execution_mode" },
-            { name: "is_foreground_service_running" },
             { name: "can_show_persistent_notification" },
             { name: "last_attempt_at" },
             { name: "last_success_at" },
-            { name: "last_failure_message" },
-            { name: "last_trigger_source" },
-            { name: "last_synced_count" },
-            { name: "foreground_service_callback_started_at" },
-            { name: "last_no_op_reason" },
-            { name: "last_pending_operations_count_at_start" },
-            { name: "is_cycle_active" },
-            { name: "last_backlog_read_count" },
-            { name: "last_pruned_operations_count" },
-            { name: "is_background_task_registered" },
             { name: "last_cycle_id" },
             { name: "last_cycle_stage" },
             { name: "last_error_name" },
-            { name: "last_native_errcode_byte" },
-            { name: "last_error_stage" },
-            { name: "consecutive_unclosed_cycles" },
-            { name: "last_cycle_stage_at" },
-            { name: "last_failed_checkpoint_count" },
-            { name: "last_diagnostics_discarded_count" },
-            { name: "last_diagnostics_undeliverable_count" },
-            { name: "last_diagnostics_unclassified_count" },
-            { name: "last_diagnostics_reaped_count" },
-            { name: "last_diagnostics_failed_removal_count" },
-            { name: "last_outbox_failed_write_count" },
-            { name: "last_dead_letter_count" },
-            { name: "last_conflict_exhausted_count" },
-            { name: "last_stuck_processing_count" },
-            { name: "last_oldest_pending_age_ms" },
-            { name: "last_pending_row_count" },
           ];
         }
 
@@ -328,6 +303,7 @@ describe("db client tracer helpers", () => {
 
           return [];
         }),
+      execAsync: jest.fn().mockResolvedValue(undefined),
       getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
@@ -338,15 +314,16 @@ describe("db client tracer helpers", () => {
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE sync_runtime_status ADD COLUMN execution_mode TEXT DEFAULT 'best_effort_background_task' NOT NULL"
     );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      "ALTER TABLE sync_runtime_status ADD COLUMN is_foreground_service_running INTEGER DEFAULT 0 NOT NULL"
+    // A retired column is never re-added (migration 0020): the repair list names only kept ones.
+    expect(rawDb.runAsync).not.toHaveBeenCalledWith(
+      expect.stringMatching(/ADD COLUMN is_foreground_service_running/)
     );
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       "ALTER TABLE sync_runtime_status ADD COLUMN can_show_persistent_notification INTEGER DEFAULT 0 NOT NULL"
     );
   });
 
-  it("repara sync_runtime_status legacy agregando columnas de diagnostics y retention", async () => {
+  it("repara sync_runtime_status legacy sin re-agregar columnas retiradas, las suelta y crea el índice de retention", async () => {
     const rawDb = {
       getAllAsync: jest
         .fn()
@@ -372,39 +349,21 @@ describe("db client tracer helpers", () => {
 
           return [];
         }),
+      execAsync: jest.fn().mockResolvedValue(undefined),
       getFirstAsync: jest.fn().mockResolvedValue(null),
       runAsync: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
     await runMigrations(rawDb as never);
 
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN foreground_service_callback_started_at INTEGER'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN last_no_op_reason TEXT'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN last_pending_operations_count_at_start INTEGER'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN is_cycle_active INTEGER DEFAULT 0 NOT NULL'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN last_backlog_read_count INTEGER DEFAULT 0 NOT NULL'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN last_pruned_operations_count INTEGER DEFAULT 0 NOT NULL'
-    );
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN is_background_task_registered INTEGER DEFAULT 0 NOT NULL'
-    );
-    // The age bound's counter, added by migration `0015` on a fresh install. This is the OTHER
-    // route -- the idempotent repair twin an already-provisioned device receives it through, since
-    // `reconcileMigrationLedger` pins the migrator's gate and the migration never runs there.
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'ALTER TABLE sync_runtime_status ADD COLUMN last_diagnostics_reaped_count INTEGER'
-    );
+    // Migration 0020 retired every diagnostics, retention and post-mortem column: none comes back,
+    // and the ones this legacy table carries are dropped in one exclusive transaction.
+    for (const column of DEAD_SYNC_RUNTIME_STATUS_COLUMNS) {
+      expect(rawDb.runAsync).not.toHaveBeenCalledWith(expect.stringContaining(`ADD COLUMN ${column} `));
+    }
+    expect(rawDb.runAsync).toHaveBeenCalledWith('ALTER TABLE sync_runtime_status DROP COLUMN is_foreground_service_running');
+    expect(rawDb.runAsync).toHaveBeenCalledWith('ALTER TABLE sync_runtime_status DROP COLUMN last_synced_count');
+    expect(rawDb.execAsync.mock.calls).toEqual([["BEGIN EXCLUSIVE"], ["COMMIT"]]);
     expect(rawDb.runAsync).toHaveBeenCalledWith(
       'CREATE INDEX IF NOT EXISTS operation_log_status_created_at_idx ON operation_log(status, created_at, id)'
     );

@@ -467,7 +467,7 @@ foreground path is unchanged.
 | | Metric | Threshold | Instrument |
 |---|---|---|---|
 | Primary | Catch-up after a night with the bridge off | pending operations pushed within the first hour the bridge is up, without opening the app | outbox + journal |
-| Primary | `consecutive_unclosed_cycles` with the app closed | 0 for ≥ 24 h | journal |
+| Primary | Unfinished cycles with the app closed | 0 for ≥ 24 h | journal (verifier check 10) |
 | Primary | Terminal outcome per attempt | never `abandoned` twice in a row for the same cause | journal |
 | Guard | JobScheduler `Client timed out …` stops for the app in 24 h | 0 | `dumpsys jobscheduler` |
 | Guard | Stand-by bucket of the package | not `45` (RESTRICTED) | `am get-standby-bucket` |
@@ -476,6 +476,13 @@ foreground path is unchanged.
 
 A `SUCCESS` reported by a suppressed job is **not** evidence that sync ran; the primary metrics must be
 read from the outbox and the journal.
+
+**Unfinished cycles** are read from the native journal alone (`scripts/lib/device-db-checks.mjs`, check
+10): walking the journal's cycles newest first, every cycle whose newest transition is `abandoned`, or a
+non-terminal state behind the newest cycle, counts until the first `closed` or `failed` one. The newest
+cycle is skipped while it is non-terminal, because it may be the attempt in flight. This replaces the
+`consecutive_unclosed_cycles` counter and the `is_cycle_active` flag, which convergent-sync T18 removed
+together with their columns; §9.1 below is the measurement taken with the retired counter.
 
 ### 9.1 As measured on device — 2026-09-21
 

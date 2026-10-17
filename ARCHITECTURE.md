@@ -372,46 +372,24 @@ host.
 
 ## 14. Diagnostic Telemetry Boundary
 
-Sibling rule to §11. Where the Bridge Boundary says *all transport goes through one adapter*, this says **all diagnostic data reaches the wire through one function**. Full contract in `docs/mobile-diagnostic-telemetry.md`.
+Sibling rule to §11. Where the Bridge Boundary says *all transport goes through one adapter*, this says **diagnostic data reaches the wire only as closed vocabularies, through the diagnostics outbox or the native engine's minimal envelope**. Full contract in `docs/mobile-diagnostic-telemetry.md`.
 
 ```mermaid
 flowchart TD
-  subgraph Features["src/features/** — emitters"]
-    E1["use-websocket"]
-    E2["anime-mutation.helpers"]
-    E3["use-foreground-resync"]
-    E4["headless-sync-cycle"]
-  end
-
-  E1 --> RING["sync-diagnostic-store\nin-memory ring, coalesced\nnever throws, drops unknown symbols"]
-  E2 --> RING
-  E3 --> RING
-  E4 --> RING
-
-  RING --> GATE
-  SNAP["sync_runtime_status\nprevious cycle, read BEFORE\nthe attempt writes"] --> GATE
-  PREF["bridgeConfig\nis_sync_telemetry_enabled"] --> GATE
-
-  GATE["resolveClientTelemetry\nSINGLE EXIT\npreference + budget + serialization"]
-  GATE --> WIRE["buildReconcileRequestBody\nclient_telemetry"]
-  WIRE --> ADAPTER["BridgeClient\n§11 boundary"]
-
-  subgraph Infra["src/infrastructure/db — outside the write door"]
-    CP["sync-cycle-checkpoint\nautoreas-telemetry.db\nrunSync, own busy_timeout"]
-  end
-
-  E4 -.->|"stage checkpoints"| CP
-  CP -.->|"promoted next cycle"| SNAP
+  CA["chapter-action-diagnostics\nepisode_action observations"] --> PREF{"bridgeConfig\nis_sync_telemetry_enabled"}
+  PREF -->|"on"| OUTBOX["sync-diagnostics-outbox\nautoreas-telemetry.db\noutside the write door"]
+  OUTBOX --> FLUSH["flushSyncDiagnosticsOutbox\n(JS cycle) / SyncEngineDiagnosticsCourier\n(native cycle)"]
+  FLUSH --> ADAPTER["BridgeClient\nPOST /api/sync/diagnostics"]
+  NATIVE["ReconcileRequestBody.kt"] --> ENV["client_telemetry\ncycle_id, trigger_source,\ncounters.pending_ops_count"]
+  ENV --> RECON["POST /api/sync/reconcile"]
 ```
 
 ### Invariants
 
-- **One exit.** User preference, size budget and serialization converge in `resolveClientTelemetry`. Leaving any of the three to the caller makes it a convention a future call site forgets; funnelled into one function they are a property of the system. The kill switch has to be a guarantee, not a habit.
-- **Closed vocabularies, always.** The bridge stores request bodies verbatim and unsanitized. Every textual field is an allowlist member or `unknown` — never free text, never a raw `error.message`, which on Android carries database paths, SQL and bound values.
-- **Stage vocabulary is derived, never duplicated.** `SYNC_CYCLE_STAGES` is the single source; the union type derives from it and the transport allowlist re-exports it. A second hand-written copy is how a vocabulary drifts from the code it describes.
-- **The instrument never shares a failure domain with what it measures.** The event ring is in memory rather than on the shared write door, and stage checkpoints write synchronously to a **separate database file** — the write queue is keyed by file path, so a side file is the only way out of the door.
-- **Instrumentation never breaks its subject.** `recordDiagnosticEvent` never throws and drops anything outside the vocabulary.
-- **Absence is omission, not null.** With nothing to send, the key is absent from the body. The bridge stores that body raw, so an empty key is permanent noise in its store.
+- **Closed vocabularies, always.** The bridge stores request bodies verbatim and unsanitized. Every textual field is an allowlist member or `unknown` — never free text, never a raw `error.message`, which on Android carries database paths, SQL and bound values. `causeFromError` is the one place a thrown value becomes a cause symbol.
+- **The instrument never shares a failure domain with what it measures.** The outbox writes to a **separate database file** — the write queue is keyed by file path, so a side file is the only way out of the door.
+- **Instrumentation never breaks its subject.** An enqueue failure is swallowed, and a flush failure is never a reconcile failure.
+- **Absence is omission, not null.** The JS reconcile body carries no `client_telemetry` key at all. The bridge stores that body raw, so an empty key is permanent noise in its store.
 
 ## 15. Device Verification Method: The JobScheduler Timeout Quota
 

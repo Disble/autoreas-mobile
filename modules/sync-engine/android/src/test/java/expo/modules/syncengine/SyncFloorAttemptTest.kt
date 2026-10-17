@@ -27,9 +27,10 @@ private val OUTCOME_FAILED = CycleOutcome("failed", "sending", 0, 0, "SocketTime
  * with the runner and the status projection replaced by recording fakes (the same seam shape
  * [SyncForegroundServiceTest] uses for [SyncForegroundService]): no test here reaches
  * [SyncEngineRunner]'s real SQLite-backed path or the wire. The one exception is
- * [a completed attempt persists the background_task trigger source], which deliberately uses the
- * REAL [SyncEngineRuntimeStatus] projection against a seeded `sync_runtime_status` table, because
- * "honest `background_task` status" is exactly the claim that a fake could not prove.
+ * [a completed attempt persists its attempt and success through the real projection], which
+ * deliberately uses the REAL [SyncEngineRuntimeStatus] projection against a seeded
+ * `sync_runtime_status` table, because the persisted row is exactly the claim a fake could not
+ * prove.
  *
  * The collaborator is driven directly, and no `androidx.work` type appears anywhere below, because
  * `TestListenableWorkerBuilder` cannot build the planned
@@ -49,7 +50,7 @@ class SyncFloorAttemptTest {
   private lateinit var context: Context
 
   /** One recorded call to the attempt's status-projection seam. */
-  private data class StatusWrite(val triggerSource: String, val outcome: CycleOutcome)
+  private data class StatusWrite(val outcome: CycleOutcome)
 
   @Before
   fun setUp() {
@@ -99,8 +100,8 @@ class SyncFloorAttemptTest {
     val attempt = SyncFloorAttempt(
       context = context,
       attemptRunner = runner,
-      runtimeStatusWriter = { _, _, _, outcome, triggerSource ->
-        writes += StatusWrite(triggerSource, outcome)
+      runtimeStatusWriter = { _, _, _, outcome ->
+        writes += StatusWrite(outcome)
       },
       ownsBackgroundCheck = { _ -> ownsBackground },
       attemptTimeoutMsForTest = attemptTimeoutMsForTest,
@@ -119,7 +120,7 @@ class SyncFloorAttemptTest {
     )
 
   @Test
-  fun `the floor runs one gated native attempt and projects it as a background_task outcome`() = runBlocking {
+  fun `the floor runs one gated native background_task attempt and projects its outcome`() = runBlocking {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     val (attempt, writes) = newAttempt(runner)
 
@@ -133,7 +134,7 @@ class SyncFloorAttemptTest {
       true,
       runner.lastRequirePresence,
     )
-    assertEquals(listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)), writes)
+    assertEquals(listOf(StatusWrite(OUTCOME_CLOSED)), writes)
   }
 
   @Test
@@ -163,7 +164,7 @@ class SyncFloorAttemptTest {
     val result = attempt.run()
 
     assertEquals(SyncFloorAttemptResult.AttemptCompleted, result)
-    assertEquals("the first settlement is the attempt's outcome", listOf(StatusWrite(SYNC_FLOOR_TRIGGER_SOURCE, OUTCOME_CLOSED)), writes)
+    assertEquals("the first settlement is the attempt's outcome", listOf(StatusWrite(OUTCOME_CLOSED)), writes)
   }
 
   @Test
@@ -213,7 +214,7 @@ class SyncFloorAttemptTest {
     val attempt = SyncFloorAttempt(
       context = context,
       attemptRunner = runner,
-      runtimeStatusWriter = { _, _, _, _, _ -> error("status write exploded") },
+      runtimeStatusWriter = { _, _, _, _ -> error("status write exploded") },
       ownsBackgroundCheck = { _ -> false },
       attemptTimeoutMsForTest = null,
     )
@@ -228,7 +229,7 @@ class SyncFloorAttemptTest {
   }
 
   @Test
-  fun `a completed attempt persists the background_task trigger source`() = runBlocking {
+  fun `a completed attempt persists its attempt and success through the real projection`() = runBlocking {
     seedRuntimeStatusSchema()
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     // The REAL projection, so this test proves the persisted row, not a fake's arguments.
@@ -237,13 +238,10 @@ class SyncFloorAttemptTest {
     val result = attempt.run()
 
     assertEquals(SyncFloorAttemptResult.AttemptCompleted, result)
-    assertEquals(
-      "the floor must never claim the foreground service's trigger source",
-      "background_task",
-      readRuntimeStatusColumn("last_trigger_source"),
-    )
-    assertEquals("3", readRuntimeStatusColumn("last_synced_count"))
-    assertTrue("the attempt instant must be persisted", readRuntimeStatusColumn("last_attempt_at") != null)
+    val attemptedAt = readRuntimeStatusColumn("last_attempt_at")
+    assertTrue("the attempt instant must be persisted", attemptedAt != null)
+    assertEquals("a closed outcome is also the success instant", attemptedAt, readRuntimeStatusColumn("last_success_at"))
+    assertEquals("closed", readRuntimeStatusColumn("last_cycle_stage"))
   }
 
   /** Mirrors only the `sync_runtime_status` columns [SyncEngineRuntimeStatus] actually names. */
@@ -255,18 +253,9 @@ class SyncFloorAttemptTest {
           "id INTEGER PRIMARY KEY DEFAULT 1 NOT NULL," +
           "last_attempt_at INTEGER," +
           "last_success_at INTEGER," +
-          "last_failure_message TEXT," +
-          "last_trigger_source TEXT," +
-          "last_synced_count INTEGER DEFAULT 0 NOT NULL," +
-          "is_cycle_active INTEGER DEFAULT 0 NOT NULL," +
-          "last_backlog_read_count INTEGER DEFAULT 0 NOT NULL," +
           "last_cycle_id TEXT," +
           "last_cycle_stage TEXT," +
-          "last_error_name TEXT," +
-          "last_native_errcode_byte INTEGER," +
-          "last_error_stage TEXT," +
-          "consecutive_unclosed_cycles INTEGER DEFAULT 0 NOT NULL," +
-          "last_cycle_stage_at INTEGER" +
+          "last_error_name TEXT" +
           ")",
       )
       // T3 tail: mirror the foreground's durable readiness stamp, without which the real

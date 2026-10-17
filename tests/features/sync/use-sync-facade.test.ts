@@ -104,7 +104,6 @@ describe('useSyncFacade', () => {
     });
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValue({
       syncedCount: 3,
-      backlogReadCount: 3,
       hasMorePending: false,
     });
 
@@ -121,7 +120,7 @@ describe('useSyncFacade', () => {
   });
 
   it('collapses a trigger storm into one running cycle plus exactly one follow-up, never in parallel', async () => {
-    type SyncResult = { syncedCount: number; backlogReadCount: number; hasMorePending: boolean };
+    type SyncResult = { syncedCount: number; hasMorePending: boolean };
     const pendingSyncs: ((value: SyncResult) => void)[] = [];
 
     (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
@@ -145,7 +144,7 @@ describe('useSyncFacade', () => {
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      pendingSyncs[0]({ syncedCount: 7, backlogReadCount: 7, hasMorePending: false });
+      pendingSyncs[0]({ syncedCount: 7, hasMorePending: false });
       await firstPromise;
     });
 
@@ -160,7 +159,7 @@ describe('useSyncFacade', () => {
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      pendingSyncs[1]({ syncedCount: 2, backlogReadCount: 2, hasMorePending: false });
+      pendingSyncs[1]({ syncedCount: 2, hasMorePending: false });
       await secondPromise;
     });
 
@@ -199,7 +198,6 @@ describe('useSyncFacade', () => {
     let failSeasonRefresh!: (error: Error) => void;
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
-      backlogReadCount: 1,
       hasMorePending: false,
       shouldRefreshActiveSeason: true,
     });
@@ -247,7 +245,7 @@ describe('useSyncFacade', () => {
   });
 
   it('serializes concurrent facade consumers on one cycle at a time and ends both online', async () => {
-    type SyncResult = { syncedCount: number; backlogReadCount: number; hasMorePending: boolean };
+    type SyncResult = { syncedCount: number; hasMorePending: boolean };
     const pendingReconciles: ((value: SyncResult) => void)[] = [];
     (syncModule.syncPendingOperations as jest.Mock).mockImplementation(
       () =>
@@ -272,7 +270,7 @@ describe('useSyncFacade', () => {
     expect(secondFacade.result.current.connectionStatus).toBe('syncing');
 
     await act(async () => {
-      pendingReconciles[0]({ syncedCount: 1, backlogReadCount: 1, hasMorePending: false });
+      pendingReconciles[0]({ syncedCount: 1, hasMorePending: false });
       await firstPromise;
       for (let tick = 0; tick < 10 && pendingReconciles.length < 2; tick += 1) {
         await Promise.resolve();
@@ -283,7 +281,7 @@ describe('useSyncFacade', () => {
     expect(firstFacade.result.current.connectionStatus).toBe('syncing');
 
     await act(async () => {
-      pendingReconciles[1]({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+      pendingReconciles[1]({ syncedCount: 0, hasMorePending: false });
       await secondPromise;
     });
 
@@ -296,7 +294,6 @@ describe('useSyncFacade', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
-      backlogReadCount: 1,
       hasMorePending: false,
       shouldRefreshActiveSeason: true,
     });
@@ -343,7 +340,6 @@ describe('useSyncFacade', () => {
   it('does not publish online when reconcile reports more bounded backlog', async () => {
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 100,
-      backlogReadCount: 100,
       hasMorePending: true,
     });
 
@@ -357,7 +353,7 @@ describe('useSyncFacade', () => {
   });
 
   it('does not let an older paused facade overwrite a newer standalone failure', async () => {
-    let resolvePass!: (value: { syncedCount: number; backlogReadCount: number; hasMorePending: boolean }) => void;
+    let resolvePass!: (value: { syncedCount: number; hasMorePending: boolean }) => void;
     (syncModule.syncPendingOperations as jest.Mock).mockImplementationOnce(
       () => new Promise((resolve) => {
         resolvePass = resolve;
@@ -381,7 +377,7 @@ describe('useSyncFacade', () => {
     });
 
     await act(async () => {
-      resolvePass({ syncedCount: 0, backlogReadCount: 0, hasMorePending: false });
+      resolvePass({ syncedCount: 0, hasMorePending: false });
       await olderFacadePromise;
     });
 
@@ -392,7 +388,6 @@ describe('useSyncFacade', () => {
   it('allows online only when the outbox pass leaves nothing pending', async () => {
     (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
       syncedCount: 1,
-      backlogReadCount: 1,
       hasMorePending: false,
     });
     const { result } = renderHook(() => useSyncFacade());

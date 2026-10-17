@@ -16,6 +16,7 @@ import { withDeadline } from '../../async/deadline.helpers';
 import { DeadlineExceededError } from '../../async/deadline.errors';
 import { LocalWriteError } from './client.errors';
 import { moveSeasonRatingQueueIntoOperationLog } from './season-rating-queue-move.helpers';
+import { dropDeadSyncRuntimeStatusColumns } from './sync-runtime-status-column-drop.helpers';
 
 import {
   ACTIVE_SEASON_CACHE_TABLE_SQL,
@@ -361,6 +362,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await migrate(db, migrations);
   await ensureBridgeConfigLastChangelogId(rawDb);
   await ensureSyncRuntimeStatusExecutionColumns(rawDb);
+  await dropDeadSyncRuntimeStatusColumns(rawDb);
   await ensureOperationLogRetentionIndex(rawDb);
   await ensureAnimesColumns(rawDb);
   await ensureOperationLogColumns(rawDb);

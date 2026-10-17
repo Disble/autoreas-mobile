@@ -1,21 +1,10 @@
 import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { buildOptimisticBaseKey } from './reconcile-base-token.helpers';
-import type { WireSyncCycleTelemetry } from './sync-telemetry.types';
 
 /**
  * Builds the reconcile request body from persisted operation-log rows.
- * Keeping this serialization pure makes the network workflow easier to test and evolve.
- *
- * `clientTelemetry` rides along on this request rather than travelling on an endpoint of its own,
- * and that is the whole design: a cycle that dies cannot report itself, so its post-mortem has to
- * leave on a request that is PROVEN to arrive. This one is -- it answers 202 in single-digit
- * milliseconds even in the cycles that later hang. A separate telemetry call would share the
- * failure domain of the thing it reports on.
- *
- * When there is nothing to send the key is OMITTED, never emitted as null. The bridge stores this
- * body raw and verbatim, so an empty key would be permanent noise in its store rather than a
- * serialization detail. `null` arrives here when the size cap declined to send, which is a
- * decision to stay silent -- exactly the same absence.
+ * Keeping this serialization pure makes the network workflow easier to test and evolve. The JS
+ * body carries no `client_telemetry` key.
  *
  * `bridgeTokensByAnimeId` (Part 2, Requirement 9) is optional and defaults to omitted: without it
  * every operation's `base` key is omitted, byte-identical to Part 1. When supplied, each
@@ -27,7 +16,6 @@ export function buildReconcileRequestBody(
   deviceId: string | undefined,
   lastChangelogId: number,
   pendingOperations: OperationLogRow[],
-  clientTelemetry?: WireSyncCycleTelemetry | null,
   bridgeTokensByAnimeId?: ReadonlyMap<string, number | null>,
 ) {
   return {
@@ -40,7 +28,6 @@ export function buildReconcileRequestBody(
       created_at: operation.createdAt,
       ...buildOptimisticBaseKey(bridgeTokensByAnimeId?.get(operation.animeId) ?? null),
     })),
-    ...(clientTelemetry ? { client_telemetry: clientTelemetry } : {}),
   };
 }
 
