@@ -16,6 +16,13 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [1.13.1] — 2026-10-17
+
+### Fixed
+
+- Tapping a folder button no longer starts a sync with the Bridge; opening a folder now just opens it.
+- Tapping a folder button a second time no longer shows "No se pudo abrir la carpeta" with an "activity is already started" error; every tap opens My Files again.
+
 ## [1.13.0] — 2026-10-17
 
 ### Changed
