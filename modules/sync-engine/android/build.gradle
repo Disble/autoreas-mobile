@@ -178,6 +178,7 @@ def CORE_CLASSES = [
   'CycleOutcome', 'CycleOutcome$*',
   // SyncEngineHttp.kt
   'SyncEngineHttp', 'SyncEngineHttp$*', 'SyncEngineHttpResponse', 'SyncEngineHttpResponse$*',
+  'SyncEngineBinaryResponse', 'SyncEngineBinaryResponse$*',
 ].collect { "expo.modules.syncengine.$it" }
 
 // CORE classes whose remaining gaps are defensive code no test can reach without a new seam
@@ -214,6 +215,12 @@ def IMPORTANT_CLASSES = [
   // covered by the mapping and collaborator tests.)
   'SyncFloorAttempt', 'SyncFloorAttempt$*', 'SyncFloorAttemptKt', 'SyncFloorAttemptKt$*',
   'SyncFloorAttemptResult', 'SyncFloorAttemptResult$*',
+  // SyncEngineBackgroundCatchUp.kt (ODD background-covers-season: the active-season refresh and
+  // the cover prefetch that run after a background attempt reached the bridge)
+  'SyncEngineBackgroundCatchUp', 'SyncEngineBackgroundCatchUp$*', 'SyncEngineBackgroundCatchUpKt',
+  'SyncEngineBackgroundCatchUpKt$*', 'SyncEngineSeasonRefresh', 'SyncEngineSeasonRefresh$*',
+  'SyncEngineCoverPrefetch', 'SyncEngineCoverPrefetch$*', 'CoverPrefetchTarget',
+  'CoverPrefetchTarget$*', 'SeasonRefreshOutcome', 'SeasonRefreshOutcome$*',
 ].collect { "expo.modules.syncengine.$it" }
 
 kover {
