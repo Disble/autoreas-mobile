@@ -4,32 +4,18 @@ import type {
   BuildAnimeSeasonProjectionInput,
 } from "./anime-season.types";
 import type { SeasonRatingIntent } from "../sync/season-rating-event.types";
-import { LOCAL_ACTIVE_SEASON_ID } from "./anime-season.constants";
 
 /**
- * The season ids whose local intents count for `seasonId`: the season itself and, for a bridge
- * season, the local placeholder a rating made before any season was known is queued under.
- */
-function buildSeasonIntentLookupIds(seasonId: string): readonly string[] {
-  if (seasonId === LOCAL_ACTIVE_SEASON_ID) {
-    return [seasonId];
-  }
-
-  return [seasonId, LOCAL_ACTIVE_SEASON_ID];
-}
-
-/**
- * Picks the latest durable season-rating intent for one anime within the active season.
+ * Picks the latest durable season-rating intent for one anime within one season.
  * This keeps UI projection aligned with the newest local intent without leaking stale rows from older seasons.
  */
 export function selectLatestSeasonRatingIntent(
   animeId: string,
-  seasonIds: readonly string[],
+  seasonId: string,
   seasonRatingIntents: readonly SeasonRatingIntent[],
 ): AnimeSeasonLocalIntent | null {
-  const seasonIdSet = new Set(seasonIds);
   const matchingRows = seasonRatingIntents.filter(
-    (row) => row.animeId === animeId && seasonIdSet.has(row.seasonId),
+    (row) => row.animeId === animeId && row.seasonId === seasonId,
   );
 
   if (matchingRows.length === 0) {
@@ -56,43 +42,23 @@ export function selectLatestSeasonRatingIntent(
 }
 
 /**
- * Builds the season projection consumed by anime list and card surfaces.
- * Projection exists for bridge-declared candidates or a durable local rating intent.
- * This prevents offline mode from inventing rating eligibility for every visible anime.
+ * Builds the season projection consumed by anime list and card surfaces from the anime's own
+ * candidacy (`anime.season`, carried on the anime sync path). Only a candidate of the open season
+ * has one, so offline mode never invents rating eligibility: a local intent counts only for the
+ * season the anime is a candidate of.
  */
 export function buildAnimeSeasonProjection(
   input: BuildAnimeSeasonProjectionInput,
 ): AnimeSeasonProjection | null {
-  const {
-    activeSeasonSnapshot,
-    animeId,
-    seasonRatingIntents,
-  } = input;
-  const candidate = activeSeasonSnapshot?.candidatesByAnimeId[animeId] ?? null;
-  const seasonId = activeSeasonSnapshot?.seasonId ?? LOCAL_ACTIVE_SEASON_ID;
-  const localIntent = selectLatestSeasonRatingIntent(
-    animeId,
-    buildSeasonIntentLookupIds(seasonId),
-    seasonRatingIntents,
-  );
+  const { animeId, season, seasonRatingIntents } = input;
 
-  if (!candidate) {
-    if (!localIntent) {
-      return null;
-    }
-
-    return {
-      seasonId,
-      bridgeRating: null,
-      bridgeRatingSource: null,
-      localIntent,
-    };
+  if (!season) {
+    return null;
   }
 
   return {
-    seasonId,
-    bridgeRating: candidate.bridgeRating,
-    bridgeRatingSource: candidate.bridgeRatingSource,
-    localIntent,
+    seasonId: season.seasonId,
+    bridgeRating: season.grade,
+    localIntent: selectLatestSeasonRatingIntent(animeId, season.seasonId, seasonRatingIntents),
   };
 }

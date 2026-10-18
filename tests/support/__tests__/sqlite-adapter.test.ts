@@ -136,7 +136,7 @@ describe('adapter proxy passthrough', () => {
 });
 
 describe('migration files are only half the production schema', () => {
-  it('leaves sync_cycle_lock and active_season_cache absent, because no migration creates them', async () => {
+  it('leaves sync_cycle_lock and app_preferences absent, because no migration creates them', async () => {
     const adapter = createTestSqliteAdapter();
 
     await applyMigrationFiles(adapter);
@@ -150,6 +150,6 @@ describe('migration files are only half the production schema', () => {
     // `prepareDatabaseSchema`'s ensure* steps, never by a migration file. This assertion pins
     // the gap so a behaviour test never dies on a missing table several layers from the cause.
     expect(tableNames).not.toContain('sync_cycle_lock');
-    expect(tableNames).not.toContain('active_season_cache');
+    expect(tableNames).not.toContain('app_preferences');
   });
 });

@@ -25,7 +25,7 @@ class SyncEngineSeasonRatingTest {
     assertEquals(1, outcome.syncedCount)
     assertEquals(listOf(RECONCILE_PATH, RATING_PATH), server.map { it.path })
     assertEquals(
-      JSONObject("""{"anime_id":"anime-1","grade":5,"rated_at":1700000000000}""").toString(),
+      JSONObject("""{"anime_id":"anime-1","grade":5,"rated_at":1700000000000,"season_id":"season-1"}""").toString(),
       JSONObject(server[1].body).toString(),
     )
     assertEquals(listOf(RowState(1, RATING, "synced", null, null)), rows)

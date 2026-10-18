@@ -5,5 +5,5 @@ export const LOCAL_FIELD_BY_WIRE_FIELD = {
   genres: 'generos', kind: 'tipo', lastWatchedAt: 'fechaUltCapVisto', premieredAt: 'fechaEstreno',
   createdAt: 'fechaCreacion', deletedAt: 'fechaEliminacion', cover: 'portada', sourceUrl: 'pagina',
   folder: 'carpeta', studios: 'estudios', origin: 'origen', durationMinutes: 'duracion',
-  episodes: 'episodes',
+  episodes: 'episodes', season: 'season',
 } as const;

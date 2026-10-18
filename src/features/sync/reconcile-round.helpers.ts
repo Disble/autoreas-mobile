@@ -97,6 +97,7 @@ async function applyReconcileResponseWrites(
     lastChangelogId,
     nextLastChangelogId,
     bridgeConfigId,
+    seasonMode,
     claim,
   } = params;
 
@@ -150,6 +151,15 @@ async function applyReconcileResponseWrites(
     await writeDb
       .update(bridgeConfig)
       .set({ lastChangelogId: forwardOnlyChangelogCursor(nextLastChangelogId) })
+      .where(eq(bridgeConfig.id, bridgeConfigId));
+  }
+
+  // Season mode lands with the cursor it was answered with, so the two never disagree. An older
+  // bridge that omits it leaves the stored value alone.
+  if (seasonMode !== undefined) {
+    await writeDb
+      .update(bridgeConfig)
+      .set({ seasonMode })
       .where(eq(bridgeConfig.id, bridgeConfigId));
   }
 }
@@ -323,6 +333,7 @@ export async function sendReconcileRound(
       applied_operations,
       bridge_changes,
       last_changelog_id: responseLastChangelogId,
+      season_mode: seasonMode,
     } = parsed.data;
     const nextLastChangelogId = responseLastChangelogId ?? lastChangelogId;
     // Pure, computed OUTSIDE the write door: `applied_operations` is the only valid token
@@ -392,6 +403,7 @@ export async function sendReconcileRound(
         lastChangelogId,
         nextLastChangelogId,
         bridgeConfigId: context.bridgeConfigId,
+        seasonMode,
         claim,
       });
 

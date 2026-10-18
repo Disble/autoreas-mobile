@@ -26,12 +26,19 @@ export function parseSeasonRatingPayload(payload: string | null): SeasonRatingPa
 /**
  * Builds the bridge request for one rating row. A field the payload does not carry stays
  * `undefined`, so the JSON body omits it, never guesses it: the bridge then rejects the message
- * (422), the 4xx fate any rejected message has. Same body as the Kotlin `buildSeasonRatingBody`.
+ * (422), the 4xx fate any rejected message has. The queued season travels as `season_id`, so a
+ * rating for a season the bridge has since closed or replaced is refused (404) instead of landing in
+ * the new one (L11). Same body as the Kotlin `buildSeasonRatingBody`.
  */
 export function buildSeasonRatingRequest(row: Pick<OperationLogRow, 'animeId' | 'payload'>): PostActiveSeasonRatingRequest {
   const payload = parseSeasonRatingPayload(row.payload);
 
-  return { animeId: row.animeId, nota: payload.grade as number, ratedAt: payload.ratedAt as number };
+  return {
+    animeId: row.animeId,
+    nota: payload.grade as number,
+    ratedAt: payload.ratedAt as number,
+    seasonId: payload.seasonId as string,
+  };
 }
 
 /**

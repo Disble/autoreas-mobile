@@ -3,6 +3,14 @@ import type { CoverManifest } from './cover-files.types';
 /** Provides the shared covers directory name value, resolved under `Paths.document`. */
 export const COVERS_DIRECTORY_NAME = 'covers';
 
+/**
+ * Provides the inbox directory name, resolved under `Paths.document`. The native background sync
+ * (`SyncEngineCoverPrefetch`) downloads covers here as `<name>.jpg` + `<name>.json` pairs, and the
+ * cover store adopts each complete pair into `covers/`. Mirrors `COVER_INBOX_DIRECTORY_NAME` in
+ * `SyncEngineBackgroundCatchUp.kt`.
+ */
+export const COVER_INBOX_DIRECTORY_NAME = 'covers-inbox';
+
 /** Provides the shared cover manifest file name value. */
 export const COVER_MANIFEST_FILE_NAME = 'manifest.json';
 

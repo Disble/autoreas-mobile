@@ -5,4 +5,4 @@ export const RATING_FIRST_ROW_AT = 1_700_000_000_000;
 export const RATING = { seasonId: 'season-1', grade: 5, ratedAt: 1_690_000_000_000 };
 
 /** The rating body the bridge receives for {@link RATING}. */
-export const RATING_BODY = { anime_id: 'anime-1', grade: 5, rated_at: 1_690_000_000_000 };
+export const RATING_BODY = { anime_id: 'anime-1', grade: 5, rated_at: 1_690_000_000_000, season_id: 'season-1' };

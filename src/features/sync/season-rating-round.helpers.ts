@@ -112,7 +112,7 @@ export async function sendSeasonRatingRound(
   let confirmedCount = 0;
   let pendingCount = 0;
   let attemptedCount = 0;
-  let shouldRefreshActiveSeason = false;
+  let ratingDelivered = false;
   const successors: OperationLogRow[] = [];
 
   for (const row of ratings) {
@@ -130,14 +130,12 @@ export async function sendSeasonRatingRound(
     confirmedCount += settled?.confirmed ? 1 : 0;
     // A row whose fate could not be written was released to `pending`: it is still to send.
     pendingCount += fate.kind === 'pending' || settled === null ? 1 : 0;
-    // A delivery, or a rejection that says the bridge's season differs (404, 409), changes what
-    // the active-season snapshot should show.
-    shouldRefreshActiveSeason ||= fate.kind === 'delivered'
-      || (fate.kind === 'given_up' && (fate.reason === 'not_found' || fate.reason === 'conflict'));
+    // Only a delivery makes the bridge record a ["season"] row; a 404 or 409 records nothing.
+    ratingDelivered ||= fate.kind === 'delivered';
     successors.push(...(settled?.successors ?? []));
   }
 
-  return { confirmedCount, pendingCount, attemptedCount, shouldRefreshActiveSeason, successors };
+  return { confirmedCount, pendingCount, attemptedCount, ratingDelivered, successors };
 }
 
 /**

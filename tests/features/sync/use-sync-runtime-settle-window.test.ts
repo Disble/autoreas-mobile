@@ -6,7 +6,6 @@ import * as nativeForegroundSyncAdapterModule from "../../../src/features/sync/n
 import * as nativeBackgroundFloorModule from "../../../src/features/sync/native-background-floor";
 import * as syncFacadeModule from "../../../src/features/sync/use-sync-facade";
 import * as runtimeStatusModule from "../../../src/features/sync/sync-runtime-status.helpers";
-import { useSeasonSync } from "../../../src/features/sync/use-season-sync";
 import { useSyncRuntime } from "../../../src/features/sync/use-sync-runtime";
 import { useWebSocket } from "../../../src/features/ws/use-websocket";
 import type {
@@ -152,10 +151,6 @@ jest.mock("../../../src/features/sync/use-remote-change-drain", () => ({
   useRemoteChangeDrain: jest.fn(),
 }));
 
-jest.mock("../../../src/features/sync/use-season-sync", () => ({
-  useSeasonSync: jest.fn(),
-}));
-
 jest.mock("../../../src/features/sync/use-foreground-resync", () => ({
   useForegroundResync: jest.fn(),
 }));
@@ -269,10 +264,6 @@ describe("useSyncRuntime settle window and projection ordering", () => {
     (
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot as jest.Mock
     ).mockResolvedValue(undefined);
-    (useSeasonSync as jest.Mock).mockReturnValue({
-      clearActiveSeason: jest.fn(async () => undefined),
-      refreshActiveSeason: jest.fn(async () => undefined),
-    });
     (useWebSocket as jest.Mock).mockImplementation(() => ({}));
   });
 

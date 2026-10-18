@@ -59,8 +59,8 @@ export interface SeasonRatingRoundOutcome {
   readonly pendingCount: number;
   /** Ratings this claim still held and posted. */
   readonly attemptedCount: number;
-  /** A delivery, a 404 or a 409 changed what the active-season snapshot should show. */
-  readonly shouldRefreshActiveSeason: boolean;
+  /** The bridge accepted at least one rating (204), so it recorded a ["season"] changelog row. */
+  readonly ratingDelivered: boolean;
   /** The next row of every key whose rating was confirmed, already claimed. */
   readonly successors: readonly OperationLogRow[];
 }

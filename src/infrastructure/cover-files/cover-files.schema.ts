@@ -20,3 +20,17 @@ export const CoverManifestSchema = z.object({
   version: z.literal(1),
   entries: z.record(z.string(), CoverManifestEntrySchema),
 });
+
+/**
+ * Validates one native inbox sidecar (`SyncEngineCoverPrefetch.writeInboxPair`). `imageFileName`
+ * must be a plain `.jpg` name inside the inbox, never a path, so a malformed sidecar can never move
+ * a file from anywhere else.
+ */
+export const CoverInboxEntrySchema = z.object({
+  version: z.literal(1),
+  animeId: z.string().min(1),
+  imageFileName: z.string().regex(/^[A-Za-z0-9_-]+\.jpg$/),
+  etag: z.string().nullable(),
+  sourceKey: z.string().nullable(),
+  fetchedAt: z.number(),
+});

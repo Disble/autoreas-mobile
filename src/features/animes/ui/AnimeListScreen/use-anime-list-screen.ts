@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { useThemeColor, useToast } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
-import { useActiveSeasonStore } from "../../../../infrastructure/store/active-season-store";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
 import { isSyncTelemetryEnabled } from "../../../sync/sync-telemetry-preference.helpers";
@@ -46,11 +45,10 @@ export function useAnimeListScreen(
   const hasUserSelectedFilterRef = useRef(false);
 
   // 2. State
+  // The bridge config is a live query that has not answered on the first render, so the initial
+  // filter assumes season mode off; the soft-follow effect below moves it once the row is read.
   const [selectedFilter, setSelectedFilter] = useState<AnimeDayFilter>(() =>
-    getDefaultAnimeDayFilter(
-      new Date(),
-      useActiveSeasonStore.getState().activeSeasonSnapshot !== null,
-    ),
+    getDefaultAnimeDayFilter(new Date(), false),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
@@ -68,9 +66,6 @@ export function useAnimeListScreen(
   const [themeColorForeground] = useThemeColor(["foreground"]);
   const { layout: layoutMode } = useResponsiveLayout();
   const networkState = useNetworkState();
-  const seasonMode = useActiveSeasonStore(
-    (state) => state.activeSeasonSnapshot !== null,
-  );
 
   // 4. Queries/Mutations
   const { data: animes, allActiveAnimes } = useAnimeList(selectedFilter);
@@ -89,6 +84,9 @@ export function useAnimeListScreen(
     () => isSyncTelemetryEnabled(config),
     [config],
   );
+  // Season mode is the last reconcile's `season_mode` (whether the bridge has a season open),
+  // read from the pairing row the query above already holds.
+  const seasonMode = config?.seasonMode === true;
   const filterOptions = useMemo(() => ANIME_DAY_FILTER_OPTIONS, []);
   const isEmpty = animes.length === 0;
   const selectedFilterOption = useMemo(
@@ -264,6 +262,7 @@ export function useAnimeListScreen(
 
       setSeasonRatingSheetRequest({
         animeId,
+        seasonId: seasonProjection.seasonId,
         animeTitle: anime.nombre,
         bridgeRating: seasonProjection.bridgeRating,
         pendingRating: seasonProjection.localIntent?.nota ?? null,
@@ -297,7 +296,10 @@ export function useAnimeListScreen(
         return;
       }
 
-      await submitSeasonRatingIntent(request.animeId, rating);
+      await submitSeasonRatingIntent(
+        { animeId: request.animeId, seasonId: request.seasonId },
+        rating,
+      );
       setSeasonRatingSheetRequest(null);
     },
     [seasonRatingSheetRequest, submitSeasonRatingIntent],

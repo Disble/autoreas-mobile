@@ -1,12 +1,13 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import {
+  COVER_INBOX_DIRECTORY_NAME,
   COVER_MANIFEST_FILE_NAME,
   COVER_MANIFEST_TEMP_FILE_NAME,
   COVERS_DIRECTORY_NAME,
   EMPTY_COVER_MANIFEST,
 } from './cover-files.constants';
-import { CoverManifestSchema } from './cover-files.schema';
-import type { CoverManifest } from './cover-files.types';
+import { CoverInboxEntrySchema, CoverManifestSchema } from './cover-files.schema';
+import type { CoverInboxEntry, CoverManifest } from './cover-files.types';
 
 /**
  * Keeps only `[A-Za-z0-9-]` unescaped; every other UTF-16 code unit -- a literal underscore
@@ -205,4 +206,95 @@ export async function listCoverFileNames(): Promise<readonly string[]> {
 /** Resolves the local `file://` URI for one cover JPEG, without touching disk. */
 export function getCoverFileUri(fileName: string): string {
   return new File(getCoversDirectory(), fileName).uri;
+}
+
+/** Resolves the `covers-inbox/` directory the native background sync downloads covers into. */
+function getCoverInboxDirectory(): Directory {
+  return new Directory(Paths.document, COVER_INBOX_DIRECTORY_NAME);
+}
+
+/**
+ * Parses one inbox sidecar read from `sidecarFileName`, returning `null` for anything that is not
+ * a valid v1 entry (see `CoverInboxEntrySchema`).
+ */
+function parseCoverInboxEntry(raw: unknown, sidecarFileName: string): CoverInboxEntry | null {
+  const result = CoverInboxEntrySchema.safeParse(raw);
+
+  if (!result.success) {
+    return null;
+  }
+
+  const { animeId, imageFileName, etag, sourceKey, fetchedAt } = result.data;
+
+  return { animeId, imageFileName, etag, sourceKey, fetchedAt, sidecarFileName };
+}
+
+/**
+ * Lists every complete pair the native background sync left in the inbox. Only sidecars count:
+ * native writes the image first and the sidecar last, so a sidecar means its image is whole. A
+ * sidecar that cannot be read or parsed is garbage nobody can adopt, so it is deleted here.
+ */
+export async function listCoverInboxEntries(): Promise<readonly CoverInboxEntry[]> {
+  const directory = getCoverInboxDirectory();
+
+  if (!directory.exists) {
+    return [];
+  }
+
+  const sidecars = directory.list().filter((entry) => entry.name.toLowerCase().endsWith('.json'));
+  const entries = await Promise.all(sidecars.map((entry) => readCoverInboxSidecar(new File(directory, entry.name))));
+
+  return entries.filter((entry): entry is CoverInboxEntry => entry !== null);
+}
+
+/** Reads one inbox sidecar, deleting it when it cannot be read or is not a valid v1 entry. */
+async function readCoverInboxSidecar(sidecar: File): Promise<CoverInboxEntry | null> {
+  try {
+    const entry = parseCoverInboxEntry(JSON.parse(await sidecar.text()), sidecar.name);
+
+    if (entry) {
+      return entry;
+    }
+  } catch {
+    // Unreadable or not JSON: garbage nobody can adopt, deleted below.
+  }
+
+  sidecar.delete();
+
+  return null;
+}
+
+/**
+ * Moves one inbox image into `covers/` under `fileName`, replacing a file already there. Returns
+ * `false` when the inbox image is gone, so the caller adopts nothing for that entry.
+ */
+export async function adoptCoverInboxImage(imageFileName: string, fileName: string): Promise<boolean> {
+  const source = new File(getCoverInboxDirectory(), imageFileName);
+
+  if (!source.exists) {
+    return false;
+  }
+
+  const target = new File(ensureCoversDirectory(), fileName);
+
+  if (target.exists) {
+    target.delete();
+  }
+
+  source.move(target);
+
+  return true;
+}
+
+/** Deletes one inbox pair (sidecar and image, whichever still exists). Missing files are a no-op. */
+export async function discardCoverInboxEntry(entry: CoverInboxEntry): Promise<void> {
+  const directory = getCoverInboxDirectory();
+
+  for (const name of [entry.sidecarFileName, entry.imageFileName]) {
+    const file = new File(directory, name);
+
+    if (file.exists) {
+      file.delete();
+    }
+  }
 }

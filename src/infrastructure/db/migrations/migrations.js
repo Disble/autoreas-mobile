@@ -22,6 +22,7 @@ import m0017 from './0017_add_animes_folder_relative.sql';
 import m0018 from './0018_add_outbox_claims_and_unresolved.sql';
 import m0019 from './0019_drop_season_rating_queue.sql';
 import m0020 from './0020_drop_dead_sync_runtime_status_columns.sql';
+import m0021 from './0021_add_season_on_anime_sync.sql';
 
   export default {
     journal,
@@ -46,7 +47,8 @@ m0016,
 m0017,
 m0018,
 m0019,
-m0020
+m0020,
+m0021
     }
   }
   

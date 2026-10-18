@@ -42,8 +42,11 @@ const KEPT_COLUMNS: readonly string[] = [
 /** The kept columns, in a fixed order, for reading the singleton row before and after. */
 const KEPT_SELECT = `SELECT ${KEPT_COLUMNS.join(', ')} FROM sync_runtime_status ORDER BY id`;
 
-/** The tables the upgrade is allowed to change; every other table must stay byte-identical. */
-const CHANGED_TABLES: readonly string[] = ['sync_runtime_status', '__drizzle_migrations'];
+/**
+ * The tables the upgrade is allowed to change; every other table must stay byte-identical. The
+ * repair twins of migration 0021 add one column each to `animes` and `bridge_config`.
+ */
+const CHANGED_TABLES: readonly string[] = ['sync_runtime_status', 'animes', 'bridge_config', '__drizzle_migrations'];
 
 /** The newest `when` the shipped journal holds: the scalar the upgrade pins the ledger to. */
 const JOURNAL_MAX_WHEN = Math.max(...journal.entries.map((entry) => entry.when));
@@ -125,7 +128,7 @@ describe('sync_runtime_status dead-column drop through the real drizzle gate (mi
     expect(await readLedger(adapter)).toEqual(Array.from({ length: 20 }, () => 1792195200000));
   });
 
-  it('drops every dead column while the real gate applies nothing, keeps the row, and stamps 21', async () => {
+  it('drops every dead column while the real gate applies nothing, keeps the row, and stamps 22', async () => {
     const adapter = await openSeededDevice();
     const keptRow = await adapter.getAllAsync(KEPT_SELECT);
     const before = await dumpDatabase(adapter);
@@ -135,7 +138,7 @@ describe('sync_runtime_status dead-column drop through the real drizzle gate (mi
     const after = await dumpDatabase(adapter);
 
     expect(GATE_MIGRATOR_LOG).toEqual([[]]);
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
     expect(await readColumns(adapter)).toEqual(KEPT_COLUMNS);
     expect(await adapter.getAllAsync(KEPT_SELECT)).toEqual(keptRow);
     expect(keptRow).toEqual([
@@ -165,7 +168,7 @@ describe('sync_runtime_status dead-column drop through the real drizzle gate (mi
 
     expect(GATE_MIGRATOR_LOG).toEqual([]);
     expect(await dumpDatabase(adapter)).toEqual(upgraded);
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
   });
 
   it('rolls every drop back at readiness 20 when one crashes midway, and the next startup completes', async () => {
@@ -186,7 +189,7 @@ describe('sync_runtime_status dead-column drop through the real drizzle gate (mi
 
     await prepareForegroundDatabase(adapter);
 
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
     expect(await readColumns(adapter)).toEqual(KEPT_COLUMNS);
     expect(await adapter.getAllAsync(KEPT_SELECT)).toEqual(keptRow);
   });
@@ -198,7 +201,7 @@ describe('sync_runtime_status dead-column drop through the real drizzle gate (mi
 
     expect(GATE_MIGRATOR_LOG).toHaveLength(1);
     expect(GATE_MIGRATOR_LOG[0].some((query) => query.includes('DROP COLUMN `last_pending_row_count`'))).toBe(true);
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
     expect(await readColumns(adapter)).toEqual(KEPT_COLUMNS);
   });
 

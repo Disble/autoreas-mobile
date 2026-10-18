@@ -75,7 +75,8 @@
         "body": {
           "anime_id": "anime-1",
           "grade": 8,
-          "rated_at": 1700000000000
+          "rated_at": 1700000000000,
+          "season_id": "season-1"
         }
       },
       {

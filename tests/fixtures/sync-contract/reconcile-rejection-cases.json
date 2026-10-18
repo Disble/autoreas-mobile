@@ -107,5 +107,21 @@
       "backlog": [],
       "responseBody": { "status": "accepted", "applied_operations": [{ "anime_id": "a-1" }] }
     }
+  },
+  {
+    "name": "season-mode-null",
+    "description": "season_mode is optional but never null (zod .optional()), so a null rejects the response.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "season_mode": null }
+    }
+  },
+  {
+    "name": "season-mode-not-a-boolean",
+    "description": "A season_mode that is not a boolean rejects the response.",
+    "input": {
+      "backlog": [],
+      "responseBody": { "status": "accepted", "season_mode": "true" }
+    }
   }
 ]

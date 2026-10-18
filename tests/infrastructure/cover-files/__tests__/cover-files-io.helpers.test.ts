@@ -105,8 +105,11 @@ jest.mock('expo-file-system', () => {
 import * as ExpoFileSystemMock from 'expo-file-system';
 // eslint-disable-next-line import/first
 import {
+  adoptCoverInboxImage,
   coverFileExists,
   deleteCoverFile,
+  discardCoverInboxEntry,
+  listCoverInboxEntries,
   getCoverFileUri,
   listCoverFileNames,
   readCoverManifest,
@@ -236,6 +239,82 @@ describe('cover-files I/O', () => {
 
     it('resolves a file URI without touching disk', () => {
       expect(getCoverFileUri('anime-1-abc.jpg')).toBe('file:///document/covers/anime-1-abc.jpg');
+    });
+  });
+  describe('cover inbox', () => {
+    const INBOX = 'file:///document/covers-inbox';
+    const sidecar = {
+      version: 1,
+      animeId: 'a/1',
+      imageFileName: 'a_002f1.jpg',
+      etag: '"e"',
+      sourceKey: '/c/a.jpg',
+      fetchedAt: 5,
+    };
+
+    it('lists nothing when the native sync never wrote an inbox', async () => {
+      expect(await listCoverInboxEntries()).toEqual([]);
+    });
+
+    it('lists each valid sidecar with the file it came from, ignoring images', async () => {
+      createdDirectories.add(INBOX);
+      store.set(`${INBOX}/a_002f1.json`, { content: JSON.stringify(sidecar) });
+      store.set(`${INBOX}/a_002f1.jpg`, { content: new Uint8Array([1]) });
+
+      expect(await listCoverInboxEntries()).toEqual([
+        {
+          animeId: 'a/1',
+          imageFileName: 'a_002f1.jpg',
+          etag: '"e"',
+          sourceKey: '/c/a.jpg',
+          fetchedAt: 5,
+          sidecarFileName: 'a_002f1.json',
+        },
+      ]);
+    });
+
+    it('deletes a sidecar that is not valid JSON or not a v1 entry, including one naming a path', async () => {
+      createdDirectories.add(INBOX);
+      store.set(`${INBOX}/broken.json`, { content: '{' });
+      store.set(`${INBOX}/old.json`, { content: JSON.stringify({ ...sidecar, version: 2 }) });
+      store.set(`${INBOX}/escape.json`, { content: JSON.stringify({ ...sidecar, imageFileName: '../covers/x.jpg' }) });
+
+      expect(await listCoverInboxEntries()).toEqual([]);
+      expect(Array.from(store.keys()).filter((uri) => uri.startsWith(INBOX))).toEqual([]);
+    });
+
+    it('moves an inbox image into covers under its new name, replacing a stale file there', async () => {
+      store.set(`${INBOX}/a1.jpg`, { content: new Uint8Array([7]) });
+      store.set('file:///document/covers/a1-e.jpg', { content: new Uint8Array([1]) });
+
+      await expect(adoptCoverInboxImage('a1.jpg', 'a1-e.jpg')).resolves.toBe(true);
+
+      expect(store.has(`${INBOX}/a1.jpg`)).toBe(false);
+      expect(store.get('file:///document/covers/a1-e.jpg')?.content).toEqual(new Uint8Array([7]));
+      expect(createdDirectories.has('file:///document/covers')).toBe(true);
+    });
+
+    it('adopts nothing when the inbox image is gone', async () => {
+      await expect(adoptCoverInboxImage('a1.jpg', 'a1-e.jpg')).resolves.toBe(false);
+      expect(store.has('file:///document/covers/a1-e.jpg')).toBe(false);
+    });
+
+    it('discards both files of a pair, and a half-gone pair without failing', async () => {
+      store.set(`${INBOX}/a1.json`, { content: '{}' });
+      store.set(`${INBOX}/a1.jpg`, { content: new Uint8Array([1]) });
+      const entry = {
+        animeId: 'a1',
+        imageFileName: 'a1.jpg',
+        etag: null,
+        sourceKey: null,
+        fetchedAt: 1,
+        sidecarFileName: 'a1.json',
+      };
+
+      await discardCoverInboxEntry(entry);
+      await discardCoverInboxEntry(entry);
+
+      expect(store.size).toBe(0);
     });
   });
 });

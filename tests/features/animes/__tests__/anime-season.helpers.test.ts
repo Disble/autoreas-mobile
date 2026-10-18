@@ -1,5 +1,4 @@
 import type { SeasonRatingIntent } from "../../../../src/features/sync/season-rating-event.types";
-import { LOCAL_ACTIVE_SEASON_ID } from "../../../../src/features/animes/anime-season.constants";
 import {
   buildAnimeSeasonProjection,
   selectLatestSeasonRatingIntent,
@@ -21,13 +20,14 @@ function buildQueueRow(overrides: Partial<SeasonRatingIntent> = {}): SeasonRatin
 }
 
 describe("anime season helpers", () => {
-  it("picks the latest local intent for the active candidate", () => {
+  it("picks the latest local intent of the anime for the season", () => {
     const latest = selectLatestSeasonRatingIntent(
       "anime-1",
-      ["season-2026-q3", LOCAL_ACTIVE_SEASON_ID],
+      "season-2026-q3",
       [
         buildQueueRow({ id: 1, nota: 3, createdAt: 1_752_000_100_000 }),
         buildQueueRow({ id: 2, nota: 6, createdAt: 1_752_000_200_000, status: "failed", failureKind: "auth_repair" }),
+        buildQueueRow({ id: 3, nota: 1, createdAt: 1_752_000_300_000, animeId: "anime-2" }),
       ],
     );
 
@@ -40,49 +40,30 @@ describe("anime season helpers", () => {
     });
   });
 
-  it("ignores rows outside the provided season lookup ids", () => {
+  it("ignores rows of another season", () => {
     const latest = selectLatestSeasonRatingIntent(
       "anime-1",
-      ["season-2026-q3"],
-      [buildQueueRow({ seasonId: "season-2025-q4", nota: 9 })],
+      "season-2026-q3",
+      [buildQueueRow({ seasonId: "season-2025-q4", nota: 6 })],
     );
 
     expect(latest).toBeNull();
   });
 
   it("returns null when there are no matching rows", () => {
-    const latest = selectLatestSeasonRatingIntent("anime-1", ["season-2026-q3"], []);
-
-    expect(latest).toBeNull();
+    expect(selectLatestSeasonRatingIntent("anime-1", "season-2026-q3", [])).toBeNull();
   });
 
-  it("builds a bridge candidate projection and omits unrelated animes", () => {
+  it("builds the projection from the anime's own candidacy, its grade as the bridge rating", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
-      activeSeasonSnapshot: {
-        seasonId: "season-2026-q3",
-        candidates: [
-          {
-            animeId: "anime-1",
-            bridgeRating: 4,
-            bridgeRatingSource: "bridge",
-          },
-        ],
-        candidatesByAnimeId: {
-          "anime-1": {
-            animeId: "anime-1",
-            bridgeRating: 4,
-            bridgeRatingSource: "bridge",
-          },
-        },
-      },
+      season: { seasonId: "season-2026-q3", grade: 4 },
       seasonRatingIntents: [buildQueueRow({ nota: 6 })],
     });
 
     expect(projection).toEqual({
       seasonId: "season-2026-q3",
       bridgeRating: 4,
-      bridgeRatingSource: "bridge",
       localIntent: {
         nota: 6,
         ratedAt: 1_752_000_000_000,
@@ -91,57 +72,35 @@ describe("anime season helpers", () => {
         failureKind: null,
       },
     });
+  });
+
+  it("keeps an ungraded candidate with no local intent rateable", () => {
     expect(
       buildAnimeSeasonProjection({
-        animeId: "anime-2",
-        activeSeasonSnapshot: {
-          seasonId: "season-2026-q3",
-          candidates: [],
-          candidatesByAnimeId: {},
-        },
+        animeId: "anime-1",
+        season: { seasonId: "season-2026-q3", grade: null },
         seasonRatingIntents: [],
+      }),
+    ).toEqual({ seasonId: "season-2026-q3", bridgeRating: null, localIntent: null });
+  });
+
+  it.each([null, undefined])("has no projection when the anime is not a candidate (%s), even with a queued intent", (season) => {
+    expect(
+      buildAnimeSeasonProjection({
+        animeId: "anime-1",
+        season,
+        seasonRatingIntents: [buildQueueRow({ nota: 5 })],
       }),
     ).toBeNull();
   });
 
-  it("does not infer a season candidate when the bridge snapshot is unavailable", () => {
+  it("counts only the intents queued for the season the anime is a candidate of", () => {
     const projection = buildAnimeSeasonProjection({
       animeId: "anime-1",
-      activeSeasonSnapshot: null,
-      seasonRatingIntents: [],
+      season: { seasonId: "season-2026-q4", grade: 2 },
+      seasonRatingIntents: [buildQueueRow({ seasonId: "season-2026-q3", nota: 6 })],
     });
 
-    expect(projection).toBeNull();
-  });
-
-  it("keeps a persisted local intent visible without an active bridge candidate", () => {
-    const projection = buildAnimeSeasonProjection({
-      animeId: "anime-1",
-      activeSeasonSnapshot: {
-        seasonId: "season-2026-q3",
-        candidates: [],
-        candidatesByAnimeId: {},
-      },
-      seasonRatingIntents: [
-        buildQueueRow({
-          seasonId: "season-2026-q3",
-          animeId: "anime-1",
-          nota: 5,
-        }),
-      ],
-    });
-
-    expect(projection).toEqual({
-      seasonId: "season-2026-q3",
-      bridgeRating: null,
-      bridgeRatingSource: null,
-      localIntent: {
-        nota: 5,
-        ratedAt: 1_752_000_000_000,
-        createdAt: 1_752_000_100_000,
-        status: "pending",
-        failureKind: null,
-      },
-    });
+    expect(projection).toEqual({ seasonId: "season-2026-q4", bridgeRating: 2, localIntent: null });
   });
 });

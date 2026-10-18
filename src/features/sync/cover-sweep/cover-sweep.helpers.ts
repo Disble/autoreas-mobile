@@ -3,7 +3,8 @@ import { BridgeUnreachableError } from '../../../infrastructure/api/bridge-clien
 import type { BridgeAnimeCoverResult, BridgeConnection } from '../../../infrastructure/api';
 import { runWithConcurrency } from '../../../infrastructure/async/run-with-concurrency.helpers';
 import { buildCoverFileName } from '../../../infrastructure/cover-files/cover-files.helpers';
-import type { CoverManifest, CoverManifestEntry } from '../../../infrastructure/cover-files';
+import type { CoverInboxEntry, CoverManifest, CoverManifestEntry } from '../../../infrastructure/cover-files';
+import { planCoverInboxAdoption } from './cover-inbox.helpers';
 import { resolveCoverManifestEntry } from './cover-sweep-entry.helpers';
 import {
   getInFlightCoverSweep,
@@ -109,7 +110,40 @@ export function shouldStopCoverSweep(outcome: CoverSweepOutcome): boolean {
 }
 
 /**
- * Restores the cover-uri-store from the persisted manifest. An entry whose file has vanished from
+ * Takes over the covers the native background sync downloaded into the inbox (see
+ * `planCoverInboxAdoption`): moves each adopted image into `covers/` and folds its entry into
+ * `manifest`. Returns the updated manifest, whether anything was adopted, and every inbox entry it
+ * handled -- the caller discards those only AFTER persisting the manifest, so a crash in between
+ * leaves a sidecar to retry instead of a cover nobody references. Never throws: an unreadable inbox
+ * only means nothing is adopted this time.
+ */
+async function adoptCoverInbox(
+  deps: CoverSweepDependencies,
+  manifest: CoverManifest,
+): Promise<{ manifest: CoverManifest; adopted: boolean; handled: readonly CoverInboxEntry[] }> {
+  try {
+    const inboxEntries = await deps.listCoverInboxEntries();
+    const plan = planCoverInboxAdoption(manifest, inboxEntries);
+    const entries: Record<string, CoverManifestEntry> = { ...manifest.entries };
+    const moved = await Promise.all(
+      plan.adopt.map((adoption) => deps.adoptCoverInboxImage(adoption.inboxEntry.imageFileName, adoption.fileName)),
+    );
+    const adopted = plan.adopt.filter((_, index) => moved[index]);
+
+    for (const adoption of adopted) {
+      entries[adoption.inboxEntry.animeId] = adoption.manifestEntry;
+    }
+
+    return { manifest: { version: 1, entries }, adopted: adopted.length > 0, handled: inboxEntries };
+  } catch (error) {
+    console.warn('[cover-sweep] cover inbox adoption failed', error);
+    return { manifest, adopted: false, handled: [] };
+  }
+}
+
+/**
+ * Restores the cover-uri-store from the persisted manifest, first adopting any cover the native
+ * background sync left in the inbox. An entry whose file has vanished from
  * disk (deleted out of band) loses its `fileName` and is scheduled for an immediate re-fetch
  * (`nextAttemptAt: 0`); everything else is republished as-is. Never throws: a hydration failure is
  * swallowed and logged, since it must never block app startup.
@@ -121,7 +155,8 @@ async function hydrateCoverUrisUnlocked(
   deps: CoverSweepDependencies = DEFAULT_COVER_SWEEP_DEPENDENCIES,
 ): Promise<void> {
   try {
-    const manifest = await deps.readManifest();
+    const inbox = await adoptCoverInbox(deps, await deps.readManifest());
+    const { manifest } = inbox;
 
     // Every entry's existence check is independent, so they run concurrently rather than one
     // await per loop iteration.
@@ -146,7 +181,7 @@ async function hydrateCoverUrisUnlocked(
     );
 
     const nextEntries: Record<string, CoverManifestEntry> = {};
-    let changed = false;
+    let changed = inbox.adopted;
 
     for (const checked of checkedEntries) {
       nextEntries[checked.animeId] = checked.entry;
@@ -158,6 +193,8 @@ async function hydrateCoverUrisUnlocked(
     if (changed) {
       await deps.writeManifest(nextManifest);
     }
+
+    await Promise.all(inbox.handled.map((entry) => deps.discardCoverInboxEntry(entry)));
 
     deps.publishCoverUris(buildCoverUriMap(nextManifest, deps.getCoverFileUri));
   } catch (error) {

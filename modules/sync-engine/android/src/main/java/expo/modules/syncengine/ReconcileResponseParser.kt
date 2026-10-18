@@ -38,6 +38,11 @@ data class ParsedReconcileResponse(
   val bridgeChanges: List<BridgeChangeEntry>,
   /** `null` when the key is absent or not a number; presence, not truthiness, is what counts. */
   val lastChangelogId: Long?,
+  /**
+   * The root `season_mode` (whether the bridge has a season open); `null` when the key is absent,
+   * which leaves the stored value as it is. It travels only on this HTTP response.
+   */
+  val seasonMode: Boolean? = null,
 )
 
 /**
@@ -46,7 +51,7 @@ data class ParsedReconcileResponse(
  * malformed response the same fate (ADR 009 R-5): `status` must be a string; a missing or null
  * `applied_operations`/`bridge_changes`/`changed_fields` becomes empty, but any other non-array
  * value is malformed; unknown keys are ignored; an unknown `reason` string is tolerated; an
- * optional field (`modified_at`, `reason`, `last_changelog_id`, `snapshot`) may be absent but
+ * optional field (`modified_at`, `reason`, `last_changelog_id`, `season_mode`, `snapshot`) may be absent but
  * never null or of the wrong type; `modified_at` must be an integer. `modified_at` and
  * `last_changelog_id` PRESENCE (not truthiness) decides whether a token exists.
  *
@@ -82,6 +87,7 @@ object ReconcileResponseParser {
       appliedOperations = parseAppliedOperations(nullishArray(root, "applied_operations", "applied_operations")),
       bridgeChanges = parseBridgeChanges(nullishArray(root, "bridge_changes", "bridge_changes")),
       lastChangelogId = optionalNumber(root, "last_changelog_id", "last_changelog_id")?.toLong(),
+      seasonMode = optionalBoolean(root, "season_mode", "season_mode"),
     )
   }
 
@@ -158,6 +164,12 @@ object ReconcileResponseParser {
     return obj.opt(key) as? Number ?: throw ReconcileParseException("$path is not a number")
   }
 
+  /** An optional boolean (zod `.optional()`): absent is `null`; null or any other type is malformed. */
+  private fun optionalBoolean(obj: JSONObject, key: String, path: String): Boolean? {
+    if (!obj.has(key)) return null
+    return obj.opt(key) as? Boolean ?: throw ReconcileParseException("$path is not a boolean")
+  }
+
   /** An optional integer (zod `.int().optional()`): a fractional number is malformed too. */
   private fun optionalInteger(obj: JSONObject, key: String, path: String): Long? {
     val number = optionalNumber(obj, key, path) ?: return null
@@ -211,6 +223,7 @@ private val LOCAL_FIELD_BY_WIRE_FIELD = mapOf(
   "origin" to "origen",
   "durationMinutes" to "duracion",
   "episodes" to "episodes",
+  "season" to "season",
 )
 
 private const val WIRE_MAPPER_LOG_TAG = "SyncEngineWireMapper"
@@ -272,7 +285,27 @@ object WireAnimeMapper {
     legacy.put("origen", wire.opt("origin") ?: JSONObject.NULL)
     legacy.put("duracion", wire.opt("durationMinutes") ?: JSONObject.NULL)
     legacy.put("episodes", mapEpisodes(wire.opt("episodes")))
+    legacy.put("season", mapSeason(wire.opt("season")))
     return legacy
+  }
+
+  /**
+   * Maps the season candidacy, mirroring `AnimeSeasonSchema` with its `.catch(null)`: rebuilt with
+   * the keys `seasonId, grade` (extra keys dropped), where `seasonId` is a non-empty string and
+   * `grade` is present and either `null` or a whole number 1-6. An absent value (not a candidate),
+   * `null` or a malformed one maps to `null` instead of failing the snapshot.
+   */
+  private fun mapSeason(value: Any?): Any {
+    if (value !is JSONObject) return JSONObject.NULL
+    val seasonId = value.opt("seasonId") as? String
+    if (seasonId.isNullOrEmpty() || !value.has("grade")) return JSONObject.NULL
+    val rawGrade = value.opt("grade")
+    if (rawGrade == JSONObject.NULL) {
+      return JSONObject().put("seasonId", seasonId).put("grade", JSONObject.NULL)
+    }
+    val grade = wholeNumberOrNull(rawGrade)
+    if (grade == null || grade < 1 || grade > 6) return JSONObject.NULL
+    return JSONObject().put("seasonId", seasonId).put("grade", grade)
   }
 
   /**

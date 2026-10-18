@@ -77,7 +77,7 @@ El caso de uso concreto es: el usuario ve anime en la tablet en **split-screen**
 
 La app móvil es un **peer offline-first** que consume la API del Bridge. Mantiene una copia local de los datos en SQLite y un log de operaciones pendientes. La sincronización sigue el protocolo definido en el RFC del Bridge: reconciliación de changelogs al reconectar + notificaciones WebSocket en tiempo real mientras están conectados.
 
-> Runtime truth note (SDD-52): el seam de transporte actual es `BridgeClient`. La superficie activa consumida por móvil es `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `GET /api/seasons/active`, `POST /api/seasons/active/ratings` y `WS /ws`. Los eventos activos son `sync_required`, `anime_changed`, `anime_created`, `anime_deleted`, `preferences_changed` y `season_changed`. Los campos legacy del wire siguen intactos, incluyendo `nrocapvisto`, `totalcap` y `grade_source`.
+> Runtime truth note (SDD-52): el seam de transporte actual es `BridgeClient`. La superficie activa consumida por móvil es `POST /api/devices/pair`, `GET /api/animes`, `POST /api/sync/reconcile`, `GET /api/status`, `POST /api/seasons/active/ratings` y `WS /ws`. Los eventos activos son `sync_required`, `anime_changed`, `anime_created` y `anime_deleted`. La temporada no tiene ruta propia: cada anime trae su candidatura en `season` y el modo temporada llega en el `season_mode` de la respuesta de reconcile. Los campos legacy del wire siguen intactos, incluyendo `nrocapvisto`, `totalcap` y `grade_source`.
 
 ```mermaid
 graph TB
@@ -480,7 +480,6 @@ La app móvil actual NO expande el transporte desde features. Todo HTTP y WebSoc
 | Snapshot list | `GET /api/animes` |
 | Reconcile | `POST /api/sync/reconcile` |
 | Status | `GET /api/status` |
-| Active season | `GET /api/seasons/active` |
 | Season ratings | `POST /api/seasons/active/ratings` |
 | Realtime | `WS /ws` |
 

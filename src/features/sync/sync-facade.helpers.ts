@@ -2,12 +2,10 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { inArray } from 'drizzle-orm';
 import { createDrizzleDb } from '../../infrastructure/db/client/client.helpers';
 import { operationLog, syncRuntimeStatus } from '../../infrastructure/db/schema';
-import { useActiveSeasonStore } from '../../infrastructure/store/active-season-store';
 import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants';
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
-import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
 import { healSnapshotOnDemand } from './snapshot-heal.helpers';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
@@ -106,18 +104,18 @@ async function persistSyncFailureTelemetrySafely(
  * `syncPendingOperations`: anime edits through the reconcile (which also carries the diagnostics
  * outbox) and season ratings through their own endpoint, interleaved per anime in queue order
  * (L28). Callers never run it directly; they enqueue and call `requestFlush`, which runs it
- * through `dispatchForegroundSyncFlush`. The active season is refreshed after a delivered rating
- * (or one the bridge refused with 404/409), or when the request demands it (the WebSocket season
- * events and the app returning to the foreground, I8); that refresh is best effort and never fails
- * the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
+ * through `dispatchForegroundSyncFlush`. Season state has no path of its own: each anime's candidacy
+ * arrives on the anime rows and `season_mode` on the reconcile response, and a delivered rating is
+ * followed by one more pass, best effort, so the grade the bridge recorded lands in this same
+ * cycle. That pass lives here, not inside `syncPendingOperations`, because the Kotlin engine shares
+ * the outbox pass's request sequence through the contract fixtures; a background rating gets its
+ * grade on the next cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
  * best effort too, and it runs even when the sends failed, before the failure is published.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
   source,
-  setActiveSeasonSnapshot,
-  refreshActiveSeason = false,
   healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
@@ -133,8 +131,8 @@ export async function runCoordinatedForegroundSyncCycle({
     // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
     const result = await syncPendingOperations(rawDb);
 
-    if (refreshActiveSeason || result.shouldRefreshActiveSeason) {
-      await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
+    if (result.ratingDelivered) {
+      await pullAfterDeliveredRating(rawDb);
     }
 
     await healSnapshotOnDemand(rawDb, healSnapshot);
@@ -176,16 +174,28 @@ export async function runCoordinatedForegroundSyncCycle({
 }
 
 /**
+ * The pull a delivered rating owes (L12): the bridge records a ["season"] row for each 204, so one
+ * more outbox pass, whose first round always reconciles, brings the new grade. Best effort, like the
+ * rating it follows (ADR 009 R-5, I4): a failure is logged and never fails the cycle, and the next
+ * cycle brings the same row because the cursor did not move.
+ */
+async function pullAfterDeliveredRating(rawDb: SQLiteDatabase): Promise<void> {
+  try {
+    await syncPendingOperations(rawDb);
+  } catch (error) {
+    console.warn('[sync-facade] The pull after a delivered rating failed; the next cycle brings its grade', error);
+  }
+}
+
+/**
  * The JS dispatcher the foreground runtime registers with `registerSyncFlushDispatcher`: one
- * flush request becomes one coordinated cycle, publishing season truth to the shared store.
+ * flush request becomes one coordinated cycle.
  */
 export function dispatchForegroundSyncFlush(request: SyncFlushRequest): Promise<number> {
   return runCoordinatedForegroundSyncCycle({
     rawDb: request.database,
     source: request.source,
-    refreshActiveSeason: request.refreshActiveSeason,
     healSnapshot: request.healSnapshot,
-    setActiveSeasonSnapshot: useActiveSeasonStore.getState().setActiveSeasonSnapshot,
   });
 }
 

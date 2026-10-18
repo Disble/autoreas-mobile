@@ -19,6 +19,7 @@ export function mapWireAnimeToLegacyAnime(anime: WireAnime): Anime {
     portada: anime.cover ?? null, pagina: anime.sourceUrl ?? null, carpeta: anime.folder ?? null,
     estudios: anime.studios ?? null, origen: anime.origin ?? null, duracion: anime.durationMinutes ?? null,
     episodes: anime.episodes ?? null, folderRelative: anime.folderRelative ?? null,
+    season: anime.season ?? null,
   };
 }
 

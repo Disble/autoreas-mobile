@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
  * Applies one parsed reconcile response, all inside the ONE transaction the caller opened
  * (step 8), in the exact order the JS `applyReconcileResponseWrites` uses: staging first (it
  * may be what creates the row), then the token writes that depend on row existence, then the
- * status updates, then the cursor advance.
+ * status updates, then the cursor advance and the season mode.
  *
  * Shared by BOTH attempt shapes so they cannot drift: the claimed path (non-empty backlog)
  * and the pull-only empty path, which passes an empty `backlog` — the staging inserts and the
@@ -121,6 +121,17 @@ internal class SyncEngineResponseApplier(
         "UPDATE bridge_config SET last_changelog_id = MAX(COALESCE(last_changelog_id, 0), ?) WHERE id = ?",
       ).apply {
         bindLong(1, nextLastChangelogId)
+        bindLong(2, configId)
+        executeUpdateDelete()
+      }
+    }
+
+    // Season mode lands with the cursor it was answered with, like the JS write. An older bridge
+    // that omits it leaves the stored value alone.
+    val seasonMode = parsed.seasonMode
+    if (seasonMode != null) {
+      appDb.compileStatement("UPDATE bridge_config SET season_mode = ? WHERE id = ?").apply {
+        bindLong(1, if (seasonMode) 1L else 0L)
         bindLong(2, configId)
         executeUpdateDelete()
       }

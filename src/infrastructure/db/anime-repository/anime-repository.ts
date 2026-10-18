@@ -2,6 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { ConfirmedAnimeToken } from "../../../features/sync/applied-operation-token.helpers";
 import type { Anime } from "../../validation/anime-schema";
 import { serializeEpisodeLengths } from "../../validation/anime-schema/anime-episodes.helpers";
+import { serializeAnimeSeason } from "../../validation/anime-schema/anime-season.helpers";
 import { buildOptionalAnimeSyncColumns } from "./anime-repository.helpers";
 import type { AppDatabase } from "../client";
 import { animes } from "../schema";
@@ -38,6 +39,7 @@ export async function upsertAnime(
     origen: anime.origen ?? null,
     duracion: anime.duracion ?? null,
     episodes: serializeEpisodeLengths(anime.episodes),
+    season: serializeAnimeSeason(anime.season),
     ...buildOptionalAnimeSyncColumns(guardMs, bridgeModifiedAt),
   };
 

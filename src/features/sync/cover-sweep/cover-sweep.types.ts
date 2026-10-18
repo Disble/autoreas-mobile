@@ -1,7 +1,11 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { BridgeAnimeCoverResult, BridgeClient } from '../../../infrastructure/api';
 import type { BridgeConfig } from '../../../infrastructure/db/schema';
-import type { CoverManifest } from '../../../infrastructure/cover-files';
+import type {
+  CoverInboxEntry,
+  CoverManifest,
+  CoverManifestEntry,
+} from '../../../infrastructure/cover-files';
 
 /** Clock seam for the cover sweep's timing decisions, mirroring the season-rating clock. */
 export interface CoverSweepClock {
@@ -49,6 +53,22 @@ export interface CoverSweepDependencies {
     rawDb: SQLiteDatabase,
   ) => Promise<readonly CoverActiveAnimeSource[]>;
   readonly getBridgeConfigSnapshot: (rawDb: SQLiteDatabase) => Promise<BridgeConfig | null>;
+  readonly listCoverInboxEntries: () => Promise<readonly CoverInboxEntry[]>;
+  readonly adoptCoverInboxImage: (imageFileName: string, fileName: string) => Promise<boolean>;
+  readonly discardCoverInboxEntry: (entry: CoverInboxEntry) => Promise<void>;
+}
+
+/** One native inbox download the cover store takes over: where it lands and its manifest entry. */
+export interface CoverInboxAdoption {
+  readonly inboxEntry: CoverInboxEntry;
+  readonly fileName: string;
+  readonly manifestEntry: CoverManifestEntry;
+}
+
+/** What `planCoverInboxAdoption` decided for every inbox entry: adopt it, or drop it unused. */
+export interface CoverInboxAdoptionPlan {
+  readonly adopt: readonly CoverInboxAdoption[];
+  readonly discard: readonly CoverInboxEntry[];
 }
 
 /**

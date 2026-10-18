@@ -136,6 +136,14 @@ class ReconcileWireContractTest {
       failures.add("$name: expected last_changelog_id absent, was ${result.lastChangelogId}")
     }
 
+    // Compared only when the case states it; a stated `null` means the response omitted it.
+    if (expected.has("season_mode")) {
+      val expectedSeasonMode = if (expected.isNull("season_mode")) null else expected.getBoolean("season_mode")
+      if (result.seasonMode != expectedSeasonMode) {
+        failures.add("$name: season_mode mismatch (expected $expectedSeasonMode, was ${result.seasonMode})")
+      }
+    }
+
     val expectedIds = expected.getJSONArray("confirmedOperationIds")
     val actualIds = JSONArray(result.confirmedOperationIds)
     if (!jsonEquals(expectedIds, actualIds)) {
@@ -171,6 +179,7 @@ class ReconcileWireContractTest {
   private data class ResponseCaseResult(
     val rejected: Boolean,
     val lastChangelogId: Long?,
+    val seasonMode: Boolean? = null,
     val confirmedOperationIds: List<Long>,
     val bridgeChanges: List<JSONObject>,
   )
@@ -198,7 +207,7 @@ class ReconcileWireContractTest {
           put("timestamp", normalized.timestamp)
         }
       }
-      ResponseCaseResult(rejected = false, lastChangelogId = parsed.lastChangelogId, confirmedOperationIds = confirmedIds, bridgeChanges = bridgeChanges)
+      ResponseCaseResult(rejected = false, lastChangelogId = parsed.lastChangelogId, seasonMode = parsed.seasonMode, confirmedOperationIds = confirmedIds, bridgeChanges = bridgeChanges)
     } catch (error: ReconcileParseException) {
       ResponseCaseResult(rejected = true, lastChangelogId = null, confirmedOperationIds = emptyList(), bridgeChanges = emptyList())
     }

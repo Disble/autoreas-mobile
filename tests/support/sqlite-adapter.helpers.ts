@@ -119,7 +119,7 @@ export function getNativeHandle(adapter: SQLiteDatabase): DatabaseSync {
  * Reads the same SQL the app ships instead of a hand-written fixture, so DDL drift between
  * the harness and production is impossible by construction.
  *
- * This is only HALF of the production schema. `sync_cycle_lock` and `active_season_cache` are
+ * This is only HALF of the production schema. `sync_cycle_lock` and `app_preferences` are
  * created imperatively by `prepareDatabaseSchema`'s `ensure*` steps and exist in no migration
  * file, so a behaviour test needing them must run the app's own `runMigrations` as well.
  *
