@@ -1,9 +1,12 @@
 import { bridgeClient } from '../../../infrastructure/api/bridge-client/bridge-client-instance.constants';
 import {
+  adoptCoverInboxImage,
   coverFileExists,
   deleteCoverFile,
+  discardCoverInboxEntry,
   getCoverFileUri,
   listCoverFileNames,
+  listCoverInboxEntries,
   normalizeCoverSourceKey,
   readCoverManifest,
   writeCoverImage,
@@ -53,7 +56,7 @@ export const COVER_SWEEP_TRIGGER_SOURCES: ReadonlySet<SyncRuntimeTriggerSource> 
 
 /**
  * Production collaborators for `hydrateCoverUris` / `runCoverSweep`: the real bridge client, the
- * `expo-file-system`-backed disk adapter, the real `cover-uri-store`, and a plain (non-write-door)
+ * `expo-file-system`-backed disk adapter (covers directory and native inbox), the real `cover-uri-store`, and a plain (non-write-door)
  * read of the active anime ids and their cover sources -- reads never need `withLocalWrite` (see
  * `getBridgeConfigSnapshot` precedent in `client.helpers.ts`).
  */
@@ -81,4 +84,7 @@ export const DEFAULT_COVER_SWEEP_DEPENDENCIES: CoverSweepDependencies = {
     }));
   },
   getBridgeConfigSnapshot,
+  listCoverInboxEntries,
+  adoptCoverInboxImage,
+  discardCoverInboxEntry,
 };

@@ -20,7 +20,8 @@ import { flushSyncDiagnosticsOutbox } from './sync-diagnostics-flush.helpers';
  * Runs ONE claim and the chain of reconcile rounds it leads to (ADR 009 R-14): the first round
  * sends the oldest row of every claimed key, and each later round sends the next row of the keys
  * the previous round confirmed, until a key is rejected, a round fails, or the chain budget runs
- * out. It reads a bounded backlog of pending rows, confirms only evidenced operations, reapplies
+ * out. It reports whether the bridge accepted a season rating anywhere in the chain, so the caller
+ * can pull the grade the bridge recorded. It reads a bounded backlog of pending rows, confirms only evidenced operations, reapplies
  * bridge changes, and advances the changelog cursor without regressing it.
  *
  * Only the JS dispatcher calls it (`runCoordinatedForegroundSyncCycle`, through `requestFlush`),
@@ -84,7 +85,7 @@ export async function syncPendingOperations(
   let syncedCount = 0;
   let backlogReadCount = 0;
   let unconfirmedCount = 0;
-  let shouldRefreshActiveSeason = false;
+  let ratingDelivered = false;
   let firstRound = true;
 
   // Every row this cycle claims -- the batch and each successor a reconcile or a rating claims --
@@ -102,7 +103,7 @@ export async function syncPendingOperations(
       syncedCount += outcome.confirmedCount;
       backlogReadCount += outcome.sentCount;
       unconfirmedCount += outcome.unconfirmedCount;
-      shouldRefreshActiveSeason ||= outcome.shouldRefreshActiveSeason;
+      ratingDelivered ||= outcome.ratingDelivered;
       round = outcome.successors;
       roundContext = {
         ...roundContext,
@@ -120,7 +121,7 @@ export async function syncPendingOperations(
   return {
     syncedCount,
     hasMorePending: unconfirmedCount > 0 || totalBacklogRowCount > backlogReadCount,
-    shouldRefreshActiveSeason,
+    ratingDelivered,
   };
 }
 
@@ -155,6 +156,6 @@ async function sendSplitRound(
     unconfirmedCount: applied.unconfirmedCount + rated.pendingCount,
     nextLastChangelogId: applied.nextLastChangelogId,
     successors: [...applied.successors, ...rated.successors],
-    shouldRefreshActiveSeason: rated.shouldRefreshActiveSeason,
+    ratingDelivered: rated.ratingDelivered,
   };
 }

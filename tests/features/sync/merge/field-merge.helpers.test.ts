@@ -145,6 +145,7 @@ describe("deriveChangedFields", () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
+      season: null,
       lastAppliedChangeMs: null,
     };
 
@@ -176,6 +177,7 @@ describe("deriveChangedFields", () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
+      season: null,
       lastAppliedChangeMs: 123,
     };
 
@@ -207,6 +209,7 @@ describe("deriveChangedFields", () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
+      season: null,
       lastAppliedChangeMs: null,
     };
 
@@ -262,7 +265,7 @@ describe("episodes merge", () => {
       ...buildPartialUpdate(
         ["nombre", "estado", "nrocapvisto", "totalcap", "activo", "primeravez", "dias", "generos",
           "tipo", "fechaUltCapVisto", "fechaEstreno", "fechaCreacion", "fechaEliminacion",
-          "portada", "pagina", "carpeta", "estudios", "origen", "duracion"],
+          "portada", "pagina", "carpeta", "estudios", "origen", "duracion", "season"],
         snapshot,
       ).columns,
       episodes,
@@ -314,7 +317,8 @@ describe("folderRelative merge (coupled to carpeta)", () => {
       ...buildPartialUpdate(
         ["nombre", "estado", "nrocapvisto", "totalcap", "activo", "primeravez", "dias", "generos",
           "tipo", "fechaUltCapVisto", "fechaEstreno", "fechaCreacion", "fechaEliminacion",
-          "portada", "pagina", "carpeta", "estudios", "origen", "duracion", "episodes"],
+          "portada", "pagina", "carpeta", "estudios", "origen", "duracion", "episodes",
+          "season"],
         snapshot,
       ).columns,
       folderRelative,
@@ -322,5 +326,42 @@ describe("folderRelative merge (coupled to carpeta)", () => {
 
     expect(deriveChangedFields(snapshot, rowFor(null))).toEqual(["carpeta"]);
     expect(deriveChangedFields(snapshot, rowFor(PATH))).toEqual([]);
+  });
+});
+
+describe("season merge", () => {
+  const SEASON = { seasonId: "season-7", grade: 5 };
+  const SEASON_TEXT = '{"seasonId":"season-7","grade":5}';
+
+  it("writes the candidacy as canonical JSON text for a season-only update", () => {
+    const { columns, skippedFields } = buildPartialUpdate(
+      ["season"],
+      makeSnapshot({ season: SEASON } as Partial<Anime>),
+    );
+
+    expect(columns).toEqual({ season: SEASON_TEXT });
+    expect(skippedFields).toEqual([]);
+  });
+
+  it("clears the local candidacy when season is named but absent from the snapshot", () => {
+    const { columns } = buildPartialUpdate(["season"], makeSnapshot());
+
+    expect(columns).toEqual({ season: null });
+  });
+
+  it("resync reports season as changed only when the stored text differs", () => {
+    const snapshot = makeSnapshot({ season: SEASON } as Partial<Anime>);
+    const rowFor = (season: string | null) => ({
+      ...buildPartialUpdate(
+        ["nombre", "estado", "nrocapvisto", "totalcap", "activo", "primeravez", "dias", "generos",
+          "tipo", "fechaUltCapVisto", "fechaEstreno", "fechaCreacion", "fechaEliminacion",
+          "portada", "pagina", "carpeta", "estudios", "origen", "duracion", "episodes"],
+        snapshot,
+      ).columns,
+      season,
+    });
+
+    expect(deriveChangedFields(snapshot, rowFor(null))).toEqual(["season"]);
+    expect(deriveChangedFields(snapshot, rowFor(SEASON_TEXT))).toEqual([]);
   });
 });

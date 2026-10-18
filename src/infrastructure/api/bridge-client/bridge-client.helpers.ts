@@ -218,12 +218,6 @@ export function createBridgeClient(
         path: `${BRIDGE_API_PATHS.animes}/${encodeURIComponent(animeId)}`,
         token: connection.token,
       }),
-    getActiveSeason: (connection) =>
-      request(connection, {
-        method: 'GET',
-        path: BRIDGE_API_PATHS.activeSeason,
-        token: connection.token,
-      }),
     postActiveSeasonRating: (
       connection,
       seasonRatingRequest: PostActiveSeasonRatingRequest,

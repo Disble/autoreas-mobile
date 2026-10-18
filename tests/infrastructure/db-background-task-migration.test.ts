@@ -153,6 +153,7 @@ describe("legacy schema repair writer order", () => {
     expect(rawDb.execAsync.mock.calls).toEqual([["BEGIN EXCLUSIVE"], ["COMMIT"]]);
     expect(rawDb.runAsync.mock.calls.map(([statement]) => statement)).toEqual([
       expect.stringMatching(/^UPDATE bridge_config/),
+      'ALTER TABLE bridge_config ADD COLUMN season_mode INTEGER DEFAULT 0 NOT NULL',
       // The dead-column drop runs right after the sync_runtime_status column backfill (which has
       // nothing to add here) and before the operation_log index, one column at a time in order.
       ...DEAD_SYNC_RUNTIME_STATUS_COLUMNS.map((column) => `ALTER TABLE sync_runtime_status DROP COLUMN ${column}`),
@@ -160,12 +161,13 @@ describe("legacy schema repair writer order", () => {
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN bridge_modified_at/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN episodes/),
       expect.stringMatching(/^ALTER TABLE animes ADD COLUMN folder_relative/),
+      'ALTER TABLE animes ADD COLUMN season TEXT',
       expect.stringMatching(/^ALTER TABLE operation_log ADD COLUMN conflict_attempt_count/),
       'ALTER TABLE operation_log ADD COLUMN claim_owner TEXT',
       'ALTER TABLE operation_log ADD COLUMN claimed_at INTEGER',
       'ALTER TABLE operation_log ADD COLUMN unresolved_reason TEXT',
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS pending_remote_changes/),
-      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS active_season_cache/),
+      'DROP TABLE IF EXISTS active_season_cache',
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS sync_cycle_lock/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS app_preferences/),
       'ALTER TABLE app_preferences ADD COLUMN anime_folders_root_uri TEXT',

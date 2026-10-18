@@ -22,7 +22,8 @@ class SyncEngineResponseApplierTest {
     database = SQLiteDatabase.create(null)
     database.execSQL("CREATE TABLE animes (_id TEXT PRIMARY KEY, bridge_modified_at INTEGER)")
     database.execSQL(
-      "CREATE TABLE bridge_config (id INTEGER PRIMARY KEY, last_changelog_id INTEGER)",
+      "CREATE TABLE bridge_config (id INTEGER PRIMARY KEY, last_changelog_id INTEGER, " +
+        "season_mode INTEGER DEFAULT 0 NOT NULL)",
     )
     database.execSQL(
       "CREATE TABLE operation_log (id INTEGER PRIMARY KEY, anime_id TEXT, operation TEXT NOT NULL DEFAULT 'update', " +
@@ -134,6 +135,32 @@ class SyncEngineResponseApplierTest {
       )
     }
     assertEquals(14L, changelogCursor())
+  }
+
+  @Test
+  fun seasonModeIsWrittenWithTheCursorAndAnAbsentOneLeavesTheStoredValue() {
+    val applier = SyncEngineResponseApplier(database, ::updateOperationStatus, ::writeConflictOutcome, ::heldOperationIds)
+    val applySeasonMode = { seasonMode: Boolean? ->
+      inImmediateTransaction(database) {
+        applier.apply(
+          1,
+          ParsedReconcileResponse(emptyList(), emptyList(), lastChangelogId = 12, seasonMode = seasonMode),
+          emptyList(),
+          lastChangelogId = 10,
+          storedTokens = emptyMap(),
+        )
+      }
+    }
+
+    applySeasonMode(true)
+    assertEquals(1L, storedSeasonMode())
+    assertEquals(12L, changelogCursor())
+
+    applySeasonMode(null)
+    assertEquals(1L, storedSeasonMode())
+
+    applySeasonMode(false)
+    assertEquals(0L, storedSeasonMode())
   }
 
   @Test
@@ -354,6 +381,14 @@ class SyncEngineResponseApplierTest {
   private fun animeToken(animeId: String): Long = database.rawQuery(
     "SELECT bridge_modified_at FROM animes WHERE _id = ?",
     arrayOf(animeId),
+  ).use { cursor ->
+    check(cursor.moveToFirst())
+    cursor.getLong(0)
+  }
+
+  private fun storedSeasonMode(): Long = database.rawQuery(
+    "SELECT season_mode FROM bridge_config WHERE id = 1",
+    null,
   ).use { cursor ->
     check(cursor.moveToFirst())
     cursor.getLong(0)

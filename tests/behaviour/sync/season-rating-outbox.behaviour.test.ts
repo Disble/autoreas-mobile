@@ -19,6 +19,30 @@ jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers'
   useOptionalLiveQuery: (_query: unknown, fallback: unknown) => ({ data: fallback }),
 }));
 
+/** The ["season"] update row the bridge records for `anime-1` once a rating is delivered. */
+function seasonRow(season: { seasonId: string; grade: number | null }) {
+  return {
+    record_id: 'anime-1',
+    change_type: 'update',
+    changed_fields: ['season'],
+    snapshot: {
+      id: 'anime-1',
+      name: 'Local anime-1',
+      status: 0,
+      episodesWatched: 4,
+      active: 1,
+      firstCycle: 1,
+      lastWatchedAt: null,
+      premieredAt: null,
+      createdAt: null,
+      deletedAt: null,
+      modified_at: 0,
+      season,
+    },
+    timestamp: Date.now(),
+  };
+}
+
 describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; L20, L28)', () => {
   let fakeBridge: FakeBridge;
 
@@ -50,7 +74,7 @@ describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; 
     expect(fakeBridge.requests.filter((_r, index) => index !== 1).map((request) =>
       (request.body as { pending_operations: { operation: string; base: number }[] }).pending_operations.map((op) => [op.operation, op.base]),
     )).toEqual([[['update', 7]], [['update', 14]]]);
-    expect(result).toMatchObject({ syncedCount: 3, hasMorePending: false, shouldRefreshActiveSeason: true });
+    expect(result).toMatchObject({ syncedCount: 3, hasMorePending: false, ratingDelivered: true });
     expect((await readRows(adapter)).map((row) => row.status)).toEqual(['synced', 'synced', 'synced']);
   });
 
@@ -98,6 +122,22 @@ describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; 
     ]);
   });
 
+  it('applies the ["season"] row the bridge recorded for a delivered rating once a reconcile pulls it', async () => {
+    const adapter = await openDatabase();
+    await seed(adapter, { id: 1, operation: 'season_rating' });
+    fakeBridge.queueResponse(pullOnly());
+    fakeBridge.queueResponse({ status: 204, body: null });
+
+    const delivered = await syncPendingOperations(adapter);
+    fakeBridge.queueResponse(pullOnly([seasonRow({ seasonId: 'season-1', grade: 5 })]));
+    await syncPendingOperations(adapter);
+
+    expect(delivered).toMatchObject({ ratingDelivered: true });
+    expect(await adapter.getFirstAsync("SELECT season FROM animes WHERE _id = 'anime-1'")).toEqual({
+      season: '{"seasonId":"season-1","grade":5}',
+    });
+  });
+
   it('releases the round ratings unsent when the reconcile fails', async () => {
     const adapter = await openDatabase();
     await seed(adapter, { id: 1, operation: 'update' });
@@ -113,15 +153,16 @@ describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; 
     ]);
   });
 
+  // Only a delivery makes the bridge record a ["season"] row, so only a 204 reports one.
   it.each([
     [204, 'synced', null, true, false],
     [401, 'dead_letter', 'auth_repair', false, false],
     [403, 'dead_letter', 'rejected', false, false],
-    [404, 'dead_letter', 'not_found', true, false],
-    [409, 'dead_letter', 'conflict', true, false],
+    [404, 'dead_letter', 'not_found', false, false],
+    [409, 'dead_letter', 'conflict', false, false],
     [422, 'dead_letter', 'rejected', false, false],
     [503, 'pending', null, false, true],
-  ] as const)('a rating answered %i ends %s (%s) and never fails the attempt', async (code, status, reason, refresh, more) => {
+  ] as const)('a rating answered %i ends %s (%s) and never fails the attempt', async (code, status, reason, delivered, more) => {
     const adapter = await openDatabase();
     await seed(adapter, { id: 1, operation: 'season_rating' });
     fakeBridge.queueResponse(pullOnly());
@@ -130,7 +171,7 @@ describe('season ratings travel in the anime outbox (ADR 009 R-2 I1, R-5, R-14; 
     const result = await syncPendingOperations(adapter);
 
     expect(paths(fakeBridge)).toEqual(['/api/sync/reconcile', '/api/seasons/active/ratings']);
-    expect(result).toMatchObject({ hasMorePending: more, shouldRefreshActiveSeason: refresh });
+    expect(result).toMatchObject({ hasMorePending: more, ratingDelivered: delivered });
     expect(await readRows(adapter)).toEqual([
       { id: 1, operation: 'season_rating', status, unresolved_reason: reason, claim_owner: null },
     ]);

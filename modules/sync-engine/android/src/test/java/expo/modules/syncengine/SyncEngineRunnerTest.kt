@@ -379,6 +379,36 @@ class SyncEngineRunnerTest {
     assertTrue(journalFile().exists())
   }
 
+  @Test
+  fun `an attempt that did not reach the bridge runs no background catch-up`() {
+    seedAppSchema(withOperationLog = true) // bridge_config exists but is empty
+    val catchUps = Collections.synchronizedList(mutableListOf<File>())
+    SyncEngineRunner.catchUpOverrideForTest = { filesDir, _ -> catchUps.add(filesDir) }
+    val latch = CountDownLatch(1)
+    val drained = CountDownLatch(1)
+
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-catch-up",
+      startMs = System.currentTimeMillis(),
+      requirePresence = false,
+    ) { latch.countDown() }
+    // A second attempt queues behind the first on the single worker, so once it settles the
+    // first attempt's post-result step has run (or been skipped) for certain.
+    SyncEngineRunner.runOnce(
+      context = context,
+      triggerSource = "test",
+      cycleId = "cycle-catch-up-2",
+      startMs = System.currentTimeMillis(),
+      requirePresence = false,
+    ) { drained.countDown() }
+
+    assertTrue(latch.await(5, TimeUnit.SECONDS))
+    assertTrue(drained.await(5, TimeUnit.SECONDS))
+    assertTrue(catchUps.isEmpty())
+  }
+
   // --- Task C.4 -------------------------------------------------------------------------------
 
   @Test

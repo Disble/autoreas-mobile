@@ -1,7 +1,9 @@
 import { act, renderHook } from '@testing-library/react-native';
-import { LOCAL_ACTIVE_SEASON_ID } from '../../../../src/features/animes/anime-season.constants';
 import { useAnimeListScreen } from '../../../../src/features/animes/ui/AnimeListScreen/use-anime-list-screen';
 import { buildSeasonAwareAnimeListItem } from './use-anime-list-screen-season-rating.helpers';
+
+/** The bridge config row the mocked live query answers; each test sets its own season mode. */
+let mockBridgeConfig: { deviceId: string; seasonMode: boolean } | null = null;
 
 jest.mock('expo-network', () => ({
   useNetworkState: () => ({ isInternetReachable: true, isConnected: true }),
@@ -24,18 +26,8 @@ jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: () => ({ layout: 'phone' }),
 }));
 
-jest.mock('../../../../src/infrastructure/store/active-season-store', () => ({
-  useActiveSeasonStore: Object.assign(
-    (selector: (state: { activeSeasonSnapshot: object | null }) => unknown) =>
-      selector({ activeSeasonSnapshot: {} }),
-    {
-      getState: () => ({ activeSeasonSnapshot: {} }),
-    },
-  ),
-}));
-
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({
-  useBridgeConfig: () => ({ isConfigured: true }),
+  useBridgeConfig: () => ({ config: mockBridgeConfig, isConfigured: mockBridgeConfig !== null }),
 }));
 
 jest.mock('../../../../src/features/sync/use-sync-facade', () => ({
@@ -65,25 +57,33 @@ jest.mock('../../../../src/features/animes/use-season-rating-intent', () => ({
   useSeasonRatingIntent: jest.fn(),
 }));
 
+/** Makes the mocked list answer exactly `items`. */
+function mockAnimeList(items: readonly object[]): void {
+  const { useAnimeList } = jest.requireMock('../../../../src/features/animes/use-anime-list');
+  useAnimeList.mockReturnValue({ data: items, allActiveAnimes: items });
+}
+
+/** The `submitSeasonRatingIntent` the screen received from the mocked rating hook. */
+function submittedRatings(): jest.Mock {
+  const { useSeasonRatingIntent } = jest.requireMock('../../../../src/features/animes/use-season-rating-intent');
+
+  return useSeasonRatingIntent.mock.results[0].value.submitSeasonRatingIntent as jest.Mock;
+}
+
 describe('useAnimeListScreen season rating integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    const { useAnimeList } = jest.requireMock(
-      '../../../../src/features/animes/use-anime-list',
-    );
+    mockBridgeConfig = { deviceId: 'bridge-1', seasonMode: true };
     const { useSeasonRatingIntent } = jest.requireMock(
       '../../../../src/features/animes/use-season-rating-intent',
     );
-    useAnimeList.mockReturnValue({
-      data: [buildSeasonAwareAnimeListItem()],
-      allActiveAnimes: [buildSeasonAwareAnimeListItem()],
-    });
+    mockAnimeList([buildSeasonAwareAnimeListItem()]);
     useSeasonRatingIntent.mockReturnValue({
       submitSeasonRatingIntent: jest.fn(),
     });
   });
 
-  it('opens season rating sheet with pending local truth', () => {
+  it('opens season rating sheet with pending local truth and the season of the anime', () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     act(() => {
@@ -92,6 +92,7 @@ describe('useAnimeListScreen season rating integration', () => {
 
     expect(result.current.seasonRatingSheetRequest).toEqual({
       animeId: 'anime-1',
+      seasonId: 'season-2026-q3',
       animeTitle: 'Blue Box',
       bridgeRating: 4,
       pendingRating: 6,
@@ -100,23 +101,13 @@ describe('useAnimeListScreen season rating integration', () => {
     });
   });
 
-  it('opens season rating sheet for the local active fallback projection', () => {
-    const fallbackAnime = {
-      ...buildSeasonAwareAnimeListItem(),
-      seasonProjection: {
-        seasonId: LOCAL_ACTIVE_SEASON_ID,
-        bridgeRating: null,
-        bridgeRatingSource: null,
-        localIntent: null,
+  it('opens season rating sheet for an ungraded candidate', () => {
+    mockAnimeList([
+      {
+        ...buildSeasonAwareAnimeListItem(),
+        seasonProjection: { seasonId: 'season-2026-q4', bridgeRating: null, localIntent: null },
       },
-    };
-    const { useAnimeList } = jest.requireMock(
-      '../../../../src/features/animes/use-anime-list',
-    );
-    useAnimeList.mockReturnValue({
-      data: [fallbackAnime],
-      allActiveAnimes: [fallbackAnime],
-    });
+    ]);
 
     const { result } = renderHook(() => useAnimeListScreen({}));
 
@@ -126,6 +117,7 @@ describe('useAnimeListScreen season rating integration', () => {
 
     expect(result.current.seasonRatingSheetRequest).toEqual({
       animeId: 'anime-1',
+      seasonId: 'season-2026-q4',
       animeTitle: 'Blue Box',
       bridgeRating: null,
       pendingRating: null,
@@ -134,7 +126,7 @@ describe('useAnimeListScreen season rating integration', () => {
     });
   });
 
-  it('submits season rating through the feature seam', async () => {
+  it('submits the rating for the season of the rated anime', async () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     act(() => {
@@ -145,13 +137,57 @@ describe('useAnimeListScreen season rating integration', () => {
       await result.current.handleSeasonRatingSubmit(5);
     });
 
-    const { useSeasonRatingIntent } = jest.requireMock(
-      '../../../../src/features/animes/use-season-rating-intent',
-    );
-    const submitSeasonRatingIntent = useSeasonRatingIntent.mock.results[0].value
-      .submitSeasonRatingIntent as jest.Mock;
-
-    expect(submitSeasonRatingIntent).toHaveBeenCalledWith('anime-1', 5);
+    expect(submittedRatings()).toHaveBeenCalledWith({ animeId: 'anime-1', seasonId: 'season-2026-q3' }, 5);
     expect(result.current.seasonRatingSheetRequest).toBeNull();
+  });
+
+  it('never rates an anime that is not a season candidate', async () => {
+    mockAnimeList([{ ...buildSeasonAwareAnimeListItem(), seasonProjection: null }]);
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    act(() => {
+      result.current.handleOpenSeasonRatingSheet('anime-1');
+    });
+    await act(async () => {
+      await result.current.handleSeasonRatingSubmit(5);
+    });
+
+    expect(result.current.seasonRatingSheetRequest).toBeNull();
+    expect(submittedRatings()).not.toHaveBeenCalled();
+  });
+
+  it('follows bridge_config.season_mode: on shows Ver hoy, and switching it off follows while the user has not picked', () => {
+    const { result, rerender } = renderHook(() => useAnimeListScreen({}));
+
+    expect(result.current.isSeasonMode).toBe(true);
+    expect(result.current.selectedFilter).toBe('Ver hoy');
+
+    mockBridgeConfig = { deviceId: 'bridge-1', seasonMode: false };
+    rerender({});
+
+    expect(result.current.isSeasonMode).toBe(false);
+    expect(result.current.selectedFilter).not.toBe('Ver hoy');
+  });
+
+  it('reads season mode off when the bridge config row has not been read', () => {
+    mockBridgeConfig = null;
+
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    expect(result.current.isSeasonMode).toBe(false);
+    expect(result.current.selectedFilter).not.toBe('Ver hoy');
+  });
+
+  it('stops following season mode once the user picked a filter', () => {
+    const { result, rerender } = renderHook(() => useAnimeListScreen({}));
+
+    act(() => {
+      result.current.handleSelectedFilterChange('Visto');
+    });
+    mockBridgeConfig = { deviceId: 'bridge-1', seasonMode: false };
+    rerender({});
+
+    expect(result.current.isSeasonMode).toBe(false);
+    expect(result.current.selectedFilter).toBe('Visto');
   });
 });

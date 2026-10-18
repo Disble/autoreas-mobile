@@ -16,11 +16,21 @@ data class SyncEngineHttpResponse(
 )
 
 /**
+ * One completed binary `GET` (the cover download): status code, the raw body of a `200` (null for
+ * every other status), and the verbatim `ETag` header, which names the cover's on-disk file.
+ */
+class SyncEngineBinaryResponse(
+  val code: Int,
+  val bytes: ByteArray?,
+  val etag: String?,
+)
+
+/**
  * The native engine's one exit to the bridge (ADR 009 R-2): every request the `:sync` process
  * makes leaves through here. [postJson] issues the reconcile and diagnostics `POST`s with a JSON
  * body and the caller's connect/read budget (10 s, `BRIDGE_REQUEST_TIMEOUT_MS`, for reconcile);
- * [get] issues the bodyless `GET`s (the presence probe, the fetch-first token read) with their
- * own budgets. Deliberately uses `HttpURLConnection` — no new dependency on the sync path.
+ * [get] issues the bodyless `GET`s (the presence probe, the fetch-first token read, the active
+ * season) with their own budgets; [getBytes] downloads a cover. Deliberately uses `HttpURLConnection` — no new dependency on the sync path.
  *
  * Transport failures throw; callers ([SyncEngineCycle], [SyncEngineBridgePresence],
  * [HttpSyncDiagnosticsTransport]) own mapping them onto their own outcome.
@@ -88,6 +98,30 @@ object SyncEngineHttp {
       val code = connection.responseCode
       val stream = if (code in 200..299) connection.inputStream else connection.errorStream
       SyncEngineHttpResponse(code, stream?.let { readAll(it) })
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  /**
+   * Issues one bodyless `GET` with bearer auth and reads a `200` body as raw bytes, the way the JS
+   * `getAnimeCover` does: only a `200` carries an image, so every other status returns no body.
+   */
+  fun getBytes(
+    url: String,
+    token: String,
+    timeoutMs: Int,
+  ): SyncEngineBinaryResponse {
+    val connection = URL(url).openConnection() as HttpURLConnection
+    connection.requestMethod = "GET"
+    connection.connectTimeout = timeoutMs
+    connection.readTimeout = timeoutMs
+    connection.setRequestProperty("Authorization", "Bearer $token")
+
+    return try {
+      val code = connection.responseCode
+      val bytes = if (code == 200) connection.inputStream.use { it.readBytes() } else null
+      SyncEngineBinaryResponse(code, bytes, connection.getHeaderField("ETag"))
     } finally {
       connection.disconnect()
     }

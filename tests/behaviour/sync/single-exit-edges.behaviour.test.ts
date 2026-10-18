@@ -1,4 +1,3 @@
-import { act, renderHook } from '@testing-library/react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as chapterActionDiagnostics from '../../../src/features/animes/chapter-action-diagnostics.helpers';
 import { applyAnimeMutationPatch, buildCapPlusPatch } from '../../../src/features/animes/anime-mutation.helpers';
@@ -12,24 +11,19 @@ import {
   waitForSyncFlushIdle,
 } from '../../../src/features/sync/sync-flush.helpers';
 import type { SyncFlushRequest } from '../../../src/features/sync/sync-flush.types';
-import { useSeasonSync } from '../../../src/features/sync/use-season-sync';
 import { runMigrations } from '../../../src/infrastructure/db/client';
-import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { confirmedAt, openPairedDatabase, readOperationRows, readRatingRows } from './unresolved-fixtures.helpers';
 
-/** The database `useOptionalSQLiteContext` hands the season hook; `null` outside the hook cases. */
-let mockSqliteContext: SQLiteDatabase | null = null;
-
-// Same seam as `single-exit.behaviour.test.ts`, plus a settable SQLite context for the season hook.
+// Same seam as `single-exit.behaviour.test.ts`: only the drizzle factory is swapped.
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
   getDrizzleFactory: () =>
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports, so the helper must be required lazily inside the factory.
     require('../../support/drizzle-test-factory.helpers').createTestDrizzleFactory(),
   getDrizzleMigrator: () => () => Promise.resolve(),
   getOpenDatabaseSync: () => () => undefined,
-  useOptionalSQLiteContext: () => mockSqliteContext,
+  useOptionalSQLiteContext: () => null,
   useOptionalLiveQuery: (_query: unknown, fallback: unknown) => ({ data: fallback }),
 }));
 
@@ -44,14 +38,8 @@ const EMPTY_RECONCILE = {
   body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 },
 };
 
-/** The bridge's active-season answer naming `anime-1` as the only candidate. */
-const ACTIVE_SEASON_ANSWER = {
-  status: 200,
-  body: { season_id: 'season-2', candidates: [{ anime_id: 'anime-1', grade: null, grade_source: null }] },
-};
-
-/** A failing active-season answer. */
-const SEASON_STORE_DOWN = { status: 500, body: { error: 'season store unavailable' } };
+/** A failing answer to the pull a delivered rating owes. */
+const PULL_DOWN = { status: 500, body: { error: 'changelog unavailable' } };
 
 /** One run of a hand-settled dispatcher, with the request it received. */
 interface DeferredRun {
@@ -107,11 +95,6 @@ async function waitForRequests(fakeBridge: FakeBridge, count: number): Promise<v
   }
 }
 
-/** Reads the cached active season, or `null` when nothing is cached. */
-function readCachedSeason(adapter: SQLiteDatabase) {
-  return adapter.getFirstAsync<{ season_id: string }>('SELECT season_id FROM active_season_cache WHERE id = 1');
-}
-
 describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
   let fakeBridge: FakeBridge;
 
@@ -119,8 +102,6 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     fakeBridge = installFakeBridge();
     resetSyncConnectionStore();
     resetSyncFlush();
-    mockSqliteContext = null;
-    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
   });
 
   afterEach(() => {
@@ -220,29 +201,35 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
 
     fakeBridge.queueResponse(EMPTY_RECONCILE);
     fakeBridge.queueResponse({ status: 204, body: null });
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
+    fakeBridge.queueResponse(EMPTY_RECONCILE);
     await requestFlush(adapter, 'network_regained');
 
     expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
     expect(getSyncConnectionSnapshot().kind).toBe('online');
   });
 
-  it('V6: a WebSocket season refresh that fails does not fail a cycle whose anime operations were delivered', async () => {
+  it('V6: a failed pull after a delivered rating does not fail the cycle that delivered it', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const adapter = await openRepairedDatabase([5]);
+    const adapter = await openRepairedDatabase();
     registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
-    fakeBridge.queueResponse(confirmedAt(8));
-    fakeBridge.queueResponse(SEASON_STORE_DOWN);
+    fakeBridge.queueResponse(EMPTY_RECONCILE);
+    fakeBridge.queueResponse({ status: 204, body: null });
+    fakeBridge.queueResponse(PULL_DOWN);
 
-    const outcome = await requestFlush(adapter, 'ws_season_changed').then(() => 'resolved', () => 'rejected');
+    await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 4, ratedAt: 1_700_000_000_000 });
+    const outcome = await waitForSyncFlushIdle(adapter).then(() => 'resolved', () => 'rejected');
 
-    expect(await readOperationRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
-    // Before T11 the WebSocket season refresh swallowed its failure and never touched connection truth.
+    expect(sentPaths(fakeBridge)).toEqual([
+      'POST /api/sync/reconcile',
+      'POST /api/seasons/active/ratings',
+      'POST /api/sync/reconcile',
+    ]);
+    expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
     expect({ outcome, kind: getSyncConnectionSnapshot().kind }).toEqual({ outcome: 'resolved', kind: 'online' });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[refreshActiveSeasonSnapshot]'), expect.anything());
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('The pull after a delivered rating failed'), expect.anything());
   });
 
-  it('keeps the chapter push reported as succeeded when its cycle only fails the season refresh after a delivered rating', async () => {
+  it('keeps the chapter push reported as succeeded when its cycle only fails the pull after a delivered rating', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const recordSync = jest.spyOn(chapterActionDiagnostics, 'recordChapterActionSync');
     const adapter = await openRepairedDatabase();
@@ -252,7 +239,7 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
     fakeBridge.queueResponse(confirmedAt(8));
     fakeBridge.queueResponse({ status: 204, body: null });
-    fakeBridge.queueResponse(SEASON_STORE_DOWN);
+    fakeBridge.queueResponse(PULL_DOWN);
     const actionContext = chapterActionDiagnostics.beginChapterAction('capPlus', { isTelemetryEnabled: false });
 
     await applyAnimeMutationPatch(adapter, 'anime-1', buildCapPlusPatch, 'capPlus', actionContext);
@@ -267,27 +254,6 @@ describe('single-exit edges (ADR 009 R-2, T11 verifier probes)', () => {
     expect(recordSync).not.toHaveBeenCalledWith(actionContext, 'failed');
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'), expect.anything());
     expect(getSyncConnectionSnapshot().kind).toBe('online');
-  });
-
-  it('never lets a refresh in flight bring back a season that season mode switched off cleared', async () => {
-    const adapter = await openRepairedDatabase();
-    mockSqliteContext = adapter;
-    registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
-    fakeBridge.queueResponse(EMPTY_RECONCILE);
-    const lateSeason = fakeBridge.queueDeferredResponse();
-    const { result } = renderHook(() => useSeasonSync({ enabled: false }));
-
-    const flush = requestFlush(adapter, 'ws_season_changed');
-    await waitForRequests(fakeBridge, 2);
-    // `preferences_changed(false)` reaches the runtime as this local clear.
-    await act(async () => {
-      await result.current.clearActiveSeason();
-    });
-    lateSeason.release(ACTIVE_SEASON_ANSWER);
-    await flush;
-
-    expect(useActiveSeasonStore.getState().activeSeasonSnapshot).toBeNull();
-    expect(await readCachedSeason(adapter)).toBeNull();
   });
 
   it('V7: a follow-up left without a dispatcher settles the connection as pending, not syncing', async () => {

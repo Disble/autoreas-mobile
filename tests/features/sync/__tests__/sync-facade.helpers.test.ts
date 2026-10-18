@@ -14,11 +14,6 @@ jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-jest.mock('../../../../src/features/sync/season-sync.helpers', () => ({
-  ...jest.requireActual('../../../../src/features/sync/season-sync.helpers'),
-  fetchActiveSeasonFromBridge: jest.fn(),
-}));
-
 jest.mock('../../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn(),
   recordSyncAttemptStarted: jest.fn(),
@@ -70,7 +65,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
         source,
-        setActiveSeasonSnapshot: jest.fn(),
       });
 
       expect(runCoverSweep).toHaveBeenCalledTimes(1);
@@ -85,7 +79,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
         source,
-        setActiveSeasonSnapshot: jest.fn(),
       });
 
       expect(runCoverSweep).toHaveBeenCalledTimes(1);
@@ -102,7 +95,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
         source,
-        setActiveSeasonSnapshot: jest.fn(),
       });
 
       expect(recordSyncAttemptSucceeded).not.toHaveBeenCalled();
@@ -117,7 +109,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
         runCoordinatedForegroundSyncCycle({
           rawDb: RAW_DB,
           source,
-          setActiveSeasonSnapshot: jest.fn(),
         }),
       ).rejects.toBe(failure);
 
@@ -135,7 +126,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       await runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
         source,
-        setActiveSeasonSnapshot: jest.fn(),
       });
 
       expect(runCoverSweep).not.toHaveBeenCalled();
@@ -149,7 +139,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
         runCoordinatedForegroundSyncCycle({
           rawDb: RAW_DB,
           source,
-          setActiveSeasonSnapshot: jest.fn(),
         }),
       ).rejects.toBe(failure);
 
@@ -166,7 +155,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
     const result = await runCoordinatedForegroundSyncCycle({
       rawDb: RAW_DB,
       source: 'manual',
-      setActiveSeasonSnapshot: jest.fn(),
     });
 
     expect(result).toBe(1);
@@ -184,7 +172,6 @@ describe('runCoordinatedForegroundSyncCycle cover-sweep trigger', () => {
       runCoordinatedForegroundSyncCycle({
         rawDb: RAW_DB,
         source: 'manual',
-        setActiveSeasonSnapshot: jest.fn(),
       }),
     ).resolves.toBe(1);
 
@@ -218,11 +205,58 @@ describe('runCoordinatedForegroundSyncCycle attempt bookkeeping', () => {
     await runCoordinatedForegroundSyncCycle({
       rawDb: RAW_DB,
       source: 'manual',
-      setActiveSeasonSnapshot: jest.fn(),
     });
 
     expect(recordSyncAttemptStarted).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
     expect(recordSyncAttemptSucceeded).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
     expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('runCoordinatedForegroundSyncCycle pull after a delivered rating (L12)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSyncConnectionStore();
+    (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (runCoverSweep as jest.Mock).mockResolvedValue({
+      fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+    });
+  });
+
+  it('runs one more outbox pass when the bridge accepted a rating, so its grade lands in this cycle', async () => {
+    (syncPendingOperations as jest.Mock)
+      .mockResolvedValueOnce({ syncedCount: 1, hasMorePending: false, ratingDelivered: true })
+      .mockResolvedValueOnce({ syncedCount: 0, hasMorePending: false, ratingDelivered: false });
+
+    await expect(runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'local_mutation' })).resolves.toBe(1);
+
+    expect(syncPendingOperations).toHaveBeenCalledTimes(2);
+    expect(recordSyncAttemptSucceeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a single pass when no rating was delivered', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({
+      syncedCount: 0, hasMorePending: false, ratingDelivered: false,
+    });
+
+    await runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'local_mutation' });
+
+    expect(syncPendingOperations).toHaveBeenCalledTimes(1);
+  });
+
+  it('never fails the cycle when the pull after a delivered rating fails', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    (syncPendingOperations as jest.Mock)
+      .mockResolvedValueOnce({ syncedCount: 1, hasMorePending: false, ratingDelivered: true })
+      .mockRejectedValueOnce(new Error('bridge gone'));
+
+    await expect(runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'local_mutation' })).resolves.toBe(1);
+
+    expect(recordSyncAttemptSucceeded).toHaveBeenCalledTimes(1);
+    expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('pull after a delivered rating failed'), expect.any(Error));
+    warn.mockRestore();
   });
 });

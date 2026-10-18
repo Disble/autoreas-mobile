@@ -45,6 +45,7 @@ describe('anime wire helpers', () => {
       pagina: 'https://example.com/anime-1', carpeta: 'anime-1', estudios: 'Bones', origen: 'Manga', duracion: 24,
       episodes: null,
       folderRelative: null,
+      season: null,
     });
   });
 
@@ -52,6 +53,28 @@ describe('anime wire helpers', () => {
     const mapped = mapWireAnimeToLegacyAnime(makeWireAnime({ folderRelative: 'Anime/One Piece' }) as never);
 
     expect(mapped.folderRelative).toBe('Anime/One Piece');
+  });
+
+  it('maps the season candidacy into the domain shape and keeps season in changed_fields', () => {
+    const mapped = mapWireAnimeToLegacyAnime(
+      makeWireAnime({ season: { seasonId: 'season-7', grade: 4 } }) as never,
+    );
+
+    expect(mapped.season).toEqual({ seasonId: 'season-7', grade: 4 });
+    expect(normalizeWireAnimeChangedFields(['season'])).toEqual(['season']);
+  });
+
+  it('reads an ungraded candidate as grade null and a malformed season as not a candidate', () => {
+    const parsed = WireAnimeListSchema.safeParse([
+      makeWireAnime({ season: { seasonId: 'season-7', grade: null } }),
+      makeWireAnime({ season: { seasonId: 'season-7', grade: 9 } }),
+    ]);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.map((anime) => mapWireAnimeToLegacyAnime(anime).season)).toEqual([
+      { seasonId: 'season-7', grade: null },
+      null,
+    ]);
   });
 
   it('drops folderRelative from changed_fields, since the bridge only sends it alongside folder', () => {

@@ -106,6 +106,7 @@ type ResponseCaseResult =
   | {
       rejected: false;
       lastChangelogId: number | undefined;
+      seasonMode: boolean | undefined;
       confirmedOperationIds: number[];
       bridgeChanges: NormalizedBridgeChangeResult[];
     };
@@ -130,6 +131,7 @@ function runResponseCase(input: { backlog: BacklogFixtureRow[]; responseBody: un
   return {
     rejected: false,
     lastChangelogId: parsed.data.last_changelog_id,
+    seasonMode: parsed.data.season_mode,
     confirmedOperationIds,
     bridgeChanges: bridgeChanges.map((change) => ({
       recordId: change.record_id,
@@ -147,6 +149,8 @@ interface ResponseCase {
   input: { backlog: BacklogFixtureRow[]; responseBody: unknown };
   expected: {
     last_changelog_id?: number;
+    /** Compared only when stated; `null` means the response omitted it. */
+    season_mode?: boolean | null;
     confirmedOperationIds: number[];
     bridgeChanges: NormalizedBridgeChangeResult[];
   };
@@ -165,6 +169,9 @@ describe('reconcile response wire contract (shared fixtures)', () => {
       expect(result.lastChangelogId).toBe(testCase.expected.last_changelog_id);
     } else {
       expect(result.lastChangelogId).toBeUndefined();
+    }
+    if ('season_mode' in testCase.expected) {
+      expect(result.seasonMode).toBe(testCase.expected.season_mode ?? undefined);
     }
     expect(result.confirmedOperationIds).toEqual(testCase.expected.confirmedOperationIds);
     expect(result.bridgeChanges).toEqual(testCase.expected.bridgeChanges);

@@ -349,10 +349,10 @@ flowchart TD
   E5 -->|no| E6["revert - 4xx dead_letter else pending; release the round ratings unsent; throw"]
   E5 -->|yes| F["applyReconcileResponseWrites inside withLocalWrite"]
   F --> F2["applyRemoteChanges to animes - useLiveQuery sees it; a deferred change stays staged"]
-  F2 --> F4["persist tokens, op statuses, advance cursor"]
+  F2 --> F4["persist tokens, op statuses, advance cursor; season_mode into bridge_config when the answer states it"]
   F4 --> G["sendSeasonRatingRound - one POST /api/seasons/active/ratings per rating, claim re-checked; 204 synced, 4xx dead_letter, else pending"]
   G --> G1["next round: successors of confirmed keys, until none or the 20 s chain budget"]
-  G1 --> G2["refresh the active season after a delivered rating, a 404/409, a season event or app_active"]
+  G1 --> G2["one more pull round after a delivered (204) rating, so the grade it recorded lands in animes.season; 404/409 owe none"]
   G2 --> H{"hasMorePending"}
   H -->|yes| H1["markSyncConnectionPending, cover sweep"]
   H -->|no| I["recordSyncAttemptSucceeded with diagnosticsFlush"]

@@ -1,11 +1,12 @@
 import type { Anime } from '../../../infrastructure/validation/anime-schema';
 import { serializeEpisodeLengths } from '../../../infrastructure/validation/anime-schema/anime-episodes.helpers';
+import { serializeAnimeSeason } from '../../../infrastructure/validation/anime-schema/anime-season.helpers';
 import { MERGEABLE_FIELDS } from './field-merge.constants';
 import type { FieldMergeResult } from './merge.types';
 
 /**
  * Whitelist of remote `changed_fields` names mapped to the local `animes` column value,
- * mirroring the field set `upsertAnime` already writes. Serializes `dias`/`generos`/`episodes` to
+ * mirroring the field set `upsertAnime` already writes. Serializes `dias`/`generos`/`episodes`/`season` to
  * JSON the same way the cold-load writer does, keeping both writers consistent.
  */
 function mapKnownField(field: string, snapshot: Anime): { value: unknown } | undefined {
@@ -51,6 +52,9 @@ function mapKnownField(field: string, snapshot: Anime): { value: unknown } | und
     case 'episodes':
       // Replaced whole, never merged: an absent array clears the local copy.
       return { value: serializeEpisodeLengths(snapshot.episodes) };
+    case 'season':
+      // Bridge-owned and replaced whole: an absent candidacy clears the local one.
+      return { value: serializeAnimeSeason(snapshot.season) };
     default:
       return undefined;
   }
@@ -114,8 +118,8 @@ export function deriveChangedFields(
 
   for (const field of MERGEABLE_FIELDS) {
     const mapped = mapKnownField(field, snapshot);
-    /* istanbul ignore next -- defensive parity guard: MERGEABLE_FIELDS' 20 entries and
-     * mapKnownField's 20 switch cases are two separately-maintained lists the module comment
+    /* istanbul ignore next -- defensive parity guard: MERGEABLE_FIELDS' 21 entries and
+     * mapKnownField's 21 switch cases are two separately-maintained lists the module comment
      * documents as mirrored; this `undefined` branch only fires if a future edit adds a field to
      * one without the other. Deleting it would turn that drift into a crash here (destructuring
      * `.value` off `undefined`) instead of a skipped field; unreachable only as long as the two

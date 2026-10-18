@@ -1,7 +1,6 @@
 import { renderHook } from "@testing-library/react-native";
 import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
-import { useActiveSeasonStore } from "../../../../src/infrastructure/store/active-season-store";
 
 /** Mocks `useOptionalSQLiteContext`, controlling whether a raw SQLite connection is available. */
 const mockUseOptionalSQLiteContext = jest.fn();
@@ -47,6 +46,7 @@ function buildRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     dias: "[]",
     generos: "[]",
     episodes: null,
+    season: null,
     folderRelative: null,
     tipo: null,
     activo: 1,
@@ -77,8 +77,6 @@ function mockLiveQueryData(animeRows: AnimeRow[], seasonQueueRows: readonly unkn
 describe("useAnimeList", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
-
     mockUseOptionalSQLiteContext.mockReturnValue({ name: "raw-db" });
     mockWhere.mockReturnValue({ query: "active-animes" });
     mockFrom.mockReturnValue({ where: mockWhere });
@@ -197,7 +195,7 @@ describe("useAnimeList", () => {
     },
   );
 
-  it("keeps weekday filters without a season fallback while season mode is active", () => {
+  it("has no season projection for an anime that is not a candidate", () => {
     mockLiveQueryData([
       buildRow({
         _id: "anime-weekday",
@@ -211,15 +209,39 @@ describe("useAnimeList", () => {
     expect(result.current.data[0]?.seasonProjection).toBeNull();
   });
 
-  it("projects a queued season rating from the outbox as the anime's local intent", () => {
+  it("projects the anime's stored candidacy, its grade as the bridge rating", () => {
+    mockLiveQueryData([
+      buildRow({
+        _id: "anime-1",
+        dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]),
+        season: '{"seasonId":"season-7","grade":3}',
+      }),
+    ]);
+
+    const { result } = renderHook(() => useAnimeList("Jueves"));
+
+    expect(result.current.data[0]?.seasonProjection).toEqual({
+      seasonId: "season-7",
+      bridgeRating: 3,
+      localIntent: null,
+    });
+  });
+
+  it("projects a queued season rating of the anime's season from the outbox as its local intent", () => {
     mockLiveQueryData(
-      [buildRow({ _id: "anime-1", dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]) })],
+      [
+        buildRow({
+          _id: "anime-1",
+          dias: JSON.stringify([{ dia: "Jueves", orden: 1 }]),
+          season: '{"seasonId":"season-7","grade":null}',
+        }),
+      ],
       [
         {
           id: 4,
           animeId: "anime-1",
           operation: "season_rating",
-          payload: JSON.stringify({ seasonId: "__local_active_season__", grade: 5, ratedAt: 10 }),
+          payload: JSON.stringify({ seasonId: "season-7", grade: 5, ratedAt: 10 }),
           status: "dead_letter",
           createdAt: 20,
           conflictAttemptCount: 0,

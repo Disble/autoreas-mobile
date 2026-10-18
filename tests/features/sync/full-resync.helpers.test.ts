@@ -109,6 +109,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     duracion: null,
     episodes: null,
     folderRelative: null,
+    season: null,
     lastAppliedChangeMs: 500,
     bridgeModifiedAt: null,
     ...overrides,
@@ -194,6 +195,7 @@ describe('resyncFromBridgeSnapshot', () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
+      season: null,
     }, undefined, 0);
     expect(result.healed).toBe(1);
   });
@@ -227,6 +229,24 @@ describe('resyncFromBridgeSnapshot', () => {
       expect.anything(),
       'anime-1',
       { episodes: '[{"episode":13,"minutes":45,"long":true}]' },
+      500,
+    );
+    expect(result.healed).toBe(1);
+  });
+
+  // The upgrade gap (L11): a build that acked ["season"] rows without applying them heals here.
+  it('backfills the season candidacy into an already-synced row that has none stored', async () => {
+    wireWriteWithLocalRows([makeRow({ season: null })]);
+    mockFetch.mockResolvedValue([
+      makeIngestedSnapshot({ season: { seasonId: 'season-7', grade: null } }),
+    ]);
+
+    const result = await resyncFromBridgeSnapshot(rawDb);
+
+    expect(applyAnimePartial).toHaveBeenCalledWith(
+      expect.anything(),
+      'anime-1',
+      { season: '{"seasonId":"season-7","grade":null}' },
       500,
     );
     expect(result.healed).toBe(1);

@@ -10,11 +10,9 @@ import {
   waitForSyncFlushIdle,
 } from '../../../src/features/sync/sync-flush.helpers';
 import { runMigrations } from '../../../src/infrastructure/db/client';
-import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { openPairedDatabase, queueEdit, readAnime } from './unresolved-fixtures.helpers';
-import { ACTIVE_SEASON_ANSWER } from './unresolved-fixtures.constants';
 
 // Same seam as `reconnect-catch-up.behaviour.test.ts`: only the drizzle factory is swapped.
 jest.mock('../../../src/infrastructure/db/native-runtime/native-runtime.helpers', () => ({
@@ -94,7 +92,6 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     fakeBridge = installFakeBridge();
     resetSyncConnectionStore();
     resetSyncFlush();
-    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
     now = START_AT;
     jest.spyOn(Date, 'now').mockImplementation(() => now);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -135,7 +132,6 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
 
     now = START_AT + 4 * MINUTE;
     fakeBridge.queueResponse(EMPTY_RECONCILE);
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     fakeBridge.queueResponse({ status: 500, body: null });
     await requestFlush(adapter, 'app_active');
 
@@ -145,7 +141,7 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
     await requestFlush(adapter, 'ws_reconnected');
 
-    expect(sentPaths(fakeBridge).slice(5)).toEqual(['POST /api/sync/reconcile', 'GET /api/animes']);
+    expect(sentPaths(fakeBridge).slice(4)).toEqual(['POST /api/sync/reconcile', 'GET /api/animes']);
   });
 
   it('P2b success at T-6min, failure at T, reconnect at T+1min heals', async () => {
@@ -155,14 +151,13 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     await requestFlush(adapter, 'bootstrap');
     now = START_AT + 6 * MINUTE;
     fakeBridge.queueResponse(EMPTY_RECONCILE);
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     fakeBridge.queueResponse({ status: 500, body: null });
     await requestFlush(adapter, 'app_active');
     now = START_AT + 7 * MINUTE;
     fakeBridge.queueResponse(EMPTY_RECONCILE);
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
     await requestFlush(adapter, 'ws_reconnected');
-    expect(sentPaths(fakeBridge).slice(5)).toEqual(['POST /api/sync/reconcile', 'GET /api/animes']);
+    expect(sentPaths(fakeBridge).slice(4)).toEqual(['POST /api/sync/reconcile', 'GET /api/animes']);
   });
 
   it('P3 mount heals drifted data even when the reconcile answers 5xx (bridge reachable, GET works)', async () => {
@@ -225,7 +220,6 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
 
     const held2 = fakeBridge.queueDeferredResponse();
     fakeBridge.queueResponse(EMPTY_RECONCILE);
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
     fakeBridge.queueResponse(EMPTY_SNAPSHOT);
     const running2 = requestFlush(adapter, 'ws_reconnected');
     const c = requestFlush(adapter, 'ws_reconnected');
@@ -239,7 +233,6 @@ describe('reconnect catch-up edges (ADR 009 R-7, T12 verifier probes)', () => {
     expect(sentPaths(fakeBridge).slice(4)).toEqual([
       'POST /api/sync/reconcile',
       'POST /api/sync/reconcile',
-      'GET /api/seasons/active',
       'GET /api/animes',
     ]);
     // bootstrap + 2 reconnect runs (persisted as ws_sync_required, a sweep source) + 2 more.

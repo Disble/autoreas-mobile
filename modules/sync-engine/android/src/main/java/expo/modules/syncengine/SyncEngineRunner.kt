@@ -7,6 +7,7 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -132,6 +133,14 @@ object SyncEngineRunner {
    * real [ENGINE_BUDGET_MS]. */
   private fun currentBudgetMs(): Long = budgetMsOverrideForTest ?: ENGINE_BUDGET_MS
 
+  /**
+   * Test seam for the post-attempt catch-up ([SyncEngineBackgroundCatchUp]). `null` (production)
+   * runs the real catch-up; [resetForTest] installs a no-op so the runner tests' scripted bridges
+   * never see its extra requests, and a test that asserts on the catch-up installs a recorder.
+   */
+  @Volatile
+  internal var catchUpOverrideForTest: ((File, SQLiteDatabase) -> Unit)? = null
+
   init {
     watchdogThread.start()
     watchdogHandler = Handler(watchdogThread.looper)
@@ -208,6 +217,7 @@ object SyncEngineRunner {
 
     val db = appDb!!
     val activeJournal = journal!!
+    val filesDir = context.filesDir
 
     val handler = watchdogHandler
     if (handler == null) {
@@ -315,7 +325,8 @@ object SyncEngineRunner {
 
         val cycle = SyncEngineCycle(db, activeJournal)
         val outcome = cycle.run(triggerSource, cycleId, stageRef::set)
-        if (settled.compareAndSet(false, true)) {
+        val isSettledHere = settled.compareAndSet(false, true)
+        if (isSettledHere) {
           handler.removeCallbacks(watchdog)
           Log.i(
             LOG_TAG,
@@ -323,6 +334,11 @@ object SyncEngineRunner {
               "in ${System.currentTimeMillis() - startMs}ms",
           )
           onResult(outcome)
+        }
+        // After the result, so the catch-up never spends the attempt's budget, and only when the
+        // attempt reached the bridge: a season or cover request to an absent bridge buys nothing.
+        if (isSettledHere && outcome.outcome == "closed") {
+          (catchUpOverrideForTest ?: SyncEngineBackgroundCatchUp::run)(filesDir, db)
         }
       } catch (error: Throwable) {
         // SyncEngineCycle never throws by contract; this guard only keeps an infrastructure
@@ -378,5 +394,6 @@ object SyncEngineRunner {
       journal = null
     }
     budgetMsOverrideForTest = null
+    catchUpOverrideForTest = { _, _ -> }
   }
 }

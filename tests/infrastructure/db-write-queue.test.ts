@@ -75,7 +75,7 @@ describe("db client write-door helpers", () => {
     expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
   });
 
-  it("clearBridgeConfig usa el write diferido y borra bridge_config sin runAsync directo", async () => {
+  it("clearBridgeConfig usa el write diferido, borra bridge_config y la candidatura de temporada sin runAsync directo", async () => {
     const rawDb = {
       __state: {
         animes: [] as Record<string, unknown>[],
@@ -91,7 +91,7 @@ describe("db client write-door helpers", () => {
     expect(rawDb.execAsync).toHaveBeenCalledWith("BEGIN IMMEDIATE");
     expect(rawDb.execAsync).toHaveBeenCalledWith("COMMIT");
     expect(rawDb.__state.deletes).toEqual([bridgeConfig, operationLog, pendingRemoteChanges]);
-    expect(rawDb.__state.updates).toEqual([{ table: animes, values: { bridgeModifiedAt: null } }]);
+    expect(rawDb.__state.updates).toEqual([{ table: animes, values: { bridgeModifiedAt: null, season: null } }]);
     expect(rawDb.runAsync).not.toHaveBeenCalled();
   });
 

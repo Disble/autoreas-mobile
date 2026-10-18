@@ -64,7 +64,6 @@ const IMPORTANT_FILES = [
   'src/features/sync/native-battery-optimization.helpers.ts',
   'src/features/sync/native-foreground-service-presence.helpers.ts',
   'src/features/sync/native-foreground-sync-ticker.helpers.ts',
-  'src/features/sync/season-sync.helpers.ts',
   'src/features/sync/sync-connection-store/sync-connection-store.helpers.ts',
   'src/features/sync/sync-diagnostics-flush.helpers.ts',
   'src/features/sync/sync-execution-facade/sync-execution-facade.helpers.ts',
@@ -79,7 +78,6 @@ const IMPORTANT_FILES = [
   'src/features/sync/ui/SyncRuntimeGate/use-sync-runtime-gate.ts',
   'src/features/sync/use-foreground-resync.ts',
   'src/features/sync/use-remote-change-drain.ts',
-  'src/features/sync/use-season-sync.ts',
   'src/features/sync/use-sync-facade.ts',
   'src/features/sync/use-sync-runtime.ts',
 ];

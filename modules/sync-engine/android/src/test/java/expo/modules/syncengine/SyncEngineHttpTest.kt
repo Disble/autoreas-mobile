@@ -169,6 +169,60 @@ class SyncEngineHttpTest {
     }
   }
 
+  // ---- getBytes ----
+
+  @Test
+  fun `getBytes sends a bodyless authorized GET and returns a 200 body as raw bytes with its ETag`() {
+    var method: String? = null
+    var authorization: String? = null
+    var contentType: String? = null
+    val image = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x00, 0x7F, 0xFF.toByte(), 0xD9.toByte())
+
+    val srv = startServer()
+    srv.createContext("/api/animes/a1/cover") { exchange ->
+      method = exchange.requestMethod
+      authorization = exchange.requestHeaders.getFirst("Authorization")
+      contentType = exchange.requestHeaders.getFirst("Content-Type")
+      exchange.responseHeaders.add("ETag", "\"abc123\"")
+      exchange.sendResponseHeaders(200, image.size.toLong())
+      exchange.responseBody.use { it.write(image) }
+    }
+    srv.start()
+
+    val response = SyncEngineHttp.getBytes(
+      url = "http://127.0.0.1:${srv.address.port}/api/animes/a1/cover",
+      token = "tok-3",
+      timeoutMs = 5_000,
+    )
+
+    assertEquals(200, response.code)
+    assertTrue(image.contentEquals(response.bytes))
+    assertEquals("\"abc123\"", response.etag)
+    assertEquals("GET", method)
+    assertEquals("Bearer tok-3", authorization)
+    assertNull(contentType)
+  }
+
+  @Test
+  fun `getBytes reads no body for a non-200 status`() {
+    val srv = startServer()
+    srv.createContext("/api/animes/a2/cover") { exchange ->
+      exchange.sendResponseHeaders(204, -1)
+      exchange.close()
+    }
+    srv.start()
+
+    val response = SyncEngineHttp.getBytes(
+      url = "http://127.0.0.1:${srv.address.port}/api/animes/a2/cover",
+      token = "tok-3",
+      timeoutMs = 5_000,
+    )
+
+    assertEquals(204, response.code)
+    assertNull(response.bytes)
+    assertNull(response.etag)
+  }
+
   // ---- get ----
 
   @Test

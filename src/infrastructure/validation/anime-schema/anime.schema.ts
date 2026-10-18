@@ -79,6 +79,22 @@ export const EpisodeLengthSchema = z.object({
   long: z.boolean(),
 });
 
+/**
+ * Validates the bridge's season candidacy of one anime: the open season it is a candidate of and
+ * its grade there (1-6), `null` while ungraded.
+ */
+export const AnimeSeasonSchema = z.object({
+  seasonId: z.string().min(1),
+  grade: z.number().int().min(1).max(6).nullable(),
+});
+
+/**
+ * Season candidacy, shared by the wire and domain shapes. An absent key means "not a candidate of
+ * the open season". A malformed value is read as `null` instead of failing the whole anime, like
+ * `episodeLengths`: rejecting the snapshot would block every other field of the anime with it.
+ */
+const animeSeason = AnimeSeasonSchema.nullable().optional().catch(null);
+
 /** Defines one per-episode duration entry. */
 export type EpisodeLength = z.infer<typeof EpisodeLengthSchema>;
 
@@ -117,6 +133,7 @@ export const AnimeSchema = z.object({
   origen: z.string().nullable().optional(),
   duracion: z.number().int().nullable().optional(),
   episodes: episodeLengths,
+  season: animeSeason,
 });
 
 /** Defines the anime value shape. */
@@ -148,6 +165,9 @@ export const WireAnimeSchema = z.object({
   origin: z.string().nullable().optional(),
   durationMinutes: z.number().int().nullable().optional(),
   episodes: episodeLengths,
+  // Joined by the bridge when it serves the anime, never stored in its snapshot: a WS
+  // `anime_changed` payload never carries it, so candidacy is read only from reconcile and list.
+  season: animeSeason,
   // Bridge-authored optimistic-concurrency token. REQUIRED, not optional: the bridge sends
   // `*int64` with `omitempty` on the Go side, so a pointer to 0 still serializes as
   // `"modified_at":0` and only a nil pointer omits the key -- measured on a live listAnimes
@@ -157,6 +177,9 @@ export const WireAnimeSchema = z.object({
   // that keeps it off every domain and UI-facing type).
   modified_at: z.number().int(),
 });
+
+/** Defines the season candidacy value shape. */
+export type AnimeSeason = z.infer<typeof AnimeSeasonSchema>;
 
 /** Defines the wire anime value shape. */
 export type WireAnime = z.infer<typeof WireAnimeSchema>;

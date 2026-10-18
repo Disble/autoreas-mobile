@@ -38,6 +38,8 @@ export const animes = sqliteTable("animes", {
   // Distinct from `lastAppliedChangeMs`, which guards remote->local apply order and is derived
   // from `change.timestamp`; this column is never derived from that guard or from it.
   bridgeModifiedAt: integer("bridge_modified_at"),
+  // Bridge season candidacy as JSON text (`{ seasonId, grade }`); NULL = not a candidate.
+  season: text("season"),
 });
 
 /** Provides the shared operation log value. */
@@ -76,13 +78,6 @@ export const operationLog = sqliteTable(
   ],
 );
 
-/** Provides the durable bridge-owned active season snapshot for offline startup. */
-export const activeSeasonCache = sqliteTable('active_season_cache', {
-  id: integer('id').primaryKey().default(1),
-  seasonId: text('season_id').notNull(),
-  candidatesJson: text('candidates_json').notNull(),
-});
-
 /**
  * Provides the single-row app preferences that must survive re-pairing. Kept out of
  * `bridge_config` on purpose: pairing deletes and reinserts that row. Created only by the
@@ -112,6 +107,8 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   isSyncTelemetryEnabled: integer("is_sync_telemetry_enabled", { mode: "boolean" })
     .notNull()
     .default(true),
+  // The last reconcile's `season_mode`: whether the bridge has a season open.
+  seasonMode: integer("season_mode", { mode: "boolean" }).notNull().default(false),
 });
 
 /** Provides the shared pending remote changes value. */
@@ -159,10 +156,6 @@ export type InsertAnimeRow = typeof animes.$inferInsert;
 export type OperationLogRow = typeof operationLog.$inferSelect;
 /** Defines the insert operation log row value shape. */
 export type InsertOperationLogRow = typeof operationLog.$inferInsert;
-/** Defines the active season cache row value shape. */
-export type ActiveSeasonCacheRow = typeof activeSeasonCache.$inferSelect;
-/** Defines the new active season cache row value shape. */
-export type NewActiveSeasonCacheRow = typeof activeSeasonCache.$inferInsert;
 /** Defines the pending remote change row value shape. */
 export type PendingRemoteChangeRow = typeof pendingRemoteChanges.$inferSelect;
 /** Defines the insert pending remote change row value shape. */
