@@ -116,7 +116,10 @@ describe('useSyncFacade', () => {
     });
 
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(1);
-    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(rawDb);
+    expect(syncModule.syncPendingOperations).toHaveBeenCalledWith(
+      rawDb,
+      expect.objectContaining({ cycleId: expect.any(String), next: expect.any(Function) }),
+    );
   });
 
   it('collapses a trigger storm into one running cycle plus exactly one follow-up, never in parallel', async () => {

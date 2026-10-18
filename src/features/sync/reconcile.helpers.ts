@@ -8,6 +8,8 @@ import { claimOperationLogBatch } from './outbox-claim.helpers';
 import { SEASON_RATING_OPERATION } from './outbox-operation.constants';
 import { sendReconcileRound } from './reconcile-round.helpers';
 import { RECONCILE_BACKLOG_BATCH_LIMIT } from './reconcile.constants';
+import { createRequestIdSequence } from './request-id.helpers';
+import type { RequestIdSequence } from './request-id.types';
 import type {
   ReconcileRoundContext,
   SplitRoundOutcome,
@@ -30,9 +32,14 @@ import { flushSyncDiagnosticsOutbox } from './sync-diagnostics-flush.helpers';
  * what keeps a crash from being indistinguishable from success: every row is either confirmed,
  * requeued, or dead-lettered by the time this returns or throws. Nothing is left claimed by a
  * cycle that is no longer running.
+ *
+ * Every bridge request this pass makes takes the next id of `requestIds`. The dispatcher passes
+ * the cycle's own sequence, so the requests after this pass keep counting; a caller that passes
+ * none still gets every request of the pass numbered under a fresh cycle id.
  */
 export async function syncPendingOperations(
   rawDb: SQLiteDatabase,
+  requestIds: RequestIdSequence = createRequestIdSequence(),
 ): Promise<SyncPendingOperationsResult> {
   const config = await getBridgeConfigSnapshot(rawDb);
   if (!config?.ip || !config?.port || !config?.token) {
@@ -69,7 +76,7 @@ export async function syncPendingOperations(
   // unreachable from the `catch` below: that `catch` releases the claimed rows, which would
   // otherwise requeue the user's own pending mutations over a diagnostics POST. The SAME
   // `config` row this cycle already read gates the drain.
-  await flushSyncDiagnosticsOutbox({ connection, config });
+  await flushSyncDiagnosticsOutbox({ connection, config, requestIds });
 
   const chainDeadline = claim.claimedAt + OUTBOX_CHAIN_BUDGET_MS;
   let round: readonly OperationLogRow[] = claimedOps;
@@ -80,6 +87,7 @@ export async function syncPendingOperations(
     lastChangelogId,
     claim,
     chainDeadline,
+    requestIds,
   };
   let syncedCount = 0;
   let backlogReadCount = 0;

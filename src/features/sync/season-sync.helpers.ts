@@ -5,26 +5,17 @@ import {
   withLocalWrite,
 } from '../../infrastructure/db/client/client.helpers';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
-
-/** Identifies a reachable bridge response that cannot produce trustworthy active-season truth. */
-export class ActiveSeasonSyncError extends Error {
-  readonly status: number;
-  readonly responseBody: string | null;
-
-  constructor(message: string, status: number, responseBody: string | null) {
-    super(message);
-    this.name = 'ActiveSeasonSyncError';
-    this.status = status;
-    this.responseBody = responseBody;
-  }
-}
+import type { RequestIdSequence } from './request-id.types';
+import { ActiveSeasonSyncError } from './season-sync.errors';
 
 /**
  * Fetches the bridge-owned active-season snapshot through the adapter seam and normalizes it.
  * Returning null is reserved for missing pairing or an explicit 404; reachable contract failures throw.
+ * The request takes the next id of `requestIds` when a sync cycle makes it, and carries none otherwise.
  */
 export async function fetchActiveSeasonFromBridge(
   rawDb: SQLiteDatabase,
+  requestIds?: RequestIdSequence,
 ): Promise<ActiveSeasonSnapshot | null> {
   const config = await getBridgeConfigSnapshot(rawDb);
 
@@ -32,11 +23,11 @@ export async function fetchActiveSeasonFromBridge(
     return null;
   }
 
-  const result = await bridgeClient.getActiveSeason({
-    ip: config.ip,
-    port: config.port,
-    token: config.token,
-  });
+  const connection = { ip: config.ip, port: config.port, token: config.token };
+  // Outside a cycle (the season screen) the call stays exactly what it was: no options, no id.
+  const result = requestIds
+    ? await bridgeClient.getActiveSeason(connection, { requestId: requestIds.next() })
+    : await bridgeClient.getActiveSeason(connection);
 
   if (result.status === 404) {
     return null;
@@ -125,6 +116,10 @@ export async function clearCachedActiveSeasonSnapshot(rawDb: SQLiteDatabase): Pr
   });
 }
 
+/**
+ * Tells whether an active-season body carries a non-empty `season_id` and a well-formed
+ * `candidates` array, so a snapshot is never built from a payload the bridge did not mean.
+ */
 function isValidActiveSeasonPayload(data: unknown): boolean {
   if (typeof data !== 'object' || data === null) {
     return false;

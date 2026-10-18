@@ -1,6 +1,7 @@
 import {
   BRIDGE_API_PATHS,
   BRIDGE_HTTP_SCHEME,
+  BRIDGE_REQUEST_ID_HEADER,
   BRIDGE_WS_SCHEME,
   SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS,
 } from './bridge-client.constants';
@@ -43,12 +44,14 @@ export function buildBridgeWebSocketUrl(connection: BridgeConnection): string {
 }
 
 /**
- * Builds request headers, adding `Content-Type` only for bodies and `Authorization` only when a
- * token is present. This mirrors the exact header shape each bridge endpoint expects.
+ * Builds request headers, adding `Content-Type` only for bodies, `Authorization` only when a
+ * token is present, and the request id only when the caller gave one. This mirrors the exact
+ * header shape each bridge endpoint expects, so a request without an id is unchanged.
  */
 export function buildBridgeHeaders(options: {
   readonly token?: string;
   readonly hasBody: boolean;
+  readonly requestId?: string;
 }): Record<string, string> {
   const headers: Record<string, string> = {};
 
@@ -58,6 +61,10 @@ export function buildBridgeHeaders(options: {
 
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
+  }
+
+  if (options.requestId) {
+    headers[BRIDGE_REQUEST_ID_HEADER] = options.requestId;
   }
 
   return headers;

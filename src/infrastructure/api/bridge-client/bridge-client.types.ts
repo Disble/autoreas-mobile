@@ -46,11 +46,15 @@ export interface BridgeRequestSpec {
   readonly body?: unknown;
   /** Overrides the default request budget. Omitted means BRIDGE_REQUEST_TIMEOUT_MS. */
   readonly timeoutMs?: number;
+  /** Sent as `X-Autoreas-Request-Id` when present; omitted means no header at all. */
+  readonly requestId?: string;
 }
 
 /** Per-call overrides a caller may apply to one bridge request. */
 export interface BridgeRequestOptions {
   readonly timeoutMs?: number;
+  /** `<cycleId>:<n>` of the sync cycle making this request; omitted outside a cycle. */
+  readonly requestId?: string;
 }
 
 /** Per-call options for `getAnimeCover`. */
@@ -106,11 +110,19 @@ export interface BridgeClient {
    * Fetches one anime (`GET /api/animes/{id}`): a `MobileAnime` carrying its live `modified_at`
    * token, or a 404 when the bridge has no such anime. Sync's fetch-first step (ADR 009 R-3).
    */
-  readonly getAnime: (connection: BridgeConnection, animeId: string) => Promise<BridgeHttpResult>;
-  readonly getActiveSeason: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
+  readonly getAnime: (
+    connection: BridgeConnection,
+    animeId: string,
+    options?: BridgeRequestOptions,
+  ) => Promise<BridgeHttpResult>;
+  readonly getActiveSeason: (
+    connection: BridgeConnection,
+    options?: BridgeRequestOptions,
+  ) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
     connection: BridgeConnection,
     request: PostActiveSeasonRatingRequest,
+    options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly reconcile: (
     connection: BridgeConnection,

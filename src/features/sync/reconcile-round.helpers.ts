@@ -66,9 +66,11 @@ function logReconcileHttpError(
   url: string,
   requestBody: ReturnType<typeof buildReconcileRequestBody>,
   error: ReconcileHttpError,
+  requestId: string,
 ) {
   console.warn('[syncPendingOperations] Reconcile request failed', {
     url,
+    requestId,
     requestBody,
     status: error.status,
     responseBody: error.responseBody,
@@ -295,7 +297,14 @@ export async function sendReconcileRound(
     heldOps.map((operation) => operation.animeId),
   );
   // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
-  const pendingOps = await resolveMissingTokens(rawDb, connection, claim, heldOps, bridgeTokensByAnimeId);
+  const pendingOps = await resolveMissingTokens(
+    rawDb,
+    connection,
+    claim,
+    heldOps,
+    bridgeTokensByAnimeId,
+    context.requestIds,
+  );
   const requestBody = buildReconcileRequestBody(
     context.deviceId,
     lastChangelogId,
@@ -304,12 +313,13 @@ export async function sendReconcileRound(
   );
 
   try {
-    const result = await bridgeClient.reconcile(connection, requestBody);
+    const requestId = context.requestIds.next();
+    const result = await bridgeClient.reconcile(connection, requestBody, { requestId });
 
     if (!result.ok) {
       const error = new ReconcileHttpError(result.status, result.rawBody);
 
-      logReconcileHttpError(result.url, requestBody, error);
+      logReconcileHttpError(result.url, requestBody, error, requestId);
       throw error;
     }
 

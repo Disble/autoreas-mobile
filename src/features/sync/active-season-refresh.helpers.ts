@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { ActiveSeasonSnapshot } from '../../infrastructure/api';
 import { ACTIVE_SEASON_REFRESH_GENERATION } from './active-season-refresh.constants';
+import type { RequestIdSequence } from './request-id.types';
 import {
   clearCachedActiveSeasonSnapshot,
   fetchActiveSeasonFromBridge,
@@ -31,17 +32,19 @@ export function isCurrentActiveSeasonRefresh(generation: number): boolean {
  *
  * Best effort, never a cycle failure: a failed fetch is logged and keeps the published and cached
  * snapshot, as a failed rating never fails the cycle (ADR 009 R-5). A refresh made stale by a
- * newer one or by a clear (season mode switched off) publishes and caches nothing.
+ * newer one or by a clear (season mode switched off) publishes and caches nothing. Its request
+ * takes the next id of the cycle's `requestIds`.
  */
 export async function refreshActiveSeasonSnapshot(
   rawDb: SQLiteDatabase,
   publishSnapshot: (snapshot: ActiveSeasonSnapshot | null) => void,
+  requestIds?: RequestIdSequence,
 ): Promise<void> {
   const generation = beginActiveSeasonRefresh();
   let snapshot: ActiveSeasonSnapshot | null;
 
   try {
-    snapshot = await fetchActiveSeasonFromBridge(rawDb);
+    snapshot = await fetchActiveSeasonFromBridge(rawDb, requestIds);
   } catch (error) {
     console.warn('[refreshActiveSeasonSnapshot] Active season refresh failed; keeping the cached snapshot', error);
     return;

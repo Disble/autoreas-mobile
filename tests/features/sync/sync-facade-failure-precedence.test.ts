@@ -1,8 +1,6 @@
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
-import {
-  ActiveSeasonSyncError,
-  fetchActiveSeasonFromBridge,
-} from '../../../src/features/sync/season-sync.helpers';
+import { ActiveSeasonSyncError } from '../../../src/features/sync/season-sync.errors';
+import { fetchActiveSeasonFromBridge } from '../../../src/features/sync/season-sync.helpers';
 import { runCoordinatedForegroundSyncCycle } from '../../../src/features/sync/sync-facade.helpers';
 import {
   getSyncConnectionSnapshot,

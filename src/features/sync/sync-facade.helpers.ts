@@ -8,6 +8,7 @@ import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
 import { refreshActiveSeasonSnapshot } from './active-season-refresh.helpers';
+import { createRequestIdSequence } from './request-id.helpers';
 import { healSnapshotOnDemand } from './snapshot-heal.helpers';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
@@ -112,6 +113,9 @@ async function persistSyncFailureTelemetrySafely(
  * the cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
  * best effort too, and it runs even when the sends failed, before the failure is published.
+ *
+ * One cycle is one request id: every bridge request of the sends and the active-season refresh
+ * carries `<cycleId>:<n>`, numbered in send order, so each joins the bridge's record of it.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
@@ -121,6 +125,7 @@ export async function runCoordinatedForegroundSyncCycle({
   healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
+  const requestIds = createRequestIdSequence();
 
   try {
     const attemptedAt = Date.now();
@@ -131,10 +136,10 @@ export async function runCoordinatedForegroundSyncCycle({
     });
     // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
     // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
-    const result = await syncPendingOperations(rawDb);
+    const result = await syncPendingOperations(rawDb, requestIds);
 
     if (refreshActiveSeason || result.shouldRefreshActiveSeason) {
-      await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot);
+      await refreshActiveSeasonSnapshot(rawDb, setActiveSeasonSnapshot, requestIds);
     }
 
     await healSnapshotOnDemand(rawDb, healSnapshot);

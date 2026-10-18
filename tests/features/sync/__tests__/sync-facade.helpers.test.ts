@@ -8,6 +8,7 @@ import {
   recordSyncAttemptSucceeded,
 } from '../../../../src/features/sync/sync-runtime-status.helpers';
 import { runCoverSweep } from '../../../../src/features/sync/cover-sweep/cover-sweep.helpers';
+import { fetchActiveSeasonFromBridge } from '../../../../src/features/sync/season-sync.helpers';
 import type { SyncRuntimeTriggerSource } from '../../../../src/features/sync/sync-runtime-status.types';
 
 jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
@@ -224,5 +225,46 @@ describe('runCoordinatedForegroundSyncCycle attempt bookkeeping', () => {
     expect(recordSyncAttemptStarted).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
     expect(recordSyncAttemptSucceeded).toHaveBeenCalledWith(RAW_DB, expect.any(Number));
     expect(recordSyncAttemptFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('runCoordinatedForegroundSyncCycle request ids (S4)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSyncConnectionStore();
+    (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (runCoverSweep as jest.Mock).mockResolvedValue({
+      fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+    });
+    (fetchActiveSeasonFromBridge as jest.Mock).mockResolvedValue(null);
+  });
+
+  it('hands the sends and the active-season refresh one shared sequence', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({
+      syncedCount: 0, hasMorePending: false, shouldRefreshActiveSeason: true,
+    });
+
+    await runCoordinatedForegroundSyncCycle({
+      rawDb: RAW_DB,
+      source: 'manual',
+      setActiveSeasonSnapshot: jest.fn(),
+    });
+
+    const sendsSequence = (syncPendingOperations as jest.Mock).mock.calls[0][1];
+    expect(sendsSequence).toEqual(expect.objectContaining({ cycleId: expect.any(String) }));
+    expect((fetchActiveSeasonFromBridge as jest.Mock).mock.calls[0][1]).toBe(sendsSequence);
+  });
+
+  it('starts a new sequence for every cycle', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({ syncedCount: 0, hasMorePending: false });
+    const input = { rawDb: RAW_DB, source: 'manual' as const, setActiveSeasonSnapshot: jest.fn() };
+
+    await runCoordinatedForegroundSyncCycle(input);
+    await runCoordinatedForegroundSyncCycle(input);
+
+    const [first, second] = (syncPendingOperations as jest.Mock).mock.calls.map((call) => call[1].cycleId);
+    expect(second).not.toBe(first);
   });
 });

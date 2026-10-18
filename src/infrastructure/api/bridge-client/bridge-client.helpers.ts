@@ -5,6 +5,7 @@ import {
 import {
   BRIDGE_API_PATHS,
   BRIDGE_COVER_REQUEST_TIMEOUT_MS,
+  BRIDGE_REQUEST_ID_HEADER,
   BRIDGE_REQUEST_TIMEOUT_MS,
   NOOP_BRIDGE_LOGGER,
 } from './bridge-client.constants';
@@ -40,6 +41,21 @@ function readResponseHeader(response: Response, name: string): string | null {
   }
 
   return response.headers.get(name);
+}
+
+/**
+ * The log fields that join a phone log line to the bridge's record of the same request: the id
+ * this request sent and the id the bridge echoed back. Each is present only when there is one,
+ * so a request without an id logs exactly what it logged before.
+ */
+function requestIdLogFields(
+  requestId: string | undefined,
+  echoedRequestId: string | null = null,
+): Record<string, string> {
+  return {
+    ...(requestId ? { requestId } : {}),
+    ...(echoedRequestId ? { echoedRequestId } : {}),
+  };
 }
 
 /**
@@ -84,6 +100,7 @@ export function createBridgeClient(
     init: RequestInit,
     method: BridgeHttpMethod,
     timeoutMs: number,
+    requestId?: string,
   ): Promise<Response> {
     const controller = new AbortController();
     let didTimeout = false;
@@ -96,11 +113,20 @@ export function createBridgeClient(
       return await resolveFetch()(url, { ...init, signal: controller.signal });
     } catch (reason) {
       if (didTimeout) {
-        logger.warn('[BridgeClient] request exceeded its budget', { url, method, timeoutMs });
+        logger.warn('[BridgeClient] request exceeded its budget', {
+          url,
+          method,
+          timeoutMs,
+          ...requestIdLogFields(requestId),
+        });
         throw new BridgeTimeoutError(url, timeoutMs);
       }
 
-      logger.warn('[BridgeClient] request did not reach the bridge', { url, method });
+      logger.warn('[BridgeClient] request did not reach the bridge', {
+        url,
+        method,
+        ...requestIdLogFields(requestId),
+      });
       throw new BridgeUnreachableError(url, reason);
     } finally {
       clearTimeout(timer);
@@ -115,7 +141,7 @@ export function createBridgeClient(
     const hasBody = spec.body !== undefined;
     const init: RequestInit = {
       method: spec.method,
-      headers: buildBridgeHeaders({ token: spec.token, hasBody }),
+      headers: buildBridgeHeaders({ token: spec.token, hasBody, requestId: spec.requestId }),
     };
 
     if (hasBody) {
@@ -123,7 +149,7 @@ export function createBridgeClient(
     }
 
     const timeoutMs = spec.timeoutMs ?? BRIDGE_REQUEST_TIMEOUT_MS;
-    const response = await executeBridgeFetch(url, init, spec.method, timeoutMs);
+    const response = await executeBridgeFetch(url, init, spec.method, timeoutMs, spec.requestId);
 
     const rawBody = typeof response.text === 'function' ? await response.text() : null;
     const data = parseBridgeResponseBody(rawBody);
@@ -138,6 +164,7 @@ export function createBridgeClient(
       url,
       method: spec.method,
       status: response.status,
+      ...requestIdLogFields(spec.requestId, readResponseHeader(response, BRIDGE_REQUEST_ID_HEADER)),
     });
 
     return {
@@ -212,27 +239,31 @@ export function createBridgeClient(
         path: BRIDGE_API_PATHS.animes,
         token: connection.token,
       }),
-    getAnime: (connection, animeId) =>
+    getAnime: (connection, animeId, options?: BridgeRequestOptions) =>
       request(connection, {
         method: 'GET',
         path: `${BRIDGE_API_PATHS.animes}/${encodeURIComponent(animeId)}`,
         token: connection.token,
+        requestId: options?.requestId,
       }),
-    getActiveSeason: (connection) =>
+    getActiveSeason: (connection, options?: BridgeRequestOptions) =>
       request(connection, {
         method: 'GET',
         path: BRIDGE_API_PATHS.activeSeason,
         token: connection.token,
+        requestId: options?.requestId,
       }),
     postActiveSeasonRating: (
       connection,
       seasonRatingRequest: PostActiveSeasonRatingRequest,
+      options?: BridgeRequestOptions,
     ) =>
       request(connection, {
         method: 'POST',
         path: BRIDGE_API_PATHS.activeSeasonRating,
         token: connection.token,
         body: buildPostActiveSeasonRatingBody(seasonRatingRequest),
+        requestId: options?.requestId,
       }),
     reconcile: (connection, body, options?: BridgeRequestOptions) =>
       request(connection, {
@@ -241,6 +272,7 @@ export function createBridgeClient(
         token: connection.token,
         body,
         timeoutMs: options?.timeoutMs,
+        requestId: options?.requestId,
       }),
     postSyncDiagnostics: (connection, envelope, options?: BridgeRequestOptions) =>
       request(connection, {
@@ -249,6 +281,7 @@ export function createBridgeClient(
         token: connection.token,
         body: envelope,
         timeoutMs: options?.timeoutMs,
+        requestId: options?.requestId,
       }),
     openWebSocket: (connection) =>
       createWebSocket(buildBridgeWebSocketUrl(connection), connection.token),

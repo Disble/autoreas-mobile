@@ -57,6 +57,9 @@ jest.mock('../../../src/features/sync/pending-remote-changes.helpers', () => ({
 /** Bridge reconcile endpoint the mocked HTTP layer is asserted against. */
 const RECONCILE_URL = 'http://192.168.1.10:9876/api/sync/reconcile';
 
+/** The options of a cycle's first bridge request: its id, `<cycleId>:1` (S4). */
+const FIRST_REQUEST_OF_CYCLE = { requestId: expect.stringMatching(/^[0-9a-f-]{36}:1$/) };
+
 describe('syncPendingOperations', () => {
   let rawDb: {
     getAllAsync: jest.Mock<Promise<unknown[]>, [string, ...unknown[]]>;
@@ -195,6 +198,7 @@ describe('syncPendingOperations', () => {
         last_changelog_id: 0,
         pending_operations: [],
       }),
+      FIRST_REQUEST_OF_CYCLE,
     );
   });
 
@@ -304,6 +308,7 @@ describe('syncPendingOperations', () => {
           },
         ],
       },
+      FIRST_REQUEST_OF_CYCLE,
     );
   });
 
@@ -328,6 +333,7 @@ describe('syncPendingOperations', () => {
     expect(reconcileMock).toHaveBeenCalledWith(
       { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({ last_changelog_id: 0 }),
+      FIRST_REQUEST_OF_CYCLE,
     );
   });
 
@@ -376,6 +382,7 @@ describe('syncPendingOperations', () => {
     expect(reconcileMock).toHaveBeenCalledWith(
       { ip: '192.168.1.10', port: 9876, token: 'token123' },
       expect.objectContaining({ device_id: 'device-abc' }),
+      FIRST_REQUEST_OF_CYCLE,
     );
     expect(dbClient.withLocalWrite).toHaveBeenCalledTimes(2);
     expect(mockDb.update).toHaveBeenCalled();

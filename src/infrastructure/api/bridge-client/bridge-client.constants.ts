@@ -16,6 +16,13 @@ export const BRIDGE_API_PATHS = {
   ws: '/ws',
 } as const;
 
+/**
+ * Header that correlates one bridge request with the sync cycle that made it, as
+ * `<cycleId>:<n>`. Sent only when the caller gives a request id; the bridge mints its own id
+ * when the header is absent, and echoes the id it used on the response.
+ */
+export const BRIDGE_REQUEST_ID_HEADER = 'X-Autoreas-Request-Id';
+
 
 /** Provides a silent logger when bridge diagnostics are not injected. */
 export const NOOP_BRIDGE_LOGGER: BridgeClientLogger = {
