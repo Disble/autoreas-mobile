@@ -8,18 +8,18 @@ import type { AnimeCardCoverProps } from './anime-card.types';
  * URI is available, otherwise the bridge's night-scene placeholder. Never reads
  * `anime.portada` and never falls back to a network URL, since the cover must stay offline-first.
  *
- * The cover is a fixed 2:3 poster (96x144) pinned to the top, filled with `cover` so it never
- * shows bars. Its column stretches with the card and sets the card's minimum height, so a taller
- * text column grows the card below the poster instead of stretching and cropping it. The card's
+ * The cover column is 96 wide, at least 144 tall (a 2:3 poster), and stretches with the card. The
+ * image or placeholder fills the whole column with `cover`, so a taller text column (season status
+ * row, long title) crops the poster's edges instead of leaving an empty strip under it. The card's
  * own `overflow-hidden` rounds the corners.
  */
 export function AnimeCardCover({ coverUri }: Readonly<AnimeCardCoverProps>) {
   return (
     <View className="min-h-36 w-24 self-stretch">
       {coverUri ? (
-        <StyledImage source={coverUri} contentFit="cover" className="h-36 w-24" />
+        <StyledImage source={coverUri} contentFit="cover" className="absolute inset-0" />
       ) : (
-        <View className="h-36 w-24 overflow-hidden">
+        <View className="absolute inset-0 overflow-hidden">
           <CoverPlaceholderScene />
         </View>
       )}
