@@ -3,7 +3,6 @@ import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as nativeRuntime from '../../../src/infrastructure/db/native-runtime/native-runtime.helpers';
 import * as settingsModule from '../../../src/features/settings/use-bridge-config';
-import * as seasonSyncModule from '../../../src/features/sync/season-sync.helpers';
 import * as syncModule from '../../../src/features/sync/reconcile.helpers';
 import * as runtimeStatusModule from '../../../src/features/sync/sync-runtime-status.helpers';
 import { useSyncFacade } from '../../../src/features/sync/use-sync-facade';
@@ -34,12 +33,6 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
 }));
 
-
-jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
-  fetchActiveSeasonFromBridge: jest.fn(),
-  writeCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
-  clearCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
-}));
 
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn(),
@@ -196,42 +189,6 @@ describe('useSyncFacade', () => {
     warnSpy.mockRestore();
   });
 
-  it('keeps the coordinated cycle syncing until the season refresh after the pass also settles', async () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    let failSeasonRefresh!: (error: Error) => void;
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-      syncedCount: 1,
-      hasMorePending: false,
-      shouldRefreshActiveSeason: true,
-    });
-    (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          failSeasonRefresh = reject;
-        }),
-    );
-
-    const { result } = renderHook(() => useSyncFacade());
-    let syncPromise!: Promise<number>;
-
-    await act(async () => {
-      syncPromise = result.current.manualSync();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(result.current.connectionStatus).toBe('syncing');
-
-    await act(async () => {
-      failSeasonRefresh(new BridgeUnreachableError('http://bridge.test/api/seasons/active', 'offline'));
-      await syncPromise;
-    });
-
-    // The refresh is best effort (I8): its failure never fails the cycle.
-    expect(result.current.connectionStatus).toBe('online');
-    warn.mockRestore();
-  });
-
   it('publishes reachable reconcile rejection as sync_error rather than unreachable', async () => {
     (syncModule.syncPendingOperations as jest.Mock).mockRejectedValueOnce(
       new Error('Reconcile failed: 422'),
@@ -291,28 +248,6 @@ describe('useSyncFacade', () => {
     expect(syncModule.syncPendingOperations).toHaveBeenCalledTimes(2);
     expect(firstFacade.result.current.connectionStatus).toBe('online');
     expect(secondFacade.result.current.connectionStatus).toBe('online');
-  });
-
-  it('stays online when the active-season refresh fails after confirmed delivery', async () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    (syncModule.syncPendingOperations as jest.Mock).mockResolvedValueOnce({
-      syncedCount: 1,
-      hasMorePending: false,
-      shouldRefreshActiveSeason: true,
-    });
-    (seasonSyncModule.fetchActiveSeasonFromBridge as jest.Mock).mockRejectedValueOnce(
-      new BridgeUnreachableError('http://bridge.test/api/seasons/active', 'offline'),
-    );
-
-    const { result } = renderHook(() => useSyncFacade());
-
-    await act(async () => {
-      await expect(result.current.manualSync()).resolves.toBe(1);
-    });
-
-    expect(runtimeStatusModule.recordSyncAttemptFailed).not.toHaveBeenCalled();
-    expect(result.current.connectionStatus).toBe('online');
-    warn.mockRestore();
   });
 
   it('includes a queued season rating in the visible count so prior online cannot appear current', () => {

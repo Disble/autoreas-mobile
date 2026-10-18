@@ -72,6 +72,7 @@ describe('initial-sync helpers', () => {
       duracion: null,
       episodes: null,
       folderRelative: null,
+      season: null,
     },
   ];
   const ingestedAnimeSnapshot = [

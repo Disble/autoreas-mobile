@@ -67,8 +67,17 @@ const RATING_COLUMNS =
 /** The columns every pre-existing anime operation keeps, compared before and after. */
 const ANIME_OPERATION_COLUMNS = 'id, anime_id, operation, payload, status, created_at';
 
-/** The tables the upgrade is allowed to change; every other table must stay byte-identical. */
-const CHANGED_TABLES: readonly string[] = ['operation_log', 'season_rating_queue', '__drizzle_migrations'];
+/**
+ * The tables the upgrade is allowed to change; every other table must stay byte-identical. The
+ * repair twins of migration 0021 add one column each to `animes` and `bridge_config`.
+ */
+const CHANGED_TABLES: readonly string[] = [
+  'operation_log',
+  'season_rating_queue',
+  'animes',
+  'bridge_config',
+  '__drizzle_migrations',
+];
 
 /** The newest `when` the shipped journal holds: the scalar the upgrade pins the ledger to. */
 const JOURNAL_MAX_WHEN = Math.max(...journal.entries.map((entry) => entry.when));
@@ -208,7 +217,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
     expect(await readLedger(adapter)).toEqual(Array.from({ length: 18 }, () => 1789310400000));
   });
 
-  it('moves the whole queue while the real gate applies nothing, and stamps the current readiness (21)', async () => {
+  it('moves the whole queue while the real gate applies nothing, and stamps the current readiness (22)', async () => {
     const adapter = await openSeededDevice();
     const expected = await expectedMovedRows();
     const animeOperations = await readAnimeOperations(adapter);
@@ -219,7 +228,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
     const after = await dumpDatabase(adapter);
 
     expect(GATE_MIGRATOR_LOG).toEqual([[]]);
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
     expect(await readRatings(adapter)).toEqual(expected);
     expect(await readAnimeOperations(adapter)).toEqual(animeOperations);
     expect(untouchedTables(after)).toEqual(untouchedTables(before));
@@ -237,7 +246,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
 
     expect(GATE_MIGRATOR_LOG).toEqual([]);
     expect(await dumpDatabase(adapter)).toEqual(upgraded);
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
   });
 
   it('rolls the whole move back at readiness 18 when the DROP crashes, and the next startup completes', async () => {
@@ -260,7 +269,7 @@ describe('season rating queue upgrade through the real drizzle gate', () => {
 
     await prepareForegroundDatabase(adapter);
 
-    expect(await readUserVersion(adapter)).toBe(21);
+    expect(await readUserVersion(adapter)).toBe(22);
     expect(await readRatings(adapter)).toEqual(expected);
     expect(await readAnimeOperations(adapter)).toEqual(animeOperations);
   });

@@ -50,9 +50,11 @@ internal fun parseSeasonRatingPayload(payload: String?): JSONObject = try {
 }
 
 /**
- * Builds the wire body `{anime_id, grade, rated_at}` for one rating row. A field the payload does
- * not carry is omitted, never guessed: the bridge then rejects the message (422), which gives the
- * row its 4xx fate like any other rejected message.
+ * Builds the wire body `{anime_id, grade, rated_at, season_id}` for one rating row. A field the
+ * payload does not carry is omitted, never guessed: the bridge then rejects the message (422), which
+ * gives the row its 4xx fate like any other rejected message. The queued season travels as
+ * `season_id`, so a rating for a season the bridge has since replaced is refused (404) instead of
+ * landing in the new one.
  */
 internal fun buildSeasonRatingBody(row: BacklogRow): JSONObject {
   val payload = parseSeasonRatingPayload(row.payload)
@@ -60,6 +62,7 @@ internal fun buildSeasonRatingBody(row: BacklogRow): JSONObject {
     put("anime_id", row.animeId)
     payload.opt("grade")?.let { put("grade", it) }
     payload.opt("ratedAt")?.let { put("rated_at", it) }
+    payload.opt("seasonId")?.let { put("season_id", it) }
   }
 }
 

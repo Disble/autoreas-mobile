@@ -376,16 +376,16 @@ class SyncEngineDatabasesTest {
   }
 
   @Test
-  fun aDeviceStampedBeforeTheDeadColumnDropWaitsForTheForegroundAndRunsAfterIt() {
-    // Migration 0020 (convergent-sync T18) drops the dead `sync_runtime_status` columns in the
-    // foreground repair step. Until that step stamps 21, the file may still hold them, so the native
-    // owner must refuse a device stamped 20 and run only once the stamp reads 21.
+  fun aDeviceStampedBeforeTheSeasonColumnsWaitsForTheForegroundAndRunsAfterIt() {
+    // Migration 0021 adds `animes.season` and `bridge_config.season_mode` in the foreground repair
+    // step. Until that step stamps 22, the file may lack them, so the native owner must refuse a
+    // device stamped 21 and run only once the stamp reads 22.
     val context = RuntimeEnvironment.getApplication()
-    assertEquals(21, EXPECTED_SCHEMA_READINESS_VERSION)
+    assertEquals(22, EXPECTED_SCHEMA_READINESS_VERSION)
 
     val db = openAppDatabase(context)
     try {
-      db.execSQL("PRAGMA user_version = 20")
+      db.execSQL("PRAGMA user_version = 21")
     } finally {
       db.close()
     }
@@ -393,7 +393,7 @@ class SyncEngineDatabasesTest {
 
     val stamped = openAppDatabase(context)
     try {
-      stamped.execSQL("PRAGMA user_version = 21")
+      stamped.execSQL("PRAGMA user_version = 22")
     } finally {
       stamped.close()
     }

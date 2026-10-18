@@ -50,10 +50,8 @@ describe('bridge client request id', () => {
   it.each([
     ['getAnime', (client: ReturnType<typeof createBridgeClient>) =>
       client.getAnime(connection, 'anime-1', { requestId: 'cycle:1' })],
-    ['getActiveSeason', (client: ReturnType<typeof createBridgeClient>) =>
-      client.getActiveSeason(connection, { requestId: 'cycle:1' })],
     ['postActiveSeasonRating', (client: ReturnType<typeof createBridgeClient>) =>
-      client.postActiveSeasonRating(connection, { animeId: 'anime-1', nota: 4, ratedAt: 1 }, { requestId: 'cycle:1' })],
+      client.postActiveSeasonRating(connection, { animeId: 'anime-1', nota: 4, ratedAt: 1, seasonId: 'season-1' }, { requestId: 'cycle:1' })],
     ['reconcile', (client: ReturnType<typeof createBridgeClient>) =>
       client.reconcile(connection, { last_changelog_id: 0 }, { requestId: 'cycle:1' })],
     ['postSyncDiagnostics', (client: ReturnType<typeof createBridgeClient>) =>
@@ -107,10 +105,10 @@ describe('bridge client request id', () => {
     const logger = { debug: jest.fn(), warn: jest.fn() };
     const client = createBridgeClient({ fetchFn, logger });
 
-    await expect(client.getActiveSeason(connection, { requestId: 'cycle:2' })).rejects.toThrow();
+    await expect(client.getAnime(connection, 'anime-1', { requestId: 'cycle:2' })).rejects.toThrow();
 
     expect(logger.warn).toHaveBeenCalledWith('[BridgeClient] request did not reach the bridge', {
-      url: 'http://192.168.1.10:9876/api/seasons/active',
+      url: 'http://192.168.1.10:9876/api/animes/anime-1',
       method: 'GET',
       requestId: 'cycle:2',
     });

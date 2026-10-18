@@ -19,7 +19,7 @@ import { moveSeasonRatingQueueIntoOperationLog } from './season-rating-queue-mov
 import { dropDeadSyncRuntimeStatusColumns } from './sync-runtime-status-column-drop.helpers';
 
 import {
-  ACTIVE_SEASON_CACHE_TABLE_SQL,
+  DROP_ACTIVE_SEASON_CACHE_TABLE_SQL,
   ANIMES_COLUMN_DEFINITIONS,
   APP_PREFERENCES_COLUMN_DEFINITIONS,
   PENDING_REMOTE_CHANGES_TABLE_SQL,
@@ -249,9 +249,14 @@ async function ensurePendingRemoteChangesTable(rawDb: SQLiteDatabase) {
   await rawDb.runAsync(PENDING_REMOTE_CHANGES_TABLE_SQL);
 }
 
-/** Creates the single-row active-season cache. Exists in no migration file; only here. */
-async function ensureActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
-  await rawDb.runAsync(ACTIVE_SEASON_CACHE_TABLE_SQL);
+/**
+ * Drops the retired active-season cache, idempotently. Season state moved to `animes.season` (each
+ * anime's candidacy) and `bridge_config.season_mode`, both carried on the anime sync path, so the
+ * table has no reader or writer left. It existed in no migration file, only as a repair step, so
+ * installed devices hold it until this runs; a database without it is left unchanged.
+ */
+async function dropActiveSeasonCacheTable(rawDb: SQLiteDatabase) {
+  await rawDb.runAsync(DROP_ACTIVE_SEASON_CACHE_TABLE_SQL);
 }
 
 /** Creates the advisory sync-cycle lock table. Exists in no migration file; only here. */
@@ -351,9 +356,10 @@ async function reconcileMigrationLedger(rawDb: SQLiteDatabase): Promise<void> {
 
 /**
  * Brings a connection's schema to the shape the app expects: the drizzle migrator first, then
- * ordered idempotent repair steps for everything migrations cannot express. Three REQUIRED_SCHEMA
- * tables -- `active_season_cache`, `sync_cycle_lock` and `app_preferences` -- exist ONLY as repair steps, so running
- * the migration files alone leaves a database that fails readiness.
+ * ordered idempotent repair steps for everything migrations cannot express. Two REQUIRED_SCHEMA
+ * tables -- `sync_cycle_lock` and `app_preferences` -- exist ONLY as repair steps, so running the
+ * migration files alone leaves a database that fails readiness. One step only removes: the retired
+ * active-season cache, which only a repair step ever created.
  */
 async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   const db = createDrizzleDb(rawDb);
@@ -368,7 +374,7 @@ async function prepareDatabaseSchema(rawDb: SQLiteDatabase) {
   await ensureOperationLogColumns(rawDb);
   await ensurePendingRemoteChangesTable(rawDb);
   await moveSeasonRatingQueueIntoOperationLog(rawDb);
-  await ensureActiveSeasonCacheTable(rawDb);
+  await dropActiveSeasonCacheTable(rawDb);
   await ensureSyncCycleLockTable(rawDb);
   await ensureSyncCycleLockColumns(rawDb);
   await ensureAppPreferencesTable(rawDb);
@@ -395,14 +401,15 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
 
 /**
  * Unpairs the bridge in one transaction (ADR 009 R-11): drops its config and cursor, every queue
- * of that pairing and every anime's bridge token, none of which means anything to the next bridge.
+ * of that pairing, and every anime's bridge token and season candidacy, none of which means
+ * anything to the next bridge.
  */
 export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   await withLocalWrite(rawDb, async (db) => {
     await db.delete(schema.bridgeConfig);
     await db.delete(schema.operationLog);
     await db.delete(schema.pendingRemoteChanges);
-    await db.update(schema.animes).set({ bridgeModifiedAt: null });
+    await db.update(schema.animes).set({ bridgeModifiedAt: null, season: null });
   });
 }
 

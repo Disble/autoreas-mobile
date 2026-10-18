@@ -60,7 +60,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
 
     const first = requestFlush(database, 'local_mutation');
     const second = requestFlush(database, 'season_rating');
-    const third = requestFlush(database, 'ws_season_changed');
+    const third = requestFlush(database, 'ws_sync_required');
     const fourth = requestFlush(database, 'manual');
 
     expect(dispatcher.runs).toHaveLength(1);
@@ -72,12 +72,10 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     await flushMicrotasks();
 
     expect(dispatcher.runs).toHaveLength(2);
-    // The follow-up serves every request it absorbed: the first one names the source, and any
-    // season event demands the refresh.
+    // The follow-up serves every request it absorbed: the first one names the source.
     expect(dispatcher.runs[1].request).toEqual({
       database,
       source: 'local_mutation',
-      refreshActiveSeason: true,
       healSnapshot: 'never',
     });
 
@@ -112,7 +110,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     void requestFlush(database, 'network_regained');
 
     expect(dispatcher.runs).toHaveLength(2);
-    expect(dispatcher.runs[1].request).toEqual({ database, source: 'network_regained', refreshActiveSeason: false, healSnapshot: 'never' });
+    expect(dispatcher.runs[1].request).toEqual({ database, source: 'network_regained', healSnapshot: 'never' });
   });
 
   it('serves the strongest snapshot-heal demand of the reasons a run absorbs (ADR 009 R-7)', async () => {
@@ -146,7 +144,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     void requestFlush(database, 'ws_disconnected');
 
     expect(dispatcher.runs).toHaveLength(1);
-    expect(dispatcher.runs[0].request).toEqual({ database, source: 'ws_sync_required', refreshActiveSeason: false, healSnapshot: 'never' });
+    expect(dispatcher.runs[0].request).toEqual({ database, source: 'ws_sync_required', healSnapshot: 'never' });
 
     dispatcher.runs[0].resolve(0);
     await flushMicrotasks();

@@ -10,7 +10,6 @@ import {
   resetSyncFlush,
   waitForSyncFlushIdle,
 } from '../../../src/features/sync/sync-flush.helpers';
-import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { confirmedAt, openPairedDatabase, readOperationRows, readRatingRows } from './unresolved-fixtures.helpers';
@@ -32,10 +31,10 @@ jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
   runCoverSweep: jest.fn().mockResolvedValue(undefined),
 }));
 
-/** The bridge's active-season answer naming `anime-1` as the only candidate. */
-const ACTIVE_SEASON_ANSWER = {
-  status: 200,
-  body: { season_id: 'season-2', candidates: [{ anime_id: 'anime-1', grade: null, grade_source: null }] },
+/** The answer to the pull a delivered rating owes: the bridge's ["season"] row lands through it. */
+const RATING_PULL_ANSWER = {
+  status: 202,
+  body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 },
 };
 
 /**
@@ -75,7 +74,6 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     fakeBridge = installFakeBridge();
     resetSyncConnectionStore();
     resetSyncFlush();
-    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
     // What the mounted foreground runtime does.
     registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
   });
@@ -89,7 +87,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     const adapter = await openRepairedDatabase();
     fakeBridge.queueResponse({ status: 202, body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 } });
     fakeBridge.queueResponse({ status: 204, body: null });
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
+    fakeBridge.queueResponse(RATING_PULL_ANSWER);
 
     await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1_700_000_000_000 });
     await waitForSyncFlushIdle(adapter);
@@ -97,7 +95,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     expect(sentPaths(fakeBridge)).toEqual([
       'POST /api/sync/reconcile',
       'POST /api/seasons/active/ratings',
-      'GET /api/seasons/active',
+      'POST /api/sync/reconcile',
     ]);
     expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ anime_id: 'anime-1', status: 'synced' })]);
   });
@@ -109,7 +107,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     );
     fakeBridge.queueResponse(confirmedAt(8));
     fakeBridge.queueResponse({ status: 204, body: null });
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
+    fakeBridge.queueResponse(RATING_PULL_ANSWER);
 
     await expect(applyAnimeMutationPatch(adapter, 'anime-1', buildCapPlusPatch, 'capPlus')).resolves.toBe(true);
     await waitForSyncFlushIdle(adapter);
@@ -117,7 +115,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     expect(sentPaths(fakeBridge)).toEqual([
       'POST /api/sync/reconcile',
       'POST /api/seasons/active/ratings',
-      'GET /api/seasons/active',
+      'POST /api/sync/reconcile',
     ]);
     expect(await readOperationRows(adapter)).toEqual([
       expect.objectContaining({ status: 'synced' }),
@@ -131,22 +129,7 @@ describe('one JS exit: callers enqueue and request a flush, only the dispatcher 
     expect(getSyncConnectionSnapshot().kind).toBe('online');
   });
 
-  it('refreshes and caches the active season when the WebSocket reports a season change (I8)', async () => {
-    const adapter = await openRepairedDatabase();
-    fakeBridge.queueResponse({ status: 202, body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 } });
-    fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
-
-    await requestFlush(adapter, 'ws_season_changed');
-
-    expect(sentPaths(fakeBridge)).toEqual(['POST /api/sync/reconcile', 'GET /api/seasons/active']);
-    expect(useActiveSeasonStore.getState().activeSeasonSnapshot?.seasonId).toBe('season-2');
-    // The WebSocket path cached what it fetched before it went through the entry point; it still does.
-    expect(
-      await adapter.getFirstAsync<{ season_id: string }>('SELECT season_id FROM active_season_cache WHERE id = 1'),
-    ).toEqual({ season_id: 'season-2' });
-  });
-
-  it('still leaves the active season alone on a plain trigger with nothing rated', async () => {
+  it('sends nothing but the reconcile on a plain trigger with nothing rated', async () => {
     const adapter = await openRepairedDatabase();
     fakeBridge.queueResponse({ status: 202, body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 } });
 

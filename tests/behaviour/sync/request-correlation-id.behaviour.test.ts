@@ -1,4 +1,3 @@
-import { refreshActiveSeasonSnapshot } from '../../../src/features/sync/active-season-refresh.helpers';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
 import { createRequestIdSequence } from '../../../src/features/sync/request-id.helpers';
 import { bridgeClient } from '../../../src/infrastructure/api';
@@ -63,7 +62,7 @@ describe('request correlation ids on the JS sync cycle (S1, S2, S4)', () => {
     jest.restoreAllMocks();
   });
 
-  it('numbers the reconciles, the rating and the active-season refresh of one cycle under one id', async () => {
+  it('numbers the reconciles, the rating and the pull after it of one cycle under one id', async () => {
     const adapter = await openDatabase();
     await seed(adapter, { id: 1, operation: 'update' });
     await seed(adapter, { id: 2, operation: 'season_rating' });
@@ -71,17 +70,18 @@ describe('request correlation ids on the JS sync cycle (S1, S2, S4)', () => {
     fakeBridge.queueResponse(confirmed(14));
     fakeBridge.queueResponse({ status: 204, body: null });
     fakeBridge.queueResponse(confirmed(15));
-    fakeBridge.queueResponse({ status: 404, body: { error: 'no active season' } });
+    fakeBridge.queueResponse(confirming());
     const requestIds = createRequestIdSequence();
 
     await syncPendingOperations(adapter, requestIds);
-    await refreshActiveSeasonSnapshot(adapter, () => undefined, requestIds);
+    // The facade's pull after a delivered rating shares the cycle's sequence.
+    await syncPendingOperations(adapter, requestIds);
 
     expect(paths(fakeBridge)).toEqual([
       '/api/sync/reconcile',
       '/api/seasons/active/ratings',
       '/api/sync/reconcile',
-      '/api/seasons/active',
+      '/api/sync/reconcile',
     ]);
     expect(expectOneNumberedCycle(fakeBridge)).toBe(requestIds.cycleId);
   });

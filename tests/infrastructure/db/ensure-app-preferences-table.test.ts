@@ -29,9 +29,8 @@ async function readAppPreferencesColumns(rawDb: SQLiteDatabase): Promise<string[
 }
 
 /**
- * `app_preferences` exists in no migration file, like `active_season_cache` and
- * `sync_cycle_lock`: adding a journal entry would bump `EXPECTED_SCHEMA_READINESS_VERSION` and its
- * Kotlin twin. Installed devices reach it because the new `REQUIRED_SCHEMA_TABLES` entry fails
+ * `app_preferences` exists in no migration file, like `sync_cycle_lock`: adding a journal entry
+ * would bump `EXPECTED_SCHEMA_READINESS_VERSION` and its Kotlin twin. Installed devices reach it because the new `REQUIRED_SCHEMA_TABLES` entry fails
  * readiness validation at the current version, which falls through to `runMigrations`.
  */
 describe('ensureAppPreferencesTable (repair-only singleton table)', () => {

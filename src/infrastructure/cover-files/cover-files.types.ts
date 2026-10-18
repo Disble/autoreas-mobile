@@ -27,3 +27,16 @@ export interface CoverManifest {
   readonly version: 1;
   readonly entries: Readonly<Record<string, CoverManifestEntry>>;
 }
+
+/**
+ * One cover the native background sync downloaded into the inbox and the cover store has not
+ * adopted yet: the sidecar's fields plus `sidecarFileName`, the inbox file it was read from.
+ */
+export interface CoverInboxEntry {
+  readonly animeId: string;
+  readonly imageFileName: string;
+  readonly etag: string | null;
+  readonly sourceKey: string | null;
+  readonly fetchedAt: number;
+  readonly sidecarFileName: string;
+}

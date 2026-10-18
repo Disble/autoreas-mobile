@@ -1,8 +1,11 @@
 export {
+  adoptCoverInboxImage,
   buildCoverFileName,
   coverFileExists,
   deleteCoverFile,
+  discardCoverInboxEntry,
   getCoverFileUri,
+  listCoverInboxEntries,
   listCoverFileNames,
   normalizeCoverSourceKey,
   parseCoverManifest,
@@ -18,6 +21,7 @@ export {
   EMPTY_COVER_MANIFEST,
 } from './cover-files.constants';
 export type {
+  CoverInboxEntry,
   CoverManifest,
   CoverManifestEntry,
   CoverManifestEntryStatus,

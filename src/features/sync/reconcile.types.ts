@@ -17,6 +17,8 @@ export interface ApplyReconcileResponseWritesParams {
   readonly lastChangelogId: number;
   readonly nextLastChangelogId: number;
   readonly bridgeConfigId: number;
+  /** The response's `season_mode`; `undefined` (absent) leaves the stored value. */
+  readonly seasonMode: boolean | undefined;
   /** The claim this cycle holds; every status write is compare-and-set on it (ADR 009 R-13). */
   readonly claim: OutboxClaim;
 }
@@ -29,18 +31,18 @@ export interface SyncPendingOperationsResult {
   readonly syncedCount: number;
   readonly hasMorePending: boolean;
   /**
-   * A season rating was delivered, or refused with a 404 or 409, so the active-season snapshot
-   * no longer matches what the bridge holds and should be fetched again (L28).
+   * The bridge accepted a season rating (a 204), so it recorded a ["season"] row for that anime
+   * that this pass has not pulled yet (L12).
    */
-  readonly shouldRefreshActiveSeason: boolean;
+  readonly ratingDelivered: boolean;
 }
 
 /**
  * What one round of a chain did across both endpoints (L28): its reconcile's outcome plus its
- * season ratings', and whether a rating answer calls for an active-season refresh.
+ * season ratings', and whether the bridge accepted one of those ratings (a 204).
  */
 export interface SplitRoundOutcome extends ReconcileRoundOutcome {
-  readonly shouldRefreshActiveSeason: boolean;
+  readonly ratingDelivered: boolean;
 }
 
 /** What one reconcile round needs that stays fixed, or is carried forward, across a chain. */

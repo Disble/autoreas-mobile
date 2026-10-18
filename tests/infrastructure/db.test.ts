@@ -204,6 +204,7 @@ describe("db client tracer helpers", () => {
             { name: "id" },
             { name: "last_changelog_id" },
             { name: "is_sync_telemetry_enabled" },
+            { name: "season_mode" },
           ];
         }
 
@@ -229,6 +230,7 @@ describe("db client tracer helpers", () => {
             { name: "bridge_modified_at" },
             { name: "episodes" },
             { name: "folder_relative" },
+            { name: "season" },
           ];
         }
 
@@ -272,12 +274,8 @@ describe("db client tracer helpers", () => {
     );
     // ADR 009 L28: the retired rating queue is never created again, only moved and dropped.
     expect(rawDb.runAsync).not.toHaveBeenCalledWith(expect.stringMatching(/season_rating_queue/));
-    expect(rawDb.runAsync).toHaveBeenCalledWith(
-      'CREATE TABLE IF NOT EXISTS active_season_cache (' +
-        'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
-        'season_id TEXT NOT NULL, ' +
-        'candidates_json TEXT NOT NULL)'
-    );
+    // The retired active-season cache is only ever dropped now, never created.
+    expect(rawDb.runAsync).toHaveBeenCalledWith('DROP TABLE IF EXISTS active_season_cache');
   });
 
   it("repara sync_runtime_status legacy agregando columnas del execution mode", async () => {

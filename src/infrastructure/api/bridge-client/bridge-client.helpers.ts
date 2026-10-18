@@ -246,13 +246,6 @@ export function createBridgeClient(
         token: connection.token,
         requestId: options?.requestId,
       }),
-    getActiveSeason: (connection, options?: BridgeRequestOptions) =>
-      request(connection, {
-        method: 'GET',
-        path: BRIDGE_API_PATHS.activeSeason,
-        token: connection.token,
-        requestId: options?.requestId,
-      }),
     postActiveSeasonRating: (
       connection,
       seasonRatingRequest: PostActiveSeasonRatingRequest,

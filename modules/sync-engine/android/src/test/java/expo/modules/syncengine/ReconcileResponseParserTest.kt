@@ -450,4 +450,46 @@ class ReconcileResponseParserTest {
 
     assertEquals(org.json.JSONObject.NULL, legacy.get("episodes"))
   }
+
+  /** Maps one snapshot whose `season` value is the given raw JSON, returning the legacy `season`. */
+  private fun legacySeasonFor(seasonJson: String): Any {
+    val change = ReconcileResponseParser.parse(
+      """{"status":"accepted","bridge_changes":[{"record_id":"a-1","change_type":"update","changed_fields":["season"],"timestamp":1,"snapshot":{"id":"a-1","name":"A","status":1,"episodesWatched":0,"active":1,"firstCycle":0,"season":$seasonJson}}]}""",
+    ).bridgeChanges.single()
+
+    val normalized = WireAnimeMapper.normalize(change)
+    assertEquals("""["season"]""", normalized.changedFieldsJson)
+    return org.json.JSONObject(normalized.snapshotJson!!).get("season")
+  }
+
+  @Test
+  fun rebuildsTheSeasonCandidacyWithCanonicalKeysAndDropsExtraKeys() {
+    assertEquals(
+      """{"seasonId":"s-7","grade":4}""",
+      legacySeasonFor("""{"grade":4.0,"extra":true,"seasonId":"s-7"}""").toString(),
+    )
+    assertEquals(
+      """{"seasonId":"s-7","grade":null}""",
+      legacySeasonFor("""{"seasonId":"s-7","grade":null}""").toString(),
+    )
+  }
+
+  @Test
+  fun mapsEveryMalformedSeasonShapeToNullInsteadOfFailingTheSnapshot() {
+    val malformed = listOf(
+      "null",
+      "\"s-7\"",
+      """{"grade":3}""",
+      """{"seasonId":"","grade":3}""",
+      """{"seasonId":"s-7"}""",
+      """{"seasonId":"s-7","grade":0}""",
+      """{"seasonId":"s-7","grade":7}""",
+      """{"seasonId":"s-7","grade":2.5}""",
+      """{"seasonId":"s-7","grade":"3"}""",
+    )
+
+    for (raw in malformed) {
+      assertEquals("season=$raw", org.json.JSONObject.NULL, legacySeasonFor(raw))
+    }
+  }
 }

@@ -62,6 +62,29 @@ describe("applyAnimePartial", () => {
 });
 
 describe("upsertAnime", () => {
+  it("persists the season candidacy as canonical JSON text, and NULL for a non-candidate", async () => {
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const db = { insert: jest.fn().mockReturnValue({ values }) } as never;
+    const anime = {
+      _id: "anime-1",
+      nombre: "Naruto",
+      estado: 1,
+      nrocapvisto: 6,
+      activo: 1,
+      primeravez: 0,
+      dias: [],
+      generos: [],
+    };
+
+    await upsertAnime(db, { ...anime, season: { seasonId: "season-7", grade: 2 } });
+    await upsertAnime(db, anime);
+
+    expect(values.mock.calls[0][0].season).toBe('{"seasonId":"season-7","grade":2}');
+    expect(onConflictDoUpdate.mock.calls[0][0].set.season).toBe('{"seasonId":"season-7","grade":2}');
+    expect(values.mock.calls[1][0].season).toBeNull();
+  });
+
   it("persists episodes as canonical JSON text, and NULL when no durations are known", async () => {
     const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });

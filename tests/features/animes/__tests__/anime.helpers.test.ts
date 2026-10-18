@@ -31,6 +31,7 @@ const FROZEN_ANIME_DOMAIN_KEYS = [
   "pagina",
   "portada",
   "primeravez",
+  "season",
   "tipo",
   "totalcap",
 ].sort();
@@ -46,6 +47,7 @@ function buildAnimeRow(overrides: Partial<AnimeRow> = {}): AnimeRow {
     dias: null,
     generos: null,
     episodes: null,
+    season: null,
     folderRelative: null,
     tipo: null,
     activo: 1,

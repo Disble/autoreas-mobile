@@ -11,28 +11,13 @@ export interface BridgePairDeviceRequest {
   readonly deviceName: string;
 }
 
-/** Bridge-owned rating source displayed on season-aware candidate surfaces. */
-export type ActiveSeasonRatingSource = 'bridge';
-
-/** One bridge-declared season candidate after transport normalization. */
-export interface ActiveSeasonCandidateSnapshot {
-  readonly animeId: string;
-  readonly bridgeRating: number | null;
-  readonly bridgeRatingSource: ActiveSeasonRatingSource | null;
-}
-
-/** Active-season snapshot consumed by features without exposing raw wire keys. */
-export interface ActiveSeasonSnapshot {
-  readonly seasonId: string;
-  readonly candidates: readonly ActiveSeasonCandidateSnapshot[];
-  readonly candidatesByAnimeId: Readonly<Record<string, ActiveSeasonCandidateSnapshot>>;
-}
-
 /** Body fields required by the bridge active-season rating contract. */
 export interface PostActiveSeasonRatingRequest {
   readonly animeId: string;
   readonly nota: number;
   readonly ratedAt: number;
+  /** The season the rating was given for; the bridge refuses it (404) when that season is gone. */
+  readonly seasonId: string;
 }
 
 /** Defines the bridge http method value shape. */
@@ -113,10 +98,6 @@ export interface BridgeClient {
   readonly getAnime: (
     connection: BridgeConnection,
     animeId: string,
-    options?: BridgeRequestOptions,
-  ) => Promise<BridgeHttpResult>;
-  readonly getActiveSeason: (
-    connection: BridgeConnection,
     options?: BridgeRequestOptions,
   ) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
