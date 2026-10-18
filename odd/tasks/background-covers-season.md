@@ -41,3 +41,8 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
   - Mobile asked bridge to confirm that a ["season"] row does not bump `modified_at` and that its change timestamp stays monotonic.
   - Installed builds reject and acknowledge ["season"] rows (fail-closed), so they are safe.
   - Waiting for the vN ping before implementing.
+- L11 (2026-10-18, bridge-season):
+  - Confirmed that a ["season"] row keeps the anime's current `modified_at` and stamps a strictly increasing timestamp. Bridge pins both with tests, and season never enters snapshot_json.
+  - Grade range is 1–6.
+  - Upgrade gap: installed builds ack the backfill rows without applying them. The mount/resume snapshot heal (R-7) closes it once `season` is a compared field, so no cursor reset or re-emit is needed.
+  - Bridge adds an optional `season_id` to POST /api/seasons/active/ratings in vN. On a mismatch it returns 404, so the rating becomes unresolved with `not_found`. Mobile always sends it, taken from the queued payload's seasonId.
