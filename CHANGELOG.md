@@ -16,6 +16,14 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-10-18
+
+Works with any Bridge 2.0.0 or later. A Bridge that does not know the new request id simply ignores it.
+
+### Internal
+
+- Every request a sync sends to the Bridge, in the foreground or in the background, now carries an id naming its sync and its place in it. The Bridge can match each request it receives to the app's own sync logs, which makes a failed or stuck sync much easier to trace. Requests outside a sync (screens, pairing, covers) are unchanged.
+
 ## [2.0.0] — 2026-10-18
 
 Requires Bridge 2.0.0 or later. This version and Bridge 2.0.0 must be installed together: older versions of the app no longer get season data from Bridge 2.0.0, and this version gets none from an older Bridge.
