@@ -16,6 +16,27 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-10-18
+
+Requires Bridge 2.0.0 or later. This version and Bridge 2.0.0 must be installed together: older versions of the app no longer get season data from Bridge 2.0.0, and this version gets none from an older Bridge.
+
+### Fixed
+
+- Season mode now turns on with the rest of your anime list, even when the app was in the background, so you can rate the animes in "Ver hoy" as soon as the season opens.
+- Covers of animes that arrive while the app is in the background are now downloaded in the background too, so those animes open with their cover.
+- On a season card, the cover now fills the whole card height instead of leaving an empty space below it.
+- On a tablet in full screen, the day sidebar shows again instead of the phone layout.
+
+### Changed
+
+- Each anime's season, and the grade you gave it, now arrive with the anime itself instead of from a separate season check, so they stay up to date in the same sync as everything else.
+- A season rating now carries the season you gave it in. A rating made offline for a season that has since closed is kept for review instead of landing in the new season.
+- After the Bridge accepts a rating, the app picks up the recorded grade in the same sync.
+
+### Internal
+
+- The app's database drops its separate season cache and stores the season with each anime. This change cannot be undone by installing an older version.
+
 ## [1.13.1] — 2026-10-17
 
 ### Fixed
