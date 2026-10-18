@@ -286,6 +286,9 @@ object SyncEngineRunner {
         return@execute
       }
 
+      // One numbering for every bridge request this attempt makes, the presence probe first.
+      val requestIds = RequestIdSequence(cycleId)
+
       try {
         // The presence gate's HTTP call runs HERE, on worker -- never on the caller's thread.
         // SyncForegroundService calls runOnce from onStartCommand (the main thread); a
@@ -294,7 +297,7 @@ object SyncEngineRunner {
         // absence. Placed inside this try (unlike an earlier T3 attempt) so a database read
         // failure inside the probe cannot escape this closure and leave onResult uncalled.
         if (requirePresence) {
-          val probe = SyncEngineBridgePresence.probe(db)
+          val probe = SyncEngineBridgePresence.probe(db, requestIds.next())
           if (!probe.isPresent) {
             // No claim, no lease touch, no journal write beyond what the watchdog may already
             // have written: the gate exists precisely to keep an absent-bridge tick this cheap
@@ -313,7 +316,7 @@ object SyncEngineRunner {
           }
         }
 
-        val cycle = SyncEngineCycle(db, activeJournal)
+        val cycle = SyncEngineCycle(db, activeJournal, requestIds = requestIds)
         val outcome = cycle.run(triggerSource, cycleId, stageRef::set)
         if (settled.compareAndSet(false, true)) {
           handler.removeCallbacks(watchdog)

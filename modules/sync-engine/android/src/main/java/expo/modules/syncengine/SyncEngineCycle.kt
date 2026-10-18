@@ -55,6 +55,8 @@ class SyncEngineCycle(
   private val diagnostics: SyncEngineDiagnosticsCourier = SyncEngineDiagnosticsCourier.forAppDatabase(appDb),
   /** Epoch-ms clock for the claim time and the chain budget; tests advance it. */
   private val clock: () -> Long = System::currentTimeMillis,
+  /** This attempt's request ids; `null` sends every bridge request without one. */
+  private val requestIds: RequestIdSequence? = null,
 ) {
   private val lease = SyncCycleLease(appDb)
 
@@ -146,6 +148,9 @@ class SyncEngineCycle(
   private fun requireOwned(): LeaseFence =
     leaseFence ?: throw LeaseLostException("attempt holds no cycle lease")
 
+  /** The id for this attempt's next bridge request, or `null` when it carries none. */
+  private fun nextRequestId(): String? = requestIds?.next()
+
   /** Appends one intent-before-effect journal transition and advances the tracked state. */
   private fun transition(toState: String, reason: String?) {
     journal.append(cycleId, lastState, toState, reason, System.currentTimeMillis())
@@ -200,6 +205,7 @@ class SyncEngineCycle(
     diagnostics.drain(
       isSyncTelemetryEnabled = config.isSyncTelemetryEnabled,
       connection = SyncDiagnosticsConnection(ip = ip, port = port, token = token),
+      nextRequestId = ::nextRequestId,
     )
 
     // Read and claim in ONE transaction (ADR 009 R-13): a key with a live claim, ours or the JS
@@ -249,7 +255,7 @@ class SyncEngineCycle(
       attemptClaimedIds += applied.successors.map { it.id }
       claimedRows = seasonRatings
       val rated = ratings.send(seasonRatings, target.chainDeadline) { body ->
-        SyncEngineHttp.postJson("http://${target.ip}:${target.port}$SEASON_RATING_PATH", target.token, body, BRIDGE_REQUEST_TIMEOUT_MS)
+        SyncEngineHttp.postJson("http://${target.ip}:${target.port}$SEASON_RATING_PATH", target.token, body, BRIDGE_REQUEST_TIMEOUT_MS, nextRequestId())
       }
       syncedCount += applied.confirmedCount + rated.confirmedCount
       lastChangelogId = applied.cursor
@@ -289,7 +295,7 @@ class SyncEngineCycle(
     val tokensByAnimeId = readAnimeBridgeTokens(appDb, round.map { it.animeId }).toMutableMap()
     // Never without a base (ADR 009 R-3): an anime with no stored token is fetched first.
     val sendable = missingTokens.resolve(round, tokensByAnimeId) { animeId ->
-      SyncEngineHttp.get("http://${target.ip}:${target.port}/api/animes/${Uri.encode(animeId)}", target.token, BRIDGE_REQUEST_TIMEOUT_MS)
+      SyncEngineHttp.get("http://${target.ip}:${target.port}/api/animes/${Uri.encode(animeId)}", target.token, BRIDGE_REQUEST_TIMEOUT_MS, nextRequestId())
     }
     claimedRows = sendable
     val requestBody = ReconcileRequestBody.build(
@@ -310,6 +316,7 @@ class SyncEngineCycle(
         token = target.token,
         body = requestBody.toString(),
         timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
+        requestId = nextRequestId(),
       )
     } catch (error: Throwable) {
       // Transport failure: retryable, never dead-lettered (step 7's sibling rule).

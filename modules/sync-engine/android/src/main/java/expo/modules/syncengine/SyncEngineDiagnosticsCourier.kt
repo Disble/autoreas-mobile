@@ -98,6 +98,13 @@ data class SyncDiagnosticsPostResult(
 fun interface SyncDiagnosticsTransport {
   /** Posts [body] verbatim; throws only on a transport failure, exactly like the JS client. */
   fun post(url: String, token: String, body: String, timeoutMs: Int): SyncDiagnosticsPostResult
+
+  /**
+   * Posts [body] carrying [requestId] as [REQUEST_ID_HEADER]. A transport that cannot send the
+   * header falls back to [post] and drops the id, which the bridge contract allows.
+   */
+  fun post(url: String, token: String, body: String, timeoutMs: Int, requestId: String?): SyncDiagnosticsPostResult =
+    post(url, token, body, timeoutMs)
 }
 
 /** The bridge coordinates one drain needs. */
@@ -207,8 +214,11 @@ private fun parseHttpDate(raw: String): Long? {
  * read is never a delivery failure.
  */
 object HttpSyncDiagnosticsTransport : SyncDiagnosticsTransport {
-  override fun post(url: String, token: String, body: String, timeoutMs: Int): SyncDiagnosticsPostResult {
-    val response = SyncEngineHttp.postJson(url, token, body, timeoutMs)
+  override fun post(url: String, token: String, body: String, timeoutMs: Int): SyncDiagnosticsPostResult =
+    post(url, token, body, timeoutMs, requestId = null)
+
+  override fun post(url: String, token: String, body: String, timeoutMs: Int, requestId: String?): SyncDiagnosticsPostResult {
+    val response = SyncEngineHttp.postJson(url, token, body, timeoutMs, requestId)
     return SyncDiagnosticsPostResult(
       code = response.code,
       retryAfterMillis = parseRetryAfterMillis(response.retryAfter, System.currentTimeMillis()),
@@ -272,10 +282,15 @@ class SyncEngineDiagnosticsCourier(
   private val acceptedKinds: Set<String> = SYNC_DIAGNOSTICS_ACCEPTED_KINDS,
   private val undeliverableKinds: Set<String> = SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS,
 ) {
-  /** Drains at most one batch, never throwing and never affecting the attempt's outcome. */
+  /**
+   * Drains at most one batch, never throwing and never affecting the attempt's outcome.
+   * [nextRequestId] is asked once per POST actually sent, so the attempt's request numbering
+   * never skips a value for a row that spent no request.
+   */
   fun drain(
     isSyncTelemetryEnabled: Boolean,
     connection: SyncDiagnosticsConnection,
+    nextRequestId: () -> String? = { null },
   ): SyncDiagnosticsFlushResult {
     // The switch first, and the zeroed tally rather than an empty pass: while the user's switch is
     // off nothing may be read or written, which is what keeps queued rows pending instead of
@@ -335,6 +350,7 @@ class SyncEngineDiagnosticsCourier(
               token = connection.token,
               body = candidate.payload,
               timeoutMs = minOf(SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS.toLong(), remainingMs).toInt(),
+              requestId = nextRequestId(),
             )
           } catch (error: Throwable) {
             break // transport failure: the link or the bridge is down, so the row stays queued
