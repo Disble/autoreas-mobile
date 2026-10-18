@@ -60,8 +60,8 @@ export const APP_PREFERENCES_TABLE_SQL =
  */
 export const REQUIRED_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   sync_runtime_status: ['last_cycle_id'],
-  bridge_config: ['is_sync_telemetry_enabled'],
-  animes: ['last_applied_change_ms', 'bridge_modified_at', 'episodes', 'folder_relative'],
+  bridge_config: ['is_sync_telemetry_enabled', 'season_mode'],
+  animes: ['last_applied_change_ms', 'bridge_modified_at', 'episodes', 'folder_relative', 'season'],
   operation_log: ['conflict_attempt_count', 'claim_owner', 'claimed_at', 'unresolved_reason'],
   // The fence token is what makes a reclaimed cycle-lock lease reject the previous owner's
   // release (and the native engine's fenced writes): without it a lease lapse only prevents

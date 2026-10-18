@@ -84,7 +84,7 @@
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
             "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North", "folderRelative": null,
-            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null, "season": null
           }
         }
       ]
@@ -151,7 +151,7 @@
             "dias": [{ "dia": "Tue", "orden": 2 }], "generos": ["Mystery"], "tipo": 1, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": 1700, "fechaEstreno": 1800, "fechaCreacion": 1900, "fechaEliminacion": 2000,
             "portada": "cover.png", "pagina": "https://example.invalid/anime/7", "carpeta": "North", "folderRelative": null,
-            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null
+            "estudios": "Studio X", "origen": "Manga", "duracion": 24, "episodes": null, "season": null
           }
         }
       ]
@@ -319,7 +319,8 @@
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
             "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null,
-            "episodes": [{ "episode": 6, "minutes": 24, "long": false }, { "episode": 7, "minutes": 45, "long": true }]
+            "episodes": [{ "episode": 6, "minutes": 24, "long": false }, { "episode": 7, "minutes": 45, "long": true }],
+            "season": null
           }
         },
         {
@@ -329,7 +330,7 @@
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
             "portada": null, "pagina": null, "carpeta": null, "folderRelative": null, "estudios": null, "origen": null, "duracion": null,
-            "episodes": null
+            "episodes": null, "season": null
           }
         }
       ]
@@ -381,7 +382,7 @@
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
             "portada": null, "pagina": null, "carpeta": "D:/Videos/Anime/Frieren", "folderRelative": "Anime/Frieren",
-            "estudios": null, "origen": null, "duracion": null, "episodes": null
+            "estudios": null, "origen": null, "duracion": null, "episodes": null, "season": null
           }
         },
         {
@@ -391,7 +392,114 @@
             "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
             "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
             "portada": null, "pagina": null, "carpeta": "D:/Elsewhere/No Path", "folderRelative": null,
-            "estudios": null, "origen": null, "duracion": null, "episodes": null
+            "estudios": null, "origen": null, "duracion": null, "episodes": null, "season": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "season-mapped-whole-or-null",
+    "description": "A candidacy-only update keeps changed_fields season and carries seasonId and grade (null while ungraded); an absent season (unlinked) or one that breaks the contract maps to null instead of failing the snapshot.",
+    "input": {
+      "backlog": [],
+      "responseBody": {
+        "status": "accepted",
+        "applied_operations": [],
+        "bridge_changes": [
+          {
+            "record_id": "anime-12",
+            "change_type": "update",
+            "changed_fields": ["season"],
+            "snapshot": {
+              "id": "anime-12", "name": "Graded", "status": 1, "episodesWatched": 2, "active": 1, "firstCycle": 0,
+              "modified_at": 7,
+              "season": { "grade": 4, "seasonId": "season-7" }
+            },
+            "timestamp": 72
+          },
+          {
+            "record_id": "anime-13",
+            "change_type": "update",
+            "changed_fields": ["season"],
+            "snapshot": {
+              "id": "anime-13", "name": "Ungraded", "status": 1, "episodesWatched": 2, "active": 1, "firstCycle": 0,
+              "modified_at": 7,
+              "season": { "seasonId": "season-7", "grade": null }
+            },
+            "timestamp": 73
+          },
+          {
+            "record_id": "anime-14",
+            "change_type": "update",
+            "changed_fields": ["season"],
+            "snapshot": {
+              "id": "anime-14", "name": "Unlinked", "status": 1, "episodesWatched": 2, "active": 1, "firstCycle": 0,
+              "modified_at": 7
+            },
+            "timestamp": 74
+          },
+          {
+            "record_id": "anime-15",
+            "change_type": "update",
+            "changed_fields": ["season"],
+            "snapshot": {
+              "id": "anime-15", "name": "Bad Grade", "status": 1, "episodesWatched": 2, "active": 1, "firstCycle": 0,
+              "modified_at": 7,
+              "season": { "seasonId": "season-7", "grade": 9 }
+            },
+            "timestamp": 75
+          }
+        ],
+        "last_changelog_id": 2410
+      }
+    },
+    "expected": {
+      "last_changelog_id": 2410,
+      "confirmedOperationIds": [],
+      "bridgeChanges": [
+        {
+          "recordId": "anime-12", "changeType": "update", "changedFields": ["season"], "timestamp": 72,
+          "snapshot": {
+            "_id": "anime-12", "nombre": "Graded", "estado": 1, "nrocapvisto": 2, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null,
+            "estudios": null, "origen": null, "duracion": null, "episodes": null,
+            "season": { "seasonId": "season-7", "grade": 4 }
+          }
+        },
+        {
+          "recordId": "anime-13", "changeType": "update", "changedFields": ["season"], "timestamp": 73,
+          "snapshot": {
+            "_id": "anime-13", "nombre": "Ungraded", "estado": 1, "nrocapvisto": 2, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null,
+            "estudios": null, "origen": null, "duracion": null, "episodes": null,
+            "season": { "seasonId": "season-7", "grade": null }
+          }
+        },
+        {
+          "recordId": "anime-14", "changeType": "update", "changedFields": ["season"], "timestamp": 74,
+          "snapshot": {
+            "_id": "anime-14", "nombre": "Unlinked", "estado": 1, "nrocapvisto": 2, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null,
+            "estudios": null, "origen": null, "duracion": null, "episodes": null,
+            "season": null
+          }
+        },
+        {
+          "recordId": "anime-15", "changeType": "update", "changedFields": ["season"], "timestamp": 75,
+          "snapshot": {
+            "_id": "anime-15", "nombre": "Bad Grade", "estado": 1, "nrocapvisto": 2, "totalcap": null,
+            "dias": [], "generos": [], "tipo": null, "activo": 1, "primeravez": 0,
+            "fechaUltCapVisto": null, "fechaEstreno": null, "fechaCreacion": null, "fechaEliminacion": null,
+            "portada": null, "pagina": null, "carpeta": null, "folderRelative": null,
+            "estudios": null, "origen": null, "duracion": null, "episodes": null,
+            "season": null
           }
         }
       ]

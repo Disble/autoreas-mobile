@@ -213,14 +213,14 @@ describe('moving season_rating_queue into operation_log (ADR 009 L28, migration 
     expect(await readOperations(adapter)).toEqual([]);
   });
 
-  it('brings a device stamped 19 with queued ratings to the current readiness (21) with them in operation_log', async () => {
+  it('brings a device stamped 19 with queued ratings to the current readiness (22) with them in operation_log', async () => {
     const adapter = await openInstalledDevice();
     await queueRatings(adapter, EVERY_STATUS);
     await adapter.execAsync('PRAGMA user_version = 19');
 
     await prepareForegroundDatabase(adapter);
 
-    expect(await adapter.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 21 });
+    expect(await adapter.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 22 });
     expect((await readOperations(adapter)).slice(2)).toEqual(expectedRatingRows());
     expect(await hasQueueTable(adapter)).toBe(false);
   });

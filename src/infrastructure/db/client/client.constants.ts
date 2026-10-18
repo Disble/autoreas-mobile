@@ -57,6 +57,10 @@ export const BRIDGE_CONFIG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
     columnName: 'is_sync_telemetry_enabled',
     sql: 'ALTER TABLE bridge_config ADD COLUMN is_sync_telemetry_enabled INTEGER DEFAULT 1 NOT NULL',
   },
+  {
+    columnName: 'season_mode',
+    sql: 'ALTER TABLE bridge_config ADD COLUMN season_mode INTEGER DEFAULT 0 NOT NULL',
+  },
 ];
 
 /**
@@ -64,7 +68,8 @@ export const BRIDGE_CONFIG_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[
  * `BRIDGE_CONFIG_COLUMN_DEFINITIONS`. Every column is intentionally nullable with no default and
  * no backfill: NULL carries its own meaning for each ("older than any remote change" for the
  * staleness guard, "no bridge token known yet" for the OCC token, "no durations known" for
- * `episodes`, "no bridge path" for `folder_relative`, both filled by the next foreground resync), so every pre-existing row must
+ * `episodes`, "no bridge path" for `folder_relative`, "not a season candidate" for `season`, all
+ * filled by the next foreground resync), so every pre-existing row must
  * read back NULL, never a fabricated value that could be mistaken for a real one.
  */
 export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
@@ -83,6 +88,10 @@ export const ANIMES_COLUMN_DEFINITIONS: readonly MissingColumnDefinition[] = [
   {
     columnName: 'folder_relative',
     sql: 'ALTER TABLE animes ADD COLUMN folder_relative TEXT',
+  },
+  {
+    columnName: 'season',
+    sql: 'ALTER TABLE animes ADD COLUMN season TEXT',
   },
 ];
 

@@ -38,6 +38,8 @@ export const animes = sqliteTable("animes", {
   // Distinct from `lastAppliedChangeMs`, which guards remote->local apply order and is derived
   // from `change.timestamp`; this column is never derived from that guard or from it.
   bridgeModifiedAt: integer("bridge_modified_at"),
+  // Bridge season candidacy as JSON text (`{ seasonId, grade }`); NULL = not a candidate.
+  season: text("season"),
 });
 
 /** Provides the shared operation log value. */
@@ -112,6 +114,8 @@ export const bridgeConfig = sqliteTable("bridge_config", {
   isSyncTelemetryEnabled: integer("is_sync_telemetry_enabled", { mode: "boolean" })
     .notNull()
     .default(true),
+  // The last reconcile's `season_mode`: whether the bridge has a season open.
+  seasonMode: integer("season_mode", { mode: "boolean" }).notNull().default(false),
 });
 
 /** Provides the shared pending remote changes value. */

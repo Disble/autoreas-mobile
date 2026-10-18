@@ -395,14 +395,15 @@ export async function getBridgeConfigSnapshot(rawDb: SQLiteDatabase) {
 
 /**
  * Unpairs the bridge in one transaction (ADR 009 R-11): drops its config and cursor, every queue
- * of that pairing and every anime's bridge token, none of which means anything to the next bridge.
+ * of that pairing, and every anime's bridge token and season candidacy, none of which means
+ * anything to the next bridge.
  */
 export async function clearBridgeConfig(rawDb: SQLiteDatabase) {
   await withLocalWrite(rawDb, async (db) => {
     await db.delete(schema.bridgeConfig);
     await db.delete(schema.operationLog);
     await db.delete(schema.pendingRemoteChanges);
-    await db.update(schema.animes).set({ bridgeModifiedAt: null });
+    await db.update(schema.animes).set({ bridgeModifiedAt: null, season: null });
   });
 }
 

@@ -204,6 +204,7 @@ describe("db client tracer helpers", () => {
             { name: "id" },
             { name: "last_changelog_id" },
             { name: "is_sync_telemetry_enabled" },
+            { name: "season_mode" },
           ];
         }
 
@@ -229,6 +230,7 @@ describe("db client tracer helpers", () => {
             { name: "bridge_modified_at" },
             { name: "episodes" },
             { name: "folder_relative" },
+            { name: "season" },
           ];
         }
 

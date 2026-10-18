@@ -16,7 +16,10 @@ Branch: `fix/background-covers-season` (worktree `autoreas-mobile-worktrees/back
 
 - T1 S4 inline — done, `c69516e` (layout from the measured root frame).
 - T2 S3 inline — done, `0783830` (cover fills the column).
-- T3 S2 — REOPENED (L9). The native season refresh in `7c1a8ca` contradicted convergent-sync L28 and is removed in a follow-up commit. New work: consume season state from the anime sync path and delete the old season read paths, after the bridge-season contract ping.
+- T3 S2 — REOPENED (L9). The native season refresh in `7c1a8ca` contradicted convergent-sync L28 and was removed in `6801e4c`. The new work is split into T5-T7 against bridge `a4f0a85a` (L12).
+- T5 S2 inline — carry `MobileAnime.season` into `animes.season` (migration 0021 + repair twin, wire/legacy mapping in JS and Kotlin, merge field, resync heal, shared contract case).
+- T6 S2 inline — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
+- T7 S2 inline — send `season_id` with every rating (JS + Kotlin).
 - T4 S1 inline — native prefetch in `7c1a8ca`; JS adoption in `hydrateCoverUrisUnlocked` in the JS commit after it.
 
 Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `SyncEngineRunner`).
@@ -46,3 +49,10 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
   - Grade range is 1–6.
   - Upgrade gap: installed builds ack the backfill rows without applying them. The mount/resume snapshot heal (R-7) closes it once `season` is a compared field, so no cursor reset or re-emit is needed.
   - Bridge adds an optional `season_id` to POST /api/seasons/active/ratings in vN. On a mismatch it returns 404, so the rating becomes unresolved with `not_found`. Mobile always sends it, taken from the queued payload's seasonId.
+- L12 (2026-10-18, bridge-season vN ping): implement against bridge `feat/season-on-anime-sync` tip `a4f0a85a` (not on bridge dev yet). Corrections:
+  - `season_mode` comes only in the HTTP POST /api/sync/reconcile response. The WS `{"type":"reconcile"}` message has no response body.
+  - The WS `anime_changed` payload for a ["season"] row is the stored snapshot, which never carries `season`. Mobile treats it only as a nudge to reconcile and never reads candidacy from it.
+  - The inbound WS `season_rating` message is unchanged. Mobile never sends it (grep), so bridge retires it in vN+1.
+  - Rating with a matching `season_id` → 204. Rating for another season → 404 `{"error":"not a season candidate"}`.
+  - A grade the bridge rejects with 409 records no row.
+  - The first bridge start after upgrade backfills one row per candidate.

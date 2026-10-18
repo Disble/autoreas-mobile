@@ -211,6 +211,7 @@ private val LOCAL_FIELD_BY_WIRE_FIELD = mapOf(
   "origin" to "origen",
   "durationMinutes" to "duracion",
   "episodes" to "episodes",
+  "season" to "season",
 )
 
 private const val WIRE_MAPPER_LOG_TAG = "SyncEngineWireMapper"
@@ -272,7 +273,27 @@ object WireAnimeMapper {
     legacy.put("origen", wire.opt("origin") ?: JSONObject.NULL)
     legacy.put("duracion", wire.opt("durationMinutes") ?: JSONObject.NULL)
     legacy.put("episodes", mapEpisodes(wire.opt("episodes")))
+    legacy.put("season", mapSeason(wire.opt("season")))
     return legacy
+  }
+
+  /**
+   * Maps the season candidacy, mirroring `AnimeSeasonSchema` with its `.catch(null)`: rebuilt with
+   * the keys `seasonId, grade` (extra keys dropped), where `seasonId` is a non-empty string and
+   * `grade` is present and either `null` or a whole number 1-6. An absent value (not a candidate),
+   * `null` or a malformed one maps to `null` instead of failing the snapshot.
+   */
+  private fun mapSeason(value: Any?): Any {
+    if (value !is JSONObject) return JSONObject.NULL
+    val seasonId = value.opt("seasonId") as? String
+    if (seasonId.isNullOrEmpty() || !value.has("grade")) return JSONObject.NULL
+    val rawGrade = value.opt("grade")
+    if (rawGrade == JSONObject.NULL) {
+      return JSONObject().put("seasonId", seasonId).put("grade", JSONObject.NULL)
+    }
+    val grade = wholeNumberOrNull(rawGrade)
+    if (grade == null || grade < 1 || grade > 6) return JSONObject.NULL
+    return JSONObject().put("seasonId", seasonId).put("grade", grade)
   }
 
   /**
