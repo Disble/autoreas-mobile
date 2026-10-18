@@ -93,3 +93,4 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
     - Legacy placeholder ratings become `not_found`.
     - Re-pairing keeps a stale `season` until a heal runs.
   - Advisory 4 (no committed real-gate test for the cache drop) is closed by `active-season-cache-drop-upgrade.test.ts`. Mutation-checked: removing the drop fails 3/3.
+- L17 (2026-10-18, bridge-season): release plan changed by the bridge user. Bridge and mobile now ship TOGETHER, with no vN/vN+1 split. The old season paths are already deleted in bridge `e05ddd8b` (feat/season-on-anime-sync), and GET /api/seasons/active now answers 404. That bridge breaks the installed app, so it must ship with this branch. A grep confirms mobile has no fallback to the removed paths, so no mobile change is needed.
