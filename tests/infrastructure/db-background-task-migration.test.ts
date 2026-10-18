@@ -167,7 +167,7 @@ describe("legacy schema repair writer order", () => {
       'ALTER TABLE operation_log ADD COLUMN claimed_at INTEGER',
       'ALTER TABLE operation_log ADD COLUMN unresolved_reason TEXT',
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS pending_remote_changes/),
-      expect.stringMatching(/^CREATE TABLE IF NOT EXISTS active_season_cache/),
+      'DROP TABLE IF EXISTS active_season_cache',
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS sync_cycle_lock/),
       expect.stringMatching(/^CREATE TABLE IF NOT EXISTS app_preferences/),
       'ALTER TABLE app_preferences ADD COLUMN anime_folders_root_uri TEXT',

@@ -1,9 +1,7 @@
 /** Defines the data contract for use web socket props. */
 export interface UseWebSocketProps {
   readonly enabled?: boolean;
-  readonly onSeasonChanged?: () => void;
   readonly onSyncRequired?: () => void;
-  readonly onPreferencesChanged?: (seasonMode: boolean) => void;
   /**
    * Fires on every open of a connection session except a first attempt that succeeds (ADR 009
    * R-7): the mount or resume flush that enabled the socket already covers that one. An open after

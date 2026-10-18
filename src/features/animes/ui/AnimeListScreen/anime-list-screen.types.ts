@@ -35,6 +35,8 @@ export interface AnimeStateSheetRequest {
 /** Defines the data contract for season rating sheet request. */
 export interface SeasonRatingSheetRequest {
   readonly animeId: string;
+  /** The season the anime is a candidate of; the rating is queued for exactly this season. */
+  readonly seasonId: string;
   readonly animeTitle: string;
   readonly bridgeRating: number | null;
   readonly pendingRating: number | null;

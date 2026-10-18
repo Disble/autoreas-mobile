@@ -27,7 +27,6 @@ export function buildSeasonAwareAnimeListItem() {
     seasonProjection: {
       seasonId: 'season-2026-q3',
       bridgeRating: 4,
-      bridgeRatingSource: 'bridge' as const,
       localIntent: {
         nota: 6,
         ratedAt: 1_752_600_000_000,

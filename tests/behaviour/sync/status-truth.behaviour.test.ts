@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { enqueueSeasonRatingIntent } from '../../../src/features/sync/season-rating-intent.helpers';
-import { writeCachedActiveSeasonSnapshot } from '../../../src/features/sync/season-sync.helpers';
 import { resolveSyncFacadeConnectionStatus } from '../../../src/features/sync/bridge-reachability.helpers';
 import { runMigrations } from '../../../src/infrastructure/db/client';
 import { getSyncConnectionSnapshot, resetSyncConnectionStore } from '../../../src/features/sync/sync-connection-store';
@@ -12,7 +11,6 @@ import {
   waitForSyncFlushIdle,
 } from '../../../src/features/sync/sync-flush.helpers';
 import { deriveVisibleSyncStatus } from '../../../src/features/sync/sync-visible-status.helpers';
-import { useActiveSeasonStore } from '../../../src/infrastructure/store/active-season-store';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { openPairedDatabase, readRatingRows } from './unresolved-fixtures.helpers';
@@ -37,10 +35,36 @@ const EMPTY_RECONCILE = {
   body: { status: 'ok', applied_operations: [], bridge_changes: [], last_changelog_id: 0 },
 };
 
-/** The bridge's active-season answer naming `anime-1` as the only candidate. */
-const ACTIVE_SEASON_ANSWER = {
-  status: 200,
-  body: { season_id: 'season-2', candidates: [{ anime_id: 'anime-1', grade: null, grade_source: null }] },
+/** The pull answer carrying the ["season"] row the bridge recorded for a delivered rating of 4. */
+const GRADED_SEASON_PULL = {
+  status: 202,
+  body: {
+    status: 'ok',
+    applied_operations: [],
+    bridge_changes: [
+      {
+        record_id: 'anime-1',
+        change_type: 'update',
+        changed_fields: ['season'],
+        snapshot: {
+          id: 'anime-1',
+          name: 'Test Anime',
+          status: 0,
+          episodesWatched: 4,
+          active: 1,
+          firstCycle: 1,
+          lastWatchedAt: null,
+          premieredAt: null,
+          createdAt: null,
+          deletedAt: null,
+          modified_at: 0,
+          season: { seasonId: 'season-1', grade: 4 },
+        },
+        timestamp: 1_700_000_000_000,
+      },
+    ],
+    last_changelog_id: 3,
+  },
 };
 
 /** Opens the paired fixture database with the repaired `sync_runtime_status` columns. */
@@ -49,11 +73,6 @@ async function openRepairedDatabase(): Promise<SQLiteDatabase> {
   await runMigrations(adapter);
 
   return adapter;
-}
-
-/** Reads the cached active season id, or `null` when nothing is cached. */
-function readCachedSeason(adapter: SQLiteDatabase) {
-  return adapter.getFirstAsync<{ season_id: string }>('SELECT season_id FROM active_season_cache WHERE id = 1');
 }
 
 /** Derives the visible status exactly as the facade feeds it: store snapshot plus the shared status row. */
@@ -85,7 +104,6 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
     fakeBridge = installFakeBridge();
     resetSyncConnectionStore();
     resetSyncFlush();
-    useActiveSeasonStore.setState({ activeSeasonSnapshot: null });
     registerSyncFlushDispatcher(dispatchForegroundSyncFlush);
   });
 
@@ -141,35 +159,20 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
     ]);
   });
 
-  describe('I6: the season refresh after a delivered rating keeps active_season_cache in step', () => {
-    it('writes the refreshed season into the cache', async () => {
-      const adapter = await openRepairedDatabase();
-      fakeBridge.queueResponse(EMPTY_RECONCILE);
-      fakeBridge.queueResponse({ status: 204, body: null });
-      fakeBridge.queueResponse(ACTIVE_SEASON_ANSWER);
+  it('lands the grade a delivered rating recorded on the anime in the same cycle, and stays online', async () => {
+    const adapter = await openRepairedDatabase();
+    fakeBridge.queueResponse(EMPTY_RECONCILE);
+    fakeBridge.queueResponse({ status: 204, body: null });
+    fakeBridge.queueResponse(GRADED_SEASON_PULL);
 
-      await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1 });
-      await waitForSyncFlushIdle(adapter);
+    await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 4, ratedAt: 1 });
+    await waitForSyncFlushIdle(adapter);
 
-      expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
-      expect(useActiveSeasonStore.getState().activeSeasonSnapshot?.seasonId).toBe('season-2');
-      expect(await readCachedSeason(adapter)).toEqual({ season_id: 'season-2' });
+    expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
+    expect(await adapter.getFirstAsync("SELECT season FROM animes WHERE _id = 'anime-1'")).toEqual({
+      season: '{"seasonId":"season-1","grade":4}',
     });
-
-    it('keeps the cached season when the refresh after the rating fails', async () => {
-      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-      const adapter = await openRepairedDatabase();
-      await writeCachedActiveSeasonSnapshot(adapter, { seasonId: 'season-1', candidates: [], candidatesByAnimeId: {} });
-      fakeBridge.queueResponse(EMPTY_RECONCILE);
-      fakeBridge.queueResponse({ status: 204, body: null });
-      fakeBridge.queueResponse({ status: 500, body: { error: 'season store unavailable' } });
-
-      await enqueueSeasonRatingIntent(adapter, { seasonId: 'season-1', animeId: 'anime-1', nota: 8, ratedAt: 1 });
-      await waitForSyncFlushIdle(adapter);
-
-      expect(await readRatingRows(adapter)).toEqual([expect.objectContaining({ status: 'synced' })]);
-      expect(await readCachedSeason(adapter)).toEqual({ season_id: 'season-1' });
-      expect(getSyncConnectionSnapshot().kind).toBe('online');
-    });
+    expect(await adapter.getFirstAsync('SELECT last_changelog_id FROM bridge_config')).toEqual({ last_changelog_id: 3 });
+    expect(getSyncConnectionSnapshot().kind).toBe('online');
   });
 });

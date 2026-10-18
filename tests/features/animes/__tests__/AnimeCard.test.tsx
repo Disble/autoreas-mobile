@@ -4,7 +4,6 @@ import {
   openDeviceFolder,
   openPageUrl,
 } from '../../../../src/features/anime-folders/anime-folders-io.helpers';
-import { LOCAL_ACTIVE_SEASON_ID } from '../../../../src/features/animes/anime-season.constants';
 import { AnimeCard } from '../../../../src/features/animes/ui/AnimeCard/AnimeCard';
 import {
   buildAnimeCardAnime,
@@ -68,7 +67,6 @@ describe('AnimeCard', () => {
             seasonProjection: {
               seasonId: 'season-2026-q3',
               bridgeRating: 4,
-              bridgeRatingSource: 'bridge',
               localIntent: null,
             },
           },
@@ -92,7 +90,6 @@ describe('AnimeCard', () => {
             seasonProjection: {
               seasonId: 'season-2026-q3',
               bridgeRating: 2,
-              bridgeRatingSource: 'bridge',
               localIntent: {
                 nota: 6,
                 ratedAt: 1_752_500_000_000,
@@ -114,16 +111,15 @@ describe('AnimeCard', () => {
     expect(onOpenSeasonRatingSheet).toHaveBeenCalledWith('anime-1');
   });
 
-  it('shows the season CTA for local active fallback without bridge confirmation', () => {
+  it('shows the season CTA for an ungraded candidate without bridge confirmation', () => {
     const { getByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           anime: {
             ...buildAnimeCardAnime(),
             seasonProjection: {
-              seasonId: LOCAL_ACTIVE_SEASON_ID,
+              seasonId: 'season-2026-q3',
               bridgeRating: null,
-              bridgeRatingSource: null,
               localIntent: null,
             },
           },

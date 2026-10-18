@@ -3,7 +3,6 @@ import { migrate } from 'drizzle-orm/sqlite-proxy/migrator';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import journal from '../../src/infrastructure/db/migrations/meta/_journal.json';
 import {
-  ACTIVE_SEASON_CACHE_TABLE_SQL,
   MIGRATION_LEDGER_CREATE_SQL,
   MIGRATION_LEDGER_SEED_SQL,
 } from '../../src/infrastructure/db/client/client.constants';
@@ -92,7 +91,7 @@ async function openShippedDevice(lastMigration: string, readiness: number): Prom
   const adapter = createTestSqliteAdapter();
   await applyMigrationFiles(adapter, { through: lastMigration });
 
-  for (const tableSql of [ACTIVE_SEASON_CACHE_TABLE_SQL, SYNC_CYCLE_LOCK_TABLE_SQL, APP_PREFERENCES_TABLE_SQL]) {
+  for (const tableSql of [SYNC_CYCLE_LOCK_TABLE_SQL, APP_PREFERENCES_TABLE_SQL]) {
     await adapter.execAsync(tableSql);
   }
 

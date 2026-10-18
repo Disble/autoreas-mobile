@@ -12,7 +12,6 @@ import { registerSyncFlushDispatcher } from "./sync-flush.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
-import { useSeasonSync } from "./use-season-sync";
 import { useSyncFacade } from "./use-sync-facade";
 import type {
   UseSyncRuntimeProps,
@@ -50,9 +49,6 @@ export function useSyncRuntime(
   const rawDb = useOptionalSQLiteContext();
   const { isConfigured } = useBridgeConfig();
   const { requestSync } = useSyncFacade();
-  const { clearActiveSeason } = useSeasonSync({
-    enabled: props.isBootstrapped && isConfigured && currentAppState === "active",
-  });
 
   // 4. Queries/Mutations
 
@@ -166,9 +162,7 @@ export function useSyncRuntime(
         | "network_regained"
         | "ws_sync_required"
         | "ws_reconnected"
-        | "ws_disconnected"
-        | "ws_season_changed"
-        | "ws_preferences_changed",
+        | "ws_disconnected",
     ) => {
       void requestSync(source).catch(() => undefined);
     },
@@ -193,25 +187,6 @@ export function useSyncRuntime(
     requestAutomaticSync("ws_disconnected");
   }, [requestAutomaticSync]);
 
-  // Both WebSocket season events go through the entry point (ADR 009 R-2, I8): the dispatched
-  // cycle refreshes and caches the active season. Season mode switched off is a local clear only;
-  // it asks the bridge for nothing, so there is nothing to send.
-  const handlePreferencesChanged = useCallback(
-    (seasonMode: boolean) => {
-      if (seasonMode) {
-        requestAutomaticSync("ws_preferences_changed");
-        return;
-      }
-
-      void clearActiveSeason().catch(() => undefined);
-    },
-    [clearActiveSeason, requestAutomaticSync],
-  );
-
-  const handleSeasonChanged = useCallback(() => {
-    requestAutomaticSync("ws_season_changed");
-  }, [requestAutomaticSync]);
-
   // 7. Effects
   // The JS dispatcher exists while the foreground runtime is mounted: from here on, every
   // `requestFlush` (a kick after a local write included) runs the coordinated cycle. Declared
@@ -220,9 +195,7 @@ export function useSyncRuntime(
 
   useWebSocket({
     enabled: isWebSocketEnabled,
-    onSeasonChanged: handleSeasonChanged,
     onSyncRequired: handleWebSocketSyncRequired,
-    onPreferencesChanged: handlePreferencesChanged,
     onReconnected: handleWebSocketReconnected,
     onDisconnected: handleWebSocketDisconnected,
   });

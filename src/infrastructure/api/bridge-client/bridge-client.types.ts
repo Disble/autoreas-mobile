@@ -11,23 +11,6 @@ export interface BridgePairDeviceRequest {
   readonly deviceName: string;
 }
 
-/** Bridge-owned rating source displayed on season-aware candidate surfaces. */
-export type ActiveSeasonRatingSource = 'bridge';
-
-/** One bridge-declared season candidate after transport normalization. */
-export interface ActiveSeasonCandidateSnapshot {
-  readonly animeId: string;
-  readonly bridgeRating: number | null;
-  readonly bridgeRatingSource: ActiveSeasonRatingSource | null;
-}
-
-/** Active-season snapshot consumed by features without exposing raw wire keys. */
-export interface ActiveSeasonSnapshot {
-  readonly seasonId: string;
-  readonly candidates: readonly ActiveSeasonCandidateSnapshot[];
-  readonly candidatesByAnimeId: Readonly<Record<string, ActiveSeasonCandidateSnapshot>>;
-}
-
 /** Body fields required by the bridge active-season rating contract. */
 export interface PostActiveSeasonRatingRequest {
   readonly animeId: string;
@@ -107,7 +90,6 @@ export interface BridgeClient {
    * token, or a 404 when the bridge has no such anime. Sync's fetch-first step (ADR 009 R-3).
    */
   readonly getAnime: (connection: BridgeConnection, animeId: string) => Promise<BridgeHttpResult>;
-  readonly getActiveSeason: (connection: BridgeConnection) => Promise<BridgeHttpResult>;
   readonly postActiveSeasonRating: (
     connection: BridgeConnection,
     request: PostActiveSeasonRatingRequest,

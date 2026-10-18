@@ -204,9 +204,8 @@ export const PENDING_REMOTE_CHANGES_TABLE_SQL =
   'timestamp INTEGER NOT NULL, ' +
   'created_at INTEGER NOT NULL)';
 
-/** Creates the single-row active-season cache. Exists in no migration file; only as a repair step. */
-export const ACTIVE_SEASON_CACHE_TABLE_SQL =
-  'CREATE TABLE IF NOT EXISTS active_season_cache (' +
-  'id INTEGER PRIMARY KEY CHECK (id = 1), ' +
-  'season_id TEXT NOT NULL, ' +
-  'candidates_json TEXT NOT NULL)';
+/**
+ * Drops the retired single-row active-season cache. Installed devices still hold it: it was created
+ * only by a repair step, never by a migration, so only a repair step can remove it.
+ */
+export const DROP_ACTIVE_SEASON_CACHE_TABLE_SQL = 'DROP TABLE IF EXISTS active_season_cache';

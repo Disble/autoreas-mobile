@@ -5,12 +5,8 @@ export {
   buildAnimeCoverPath,
   classifyAnimeCoverResponse,
   createBridgeClient,
-  extractActiveSeasonSnapshot,
 } from './bridge-client';
 export type {
-  ActiveSeasonCandidateSnapshot,
-  ActiveSeasonRatingSource,
-  ActiveSeasonSnapshot,
   BridgeAnimeCoverResult,
   BridgeClient,
   BridgeClientDependencies,

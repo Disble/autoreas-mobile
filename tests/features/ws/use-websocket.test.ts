@@ -113,12 +113,9 @@ describe('useWebSocket', () => {
 
   it('ignores an unrecognized message type without throwing or invoking callbacks', async () => {
     const onSyncRequired = jest.fn();
-    const onPreferencesChanged = jest.fn();
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    renderHook(() =>
-      useWebSocket({ enabled: true, onSyncRequired, onPreferencesChanged }),
-    );
+    renderHook(() => useWebSocket({ enabled: true, onSyncRequired }));
 
     await act(async () => {
       await Promise.resolve();
@@ -136,18 +133,24 @@ describe('useWebSocket', () => {
     });
 
     expect(onSyncRequired).not.toHaveBeenCalled();
-    expect(onPreferencesChanged).not.toHaveBeenCalled();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
 
     consoleErrorSpy.mockRestore();
   });
 
-  it('routes preferences_changed to the preferences callback, not the reconcile callback', async () => {
+  // Season state travels on the anime rows and the HTTP reconcile response now. An older bridge
+  // still sends these two frames until its next release; they must trigger nothing.
+  it.each([
+    ['season_changed', { type: 'season_changed' }],
+    ['preferences_changed', { type: 'preferences_changed', season_mode: true }],
+  ])('ignores the retired %s frame quietly: no sync request, no error', async (_type, frame) => {
     const onSyncRequired = jest.fn();
-    const onPreferencesChanged = jest.fn();
+    const onReconnected = jest.fn();
+    const onDisconnected = jest.fn();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     renderHook(() =>
-      useWebSocket({ enabled: true, onSyncRequired, onPreferencesChanged }),
+      useWebSocket({ enabled: true, onSyncRequired, onReconnected, onDisconnected }),
     );
 
     await act(async () => {
@@ -159,14 +162,16 @@ describe('useWebSocket', () => {
     });
 
     await act(async () => {
-      mockWs.onmessage?.({
-        data: JSON.stringify({ type: 'preferences_changed', season_mode: true }),
-      } as MessageEvent);
+      mockWs.onmessage?.({ data: JSON.stringify(frame) } as MessageEvent);
       await Promise.resolve();
     });
 
-    expect(onPreferencesChanged).toHaveBeenCalledWith(true);
     expect(onSyncRequired).not.toHaveBeenCalled();
+    expect(onReconnected).not.toHaveBeenCalled();
+    expect(onDisconnected).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
   });
 
   it('routes anime_changed through the reconcile callback instead of clobbering the row directly', async () => {

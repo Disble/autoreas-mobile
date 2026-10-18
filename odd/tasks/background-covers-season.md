@@ -18,7 +18,7 @@ Branch: `fix/background-covers-season` (worktree `autoreas-mobile-worktrees/back
 - T2 S3 inline — done, `0783830` (cover fills the column).
 - T3 S2 — REOPENED (L9). The native season refresh in `7c1a8ca` contradicted convergent-sync L28 and was removed in `6801e4c`. The new work is split into T5-T7 against bridge `a4f0a85a` (L12).
 - T5 S2 inline — carry `MobileAnime.season` into `animes.season` (migration 0021 + repair twin, wire/legacy mapping in JS and Kotlin, merge field, resync heal, shared contract case).
-- T6 S2 inline — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
+- T6 S2 delegated (writer trigger: context backstop, ~40 files) — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
 - T7 S2 inline — send `season_id` with every rating (JS + Kotlin).
 - T4 S1 inline — native prefetch in `7c1a8ca`; JS adoption in `hydrateCoverUrisUnlocked` in the JS commit after it.
 
@@ -56,3 +56,25 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
   - Rating with a matching `season_id` → 204. Rating for another season → 404 `{"error":"not a season candidate"}`.
   - A grade the bridge rejects with 409 records no row.
   - The first bridge start after upgrade backfills one row per candidate.
+- L13 (2026-10-18, T6 writer evidence, S2): implemented and NOT closed; one open decision.
+  - Done:
+    - JS and Kotlin read `season_mode` from the reconcile answer and write `bridge_config.season_mode` with the cursor, only when the answer states it. A null value is rejected in both runtimes (zod `.optional()` parity), and shared rejection fixtures pin it.
+    - The UI takes season mode from `config?.seasonMode === true`, builds the projection from `anime.season`, and queues each rating with that anime's seasonId.
+    - Deleted the old paths: `GET /api/seasons/active`, the WS season and preference events with their flush reasons, the season store, season-sync, `LOCAL_ACTIVE_SEASON_ID` and `bridgeRatingSource`.
+    - `active_season_cache` is now `DROP TABLE IF EXISTS` in the same ensure position, and the required tables go from 8 to 7.
+    - Docs updated: `mobile-sync-engine-workflow.md`, `Autoreas_mobile_design_doc.md`, `mobile-sync-architecture.md`.
+  - Checks:
+    - `bun run typecheck`: exit 0.
+    - `bun run test:kotlin`: BUILD SUCCESSFUL.
+    - `bunx eslint <touched>`: exit 0.
+    - `react-doctor --diff`: no issues.
+    - Final grep: only the DROP step, its tests, and the WS test proving the retired frames are ignored.
+    - `bunx jest`: 2147/2149. The 2 failures are `contract-fixtures.behaviour.test.ts` `rating-204-is-delivered` and `rating-5xx-stays-pending-and-is-resent-identically`.
+  - Open decision: JS now runs one extra pull inside `syncPendingOperations` after a 204 rating. Kotlin has no such pull, and `SyncEngineCycle.kt` is outside T6's surface. So the shared rating fixtures (both runtimes, ADR 009 R-4/R-10) see an extra `POST /api/sync/reconcile` in JS only. Either the pull moves to the foreground facade (where the old refresh lived; the fixtures stay as they are), or Kotlin gains the same pull and the fixtures expect it.
+- L14 (2026-10-18, parent decision on L13):
+  - The pull after a delivered rating moved to the foreground facade. `syncPendingOperations` reports `ratingDelivered`, and `runCoordinatedForegroundSyncCycle` runs one more outbox pass as a best-effort step.
+  - The shared rating fixtures stay byte-identical, so both runtimes still send the same requests. A rating the background engine delivers gets its grade on the next cycle; resume always heals.
+  - Facade tests pin the cases: two passes on delivery, one otherwise, and a failed pull never fails the cycle.
+  - The pre-commit gate also dropped the two deleted files from `jest.coverage-tiers.js`.
+  - Results: full `bunx jest` 2151/2151, `bun run typecheck` exit 0, `npx lefthook run pre-commit` exit 0.
+  - Retired names now appear only in historical docs (dated redesign draft, archived specs), which stay as they are.

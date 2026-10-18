@@ -34,12 +34,6 @@ jest.mock('../../../src/features/sync/reconcile.helpers', () => ({
 }));
 
 
-jest.mock('../../../src/features/sync/season-sync.helpers', () => ({
-  fetchActiveSeasonFromBridge: jest.fn(),
-  writeCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
-  clearCachedActiveSeasonSnapshot: jest.fn().mockResolvedValue(undefined),
-}));
-
 jest.mock('../../../src/features/sync/sync-runtime-status.helpers', () => ({
   recordSyncAttemptFailed: jest.fn(),
   recordSyncAttemptStarted: jest.fn(),

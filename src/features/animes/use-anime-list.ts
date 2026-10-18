@@ -10,7 +10,6 @@ import {
   type AnimeRow,
   type OperationLogRow,
 } from "../../infrastructure/db/schema";
-import { useActiveSeasonStore } from "../../infrastructure/store/active-season-store";
 import { mapSeasonRatingIntents } from "../sync/season-rating-event.helpers";
 import { buildSeasonRatingIntentsQuery } from "../sync/season-rating-intent.helpers";
 import { buildAnimeSeasonProjection } from "./anime-season.helpers";
@@ -25,9 +24,6 @@ import type { AnimeDayFilter } from "./anime.types";
 export function useAnimeList(filter: AnimeDayFilter) {
   const rawDb = useOptionalSQLiteContext();
   const db = useMemo(() => (rawDb ? createDrizzleDb(rawDb) : null), [rawDb]);
-  const activeSeasonSnapshot = useActiveSeasonStore(
-    (state) => state.activeSeasonSnapshot,
-  );
 
   const animeQuery = useMemo(() => {
     if (!db) {
@@ -60,12 +56,12 @@ export function useAnimeList(filter: AnimeDayFilter) {
           ...anime,
           seasonProjection: buildAnimeSeasonProjection({
             animeId: anime._id,
-            activeSeasonSnapshot,
+            season: anime.season,
             seasonRatingIntents,
           }),
         };
       });
-  }, [activeSeasonSnapshot, data, seasonRatingIntents]);
+  }, [data, seasonRatingIntents]);
 
   const parsedData = useMemo(
     () => sortAnimesBySelectedDay(allActiveAnimes, filter),

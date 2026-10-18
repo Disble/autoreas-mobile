@@ -5,8 +5,7 @@ import type { SyncRuntimeTriggerSource } from './sync-runtime-status.types';
 /**
  * Why a caller asks the JS dispatcher to flush (ADR 009 R-2). Callers name their reason and never
  * which kinds exist or how they leave: every reason maps onto one persisted trigger source, onto a
- * full-snapshot heal demand (ADR 009 R-7) and, for the WebSocket season events, onto a demand to
- * refresh the active season.
+ * full-snapshot heal demand (ADR 009 R-7).
  */
 export type SyncFlushReason =
   | 'bootstrap'
@@ -16,8 +15,6 @@ export type SyncFlushReason =
   | 'ws_sync_required'
   | 'ws_reconnected'
   | 'ws_disconnected'
-  | 'ws_season_changed'
-  | 'ws_preferences_changed'
   | 'local_mutation'
   | 'season_rating';
 
@@ -25,7 +22,6 @@ export type SyncFlushReason =
 export interface SyncFlushRequest {
   readonly database: SQLiteDatabase;
   readonly source: SyncRuntimeTriggerSource;
-  readonly refreshActiveSeason: boolean;
   readonly healSnapshot: SnapshotHealDemand;
 }
 

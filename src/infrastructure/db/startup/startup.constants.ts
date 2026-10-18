@@ -20,7 +20,6 @@ export const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 /** Required application tables whose presence proves the current repair set completed. */
 export const REQUIRED_SCHEMA_TABLES = [
-  'active_season_cache',
   'animes',
   'app_preferences',
   'bridge_config',

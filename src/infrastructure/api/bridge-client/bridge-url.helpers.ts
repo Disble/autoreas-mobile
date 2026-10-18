@@ -5,8 +5,6 @@ import {
   SYNC_DIAGNOSTICS_MAX_RETRY_AFTER_MS,
 } from './bridge-client.constants';
 import type {
-  ActiveSeasonCandidateSnapshot,
-  ActiveSeasonSnapshot,
   BridgeAnimeCoverResult,
   BridgeConnection,
   PostActiveSeasonRatingRequest,
@@ -61,38 +59,6 @@ export function buildBridgeHeaders(options: {
   }
 
   return headers;
-}
-
-/**
- * Extracts the active-season snapshot from a bridge response body and drops malformed entries.
- * Candidate membership comes ONLY from the bridge `candidates` array so mobile never infers it locally.
- */
-export function extractActiveSeasonSnapshot(data: unknown): ActiveSeasonSnapshot | null {
-  if (typeof data !== 'object' || data === null) {
-    return null;
-  }
-
-  const seasonId = (data as { season_id?: unknown }).season_id;
-  const rawCandidates = (data as { candidates?: unknown }).candidates;
-
-  if (typeof seasonId !== 'string' || !Array.isArray(rawCandidates)) {
-    return null;
-  }
-
-  const candidates = rawCandidates
-    .map(mapActiveSeasonCandidate)
-    .filter((candidate): candidate is ActiveSeasonCandidateSnapshot => candidate !== null);
-
-  return {
-    seasonId,
-    candidates,
-    candidatesByAnimeId: Object.freeze(
-      candidates.reduce<Record<string, ActiveSeasonCandidateSnapshot>>((accumulator, candidate) => {
-        accumulator[candidate.animeId] = candidate;
-        return accumulator;
-      }, {}),
-    ),
-  };
 }
 
 /**
@@ -163,30 +129,6 @@ export function parseBridgeResponseBody(rawBody: string | null): unknown {
   } catch {
     return null;
   }
-}
-
-/**
- * Normalizes one wire season candidate into the snapshot shape features consume, returning null
- * for anything that is not a usable object so a malformed entry is skipped rather than fatal.
- */
-function mapActiveSeasonCandidate(candidate: unknown): ActiveSeasonCandidateSnapshot | null {
-  if (typeof candidate !== 'object' || candidate === null) {
-    return null;
-  }
-
-  const animeId = (candidate as { anime_id?: unknown }).anime_id;
-  const grade = (candidate as { grade?: unknown }).grade;
-  const gradeSource = (candidate as { grade_source?: unknown }).grade_source;
-
-  if (typeof animeId !== 'string' || animeId.length === 0) {
-    return null;
-  }
-
-  return {
-    animeId,
-    bridgeRating: typeof grade === 'number' ? grade : null,
-    bridgeRatingSource: gradeSource === 'bridge' ? 'bridge' : null,
-  };
 }
 
 /**

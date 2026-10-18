@@ -38,6 +38,11 @@ data class ParsedReconcileResponse(
   val bridgeChanges: List<BridgeChangeEntry>,
   /** `null` when the key is absent or not a number; presence, not truthiness, is what counts. */
   val lastChangelogId: Long?,
+  /**
+   * The root `season_mode` (whether the bridge has a season open); `null` when the key is absent,
+   * which leaves the stored value as it is. It travels only on this HTTP response.
+   */
+  val seasonMode: Boolean? = null,
 )
 
 /**
@@ -46,7 +51,7 @@ data class ParsedReconcileResponse(
  * malformed response the same fate (ADR 009 R-5): `status` must be a string; a missing or null
  * `applied_operations`/`bridge_changes`/`changed_fields` becomes empty, but any other non-array
  * value is malformed; unknown keys are ignored; an unknown `reason` string is tolerated; an
- * optional field (`modified_at`, `reason`, `last_changelog_id`, `snapshot`) may be absent but
+ * optional field (`modified_at`, `reason`, `last_changelog_id`, `season_mode`, `snapshot`) may be absent but
  * never null or of the wrong type; `modified_at` must be an integer. `modified_at` and
  * `last_changelog_id` PRESENCE (not truthiness) decides whether a token exists.
  *
@@ -82,6 +87,7 @@ object ReconcileResponseParser {
       appliedOperations = parseAppliedOperations(nullishArray(root, "applied_operations", "applied_operations")),
       bridgeChanges = parseBridgeChanges(nullishArray(root, "bridge_changes", "bridge_changes")),
       lastChangelogId = optionalNumber(root, "last_changelog_id", "last_changelog_id")?.toLong(),
+      seasonMode = optionalBoolean(root, "season_mode", "season_mode"),
     )
   }
 
@@ -156,6 +162,12 @@ object ReconcileResponseParser {
   private fun optionalNumber(obj: JSONObject, key: String, path: String): Number? {
     if (!obj.has(key)) return null
     return obj.opt(key) as? Number ?: throw ReconcileParseException("$path is not a number")
+  }
+
+  /** An optional boolean (zod `.optional()`): absent is `null`; null or any other type is malformed. */
+  private fun optionalBoolean(obj: JSONObject, key: String, path: String): Boolean? {
+    if (!obj.has(key)) return null
+    return obj.opt(key) as? Boolean ?: throw ReconcileParseException("$path is not a boolean")
   }
 
   /** An optional integer (zod `.int().optional()`): a fractional number is malformed too. */

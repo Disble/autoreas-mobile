@@ -6,7 +6,6 @@ import {
 import { SNAPSHOT_HEAL_DEMAND_RANK } from './snapshot-heal.constants';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
-  ACTIVE_SEASON_REFRESH_FLUSH_REASONS,
   SNAPSHOT_HEAL_FLUSH_DEMANDS,
   SYNC_FLUSH_DISPATCHER,
   SYNC_FLUSH_REASON_SOURCES,
@@ -105,7 +104,6 @@ function buildSyncFlushRequest(
   return {
     database,
     source: SYNC_FLUSH_REASON_SOURCES[reasons[0]],
-    refreshActiveSeason: reasons.some((reason) => ACTIVE_SEASON_REFRESH_FLUSH_REASONS.has(reason)),
     healSnapshot: mergeSnapshotHealDemands(reasons),
   };
 }

@@ -166,7 +166,8 @@
       ],
       "responseBody": { "status": "accepted", "applied_operations": [], "bridge_changes": [], "last_changelog_id": 2401 }
     },
-    "expected": { "last_changelog_id": 2401, "confirmedOperationIds": [], "bridgeChanges": [] }
+    "expected": {
+      "season_mode": null, "last_changelog_id": 2401, "confirmedOperationIds": [], "bridgeChanges": [] }
   },
   {
     "name": "null-array-fields-fallback-to-empty",
@@ -405,6 +406,7 @@
       "backlog": [],
       "responseBody": {
         "status": "accepted",
+        "season_mode": true,
         "applied_operations": [],
         "bridge_changes": [
           {
@@ -455,6 +457,7 @@
       }
     },
     "expected": {
+      "season_mode": true,
       "last_changelog_id": 2410,
       "confirmedOperationIds": [],
       "bridgeChanges": [

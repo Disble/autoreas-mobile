@@ -44,6 +44,9 @@ export const ReconcileResponseSchema = z.object({
   applied_operations: ReconcileArrayFallback(ReconcileAppliedOperationSchema),
   bridge_changes: ReconcileArrayFallback(ReconcileAnimeChangeSchema),
   last_changelog_id: z.number().optional(),
+  // Whether the bridge has a season open. Carried only on this HTTP response, never on a WS
+  // message; absent (an older bridge) leaves the stored value as it is.
+  season_mode: z.boolean().optional(),
 });
 
 /** Defines the reconcile applied operation value shape. */

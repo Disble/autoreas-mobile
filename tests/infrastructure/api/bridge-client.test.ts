@@ -86,25 +86,6 @@ describe('bridge-client', () => {
     expect(result.data).toEqual({ id: 'a b', modified_at: 42 });
   });
 
-  it('reads the active season with a bearer token and no content-type on a bodyless GET', async () => {
-    const fetchFn = jest.fn(async () =>
-      buildResponse({
-        body: JSON.stringify({ season_id: '2026-q3', candidates: [] }),
-      }) as unknown as Response,
-    );
-    const client = createBridgeClient({ fetchFn });
-
-    const result = await client.getActiveSeason(connection);
-
-    expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/seasons/active', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer token123' },
-      signal: expect.any(AbortSignal),
-    });
-    expect(result.ok).toBe(true);
-    expect(result.data).toEqual({ season_id: '2026-q3', candidates: [] });
-  });
-
   it('posts an active season rating with content-type, bearer auth and the serialized grade body', async () => {
     const fetchFn = jest.fn(async () =>
       buildResponse({ status: 204, body: '' }) as unknown as Response,
