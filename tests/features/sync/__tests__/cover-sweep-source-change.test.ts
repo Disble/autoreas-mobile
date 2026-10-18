@@ -69,6 +69,9 @@ function buildFakeDeps(
       lastChangelogId: 0,
       isSyncTelemetryEnabled: true,
     })),
+    listCoverInboxEntries: jest.fn(async () => []),
+    adoptCoverInboxImage: jest.fn(async () => false),
+    discardCoverInboxEntry: jest.fn(async () => undefined),
     ...overrides,
   };
 
