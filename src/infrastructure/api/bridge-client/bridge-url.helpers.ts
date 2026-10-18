@@ -72,6 +72,7 @@ export function buildPostActiveSeasonRatingBody(
     anime_id: request.animeId,
     grade: request.nota,
     rated_at: request.ratedAt,
+    season_id: request.seasonId,
   };
 }
 

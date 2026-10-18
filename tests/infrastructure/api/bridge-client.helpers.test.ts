@@ -2,17 +2,19 @@ import { createBridgeClient } from '../../../src/infrastructure/api/bridge-clien
 import { buildPostActiveSeasonRatingBody } from '../../../src/infrastructure/api/bridge-client/bridge-url.helpers';
 
 describe('buildPostActiveSeasonRatingBody', () => {
-  it('serializes the rating onto the bridge `grade` wire key without rewriting ratedAt', () => {
+  it('serializes the rating onto the bridge `grade` wire key with its season, without rewriting ratedAt', () => {
     expect(
       buildPostActiveSeasonRatingBody({
         animeId: 'anime-9',
         nota: 4,
         ratedAt: 1_752_300_000_000,
+        seasonId: 'season-3',
       }),
     ).toEqual({
       anime_id: 'anime-9',
       grade: 4,
       rated_at: 1_752_300_000_000,
+      season_id: 'season-3',
     });
   });
 });

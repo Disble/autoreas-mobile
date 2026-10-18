@@ -17,9 +17,9 @@ Branch: `fix/background-covers-season` (worktree `autoreas-mobile-worktrees/back
 - T1 S4 inline — done, `c69516e` (layout from the measured root frame).
 - T2 S3 inline — done, `0783830` (cover fills the column).
 - T3 S2 — REOPENED (L9). The native season refresh in `7c1a8ca` contradicted convergent-sync L28 and was removed in `6801e4c`. The new work is split into T5-T7 against bridge `a4f0a85a` (L12).
-- T5 S2 inline — carry `MobileAnime.season` into `animes.season` (migration 0021 + repair twin, wire/legacy mapping in JS and Kotlin, merge field, resync heal, shared contract case).
-- T6 S2 delegated (writer trigger: context backstop, ~40 files) — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
-- T7 S2 inline — send `season_id` with every rating (JS + Kotlin).
+- T5 S2 inline — done, `345c0e2` — carry `MobileAnime.season` into `animes.season` (migration 0021 + repair twin, wire/legacy mapping in JS and Kotlin, merge field, resync heal, shared contract case).
+- T6 S2 done, `644e44c`, delegated (writer trigger: context backstop, ~40 files) — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
+- T7 S2 inline — done (this commit) — send `season_id` with every rating (JS + Kotlin).
 - T4 S1 inline — native prefetch in `7c1a8ca`; JS adoption in `hydrateCoverUrisUnlocked` in the JS commit after it.
 
 Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `SyncEngineRunner`).
@@ -78,3 +78,8 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
   - The pre-commit gate also dropped the two deleted files from `jest.coverage-tiers.js`.
   - Results: full `bunx jest` 2151/2151, `bun run typecheck` exit 0, `npx lefthook run pre-commit` exit 0.
   - Retired names now appear only in historical docs (dated redesign draft, archived specs), which stay as they are.
+- L15 (2026-10-18, T7):
+  - Both runtimes now send the queued payload's `seasonId` as `season_id` in POST /api/seasons/active/ratings (JS `buildSeasonRatingRequest`/`buildPostActiveSeasonRatingBody`, Kotlin `buildSeasonRatingBody`).
+  - A payload without `seasonId` omits it and never guesses.
+  - RED first: the shared rating fixtures expected `season_id` before the change, and 7 failed.
+  - Results: full `bunx jest` 2151/2151, `bun run test:kotlin` BUILD SUCCESSFUL.

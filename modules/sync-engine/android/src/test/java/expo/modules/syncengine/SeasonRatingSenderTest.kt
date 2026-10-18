@@ -79,10 +79,10 @@ class SeasonRatingSenderTest {
   @Test
   fun aBodyCarriesOnlyTheFieldsThePayloadHasAndNeverGuessesTheRest() {
     assertEquals(
-      """{"anime_id":"anime-1","grade":4,"rated_at":5}""",
+      """{"anime_id":"anime-1","grade":4,"rated_at":5,"season_id":"s"}""",
       buildSeasonRatingBody(row(1, "anime-1", """{"seasonId":"s","grade":4,"ratedAt":5,"extra":true}""")).toString(),
     )
-    assertEquals("""{"anime_id":"anime-1"}""", buildSeasonRatingBody(row(1, "anime-1", """{"seasonId":"s"}""")).toString())
+    assertEquals("""{"anime_id":"anime-1","season_id":"s"}""", buildSeasonRatingBody(row(1, "anime-1", """{"seasonId":"s"}""")).toString())
     assertEquals("""{"anime_id":"anime-1"}""", buildSeasonRatingBody(row(1, "anime-1", "[1,2]")).toString())
     assertEquals("""{"anime_id":"anime-1"}""", buildSeasonRatingBody(row(1, "anime-1", "{not json")).toString())
     // A NULL payload column (a row the device never wrote this way) reads as `{}` too.

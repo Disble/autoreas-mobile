@@ -96,6 +96,7 @@ describe('bridge-client', () => {
       animeId: 'anime-9',
       nota: 4,
       ratedAt: 1_752_300_000_000,
+      seasonId: 'season-3',
     });
 
     expect(fetchFn).toHaveBeenCalledWith('http://192.168.1.10:9876/api/seasons/active/ratings', {
@@ -104,7 +105,7 @@ describe('bridge-client', () => {
         'Content-Type': 'application/json',
         Authorization: 'Bearer token123',
       },
-      body: JSON.stringify({ anime_id: 'anime-9', grade: 4, rated_at: 1_752_300_000_000 }),
+      body: JSON.stringify({ anime_id: 'anime-9', grade: 4, rated_at: 1_752_300_000_000, season_id: 'season-3' }),
       signal: expect.any(AbortSignal),
     });
     expect(result.ok).toBe(true);

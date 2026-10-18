@@ -16,6 +16,8 @@ export interface PostActiveSeasonRatingRequest {
   readonly animeId: string;
   readonly nota: number;
   readonly ratedAt: number;
+  /** The season the rating was given for; the bridge refuses it (404) when that season is gone. */
+  readonly seasonId: string;
 }
 
 /** Defines the bridge http method value shape. */
