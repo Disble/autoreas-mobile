@@ -8,6 +8,8 @@ import {
   SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS,
 } from '../../../../src/features/sync/sync-diagnostics-flush.constants';
 import type { SyncDiagnosticsFlushResult } from '../../../../src/features/sync/sync-diagnostics-flush.types';
+import { createRequestIdSequence } from '../../../../src/features/sync/request-id.helpers';
+import type { RequestIdSequence } from '../../../../src/features/sync/request-id.types';
 import type {
   SyncDiagnosticsOutboxRecord,
   SyncDiagnosticsOutboxStore,
@@ -108,6 +110,7 @@ async function runFlush(
     config: { isSyncTelemetryEnabled?: unknown } | null;
     undeliverableKinds: readonly string[];
     removeResult: 'removed' | 'failed';
+    requestIds: RequestIdSequence;
   }> = {},
 ) {
   const { removeResult = 'removed', ...flushParams } = overrides;
@@ -468,5 +471,29 @@ describe('flushSyncDiagnosticsOutbox', () => {
     expect(postSyncDiagnostics).toHaveBeenCalledTimes(1);
     expect(store.remove).toHaveBeenCalledWith('cycle-1');
     expect(result).toEqual(tally({ attempted: 1, delivered: 1 }));
+  });
+});
+
+describe('flushSyncDiagnosticsOutbox request ids (S4)', () => {
+  it("numbers each POST with the cycle's next request id", async () => {
+    const requestIds = createRequestIdSequence('cycle-7');
+    const { postSyncDiagnostics } = await runFlush(
+      [buildRecord({ cycleId: 'cycle-1' }), buildRecord({ cycleId: 'cycle-2' })],
+      [buildResult(), buildResult()],
+      { requestIds },
+    );
+
+    expect(postSyncDiagnostics.mock.calls.map((call) => call[2])).toEqual([
+      { timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS, requestId: 'cycle-7:1' },
+      { timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS, requestId: 'cycle-7:2' },
+    ]);
+    // The flush took only the ids it sent: the cycle's next request keeps counting from there.
+    expect(requestIds.next()).toBe('cycle-7:3');
+  });
+
+  it('sends no request id when the pass runs outside a cycle (S2)', async () => {
+    const { postSyncDiagnostics } = await runFlush([buildRecord()], [buildResult()]);
+
+    expect(postSyncDiagnostics.mock.calls[0][2]).toEqual({ timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS });
   });
 });

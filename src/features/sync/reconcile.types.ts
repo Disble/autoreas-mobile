@@ -4,6 +4,7 @@ import type { OutboxClaim } from './outbox-claim.types';
 import type { ConfirmedAnimeToken } from './applied-operation-token.helpers';
 import type { ConflictOutcome } from './reconcile-conflict.helpers';
 import type { RemoteAnimeChange } from './merge/merge.types';
+import type { RequestIdSequence } from './request-id.types';
 
 /** Input to `applyReconcileResponseWrites`, one field per write source this cycle produced. */
 export interface ApplyReconcileResponseWritesParams {
@@ -54,6 +55,8 @@ export interface ReconcileRoundContext {
   readonly claim: OutboxClaim;
   /** Epoch ms after which no further row is claimed for the chain (ADR 009 R-14). */
   readonly chainDeadline: number;
+  /** The cycle's request numbering, shared by reference so every round keeps counting. */
+  readonly requestIds: RequestIdSequence;
 }
 
 /** What one reconcile round produced, and the rows the chain sends next. */

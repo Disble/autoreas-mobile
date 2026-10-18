@@ -7,15 +7,20 @@ import type { OperationLogRow } from '../../infrastructure/db/schema';
 import { RELEASED_CLAIM } from './outbox-claim.constants';
 import { claimChainSuccessors, heldOperationsWhere, readHeldOperationIds } from './outbox-claim.helpers';
 import type { OutboxClaim } from './outbox-claim.types';
+import type { RequestIdSequence } from './request-id.types';
 import { buildSeasonRatingRequest, classifySeasonRatingAnswer } from './season-rating-event.helpers';
 import { NOTHING_CONFIRMED } from './season-rating-event.constants';
 import type { SeasonRatingFate, SeasonRatingRoundOutcome, SettledRating } from './season-rating-event.types';
 import { logAutomaticResolutions, resolveSupersededRatings } from './unresolved-supersede.helpers';
 
 /** Posts one rating and classifies its answer; a request that never got an answer stays pending. */
-async function postSeasonRating(connection: BridgeConnection, row: OperationLogRow): Promise<SeasonRatingFate> {
+async function postSeasonRating(
+  connection: BridgeConnection,
+  row: OperationLogRow,
+  requestId: string,
+): Promise<SeasonRatingFate> {
   try {
-    const result = await bridgeClient.postActiveSeasonRating(connection, buildSeasonRatingRequest(row));
+    const result = await bridgeClient.postActiveSeasonRating(connection, buildSeasonRatingRequest(row), { requestId });
 
     return classifySeasonRatingAnswer(result.status);
   } catch {
@@ -106,6 +111,7 @@ export async function sendSeasonRatingRound(
     readonly claim: OutboxClaim;
     readonly chainDeadline: number;
     readonly onClaimed: (rows: readonly OperationLogRow[]) => void;
+    readonly requestIds: RequestIdSequence;
   },
   ratings: readonly OperationLogRow[],
 ): Promise<SeasonRatingRoundOutcome> {
@@ -122,7 +128,7 @@ export async function sendSeasonRatingRound(
     }
 
     attemptedCount += 1;
-    const fate = await postSeasonRating(context.connection, row);
+    const fate = await postSeasonRating(context.connection, row, context.requestIds.next());
     const settled = await settleSafely(rawDb, row, fate, context);
     logAutomaticResolutions(settled?.resolutions ?? []);
     context.onClaimed(settled?.successors ?? []);

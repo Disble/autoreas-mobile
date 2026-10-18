@@ -46,6 +46,7 @@ class SyncEngineHttpTest {
     var authorization: String? = null
     var contentType: String? = null
     var receivedBody: String? = null
+    var requestId: String? = "unset"
 
     val srv = startServer()
     srv.createContext("/api/sync/reconcile") { exchange ->
@@ -53,6 +54,7 @@ class SyncEngineHttpTest {
       path = exchange.requestURI.path
       authorization = exchange.requestHeaders.getFirst("Authorization")
       contentType = exchange.requestHeaders.getFirst("Content-Type")
+      requestId = exchange.requestHeaders.getFirst(REQUEST_ID_HEADER)
       receivedBody = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
       val responseBytes = "{\"ok\":true}".toByteArray(StandardCharsets.UTF_8)
       exchange.sendResponseHeaders(200, responseBytes.size.toLong())
@@ -74,6 +76,33 @@ class SyncEngineHttpTest {
     assertEquals("Bearer tok-1", authorization)
     assertEquals("application/json", contentType)
     assertEquals("{\"device_id\":\"d1\"}", receivedBody)
+    assertNull("a call without a request id must send no request-id header", requestId)
+  }
+
+  @Test
+  fun `postJson sends the request id header verbatim when one is given`() {
+    var requestId: String? = null
+    var authorization: String? = null
+    val srv = startServer()
+    srv.createContext("/api/sync/reconcile") { exchange ->
+      requestId = exchange.requestHeaders.getFirst(REQUEST_ID_HEADER)
+      authorization = exchange.requestHeaders.getFirst("Authorization")
+      exchange.requestBody.readBytes()
+      exchange.sendResponseHeaders(204, -1)
+      exchange.close()
+    }
+    srv.start()
+
+    SyncEngineHttp.postJson(
+      url = "http://127.0.0.1:${srv.address.port}/api/sync/reconcile",
+      token = "tok-1",
+      body = "{}",
+      timeoutMs = 5_000,
+      requestId = "0f8b4c1e-2d3a-4b5c-8d9e-0a1b2c3d4e5f:3",
+    )
+
+    assertEquals("0f8b4c1e-2d3a-4b5c-8d9e-0a1b2c3d4e5f:3", requestId)
+    assertEquals("Bearer tok-1", authorization)
   }
 
   @Test
@@ -230,12 +259,14 @@ class SyncEngineHttpTest {
     var method: String? = null
     var authorization: String? = null
     var contentType: String? = null
+    var requestId: String? = "unset"
 
     val srv = startServer()
     srv.createContext("/api/status") { exchange ->
       method = exchange.requestMethod
       authorization = exchange.requestHeaders.getFirst("Authorization")
       contentType = exchange.requestHeaders.getFirst("Content-Type")
+      requestId = exchange.requestHeaders.getFirst(REQUEST_ID_HEADER)
       val responseBytes = "{\"status\":\"ok\"}".toByteArray(StandardCharsets.UTF_8)
       exchange.sendResponseHeaders(200, responseBytes.size.toLong())
       exchange.responseBody.use { it.write(responseBytes) }
@@ -253,6 +284,31 @@ class SyncEngineHttpTest {
     assertEquals("GET", method)
     assertEquals("Bearer tok-2", authorization)
     assertNull("a GET must never carry Content-Type", contentType)
+    assertNull("a call without a request id must send no request-id header", requestId)
+  }
+
+  @Test
+  fun `get sends the request id header verbatim when one is given`() {
+    var requestId: String? = null
+    var contentType: String? = "unset"
+    val srv = startServer()
+    srv.createContext("/api/status") { exchange ->
+      requestId = exchange.requestHeaders.getFirst(REQUEST_ID_HEADER)
+      contentType = exchange.requestHeaders.getFirst("Content-Type")
+      exchange.sendResponseHeaders(204, -1)
+      exchange.close()
+    }
+    srv.start()
+
+    SyncEngineHttp.get(
+      url = "http://127.0.0.1:${srv.address.port}/api/status",
+      token = "tok-2",
+      timeoutMs = 5_000,
+      requestId = "0f8b4c1e-2d3a-4b5c-8d9e-0a1b2c3d4e5f:1",
+    )
+
+    assertEquals("0f8b4c1e-2d3a-4b5c-8d9e-0a1b2c3d4e5f:1", requestId)
+    assertNull("the request id must not add a Content-Type to a GET", contentType)
   }
 
   @Test
@@ -352,5 +408,9 @@ class SyncEngineHttpTest {
     } finally {
       socket.close()
     }
+  }
+
+  private companion object {
+    const val REQUEST_ID_HEADER = "X-Autoreas-Request-Id"
   }
 }

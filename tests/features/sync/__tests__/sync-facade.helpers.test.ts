@@ -260,3 +260,41 @@ describe('runCoordinatedForegroundSyncCycle pull after a delivered rating (L12)'
     warn.mockRestore();
   });
 });
+
+describe('runCoordinatedForegroundSyncCycle request ids (S4)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSyncConnectionStore();
+    (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (runCoverSweep as jest.Mock).mockResolvedValue({
+      fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+    });
+  });
+
+  it('hands the sends and the pull after a delivered rating one shared sequence', async () => {
+    (syncPendingOperations as jest.Mock)
+      .mockResolvedValueOnce({ syncedCount: 1, hasMorePending: false, ratingDelivered: true })
+      .mockResolvedValueOnce({ syncedCount: 0, hasMorePending: false, ratingDelivered: false });
+
+    await runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'local_mutation' });
+
+    const [sendsSequence, pullSequence] = (syncPendingOperations as jest.Mock).mock.calls.map((call) => call[1]);
+    expect(sendsSequence).toEqual(expect.objectContaining({ cycleId: expect.any(String) }));
+    expect(pullSequence).toBe(sendsSequence);
+  });
+
+  it('starts a new sequence for every cycle', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({
+      syncedCount: 0, hasMorePending: false, ratingDelivered: false,
+    });
+    const input = { rawDb: RAW_DB, source: 'manual' as const };
+
+    await runCoordinatedForegroundSyncCycle(input);
+    await runCoordinatedForegroundSyncCycle(input);
+
+    const [first, second] = (syncPendingOperations as jest.Mock).mock.calls.map((call) => call[1].cycleId);
+    expect(second).not.toBe(first);
+  });
+});

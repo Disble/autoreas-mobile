@@ -260,6 +260,7 @@ describe('syncPendingOperations remote-change routing', () => {
       expect.objectContaining({
         pending_operations: [expect.objectContaining({ anime_id: 'anime-1', base: 555 })],
       }),
+      { requestId: expect.stringMatching(/^[0-9a-f-]{36}:1$/) },
     );
   });
 });

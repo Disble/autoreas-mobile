@@ -3,6 +3,9 @@ import { bridgeClient } from '../../../src/infrastructure/api';
 import * as dbClient from '../../../src/infrastructure/db/client/client.helpers';
 import * as operationLogRetention from '../../../src/features/sync/operation-log-retention.helpers';
 import * as syncDiagnosticsFlushModule from '../../../src/features/sync/sync-diagnostics-flush.helpers';
+import { createRequestIdSequence } from '../../../src/features/sync/request-id.helpers';
+import type { RequestIdSequence } from '../../../src/features/sync/request-id.types';
+import * as animeRepository from '../../../src/infrastructure/db/anime-repository';
 
 // The remaining collaborators `syncPendingOperations` reaches for -- the merge boundary, the
 // pending-remote-changes stager, and the anime bridge-token reader -- are mocked below by module
@@ -106,5 +109,20 @@ describe('syncPendingOperations diagnostics wiring (Decision 5)', () => {
     // here), so any `withLocalWrite` call at all would be that revert.
     expect(mockReconcile).not.toHaveBeenCalled();
     expect(dbClient.withLocalWrite).not.toHaveBeenCalled();
+  });
+  it("numbers the flush and the reconcile after it in one cycle's sequence (S4)", async () => {
+    (animeRepository.readAnimeBridgeTokens as jest.Mock).mockResolvedValueOnce(new Map([['anime-1', 5]]));
+    // The flush posts one envelope, so it takes the cycle's first id.
+    mockFlush.mockImplementationOnce(async (params: { requestIds: RequestIdSequence }) => {
+      params.requestIds.next();
+      return { attempted: 1, delivered: 1, discarded: 0, failedRemovals: 0 };
+    });
+
+    // The stubbed write door cannot apply the answer, so the pass fails after the request: only
+    // the request is under test here.
+    await syncPendingOperations({ name: 'numbered-cycle-db' } as never, createRequestIdSequence('cycle-9'))
+      .catch(() => undefined);
+
+    expect(mockReconcile).toHaveBeenCalledWith(expect.anything(), expect.anything(), { requestId: 'cycle-9:2' });
   });
 });

@@ -12,6 +12,7 @@ import { RELEASED_CLAIM } from './outbox-claim.constants';
 import { heldOperationsWhere, readHeldOperationIds } from './outbox-claim.helpers';
 import { ANIME_UPDATE_OPERATION } from './outbox-operation.constants';
 import type { OutboxClaim } from './outbox-claim.types';
+import type { RequestIdSequence } from './request-id.types';
 
 /** Reads the `modified_at` token of a fetched `MobileAnime`, or `null` when it carries none. */
 function readFetchedToken(data: unknown): number | null {
@@ -23,15 +24,17 @@ function readFetchedToken(data: unknown): number | null {
 /**
  * Asks the bridge for one anime whose token is missing (ADR 009 R-3). Four outcomes: a transport
  * failure or any status other than 200/404 keeps the key pending; a 404 and an anime with no token
- * give the key up, the latter logged; a token lets the key be sent on it.
+ * give the key up, the latter logged; a token lets the key be sent on it. The request takes the
+ * next id of `requestIds` when the cycle gives one.
  */
 export async function fetchMissingTokenOutcome(
   connection: BridgeConnection,
   animeId: string,
+  requestIds?: RequestIdSequence,
 ): Promise<MissingTokenOutcome> {
   let result;
   try {
-    result = await bridgeClient.getAnime(connection, animeId);
+    result = await bridgeClient.getAnime(connection, animeId, { requestId: requestIds?.next() });
   } catch {
     return { kind: 'unreachable' };
   }
@@ -132,7 +135,7 @@ async function applyMissingTokenOutcome(
  * The claim holder's fetch-first step (ADR 009 R-3): a held row whose anime has no stored token is
  * never sent without a base. Each such anime is fetched once; its outcome is written, the token is
  * added to `tokensByAnimeId`, and only the rows that can now carry a base and that this claim
- * still holds are returned.
+ * still holds are returned. Each fetch takes the next id of the cycle's `requestIds`.
  */
 export async function resolveMissingTokens(
   rawDb: SQLiteDatabase,
@@ -140,6 +143,7 @@ export async function resolveMissingTokens(
   claim: OutboxClaim,
   heldOps: readonly OperationLogRow[],
   tokensByAnimeId: Map<string, number | null>,
+  requestIds: RequestIdSequence,
 ): Promise<OperationLogRow[]> {
   const missing = [...new Set(heldOps.map((operation) => operation.animeId))].filter(
     (animeId) => (tokensByAnimeId.get(animeId) ?? null) === null,
@@ -152,7 +156,7 @@ export async function resolveMissingTokens(
   const outcomes = new Map<string, MissingTokenOutcome>();
   for (const animeId of missing) {
     // eslint-disable-next-line react-doctor/async-await-in-loop -- one bounded request per anime, sequential so a down bridge costs one timeout at a time, not a burst.
-    outcomes.set(animeId, await fetchMissingTokenOutcome(connection, animeId));
+    outcomes.set(animeId, await fetchMissingTokenOutcome(connection, animeId, requestIds));
   }
 
   // The fetches were network calls: a claim can have expired and been taken over meanwhile
