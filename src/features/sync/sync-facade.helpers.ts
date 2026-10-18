@@ -6,6 +6,8 @@ import { COVER_SWEEP_TRIGGER_SOURCES } from './cover-sweep/cover-sweep.constants
 import { runCoverSweep } from './cover-sweep/cover-sweep.helpers';
 import { syncPendingOperations } from './reconcile.helpers';
 import { PENDING_OPERATIONS_LIVE_QUERY_LIMIT } from './reconcile.constants';
+import { createRequestIdSequence } from './request-id.helpers';
+import type { RequestIdSequence } from './request-id.types';
 import { healSnapshotOnDemand } from './snapshot-heal.helpers';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
 import {
@@ -112,6 +114,9 @@ async function persistSyncFailureTelemetrySafely(
  * grade on the next cycle. The full-snapshot heal runs last, when the request demands it (ADR 009 R-7):
  * always on mount and resume, on a reconnect only when the last successful heal is stale. It is
  * best effort too, and it runs even when the sends failed, before the failure is published.
+ *
+ * One cycle is one request id: every bridge request of the sends and the pull after a delivered
+ * rating carries `<cycleId>:<n>`, numbered in send order, so each joins the bridge's record of it.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
@@ -119,6 +124,7 @@ export async function runCoordinatedForegroundSyncCycle({
   healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
   const attempt = beginSyncConnectionAttempt();
+  const requestIds = createRequestIdSequence();
 
   try {
     const attemptedAt = Date.now();
@@ -129,10 +135,10 @@ export async function runCoordinatedForegroundSyncCycle({
     });
     // A failing rating never fails the cycle (ADR 009 R-5, I4): a terminal one is kept as
     // unresolved, and one left queued for retry only keeps the cycle pending, like an anime row.
-    const result = await syncPendingOperations(rawDb);
+    const result = await syncPendingOperations(rawDb, requestIds);
 
     if (result.ratingDelivered) {
-      await pullAfterDeliveredRating(rawDb);
+      await pullAfterDeliveredRating(rawDb, requestIds);
     }
 
     await healSnapshotOnDemand(rawDb, healSnapshot);
@@ -177,11 +183,15 @@ export async function runCoordinatedForegroundSyncCycle({
  * The pull a delivered rating owes (L12): the bridge records a ["season"] row for each 204, so one
  * more outbox pass, whose first round always reconciles, brings the new grade. Best effort, like the
  * rating it follows (ADR 009 R-5, I4): a failure is logged and never fails the cycle, and the next
- * cycle brings the same row because the cursor did not move.
+ * cycle brings the same row because the cursor did not move. Its requests continue the cycle's
+ * request numbering.
  */
-async function pullAfterDeliveredRating(rawDb: SQLiteDatabase): Promise<void> {
+async function pullAfterDeliveredRating(
+  rawDb: SQLiteDatabase,
+  requestIds: RequestIdSequence,
+): Promise<void> {
   try {
-    await syncPendingOperations(rawDb);
+    await syncPendingOperations(rawDb, requestIds);
   } catch (error) {
     console.warn('[sync-facade] The pull after a delivered rating failed; the next cycle brings its grade', error);
   }

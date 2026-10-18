@@ -54,9 +54,12 @@ data class PresenceProbeResult(
  */
 object SyncEngineBridgePresence {
 
-  /** Runs one presence probe against the app database's current `bridge_config` row. */
-  fun probe(appDb: SQLiteDatabase): PresenceProbeResult {
-    return probe(readBridgeConfig(appDb))
+  /**
+   * Runs one presence probe against the app database's current `bridge_config` row. [requestId]
+   * is the attempt's id for the probe's `GET`, or `null` to send none.
+   */
+  fun probe(appDb: SQLiteDatabase, requestId: String? = null): PresenceProbeResult {
+    return probe(readBridgeConfig(appDb), requestId)
   }
 
   /**
@@ -64,9 +67,10 @@ object SyncEngineBridgePresence {
    * pass so this class's contract can be exercised with a fake HTTP server and a plain
    * [BridgeConfigRow] fixture, without opening a real SQLite connection. [probe] above is now a
    * thin adapter that reads the row and delegates here; behavior is byte-identical to before the
-   * split — every branch and log line moved verbatim, nothing was added or reordered.
+   * split — every branch and log line moved verbatim, nothing was added or reordered. [requestId]
+   * is sent with the `GET` and named in the transport-failure log line when given.
    */
-  fun probe(config: BridgeConfigRow?): PresenceProbeResult {
+  fun probe(config: BridgeConfigRow?, requestId: String? = null): PresenceProbeResult {
     if (config == null) {
       return PresenceProbeResult(isPresent = false, reason = "no bridge_config row")
     }
@@ -85,10 +89,12 @@ object SyncEngineBridgePresence {
         url = "http://$ip:$port/api/status",
         token = token,
         timeoutMs = PRESENCE_PROBE_TIMEOUT_MS,
+        requestId = requestId,
       )
       PresenceProbeResult(isPresent = true, reason = null)
     } catch (error: Throwable) {
-      Log.w(TAG, "presence probe transport failure", error)
+      val suffix = if (requestId == null) "" else " (requestId=$requestId)"
+      Log.w(TAG, "presence probe transport failure$suffix", error)
       PresenceProbeResult(isPresent = false, reason = error.javaClass.simpleName)
     }
   }

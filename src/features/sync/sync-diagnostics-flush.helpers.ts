@@ -26,6 +26,7 @@ import type {
   BridgeConnection,
 } from '../../infrastructure/api/bridge-client/bridge-client.types';
 import type { SyncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox';
+import type { RequestIdSequence } from './request-id.types';
 
 /** One entry as `readFlushCandidates` hands it back, derived so no extra import is needed. */
 type FlushCandidate = ReturnType<SyncDiagnosticsOutboxStore['readFlushCandidates']>[number];
@@ -38,9 +39,13 @@ interface FlushCollaborators {
   readonly undeliverableKinds: readonly string[];
 }
 
-/** Collaborators one envelope's round trip needs: the pass's own, plus the connection it POSTs to. */
+/**
+ * Collaborators one envelope's round trip needs: the pass's own, plus the connection it POSTs to
+ * and the cycle's request numbering, when there is one.
+ */
 interface DisposeOfEnvelopeParams extends FlushCollaborators {
   readonly connection: BridgeConnection;
+  readonly requestIds?: RequestIdSequence;
 }
 
 /**
@@ -175,6 +180,7 @@ async function postStoredPayload(
   try {
     const result = await params.client.postSyncDiagnostics(params.connection, payload, {
       timeoutMs: SYNC_DIAGNOSTICS_REQUEST_TIMEOUT_MS,
+      ...(params.requestIds ? { requestId: params.requestIds.next() } : {}),
     });
 
     return {
@@ -450,6 +456,7 @@ export async function flushSyncDiagnosticsOutbox(
       connection: params.connection,
       now,
       undeliverableKinds,
+      requestIds: params.requestIds,
     };
 
     for (const candidate of candidates) {

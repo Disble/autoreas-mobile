@@ -3,6 +3,7 @@ import type {
   BridgeConnection,
 } from '../../infrastructure/api/bridge-client/bridge-client.types';
 import type { SyncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox';
+import type { RequestIdSequence } from './request-id.types';
 
 /**
  * Dependencies one bounded flush pass needs. `connection` is mandatory (there is no shared
@@ -31,6 +32,11 @@ export interface FlushSyncDiagnosticsOutboxParams {
    * be pinnable by a test while the shipped declaration stays empty.
    */
   readonly undeliverableKinds?: readonly string[];
+  /**
+   * The sync cycle's request numbering: each POST this pass makes takes its next id. Omitted, the
+   * POSTs carry no request id.
+   */
+  readonly requestIds?: RequestIdSequence;
 }
 
 /**
