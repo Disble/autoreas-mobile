@@ -1,7 +1,6 @@
 package expo.modules.syncengine
 
 import android.database.sqlite.SQLiteDatabase
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,8 +19,8 @@ import java.net.ServerSocket
 import java.util.UUID
 
 /**
- * Robolectric tests for the background catch-up (ODD background-covers-season T3/T4): the
- * active-season refresh into `active_season_cache` and the cover prefetch into `covers-inbox/`.
+ * Robolectric tests for the background catch-up (ODD background-covers-season T4): the cover
+ * prefetch into `covers-inbox/`.
  * The bridge is a function seam, so each test scripts exactly what the bridge answers and reads
  * back what landed in the database and on disk.
  */
@@ -43,10 +42,6 @@ class SyncEngineBackgroundCatchUpTest {
   @Before
   fun setUp() {
     db = SQLiteDatabase.create(null)
-    db.execSQL(
-      "CREATE TABLE active_season_cache (id INTEGER PRIMARY KEY CHECK (id = 1), " +
-        "season_id TEXT NOT NULL, candidates_json TEXT NOT NULL)",
-    )
     db.execSQL("CREATE TABLE animes (_id TEXT PRIMARY KEY, activo INTEGER NOT NULL, portada TEXT)")
     db.execSQL(
       "CREATE TABLE pending_remote_changes (id INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT NOT NULL, " +
@@ -60,113 +55,6 @@ class SyncEngineBackgroundCatchUpTest {
   fun tearDown() {
     db.close()
     filesDir.deleteRecursively()
-  }
-
-  // ---- active season ----
-
-  private fun refresh(response: () -> SyncEngineHttpResponse, onUrl: (String) -> Unit = {}): SeasonRefreshOutcome =
-    SyncEngineSeasonRefresh(db) { url, token ->
-      onUrl("$url|$token")
-      response()
-    }.refresh(config)
-
-  private fun seedSeasonCache(seasonId: String = "old-season", candidates: String = "[]") {
-    db.execSQL(
-      "INSERT INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?)",
-      arrayOf(seasonId, candidates),
-    )
-  }
-
-  private fun cachedSeason(): Pair<String, String>? =
-    db.rawQuery("SELECT season_id, candidates_json FROM active_season_cache WHERE id = 1", null).use {
-      if (it.moveToFirst()) it.getString(0) to it.getString(1) else null
-    }
-
-  @Test
-  fun `a valid season replaces the cache with the candidates the JS reader expects`() {
-    seedSeasonCache()
-    var requested: String? = null
-    val body = """{"season_id":"s-1","candidates":[{"anime_id":"a1","grade":null},""" +
-      """{"anime_id":"a2","grade":6,"grade_source":"bridge"},{"anime_id":"a3"}]}"""
-
-    val outcome = refresh({ SyncEngineHttpResponse(200, body) }) { requested = it }
-
-    assertEquals(SeasonRefreshOutcome.CACHED, outcome)
-    assertEquals("http://10.0.0.2:3000/api/seasons/active|tok", requested)
-    val (seasonId, candidatesJson) = cachedSeason()!!
-    assertEquals("s-1", seasonId)
-    val candidates = JSONArray(candidatesJson)
-    assertEquals(3, candidates.length())
-    assertCandidate(candidates.getJSONObject(0), "a1", null, null)
-    assertCandidate(candidates.getJSONObject(1), "a2", 6, "bridge")
-    assertCandidate(candidates.getJSONObject(2), "a3", null, null)
-  }
-
-  private fun assertCandidate(candidate: JSONObject, animeId: String, grade: Int?, source: String?) {
-    assertEquals(animeId, candidate.getString("anime_id"))
-    if (grade == null) assertTrue(candidate.isNull("grade")) else assertEquals(grade, candidate.getInt("grade"))
-    if (source == null) assertTrue(candidate.isNull("grade_source")) else assertEquals(source, candidate.getString("grade_source"))
-  }
-
-  @Test
-  fun `a valid season is cached when no season was cached before`() {
-    val outcome = refresh({ SyncEngineHttpResponse(200, """{"season_id":"s-2","candidates":[]}""") })
-
-    assertEquals(SeasonRefreshOutcome.CACHED, outcome)
-    assertEquals("s-2" to "[]", cachedSeason())
-  }
-
-  @Test
-  fun `a 404 means no active season and clears the cache`() {
-    seedSeasonCache()
-
-    assertEquals(SeasonRefreshOutcome.CLEARED, refresh({ SyncEngineHttpResponse(404, null) }))
-    assertNull(cachedSeason())
-  }
-
-  @Test
-  fun `any other status keeps the cache`() {
-    seedSeasonCache()
-
-    assertEquals(SeasonRefreshOutcome.KEPT, refresh({ SyncEngineHttpResponse(500, "boom") }))
-    assertEquals("old-season" to "[]", cachedSeason())
-  }
-
-  @Test
-  fun `a transport failure keeps the cache`() {
-    seedSeasonCache()
-
-    assertEquals(SeasonRefreshOutcome.KEPT, refresh({ throw IOException("unreachable") }))
-    assertEquals("old-season" to "[]", cachedSeason())
-  }
-
-  @Test
-  fun `a body the JS reader would refuse keeps the cache`() {
-    val invalidBodies = listOf(
-      null,
-      "not json",
-      """{"candidates":[]}""",
-      """{"season_id":"","candidates":[]}""",
-      """{"season_id":"s","candidates":{}}""",
-      """{"season_id":"s","candidates":[1]}""",
-      """{"season_id":"s","candidates":[{"grade":1}]}""",
-      """{"season_id":"s","candidates":[{"anime_id":""}]}""",
-      """{"season_id":"s","candidates":[{"anime_id":"a","grade":"6"}]}""",
-      """{"season_id":"s","candidates":[{"anime_id":"a","grade_source":"manual"}]}""",
-    )
-    seedSeasonCache()
-
-    for (body in invalidBodies) {
-      assertEquals("body $body", SeasonRefreshOutcome.KEPT, refresh({ SyncEngineHttpResponse(200, body) }))
-      assertEquals("old-season" to "[]", cachedSeason())
-    }
-  }
-
-  @Test
-  fun `a store without the cache table keeps going without a throw`() {
-    db.execSQL("DROP TABLE active_season_cache")
-
-    assertEquals(SeasonRefreshOutcome.KEPT, refresh({ SyncEngineHttpResponse(404, null) }))
   }
 
   // ---- cover prefetch ----
@@ -405,17 +293,17 @@ class SyncEngineBackgroundCatchUpTest {
       "CREATE TABLE bridge_config (id INTEGER PRIMARY KEY, device_id TEXT, ip TEXT, port TEXT, " +
         "token TEXT, last_changelog_id INTEGER, is_sync_telemetry_enabled INTEGER)",
     )
-    seedSeasonCache()
+    addAnime("a", "/c/a.jpg")
 
     SyncEngineBackgroundCatchUp.run(filesDir, db)
     db.execSQL("INSERT INTO bridge_config (id, ip, port) VALUES (1, '127.0.0.1', '1')")
     SyncEngineBackgroundCatchUp.run(filesDir, db)
 
-    assertEquals("old-season" to "[]", cachedSeason())
+    assertFalse(inbox.exists())
   }
 
   @Test
-  fun `the catch-up survives an absent bridge and keeps what it had`() {
+  fun `the catch-up survives an absent bridge and lands nothing`() {
     val closedPort = ServerSocket(0).use { it.localPort }
     db.execSQL(
       "CREATE TABLE bridge_config (id INTEGER PRIMARY KEY, device_id TEXT, ip TEXT, port TEXT, " +
@@ -425,12 +313,10 @@ class SyncEngineBackgroundCatchUpTest {
       "INSERT INTO bridge_config (id, device_id, ip, port, token) VALUES (1, 'd', '127.0.0.1', ?, 't')",
       arrayOf(closedPort.toString()),
     )
-    seedSeasonCache()
     addAnime("a", "/c/a.jpg")
 
     SyncEngineBackgroundCatchUp.run(filesDir, db)
 
-    assertEquals("old-season" to "[]", cachedSeason())
     assertFalse(inbox.exists())
   }
 

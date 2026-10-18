@@ -3,17 +3,13 @@ package expo.modules.syncengine
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.util.Log
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.URLEncoder
 
 private const val TAG = "SyncEngineCatchUp"
 
-/** Bridge route of the active season; mirrors `getActiveSeason` in the JS bridge client. */
-const val ACTIVE_SEASON_PATH = "/api/seasons/active"
-
-/** Budget for the active-season read and for each cover download. */
+/** Budget for each cover download. */
 const val CATCH_UP_REQUEST_TIMEOUT_MS = 5_000
 
 /** The JS-owned covers directory under `filesDir`; mirrors `COVERS_DIRECTORY_NAME`. */
@@ -41,124 +37,26 @@ const val COVER_PREFETCH_MAX_PER_ATTEMPT = 3
  */
 const val COVER_PREFETCH_RETRY_MS = 60 * 60 * 1000L
 
-/** What one active-season refresh did to `active_season_cache`. */
-enum class SeasonRefreshOutcome { CACHED, CLEARED, KEPT }
-
 /**
- * Background catch-up that runs after an attempt that reached the bridge (`closed`): it refreshes
- * the active season and downloads the covers of animes that have none yet, so an anime that
- * arrives while the app is in the background opens with its season controls and its cover. Both
- * steps used to run only from the JS foreground cycle, which never runs in the background.
+ * Background catch-up that runs after an attempt that reached the bridge (`closed`): it downloads
+ * the covers of animes that have none yet, so an anime that arrives while the app is in the
+ * background opens with its cover. The cover sweep used to run only from the JS foreground cycle,
+ * which never runs in the background.
  *
  * Never throws: every failure is logged and leaves the previous state, because a catch-up step is
  * best effort and must never change how the attempt itself ended.
  */
 object SyncEngineBackgroundCatchUp {
 
-  /** Runs both steps against the real bridge, reading the connection from `bridge_config`. */
+  /** Runs the cover prefetch against the real bridge, reading the connection from `bridge_config`. */
   fun run(filesDir: File, appDb: SQLiteDatabase) {
     try {
       val config = readBridgeConfig(appDb) ?: return
       if (!hasCompleteBridgeConnection(config)) return
-      SyncEngineSeasonRefresh(appDb) { url, token ->
-        SyncEngineHttp.get(url, token, CATCH_UP_REQUEST_TIMEOUT_MS)
-      }.refresh(config)
       SyncEngineCoverPrefetch.shared(appDb, filesDir).prefetch(config)
     } catch (error: Throwable) {
       Log.w(TAG, "background catch-up failed", error)
     }
-  }
-}
-
-/**
- * Refreshes `active_season_cache` from the bridge with the JS rules of
- * `refreshActiveSeasonSnapshot`: a valid `200` replaces the cached season, a `404` (no season
- * active) clears it, and anything else -- a transport failure, another status, an invalid body --
- * keeps it, since none of those proves the season changed. The cached shape is the one
- * `writeCachedActiveSeasonSnapshot` writes, so `readCachedActiveSeasonSnapshot` reads it back.
- */
-class SyncEngineSeasonRefresh(
-  private val appDb: SQLiteDatabase,
-  private val get: (url: String, token: String) -> SyncEngineHttpResponse,
-) {
-
-  /** Runs one refresh; never throws. */
-  fun refresh(config: BridgeConfigRow): SeasonRefreshOutcome {
-    val response = try {
-      get("http://${config.ip}:${config.port}$ACTIVE_SEASON_PATH", config.token!!)
-    } catch (error: Throwable) {
-      Log.w(TAG, "active season read did not reach the bridge", error)
-      return SeasonRefreshOutcome.KEPT
-    }
-
-    return try {
-      when {
-        response.code == 404 -> {
-          appDb.execSQL("DELETE FROM active_season_cache WHERE id = 1")
-          SeasonRefreshOutcome.CLEARED
-        }
-        response.code == 200 -> cacheSeason(response.body)
-        else -> SeasonRefreshOutcome.KEPT
-      }
-    } catch (error: SQLiteException) {
-      Log.w(TAG, "active season cache was not updated", error)
-      SeasonRefreshOutcome.KEPT
-    }
-  }
-
-  private fun cacheSeason(body: String?): SeasonRefreshOutcome {
-    val season = parseActiveSeason(body)
-    if (season == null) {
-      Log.w(TAG, "active season response was not a valid season; keeping the cache")
-      return SeasonRefreshOutcome.KEPT
-    }
-    // `OR REPLACE` on the single row (`id = 1`) has the JS upsert's effect; the JS
-    // `ON CONFLICT DO UPDATE` form is not used here because Robolectric's SQLite cannot run it.
-    appDb.execSQL(
-      "INSERT OR REPLACE INTO active_season_cache (id, season_id, candidates_json) VALUES (1, ?, ?)",
-      arrayOf(season.first, season.second.toString()),
-    )
-    return SeasonRefreshOutcome.CACHED
-  }
-
-  /**
-   * Validates a season body with the rules of `isValidActiveSeasonPayload` and returns its id plus
-   * the candidates normalized to `{anime_id, grade, grade_source}` with explicit nulls, exactly the
-   * array the JS cache writer stores. Returns `null` for anything the JS reader would refuse.
-   */
-  private fun parseActiveSeason(body: String?): Pair<String, JSONArray>? {
-    val payload = try {
-      JSONObject(body ?: return null)
-    } catch (error: Throwable) {
-      return null
-    }
-    val seasonId = payload.opt("season_id") as? String
-    val candidates = payload.opt("candidates") as? JSONArray
-    if (seasonId.isNullOrEmpty() || candidates == null) return null
-
-    val normalized = JSONArray()
-    for (index in 0 until candidates.length()) {
-      val candidate = candidates.opt(index) as? JSONObject ?: return null
-      normalized.put(normalizeCandidate(candidate) ?: return null)
-    }
-    return seasonId to normalized
-  }
-
-  private fun normalizeCandidate(candidate: JSONObject): JSONObject? {
-    val animeId = candidate.opt("anime_id") as? String
-    if (animeId.isNullOrEmpty()) return null
-
-    val grade = candidate.opt("grade")
-    val isGradeValid = grade == null || grade == JSONObject.NULL ||
-      (grade is Number && grade.toDouble().isFinite())
-    val source = candidate.opt("grade_source")
-    val isSourceValid = source == null || source == JSONObject.NULL || source == "bridge"
-    if (!isGradeValid || !isSourceValid) return null
-
-    return JSONObject()
-      .put("anime_id", animeId)
-      .put("grade", grade ?: JSONObject.NULL)
-      .put("grade_source", source ?: JSONObject.NULL)
   }
 }
 

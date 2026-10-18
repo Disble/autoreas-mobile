@@ -215,12 +215,11 @@ def IMPORTANT_CLASSES = [
   // covered by the mapping and collaborator tests.)
   'SyncFloorAttempt', 'SyncFloorAttempt$*', 'SyncFloorAttemptKt', 'SyncFloorAttemptKt$*',
   'SyncFloorAttemptResult', 'SyncFloorAttemptResult$*',
-  // SyncEngineBackgroundCatchUp.kt (ODD background-covers-season: the active-season refresh and
-  // the cover prefetch that run after a background attempt reached the bridge)
+  // SyncEngineBackgroundCatchUp.kt (ODD background-covers-season: the cover prefetch that runs
+  // after a background attempt reached the bridge)
   'SyncEngineBackgroundCatchUp', 'SyncEngineBackgroundCatchUp$*', 'SyncEngineBackgroundCatchUpKt',
-  'SyncEngineBackgroundCatchUpKt$*', 'SyncEngineSeasonRefresh', 'SyncEngineSeasonRefresh$*',
-  'SyncEngineCoverPrefetch', 'SyncEngineCoverPrefetch$*', 'CoverPrefetchTarget',
-  'CoverPrefetchTarget$*', 'SeasonRefreshOutcome', 'SeasonRefreshOutcome$*',
+  'SyncEngineBackgroundCatchUpKt$*', 'SyncEngineCoverPrefetch', 'SyncEngineCoverPrefetch$*',
+  'CoverPrefetchTarget', 'CoverPrefetchTarget$*',
 ].collect { "expo.modules.syncengine.$it" }
 
 kover {
