@@ -19,7 +19,7 @@ Branch: `fix/background-covers-season` (worktree `autoreas-mobile-worktrees/back
 - T3 S2 — REOPENED (L9). The native season refresh in `7c1a8ca` contradicted convergent-sync L28 and was removed in `6801e4c`. The new work is split into T5-T7 against bridge `a4f0a85a` (L12).
 - T5 S2 inline — done, `345c0e2` — carry `MobileAnime.season` into `animes.season` (migration 0021 + repair twin, wire/legacy mapping in JS and Kotlin, merge field, resync heal, shared contract case).
 - T6 S2 done, `644e44c`, delegated (writer trigger: context backstop, ~40 files) — read `season_mode` from the HTTP reconcile into `bridge_config.season_mode` (JS + Kotlin), drive the UI from `animes.season` + `season_mode`, and delete GET /api/seasons/active, WS `season_changed`/`preferences_changed`, `active_season_cache` and the Zustand season store.
-- T7 S2 inline — done (this commit) — send `season_id` with every rating (JS + Kotlin).
+- T7 S2 inline — done, `1e9643f` — send `season_id` with every rating (JS + Kotlin).
 - T4 S1 inline — native prefetch in `7c1a8ca`; JS adoption in `hydrateCoverUrisUnlocked` in the JS commit after it.
 
 Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `SyncEngineRunner`).
@@ -83,3 +83,13 @@ Route: inline for all (no writer trigger: T3/T4 share the post-cycle hook in `Sy
   - A payload without `seasonId` omits it and never guesses.
   - RED first: the shared rating fixtures expected `season_id` before the change, and 7 failed.
   - Results: full `bunx jest` 2151/2151, `bun run test:kotlin` BUILD SUCCESSFUL.
+- L16 (2026-10-18, feature-end independent verifier, items 1 and 3): S2 PASS, no blockers. Probes covered three things:
+  - The real drizzle gate on an installed device holding `active_season_cache`: same schema as a fresh install.
+  - `["season"]`-only merges.
+  - A baseline-vs-candidate differential with no season fields: identical, apart from the requested `ratingDelivered` and `season_id`.
+  - Advisories kept as known limits:
+    - Mobile must ship after bridge vN.
+    - `season_mode` with zero candidates waits for the next reconcile.
+    - Legacy placeholder ratings become `not_found`.
+    - Re-pairing keeps a stale `season` until a heal runs.
+  - Advisory 4 (no committed real-gate test for the cache drop) is closed by `active-season-cache-drop-upgrade.test.ts`. Mutation-checked: removing the drop fails 3/3.
