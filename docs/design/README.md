@@ -1,0 +1,102 @@
+# Mobile design system
+
+The app ships **one base theme with two modes: `light` and `dark`**. Both modes are
+declared in `global.css`, and the vendor theme (`heroui-native/styles`) supplies the
+color values underneath them. There is no theme picker, no theme persistence and no
+second palette: `ThemeName` is `'light' | 'dark'`, and the only control in the UI
+toggles between those two.
+
+Everything on this page describes the **checked-in static contract**. Nothing here is
+proof of rendered appearance, Native compilation, contrast, or device output.
+
+> Back to the [README](../../README.md) · Color vocabulary in [Color tokens](foundations/color-tokens.md).
+
+---
+
+## Quick path
+
+1. Use **semantic color roles** in component classes (`bg-surface`, `text-muted`,
+   `border-border`), never a raw hue or a literal color value.
+2. To change a token, override the role variable in `global.css` — see
+   [How to change a token](#how-to-change-a-token).
+3. Confirm the modes still build: `bun run typecheck`, then the focused tests for the
+   area you touched.
+
+## Where tokens live
+
+| Owner | Declares | File |
+| --- | --- | --- |
+| `heroui-native` (vendor) | `light`/`dark` role values, the primitives behind them, and the `--color-*` aliases components consume | `heroui-native/styles`, imported by `global.css` |
+| App | The overrides it actually wants in each mode — today the `--font-*` aliases and `--radius` | `global.css`, `@layer theme` |
+
+`global.css` is the only entry point: it imports Tailwind, Uniwind and
+`heroui-native/styles`, then declares `@layer theme { :root { @variant light … @variant dark … } }`.
+Because the app block is declared after the vendor import, its declarations win for the
+roles it names. Every role it does *not* name keeps the vendor value.
+
+`metro.config.js` registers that entry point with Uniwind (`cssEntryFile` and
+`dtsFile` only). `uniwind-types.d.ts` is generated from it and lists exactly
+`['light', 'dark']`; do not hand-edit it as a source of truth.
+
+Theme state in code: `src/contexts/app-theme-context/` exposes `ThemeName`,
+`THEME_TOGGLE_MAP` (`light` → `dark`, `dark` → `light`), and `useAppTheme()` with
+`currentTheme`, `isLight`, `isDark`, `setTheme` and `toggleTheme`. `ThemeToggle` is the
+only consumer that changes the theme.
+
+## The one UI rule
+
+Components use **semantic roles only**. A component asks for a purpose
+(`background`, `surface`, `muted`, `accent`, `danger`, `border`), not for a color. That
+is what lets one token change reach every screen and keep both modes coherent.
+
+| Do | Do not |
+| --- | --- |
+| `className="bg-surface text-foreground"` | `className="bg-white"` |
+| `className="text-muted"` | `className="text-gray-500"` |
+| `className="border-border"` | An inline `color` literal |
+| `--danger` override in `global.css` | A `danger` hex duplicated per screen |
+
+Raw React Native controls and `StyleSheet.create()` are out of scope for new or
+refactored UI; use HeroUI Native primitives with Tailwind classes.
+
+## How to change a token
+
+1. Find the role you want in [Color tokens](foundations/color-tokens.md).
+2. Declare the base variable for that role inside the matching `@variant` block in
+   `global.css` (`light` and/or `dark`). Override the base variable (for example
+   `--accent`), not the derived `--color-accent` alias.
+3. Keep both modes covered when the change is not mode-specific.
+4. Run `bun run typecheck` and the focused tests for any screen you touched.
+5. Re-read the change on a device or simulator yourself — this repository has no
+   automated visual or contrast check.
+
+`--radius` and the `--font-*` aliases follow the same mechanism. Their values are owned
+by the typography/shape work, not by this page.
+
+## Existing but unwired file
+
+`themes/alpha.css` exists in the repository and is **not imported** by `global.css`, so
+it is not an active mode and it declares nothing the app compiles today. This page
+records that fact only.
+
+## Files in this directory
+
+- [Color tokens](foundations/color-tokens.md) — the semantic role vocabulary the app
+  consumes, per-mode ownership, and what is not documented or enforced yet.
+
+## Checklist before merging a token change
+
+- [ ] The change uses a semantic role, not a literal color, in component code.
+- [ ] Both `light` and `dark` were considered.
+- [ ] `global.css` still declares `heroui-native/styles` before the app overrides.
+- [ ] `bun run typecheck` passes.
+- [ ] Anything visual you claim was checked by you on a device, not inferred here.
+
+## Evidence boundary
+
+- Docs and static configuration only. No automated check reads palette values, resolves
+  `var()` references, measures contrast, or renders a mode.
+- The `--font-*` aliases are a typography concern; this page makes no claim about which
+  font file wins at runtime.
+- No screenshot, device, simulator or Native-compilation claim is made or implied by
+  anything in `docs/design/`.
