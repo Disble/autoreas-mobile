@@ -6,8 +6,8 @@ import type { AppThemeProviderProps, ThemeName } from './app-theme-context.types
 /** Provides theme state and actions to the application tree. */
 export function AppThemeProvider({ children }: Readonly<AppThemeProviderProps>) {
   const { theme } = useUniwind();
-  const isLight = useMemo(() => theme === 'light' || theme.endsWith('-light'), [theme]);
-  const isDark = useMemo(() => theme === 'dark' || theme.endsWith('-dark'), [theme]);
+  const isLight = theme === 'light';
+  const isDark = theme === 'dark';
 
   const setTheme = useCallback((newTheme: ThemeName) => {
     Uniwind.setTheme(newTheme);
