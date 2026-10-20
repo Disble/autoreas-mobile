@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { StyledIonicons } from '../../../../components/theme-toggle.constants';
 import { CARD_TOUCH_SLOP } from './anime-card.constants';
 import { Button, cn } from 'heroui-native';
 import { AppText } from '../../../../components/app-text';
@@ -24,7 +24,7 @@ export function AnimeCardChapterControls(props: Readonly<AnimeCardChapterControl
     <>
       <Button
         accessibilityLabel="Restar un capítulo visto"
-        variant="danger"
+        variant="tertiary"
         isIconOnly
         hitSlop={CARD_TOUCH_SLOP}
         onPress={onCapMinusPress}
@@ -32,7 +32,7 @@ export function AnimeCardChapterControls(props: Readonly<AnimeCardChapterControl
         isDisabled={disableDecrease}
         className={cn('size-10', disableDecrease ? 'opacity-40' : undefined)}
       >
-        <Ionicons name="remove" size={22} color="#ffffff" />
+        <StyledIonicons name="remove" size={22} className="text-default-foreground" />
       </Button>
       <AppText className="text-foreground min-w-9 text-center text-base font-semibold tabular-nums">
         {nrocapvisto}
@@ -47,7 +47,7 @@ export function AnimeCardChapterControls(props: Readonly<AnimeCardChapterControl
         isDisabled={disableIncrease}
         className={cn('size-10', disableIncrease ? 'opacity-40' : undefined)}
       >
-        <Ionicons name="add" size={22} color="#ffffff" />
+        <StyledIonicons name="add" size={22} className="text-accent-foreground" />
       </Button>
     </>
   );
