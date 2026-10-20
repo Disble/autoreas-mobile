@@ -9,7 +9,8 @@ toggles between those two.
 Everything on this page describes the **checked-in static contract**. Nothing here is
 proof of rendered appearance, Native compilation, contrast, or device output.
 
-> Back to the [README](../../README.md) · Color vocabulary in [Color tokens](foundations/color-tokens.md).
+> Back to the [README](../../README.md) · Foundations: [Color tokens](foundations/color-tokens.md) ·
+> [Typography](foundations/typography.md).
 
 ---
 
@@ -83,8 +84,9 @@ refactored UI; use HeroUI Native primitives with Tailwind classes.
 5. Re-read the change on a device or simulator yourself — this repository has no
    automated visual or contrast check.
 
-`--radius` and the `--font-*` aliases follow the same mechanism. Their values are owned
-by the typography/shape work, not by this page.
+`--radius` and the `--font-*` aliases follow the same mechanism. The `--font-*` values are the four
+Inter faces documented in [Typography](foundations/typography.md); `--radius` is still owned by the
+shape work, not by this page.
 
 ## Existing but unwired file
 
@@ -96,6 +98,8 @@ records that fact only.
 
 - [Color tokens](foundations/color-tokens.md) — the semantic role vocabulary the app
   consumes, per-mode ownership, and what is not documented or enforced yet.
+- [Typography](foundations/typography.md) — the four Inter weight roles, where the faces are loaded
+  and declared, and the executable contract that keeps `--font-*` on shipped PostScript names.
 
 ## Checklist before merging a token change
 
@@ -109,7 +113,8 @@ records that fact only.
 
 - Docs and static configuration only. No automated check reads palette values, resolves
   `var()` references, measures contrast, or renders a mode.
-- The `--font-*` aliases are a typography concern; this page makes no claim about which
-  font file wins at runtime.
+- The `--font-*` aliases are a typography concern, documented in
+  [Typography](foundations/typography.md). This page makes no claim about which font file wins at
+  runtime.
 - No screenshot, device, simulator or Native-compilation claim is made or implied by
   anything in `docs/design/`.
