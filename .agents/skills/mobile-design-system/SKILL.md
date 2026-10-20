@@ -100,3 +100,4 @@ Detail: `docs/design/patterns/states.md`.
 - `docs/design/components/app-text.md` — the text wrapper and its default weight.
 - `docs/design/patterns/states.md` — every state that exists, with its trigger and component.
 - `docs/design/process/proposals-and-evidence.md` — proposals versus implemented state.
+- `docs/design/proposals/anime-cards-and-season-rating.md` — approved but unimplemented card and sheet work, and the open questions.
