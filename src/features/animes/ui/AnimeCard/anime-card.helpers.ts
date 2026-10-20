@@ -139,29 +139,12 @@ export function getAnimeSeasonStatus(
     return null;
   }
 
-  if (seasonProjection.localIntent?.status === 'failed') {
-    return {
-      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
-      showRatingCta: true,
-    };
-  }
-
-  if (seasonProjection.localIntent?.status === 'pending') {
-    return {
-      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
-      showRatingCta: true,
-    };
-  }
-
-  if (seasonProjection.bridgeRating != null) {
-    return {
-      label: `Nota ${seasonProjection.bridgeRating}/6`,
-      showRatingCta: true,
-    };
-  }
+  // The note is a value of the anime, never a sync state: a local intent is the newest choice, so it
+  // wins over the bridge value, and sync health is reported once above the list rather than here.
+  const note = seasonProjection.localIntent?.nota ?? seasonProjection.bridgeRating;
 
   return {
-    label: 'Sin nota',
+    label: note == null ? 'Sin nota' : `Nota ${note}/6`,
     showRatingCta: true,
   };
 }

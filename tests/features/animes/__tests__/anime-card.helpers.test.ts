@@ -149,7 +149,7 @@ describe("getNoteSegmentLabel", () => {
     ).toBe("Nota 3/6");
   });
 
-  it("keeps a pending local intent distinct from a confirmed rating", () => {
+  it("shows the newest local choice as the note, with no sync wording", () => {
     expect(
       getNoteSegmentLabel(
         getAnimeSeasonStatus({
@@ -164,7 +164,7 @@ describe("getNoteSegmentLabel", () => {
           },
         }),
       ),
-    ).toBe("Pendiente 6/6");
+    ).toBe("Nota 6/6");
   });
 
   it("reads Sin nota for an ungraded candidate", () => {

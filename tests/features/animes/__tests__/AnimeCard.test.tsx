@@ -80,7 +80,7 @@ describe('AnimeCard', () => {
     expect(getByText('Temporada')).toBeTruthy();
   });
 
-  it('shows pending local truth without claiming bridge confirmation', () => {
+  it('shows the newest local choice as the note, with no sync wording on the card', () => {
     const onOpenSeasonRatingSheet = jest.fn();
     const { getAllByText, getByText, queryByText } = render(
       <AnimeCard
@@ -104,7 +104,8 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getAllByText(/Pendiente 6\/6/)).toHaveLength(1);
+    expect(getAllByText(/Nota 6\/6/)).toHaveLength(1);
+    expect(queryByText(/Pendiente/)).toBeNull();
     expect(queryByText('Esperando confirmación del bridge')).toBeNull();
 
     fireEvent.press(getByText('Temporada'));

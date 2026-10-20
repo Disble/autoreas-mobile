@@ -8,7 +8,6 @@ import type {
   SyncVisibleStatusTone,
 } from '../../../sync/sync-visible-status.types';
 import type { AnimeListItem } from '../../anime-season.types';
-import type { SeasonRatingFailureKind } from '../../../sync/season-rating-event.types';
 import type { SeasonRatingValue } from '../SeasonRatingSheet';
 import type { AnimeDayFilter, AnimeDayFilterOption } from '../../anime.types';
 import type { AnimeCardProps } from '../AnimeCard';
@@ -32,7 +31,11 @@ export interface AnimeStateSheetRequest {
   readonly currentEstado: number;
 }
 
-/** Defines the data contract for season rating sheet request. */
+/**
+ * Defines the data contract for season rating sheet request.
+ * It carries the note only: per-note sync status is deliberately absent, because sync health is
+ * reported once by the status card above the list, exactly as it is for any other anime mutation.
+ */
 export interface SeasonRatingSheetRequest {
   readonly animeId: string;
   /** The season the anime is a candidate of; the rating is queued for exactly this season. */
@@ -40,8 +43,6 @@ export interface SeasonRatingSheetRequest {
   readonly animeTitle: string;
   readonly bridgeRating: number | null;
   readonly pendingRating: number | null;
-  readonly pendingStatus: 'pending' | 'failed' | null;
-  readonly pendingFailureKind: SeasonRatingFailureKind | null;
 }
 
 /** Defines the data contract for anime list screen header left props. */

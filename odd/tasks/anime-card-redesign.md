@@ -32,6 +32,20 @@ References: `.pi/mockups/season-rating-workflow.html` (private, uncommitted, ref
 - S6 — Secondary colour, user verbatim: «ciertamente, el ambar compite mucho con el azul y el
   warning, pienso que mejor el violeta» and «seria el color secundario». Violet becomes the
   **`secondary`** role and amber is rejected.
+- S8 — Sync architecture, user verbatim: «El modo temporadas debe pasar por la misma arquitectura de
+  sincronización que el modo anime. En el modo animes, nosotros no tenemos estados especiales dentro
+  de las cards para indicar que un anime no pudo sincronizar. Para eso tenemos una sola card encima
+  que se va actualizando. Nada de seasons, ni notas, ni nada de eso pasa por un workflow diferente.
+  Sigue exactamente el mismo workflow de sincronización que el resto de animes que no están en modo
+  temporada.» Consequence: no per-note sync state exists anywhere in the card or the sheet. The single
+  status surface above the list (`AnimeListScreenStatusSection`) is the only place sync state is
+  reported, and the note is queued like any other anime mutation.
+- S9 — No separate season path, user verbatim: «Hemos pasado por muchas iteraciones para quitar el
+  camino exclusivo de seasons, incluso la API que antes usaba ya no existe. Por favor, no vuelva a
+  dividir las aguas separando seasons del resto de animes, seasons es parte de los animes!»
+  Consequence: the note is a field on the anime, the sheet is the anime's sheet, and no task, doc or
+  mockup may describe or build a season-only flow. Any wording that frames the note as a separate
+  seasonal workflow is a defect, not a style preference.
 - S7 — Model, described by the user and summarised here rather than quoted: every anime is born in a
   season; a season is the time range in which an anime first airs; season mode is a range inside it
   where the user evaluates what they will watch; one anime has one note and there is no season picker
@@ -53,9 +67,12 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
 - T3 [S5] — The sheet: heading `Nota`, no subtitle, no season selector, numeric comparison with the
   prominent arrow, the saved value in `accent` and the draft ring in `secondary`, values 1–6,
   `Guardar` only on change, no close button, backdrop close with focus return, plus its tests.
-  Status: done. Commit: a38ca79 (unit mvgu2cgs-2-ljac).
-- T4 [S7] — Connect the sheet to the real mutation path and implement the chosen failure behaviour
-  (O2), with tests. Blocked until O2 is decided. Commit: —
+  Status: done. Commits: a38ca79 (unit mvgu2cgs-2-ljac) and c71073d (bridge summary removed).
+- T4 [S7,S8] — Align the note with the shared sync architecture: delete the sheet's own sync states
+  (`Pendiente de sync`, `Requiere reparación`, `Bridge confirmó`, the status alert, the builder, the copy
+  and the two props that fed it), stop the list screen from computing and passing per-note status, and
+  prove the note is queued through the same path as any other anime mutation. The single status card
+  above the list stays untouched. Commit: —
 - T5 — Verification and close: repository gate, lab APK on device with before/after screenshots,
   reconcile docs and skill. Commit: —
 
@@ -64,7 +81,22 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
 - **O1 — `secondary` values.** The hue is decided; the exact light value is not. The dark prototype
   value is `oklch(0.62 0.19 300)`. T1 needs a light value; it will be proposed in the task and shown in
   the commit, not chosen silently.
-- **O2 — failure behaviour.** Silent revert, visible revert, or queue and retry. Blocks T4.
+- **O2 — resolved by S8, not by a UI choice.** There is no per-note sync state to design: the note is
+  queued like any other anime mutation and the single status card above the list reports sync
+  health. What the sheet keeps from this is only the ordinary mutation path: a failed local write
+  throws and is recorded exactly as any other mutation, and the sheet does not grow a status block to
+  narrate it. Earlier draft of this question, kept for the record:
+  - **O2a, local intent.** Tapping `Guardar` inserts a local intent row. It can fail when SQLite is
+    unavailable or the write errors; `useMutateAnime` throws and records the failure, so nothing is
+    reverted silently today. Undecided: does the sheet stay open with an error, or close with the
+    card unchanged? Recommendation: stay open, show the error inline, leave the card untouched —
+    nothing was saved, and closing would imply it was.
+  - **O2b, bridge confirmation.** The intent is already stored locally, so a rejection does not lose
+    the note: it stays `pending` and becomes `failed` with an existing repair state
+    (`SeasonRatingIntentStatus`, `SeasonRatingFailureKind`). Nothing new is needed; T4 only has to
+    keep that visible instead of hiding it. This is also where the optimistic proposal actually
+    bites: the card may show the new note before the bridge confirms it.
+  The old O2a/O2b split is superseded: it assumed a per-note workflow that does not exist.
 - **O3 — branch base.** Resolved: this feature branches from the unintegrated design-system branch.
   That stacks two features, so the design-system branch must be integrated or reviewed first.
 
@@ -131,6 +163,27 @@ design, balance or data-model changes, and anything in `.pi/`.
   keeps the `Candidato activo` chip and the bridge `n/6` line above the comparison is the user’s
   call; focus return needs `AnimeListScreenSheets`, outside the surfaces used so far, so it is
   reasoned from the modal container and not proven.
+- L10 — Sheet follow-up committed as c71073d: the `Candidato activo` chip and the bridge `n/6` block
+  are removed with the view-model field, builder, copy and type that only they used. The comparison is
+  the only place the note is drawn in the sheet; the pending, failed and confirmed copy stays because
+  it describes sync state, not the note.
+- L11 — O2 was restated after reading the write path, because the original question was too coarse:
+  the note is written locally first and synced later, so `failure` means either a local insert
+  failing (nothing saved, `useMutateAnime` throws and records it) or a bridge rejection (note kept,
+  row becomes pending then failed with an existing repair state). See the two halves in Open
+  questions; T4 stays blocked until both are decided.
+- L12 — User corrected the architecture, verbatim in S8: season mode goes through the same sync
+  workflow as anime mode, and no per-card or per-sheet sync states exist because one status card
+  above the list reports it. Verified in code before accepting: `AnimeListScreenStatusSection` renders
+  the only sync surface (`syncStatus` alert with its chip), and the sheet's pending/failed/confirmed
+  copy plus `buildSeasonRatingSheetStatus` were exactly the divergent workflow the user rejected.
+  T4 redefined accordingly; O2 is no longer a product question.
+- L13 — User restated the rule that seasons belong to animes (S9) and forbade dividing the waters
+  again. Parent realignment before any further code: the private prototype title and heading stopped
+  framing the note as a season flow, the proposals page was retitled and reworded so the sheet is the
+  anime's note sheet, its model section now states that seasons are a property of an anime and never a
+  separate workflow, and the skill mirrors were checked for the same phrasing (no season wording
+  remains there). Prototype regenerated: 936,820 bytes, zero external requests.
 - L3 — Document restructured from eight specs and seven tasks to seven specs and five tasks: the
   test task was folded into each behaviour unit, and the two review-found defects became acceptance
   criteria instead of a task with no specification behind it.

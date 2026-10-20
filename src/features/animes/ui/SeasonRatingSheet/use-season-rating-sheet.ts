@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
   buildSeasonRatingComparison,
-  buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
   isSeasonRatingSaveVisible,
 } from "./season-rating-sheet.helpers";
@@ -15,6 +14,8 @@ import type {
 /**
  * Coordinates season rating sheet state and actions.
  * The saved note is the sheet's current truth (pending intent before bridge truth); the draft is the selection.
+ * The sheet reports no sync state: the note is queued like any other anime mutation and the single
+ * status card above the list is what narrates sync health.
  */
 export function useSeasonRatingSheet(
   props: SeasonRatingSheetProps,
@@ -40,14 +41,6 @@ export function useSeasonRatingSheet(
   );
   const selectedRating = userRatingChoice ?? derivedSelectedRating;
 
-  const status = useMemo(
-    () =>
-      buildSeasonRatingSheetStatus({
-        pendingStatus: props.pendingStatus,
-        pendingFailureKind: props.pendingFailureKind,
-      }),
-    [props.pendingFailureKind, props.pendingStatus],
-  );
   const comparison = useMemo(
     () => buildSeasonRatingComparison(derivedSelectedRating, selectedRating),
     [derivedSelectedRating, selectedRating],
@@ -83,7 +76,6 @@ export function useSeasonRatingSheet(
   return {
     isOpen: props.isOpen,
     selectedRating,
-    status,
     comparison,
     isSaveVisible,
     ratingOptions: SEASON_RATING_VALUES,

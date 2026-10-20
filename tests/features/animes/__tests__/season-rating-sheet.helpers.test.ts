@@ -1,6 +1,5 @@
 import {
   buildSeasonRatingComparison,
-  buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
   isSeasonRatingSaveVisible,
 } from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.helpers';
@@ -18,38 +17,26 @@ describe('season rating sheet copy', () => {
     expect(copy.closeButton).toBeUndefined();
     expect(Object.values(copy).join(' ').toLowerCase()).not.toContain('temporada');
   });
+
+  it('carries no sync wording: sync health belongs to the one status card above the list', () => {
+    const copy: Record<string, string | undefined> = SEASON_RATING_SHEET_COPY;
+    const allCopy = Object.values(copy).join(' ').toLowerCase();
+
+    expect(copy.pendingTitle).toBeUndefined();
+    expect(copy.pendingDescription).toBeUndefined();
+    expect(copy.failedTitle).toBeUndefined();
+    expect(copy.failedDescription).toBeUndefined();
+    expect(copy.confirmedTitle).toBeUndefined();
+    expect(allCopy).not.toContain('sync');
+    expect(allCopy).not.toContain('bridge');
+    expect(allCopy).not.toContain('reparaci');
+  });
 });
 
 describe('season rating sheet helpers', () => {
   it('prefers pending rating over bridge rating for local truth', () => {
     expect(getInitialSeasonRatingSelection(6, 4)).toBe(6);
     expect(getInitialSeasonRatingSelection(null, 4)).toBe(4);
-  });
-
-  it('builds pending and failed status copy without claiming bridge confirmation', () => {
-    expect(
-      buildSeasonRatingSheetStatus({
-        pendingStatus: 'pending',
-        pendingFailureKind: null,
-      }),
-    ).toEqual({
-      kind: 'pending',
-      label: 'Pendiente de sync',
-      description:
-        'Tu nota queda guardada en este teléfono hasta que el bridge la confirme.',
-    });
-
-    expect(
-      buildSeasonRatingSheetStatus({
-        pendingStatus: 'failed',
-        pendingFailureKind: 'auth_repair',
-      }),
-    ).toEqual({
-      kind: 'failed',
-      label: 'Requiere reparación',
-      description:
-        'La nota quedó guardada. Revisa el bridge para reintentar sin perder la intención.',
-    });
   });
 });
 

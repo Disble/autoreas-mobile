@@ -1,8 +1,6 @@
 import { SEASON_RATING_SHEET_COPY, SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import type {
   SeasonRatingSheetComparison,
-  SeasonRatingSheetProps,
-  SeasonRatingSheetStatus,
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 
@@ -52,31 +50,4 @@ export function isSeasonRatingSaveVisible(
   selectedRating: SeasonRatingValue | null,
 ): boolean {
   return selectedRating !== null && selectedRating !== savedRating;
-}
-
-
-/**
- * Derives pending or repair status messaging for one season rating intent.
- * The copy makes local queue truth explicit so the sheet never implies bridge confirmation.
- */
-export function buildSeasonRatingSheetStatus(
-  props: Pick<SeasonRatingSheetProps, "pendingStatus" | "pendingFailureKind">,
-): SeasonRatingSheetStatus | null {
-  if (props.pendingStatus === "pending") {
-    return {
-      kind: "pending",
-      label: SEASON_RATING_SHEET_COPY.pendingTitle,
-      description: SEASON_RATING_SHEET_COPY.pendingDescription,
-    };
-  }
-
-  if (props.pendingStatus === "failed") {
-    return {
-      kind: "failed",
-      label: SEASON_RATING_SHEET_COPY.failedTitle,
-      description: SEASON_RATING_SHEET_COPY.failedDescription,
-    };
-  }
-
-  return null;
 }

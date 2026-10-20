@@ -3,10 +3,9 @@
 **Answer:** the startup boundary renders three blocking screens (loading, SQLite unavailable,
 failure/recovery) and the loading one gains a slow-start notice after 8 s. Inside the app there
 is one list empty state, one shared sync-status model rendered as a banner and as a settings
-card, and three feedback styles for failed actions (danger toast, inline danger alert, alert
-inside a sheet). It has **no skeleton component, no `ActivityIndicator`, no React error
-boundary and no first-load spinner** for the anime list. Each row below is the real component
-and the real trigger.
+card, and two feedback styles for failed actions (danger toast, inline danger alert). It has
+**no skeleton component, no `ActivityIndicator`, no React error boundary and no first-load
+spinner** for the anime list. Each row below is the real component and the real trigger.
 
 > Back to the [design system README](../README.md) · [Primitives](../components/heroui-native.md) ·
 > [AppText](../components/app-text.md).
@@ -34,7 +33,6 @@ hint, and only the actions the recovery layer authorised
 | Empty anime list | `animes.length === 0` | `AnimeEmptyState` | `src/features/animes/ui/AnimeListScreen/use-anime-list-screen.ts:91` → `src/features/animes/ui/AnimeListScreen/AnimeListScreenContent.tsx:40` |
 | Sync status (list) | `deriveVisibleSyncStatus(facts, now)` from connection status, pending ops and last sync | `AnimeListScreenStatusSection` | `src/features/sync/sync-visible-status.helpers.ts:219` → `src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx:28` |
 | Sync status (settings) | the same shared status, plus icon, meta line and one action | `SettingsStatusCard` | `src/features/settings/ui/SettingsScreen/settings-sync-status.helpers.ts:99` → `src/features/settings/ui/SettingsScreen/SettingsStatusCard.tsx:44` |
-| Rating submit status | sheet status `pending` / `failed` | `SheetStatusAlert`, `warning` for failed, `accent` otherwise | `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx:79` |
 | Background sync issue | one entry per issue in the background status | coloured row inside `SettingsBackgroundCard` (not an `Alert`) | `src/features/settings/ui/SettingsScreen/SettingsBackgroundCard.tsx:17` |
 | Folder hint / folder lost | folder banner kind `hint` / `lost` | `AnimeFolderBanner` (`Alert status="accent"` / `status="danger"`) | `src/features/anime-folders/ui/AnimeFolderBanner/AnimeFolderBanner.tsx:41`, `:23` |
 
@@ -44,13 +42,34 @@ for the configured number of hours, `danger` only when the Bridge answered and r
 sync (`src/features/sync/sync-visible-status.helpers.ts:228`, `:241`, `:251`, and the ladder
 note at `:216`).
 
+**Sync health is reported once, above the list.** The rule: no card and no sheet carries its own
+sync state, because the single status card above the list is already updating. Season mode is not
+an exception — a season rating is queued exactly like any other anime mutation, and the note sheet
+(`src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx`) draws no pending, failed or
+confirmed copy of its own. Its whole copy set is the heading, the options, the comparison and
+`Guardar` (`src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.constants.ts:9`). What a
+per-note status block used to say — `Pendiente de sync`, `Requiere reparación`,
+`Bridge confirmó esta nota` — is now the status card's job, and nowhere else's.
+
+**The card follows the same rule.** Its note segment used to render `Pendiente n/6` for a pending
+or failed local intent, which was the last per-card sync state in the app. It is gone: the segment
+now shows `Nota n/6` or `Sin nota`, taking the newest local choice over the bridge value, because the
+note is a value of the anime and its sync health belongs to the card above the list
+(`src/features/animes/ui/AnimeCard/anime-card.helpers.ts:139`-`:149`).
+
 ## Feedback for a failed action
 
 | Style | Used for | Citation |
 | --- | --- | --- |
 | `toast.show({ variant: 'danger' })` | a chapter mutation that threw, a pairing attempt that failed | `src/features/animes/ui/AnimeListScreen/anime-list-screen-callback.helpers.ts:66`, `src/features/setup/ui/SetupScreen/use-setup-screen.ts:85` |
 | Inline `Alert status="danger"` | a screen-level action error that stays on screen | `src/features/setup/ui/SetupScreen/SetupScreen.tsx:83`, `src/features/settings/ui/SettingsScreen/SettingsScreen.tsx:24` |
-| `Alert` inside a sheet | rating submit failure, replaced when the next attempt starts | `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx:79` |
+
+Both are list- or screen-level. A sheet renders neither, and the rating sheet is the case that
+proves it: it has no alert to put a failure in, and `submitSeasonRatingIntent` rethrows
+(`src/features/animes/use-season-rating-intent.ts:26` →
+`src/features/animes/ui/AnimeListScreen/use-anime-list-screen.ts:290`) without passing through the
+chapter mutation runner that raises the danger toast. Stated plainly because it is a gap, not a
+pattern: a failed note write is currently narrated nowhere.
 
 ## Decisions (blocking dialogs)
 
@@ -76,6 +95,9 @@ Verified absent from `src/`, stated so nobody infers a pattern that is not there
   hint, and no action at all (`src/features/animes/ui/AnimeEmptyState/AnimeEmptyState.tsx:17`).
 - **No dedicated offline screen.** Being offline changes sync-status copy and toast copy; it
   never replaces a screen.
+- **No sync alert inside a sheet.** No file under `src/features/animes/ui/*Sheet*` renders `Alert`;
+  the note sheet's own status block was removed, and the one sync surface is the status card above
+  the list. No per-card or per-sheet sync state remains.
 
 ## Evidence boundary
 

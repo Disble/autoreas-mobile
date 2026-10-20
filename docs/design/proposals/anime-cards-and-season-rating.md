@@ -1,4 +1,4 @@
-# Proposals: anime cards and the season rating sheet
+# Proposals: anime cards and the note sheet
 
 This page records design work that is **approved but not implemented**, plus the questions
 still open. It exists so the next redesign starts from a documented baseline instead of from
@@ -15,8 +15,8 @@ are defined in [proposals and evidence](../process/proposals-and-evidence.md).
 | Item | Label | Where the work lives |
 | --- | --- | --- |
 | Card structure “A · Lectura + Color” | Approved, not implemented | `.pi/mockups/anime-cards-*.html` (private, not committed) |
-| Season sheet “option C” | Approved for iteration, not implemented | `.pi/mockups/season-rating-sheet-c-colors.html` |
-| Optimistic season rating | Proposal, open question | Described below; no mockup implements it |
+| Note sheet “option C” | Approved for iteration, not implemented | `.pi/mockups/season-rating-sheet-c-colors.html` |
+| Optimistic note | Proposal, open question | Described below; the sheet carries no sync copy |
 | Secondary hue for a draft rating | Open question | Undecided; see below |
 
 The mockups are private HTML reference views, not native renders and not screenshots. They are
@@ -49,7 +49,7 @@ so the rename to `Nota` is part of the proposal, not present behaviour.
 These are **sizes and roles for a proposal**. They are not in the code, and the current card
 does not use them.
 
-## Season rating sheet — approved direction
+## The note sheet — approved direction
 
 Of the variants explored, only “option C” was kept for iteration: when a saved rating and a new
 one differ, the sheet shows both so the change is visible before it is committed. The latest
@@ -68,10 +68,22 @@ Further decisions taken on that sheet:
   the control that opened it;
 - the sheet does **not** repeat the note the bridge already knows: the `Candidato activo` chip and the
   bridge `n/6` block are removed, so the note appears once, in the comparison;
-- `Guardar nota` appears only when the selected value differs from the saved one, and it is never
-  shown in a disabled state.
+- `Guardar` appears only when the selected value differs from the saved one, and it is never
+  shown in a disabled state;
+- the sheet carries **no sync copy**: no `Pendiente de sync`, no `Requiere reparación`, no
+  `Bridge confirmó esta nota`, and no status alert. Sync health is reported once, by the single
+  status card above the list
+  (`src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx`), exactly as it is for a
+  card. The rule and its citations are in
+  [loading, empty and error states](../patterns/states.md).
 
 ## The rating model, as the app actually works
+
+**Seasons are a property of an anime, never a separate workflow.** The note is a field on the
+anime, the sheet is the anime's sheet, and the write follows the same queue as a chapter change.
+Nothing in a card, a sheet or a spec may introduce a season-only path: the single sync status above
+the list reports sync health for all of it.
+
 
 One anime has **one season candidacy and one rating**. `anime.season` carries `{ seasonId, grade }`, and
 local intents are looked up by `animeId` plus `seasonId`, so a card can never hold several ratings to
@@ -94,10 +106,12 @@ corrected because of this note.
   User, verbatim: «ciertamente, el ambar compite mucho con el azul y el warning, pienso que mejor el
   violeta». Violet has **no token yet**, so implementation needs a decision on its name and on one
   value per mode; `oklch(0.62 0.19 300)` is the prototype value, not an approved token.
-- **The optimistic rating is a proposal, not a decision.** The idea is that a season rating is
-  applied immediately with no visible pending-confirmation state. Nobody has established what
-  happens on failure: a silent rollback, a visible revert, or a queued retry. That question has
-  to be answered before implementation, and it belongs in this page, not in a component.
+- **The optimistic note is a proposal, not a decision.** The idea is that the note is
+  applied immediately with no visible pending-confirmation state. This is settled for the sheet
+  itself: it carries no sync copy at all, so there is no per-note pending state to design there.
+  What stays open is the failure path — a failed local insert throws and is narrated nowhere
+  today, and a bridge rejection has to be read from the shared status card. Who surfaces that, and
+  how, is still undecided and belongs in this page, not in a component.
 
 ## What a redesign must not do
 

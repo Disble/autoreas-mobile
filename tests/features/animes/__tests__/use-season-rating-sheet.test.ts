@@ -11,8 +11,6 @@ function buildProps(
     animeTitle: 'Test',
     bridgeRating: null,
     pendingRating: null,
-    pendingStatus: null,
-    pendingFailureKind: null,
     onClose: jest.fn(),
     onSubmit: jest.fn(),
     ...overrides,
@@ -27,13 +25,19 @@ describe('useSeasonRatingSheet', () => {
           animeTitle: 'Dan Da Dan',
           bridgeRating: 4,
           pendingRating: 6,
-          pendingStatus: 'pending',
         }),
       ),
     );
 
     expect(result.current.selectedRating).toBe(6);
-    expect(result.current.status?.kind).toBe('pending');
+  });
+
+  it('exposes no sync status in the view model', () => {
+    const { result } = renderHook(() =>
+      useSeasonRatingSheet(buildProps({ bridgeRating: 4, pendingRating: 6 })),
+    );
+
+    expect('status' in result.current).toBe(false);
   });
 
   it('submits the selected rating through the public callback', () => {

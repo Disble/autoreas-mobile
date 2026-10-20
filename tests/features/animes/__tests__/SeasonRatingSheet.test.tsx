@@ -1,6 +1,40 @@
 import React from 'react';
 import { fireEvent, render, within } from '@testing-library/react-native';
+import { AnimeListScreenStatusSection } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection';
+import type { AnimeListScreenStatusSectionProps } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 import { SeasonRatingSheet } from '../../../../src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet';
+
+jest.mock('../../../../src/features/anime-folders/ui/AnimeFolderBanner', () => ({
+  AnimeFolderBanner: () => null,
+}));
+
+/** Fixture contextual header for the shared status card, hoisted so the prop is not a fresh object per render. */
+const STATUS_SECTION_CONTEXTUAL_HEADER = {
+  title: 'Martes',
+  subtitle: '1 anime para ver',
+  isToday: true,
+};
+
+/** Fixture sync status for the shared status card, hoisted so the prop is not a fresh object per render. */
+const STATUS_SECTION_SYNC_STATUS: AnimeListScreenStatusSectionProps['syncStatus'] = {
+  actionLabel: null,
+  chipLabel: 'Catálogo local',
+  description: 'La copia local sigue disponible.',
+  title: 'Catálogo local listo',
+  tone: 'default',
+};
+
+/** Renders the one shared sync surface that sits above the list. */
+function renderStatusSection() {
+  return (
+    <AnimeListScreenStatusSection
+      contextualHeader={STATUS_SECTION_CONTEXTUAL_HEADER}
+      handleOpenSettings={jest.fn()}
+      isSeasonMode
+      syncStatus={STATUS_SECTION_SYNC_STATUS}
+    />
+  );
+}
 
 describe('SeasonRatingSheet', () => {
   it('names the sheet Nota and does not repeat the anime title under it', () => {
@@ -11,9 +45,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -30,9 +62,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -47,35 +77,52 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
     expect(queryByText('Cerrar')).toBeNull();
   });
 
-  it('shows the pending local truth and no bridge summary block', () => {
-    const { getByText, queryByText } = render(
+  it('carries no sync wording of its own, for any saved or pending note', () => {
+    const { getByTestId } = render(
       <SeasonRatingSheet
         animeTitle="Kaiju No. 8"
         bridgeRating={3}
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={5}
-        pendingStatus="pending"
       />,
     );
 
-    expect(queryByText('Bridge confirmó esta nota')).toBeNull();
-    expect(queryByText('3/6')).toBeNull();
-    expect(getByText('Pendiente de sync')).toBeTruthy();
-    expect(
-      getByText('Tu nota queda guardada en este teléfono hasta que el bridge la confirme.'),
-    ).toBeTruthy();
+    const sheet = getByTestId('heroui-bottom-sheet-content');
+
+    expect(within(sheet).queryByText(/sync/i)).toBeNull();
+    expect(within(sheet).queryByText(/reparación/i)).toBeNull();
+    expect(within(sheet).queryByText(/bridge/i)).toBeNull();
+    expect(within(sheet).queryByText('Pendiente de sync')).toBeNull();
+    expect(within(sheet).queryByText('Requiere reparación')).toBeNull();
+    expect(within(sheet).queryByText('Bridge confirmó esta nota')).toBeNull();
+  });
+
+  it('renders no status alert while the shared card above the list still renders its chip', () => {
+    const { getAllByTestId, getByText } = render(
+      <>
+        {renderStatusSection()}
+        <SeasonRatingSheet
+          animeTitle="Kaiju No. 8"
+          bridgeRating={3}
+          isOpen
+          onClose={jest.fn()}
+          onSubmit={jest.fn()}
+          pendingRating={5}
+        />
+      </>,
+    );
+
+    expect(getByText('Catálogo local')).toBeTruthy();
+    expect(getAllByTestId('heroui-alert')).toHaveLength(1);
   });
 
   it('compares the saved and the draft number with a prominent arrow when they differ', () => {
@@ -86,9 +133,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -115,9 +160,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -139,9 +182,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={jest.fn()}
         onSubmit={onSubmit}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -168,9 +209,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={onClose}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 
@@ -188,9 +227,7 @@ describe('SeasonRatingSheet', () => {
         isOpen
         onClose={onClose}
         onSubmit={jest.fn()}
-        pendingFailureKind={null}
         pendingRating={null}
-        pendingStatus={null}
       />,
     );
 

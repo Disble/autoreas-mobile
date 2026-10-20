@@ -15,6 +15,7 @@ import {
 } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import type { ChapterActionLabel } from "../../chapter-action-diagnostics.types";
+import { buildAnimeMutationFailureFeedback } from "../../anime-mutation-failure.helpers";
 import { useAnimeList } from "../../use-anime-list";
 import { useMutateAnime } from "../../use-mutate-anime";
 import { useSeasonRatingIntent } from "../../use-season-rating-intent";
@@ -253,21 +254,12 @@ export function useAnimeListScreen(
         return;
       }
 
-      let pendingStatus: "failed" | "pending" | null = null;
-      if (seasonProjection.localIntent?.status === "failed") {
-        pendingStatus = "failed";
-      } else if (seasonProjection.localIntent?.status === "pending") {
-        pendingStatus = "pending";
-      }
-
       setSeasonRatingSheetRequest({
         animeId,
         seasonId: seasonProjection.seasonId,
         animeTitle: anime.nombre,
         bridgeRating: seasonProjection.bridgeRating,
         pendingRating: seasonProjection.localIntent?.nota ?? null,
-        pendingStatus,
-        pendingFailureKind: seasonProjection.localIntent?.failureKind ?? null,
       });
     },
     [animes],
@@ -284,9 +276,21 @@ export function useAnimeListScreen(
         return;
       }
       setStateSheetRequest(null);
-      await setEstado(request.animeId, estado);
+      try {
+        await setEstado(request.animeId, estado);
+      } catch (error) {
+        // Same door as a chapter change: an escaping rejection would be unhandled, and the sheet is
+        // already closed, so the user would see nothing at all.
+        console.warn('[AnimeListScreen] State selection failed:', error);
+        toast.show({
+          variant: 'danger',
+          label: buildAnimeMutationFailureFeedback(error).label,
+          description: buildAnimeMutationFailureFeedback(error).description,
+          duration: 4000,
+        });
+      }
     },
-    [setEstado, stateSheetRequest],
+    [setEstado, stateSheetRequest, toast],
   );
 
   const handleSeasonRatingSubmit = useCallback(
@@ -296,13 +300,26 @@ export function useAnimeListScreen(
         return;
       }
 
-      await submitSeasonRatingIntent(
-        { animeId: request.animeId, seasonId: request.seasonId },
-        rating,
-      );
-      setSeasonRatingSheetRequest(null);
+      try {
+        await submitSeasonRatingIntent(
+          { animeId: request.animeId, seasonId: request.seasonId },
+          rating,
+        );
+        setSeasonRatingSheetRequest(null);
+      } catch (error) {
+        // The note takes the same door as a chapter change: recorded, narrated, and the sheet stays
+        // open because nothing was stored.
+        console.warn('[AnimeListScreen] Season rating submit failed:', error);
+        const feedback = buildAnimeMutationFailureFeedback(error);
+        toast.show({
+          variant: 'danger',
+          label: feedback.label,
+          description: feedback.description,
+          duration: 4000,
+        });
+      }
     },
-    [seasonRatingSheetRequest, submitSeasonRatingIntent],
+    [seasonRatingSheetRequest, submitSeasonRatingIntent, toast],
   );
 
   const handleOpenSettings = useCallback(() => {

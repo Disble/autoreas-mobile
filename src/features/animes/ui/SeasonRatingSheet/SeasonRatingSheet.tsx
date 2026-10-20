@@ -1,4 +1,4 @@
-import { Alert, BottomSheet, Button, cn } from "heroui-native";
+import { BottomSheet, Button, cn } from "heroui-native";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
@@ -7,7 +7,6 @@ import { SEASON_RATING_SHEET_COPY } from "./season-rating-sheet.constants";
 import type {
   SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
-  SeasonRatingSheetStatus,
   SeasonRatingSheetViewModel,
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
@@ -116,27 +115,6 @@ function RatingComparison({
   );
 }
 
-/** Renders the submit status alert, or nothing while there is no status to show. */
-function SheetStatusAlert({
-  status,
-}: {
-  readonly status: SeasonRatingSheetStatus | null;
-}) {
-  if (!status) {
-    return null;
-  }
-
-  return (
-    <Alert status={status.kind === "failed" ? "warning" : "accent"}>
-      <Alert.Indicator />
-      <Alert.Content>
-        <Alert.Title>{status.label}</Alert.Title>
-        <Alert.Description>{status.description}</Alert.Description>
-      </Alert.Content>
-    </Alert>
-  );
-}
-
 /**
  * Renders the save action, only while the draft differs from the saved note.
  * It is never drawn in a disabled state: an unchanged note shows no action at all.
@@ -168,7 +146,6 @@ function SeasonRatingSheetContent({
   isSaveVisible,
   ratingOptions,
   selectedRating,
-  status,
 }: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen">> & {
   readonly handleClose: () => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
@@ -183,8 +160,6 @@ function SeasonRatingSheetContent({
       <BottomSheet.Title className="text-foreground text-lg font-semibold">
         {SEASON_RATING_SHEET_COPY.title}
       </BottomSheet.Title>
-
-      <SheetStatusAlert status={status} />
 
       <RatingComparison comparison={comparison} />
 
@@ -203,6 +178,7 @@ function SeasonRatingSheetContent({
  * Renders the season rating sheet interface.
  * It has no close control: the backdrop and the accessibility escape dismiss it, and the portal keeps
  * VoiceOver inside the sheet while it is open so dismissal hands focus back to the opening control.
+ * It also draws no sync state: the status card above the list is the one place sync health appears.
  */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
@@ -215,7 +191,6 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
     isSaveVisible,
     ratingOptions,
     selectedRating,
-    status,
   } = useSeasonRatingSheet(props);
 
   return (
@@ -234,7 +209,6 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
           isSaveVisible={isSaveVisible}
           ratingOptions={ratingOptions}
           selectedRating={selectedRating}
-          status={status}
         />
       </BottomSheet.Portal>
     </BottomSheet>
