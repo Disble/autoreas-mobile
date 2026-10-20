@@ -59,14 +59,14 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
       <View className="flex-1" />
       {seasonStatus?.showRatingCta ? (
         <Button
-          accessibilityLabel="Abrir calificación de temporada"
-          onPress={onOpenSeasonRatingSheet}
+          accessibilityLabel="Abrir la calificación de la nota"
+          isIconOnly
           size="sm"
-          variant="secondary"
+          variant="tertiary"
           hitSlop={CARD_TOUCH_SLOP}
-          className="mr-4"
+          onPress={onOpenSeasonRatingSheet}
         >
-          <Button.Label>Temporada</Button.Label>
+          <StyledIonicons name="star-outline" size={18} className="text-accent" />
         </Button>
       ) : null}
       {isMutationLocked ? (

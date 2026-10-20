@@ -53,13 +53,13 @@ describe('AnimeCard', () => {
   });
 
   it('shows no season CTA for non-candidates', () => {
-    const { queryByText } = render(<AnimeCard {...buildAnimeCardProps()} />);
+    const { queryByLabelText } = render(<AnimeCard {...buildAnimeCardProps()} />);
 
-    expect(queryByText('Temporada')).toBeNull();
+    expect(queryByLabelText('Abrir la calificación de la nota')).toBeNull();
   });
 
   it('reads the confirmed note on the meta line only, with no bridge description beside it', () => {
-    const { getAllByText, getByText, queryByText } = render(
+    const { getAllByText, getByLabelText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           anime: {
@@ -77,12 +77,12 @@ describe('AnimeCard', () => {
     // The note appears exactly once, on the meta line; the season status row that repeated it is gone.
     expect(getAllByText(/Nota 4\/6/)).toHaveLength(1);
     expect(queryByText('Confirmado por bridge')).toBeNull();
-    expect(getByText('Temporada')).toBeTruthy();
+    expect(getByLabelText('Abrir la calificación de la nota')).toBeTruthy();
   });
 
   it('shows the newest local choice as the note, with no sync wording on the card', () => {
     const onOpenSeasonRatingSheet = jest.fn();
-    const { getAllByText, getByText, queryByText } = render(
+    const { getAllByText, getByLabelText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           onOpenSeasonRatingSheet,
@@ -108,13 +108,13 @@ describe('AnimeCard', () => {
     expect(queryByText(/Pendiente/)).toBeNull();
     expect(queryByText('Esperando confirmación del bridge')).toBeNull();
 
-    fireEvent.press(getByText('Temporada'));
+    fireEvent.press(getByLabelText('Abrir la calificación de la nota'));
 
     expect(onOpenSeasonRatingSheet).toHaveBeenCalledWith('anime-1');
   });
 
   it('shows the season CTA for an ungraded candidate without bridge confirmation', () => {
-    const { getAllByText, getByText, queryByText } = render(
+    const { getAllByText, getByLabelText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           anime: {
@@ -131,7 +131,7 @@ describe('AnimeCard', () => {
 
     expect(getAllByText(/Sin nota/)).toHaveLength(1);
     expect(queryByText('Disponible para calificar')).toBeNull();
-    expect(getByText('Temporada')).toBeTruthy();
+    expect(getByLabelText('Abrir la calificación de la nota')).toBeTruthy();
   });
 
   it('opens the anime page and its folder from the shortcuts', () => {
@@ -447,7 +447,7 @@ describe('AnimeCard', () => {
     expect(getByLabelText('Abrir carpeta del anime').props.hitSlop).toBe(4);
   });
 
-  it('gives the Temporada CTA and Reanudar a 48 pt touch area', () => {
+  it('gives the note star and Reanudar a 48 pt touch area', () => {
     const { getByLabelText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
@@ -464,7 +464,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByLabelText('Abrir calificación de temporada').props.hitSlop).toBe(4);
+    expect(getByLabelText('Abrir la calificación de la nota').props.hitSlop).toBe(4);
     expect(getByLabelText('Reanudar anime').props.hitSlop).toBe(4);
   });
 

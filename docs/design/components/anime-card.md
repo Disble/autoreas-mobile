@@ -56,7 +56,7 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | State control | one muted ellipsis `Pressable`, `h-7 w-7 rounded-full`, `hitSlop={8}`, label `Cambiar estado: {label}`, for every state | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:13`–`:21` |
 | Actions row | `flex-row items-center gap-2`, with a `flex-1` spacer before the CTA | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:33`, `:58` |
 | Shortcuts | icon-only `Button size="sm" variant="tertiary"` with `hitSlop={4}`, labels `Abrir página del anime` / `Abrir carpeta del anime` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:34`–`:57` |
-| Season CTA | labelled `Button` (`Temporada`), `size="sm" variant="secondary"` with `hitSlop={4}`, label `Abrir calificación de temporada`, drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:59`–`:70` |
+| Note star | icon-only `Button` (`star-outline`, `text-accent`), `size="sm" variant="tertiary"` with `hitSlop={4}`, label `Abrir la calificación de la nota`, drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:58`–`:69` |
 | Locked state | labelled `Reanudar` button with a play icon and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:71`–`:81` |
 | Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="danger"` and `"primary"`, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, with a count `AppText` between them | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:50` |
 
@@ -126,7 +126,7 @@ same as before the change.
 | Meta toggle | the 13/11 pt line itself | `min-h-11 min-w-11` on the `Pressable` = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:28` |
 | Page shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:35`–`:42` |
 | Folder shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:47`–`:54` |
-| `Temporada` CTA | 40 pt tall (`size="sm"`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:60`–`:67` |
+| Note star | 40 pt (`size="sm"`, icon only) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:59`–`:66` |
 | `Reanudar` | 40 pt tall (`size="sm"`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:72`–`:78` |
 | Chapter minus | 40 pt (`size-10`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:33` |
 | Chapter plus | 40 pt (`size-10`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:39`–`:48` |
@@ -143,7 +143,7 @@ instead of a segment being clipped. Only the title is capped, at two lines
 measured layout.
 
 Icon-only today: the page shortcut, the folder shortcut, the state ellipsis, the chapter minus and
-plus, and the list header refresh. Carrying a visible label: `Temporada` and `Reanudar`. Every
+plus, and the list header refresh. Carrying a visible label: `Reanudar`. Every other control there is
 accessibility label on the card is Spanish: the composed meta line
 (`6 capítulos vistos · En pausa · Nota 4/6`) with `Alternar episodios restantes` as its hint,
 `Cambiar estado: {label}`, `Abrir página del anime`, `Abrir carpeta del anime`,
@@ -220,14 +220,14 @@ meta line, and no bridge wording reaches the card. Two things still read `season
   (`src/features/animes/ui/AnimeCard/anime-card.helpers.ts:59`–`:63`,
   `src/features/animes/ui/AnimeCard/AnimeCard.tsx:36`).
 - `AnimeCardActions` reads `showRatingCta`, which is always `true`, to decide whether
-the `Temporada` CTA is drawn (`src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:59`).
+the note star is drawn (`src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:58`).
 
 `description` and `tone` were removed from `getAnimeSeasonStatus` and from
 `AnimeSeasonStatusDescriptor`. The component that drew them, `AnimeCardSeasonStatus.tsx`, was deleted
 in the same change, so no dead component and no unrendered field remain
 (`src/features/animes/ui/AnimeCard/anime-card.types.ts:70`–`:73`).
 
-Rating today: the `Temporada` button calls `onOpenSeasonRatingSheet` with the anime id
+Rating today: the note star calls `onOpenSeasonRatingSheet` with the anime id
 (`src/features/animes/ui/AnimeCard/use-anime-card.ts:69`–`:71`), the list handler builds the request
 from that anime's projection (`src/features/animes/ui/AnimeListScreen/use-anime-list-screen.ts:248`),
 and the request opens a HeroUI Native `BottomSheet`
@@ -251,6 +251,6 @@ kind of sheet (`src/features/animes/ui/AnimeStateSheet/AnimeStateSheet.tsx:19`).
   (`src/features/animes/ui/AnimeListScreen/AnimeListScreenContent.tsx:32`).
 - **No claim about native appearance.** The season row was removed, so the note is drawn once; that
   is a code fact. Nothing here proves how the resulting card looks on a device.
-- **No claim that the whole proposals page is implemented.** The approved redesign also asks for the
-  neutral decrease control, the star affordance and no `Temporada` button; none of that is on the card
-  yet. The 16/13/11 type scale is on it from this change on, in the `foreground` and `muted` roles.
+- **No claim that the whole proposals page is implemented.** The 16/13/11 type scale, the note star and
+  the removal of the `Temporada` button are on the card from these changes on. The neutral decrease
+  control is not: the minus button still uses the danger variant.
