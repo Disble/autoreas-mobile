@@ -19,8 +19,8 @@ proof of rendered appearance, Native compilation, contrast, or device output.
    `border-border`), never a raw hue or a literal color value.
 2. To change a token, override the role variable in `global.css` — see
    [How to change a token](#how-to-change-a-token).
-3. Confirm the modes still build: `bun run typecheck`, then the focused tests for the
-   area you touched.
+3. Run `bun run typecheck` plus the focused tests for the area you touched. Neither one
+   proves rendering, Native compilation output, or how either mode looks on a device.
 
 ## Where tokens live
 
@@ -45,9 +45,22 @@ only consumer that changes the theme.
 
 ## The one UI rule
 
-Components use **semantic roles only**. A component asks for a purpose
-(`background`, `surface`, `muted`, `accent`, `danger`, `border`), not for a color. That
-is what lets one token change reach every screen and keep both modes coherent.
+**Rule — for new and refactored UI.** A component asks for a semantic role
+(`background`, `surface`, `muted`, `accent`, `danger`, `border`), not for a color. That is
+what lets one token change reach every screen and keep both modes coherent.
+
+**Current state — the repository does not satisfy that rule yet.** A literal-color grep
+over `src/` returns **18 lines**: 12 SVG paint props in
+`src/components/cover-placeholder-scene.tsx`, 5 Ionicons `color` props (for example
+`color="#6366f1"` in `src/features/setup/ui/SetupScreen/SetupScreen.tsx` and
+`color="#ffffff"` in `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx`),
+and 1 `className="text-white"` in `SetupScreen.tsx`. Ionicons `color` and the SVG
+`fill`/`stroke`/`stopColor` props take a raw color, so no class can replace them in
+place. Recount with:
+
+```bash
+grep -rn "#[0-9a-fA-F]\{6\}\|text-white\|bg-white" src
+```
 
 | Do | Do not |
 | --- | --- |

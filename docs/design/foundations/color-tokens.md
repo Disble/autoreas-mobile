@@ -1,9 +1,16 @@
 # Color tokens
 
-Components never name a color. They name a **semantic role** (`bg-surface`,
-`text-muted`, `border-border`), and the role resolves to a value per mode. The app has
-two modes, `light` and `dark`; both take their color values from the vendor theme
-`heroui-native/styles`, and the app adds no color overrides of its own today.
+**Rule — for new and refactored UI.** A component names a **semantic role**
+(`bg-surface`, `text-muted`, `border-border`) instead of a color, and the role resolves to
+a value per mode. The app has two modes, `light` and `dark`; both take their color values
+from the vendor theme `heroui-native/styles`, and the app adds no color overrides of its
+own today.
+
+**Current state — the repository does not meet that rule yet.** It has 18 literal-color
+lines in `src/`, broken down in the [overview](../README.md#the-one-ui-rule); 17 of them
+pass a raw value to a prop that accepts no class (Ionicons `color`, or SVG
+`fill`/`stroke`/`stopColor`), and one is a `text-white` class. This page describes the
+vocabulary and its owners, not the compliance of every existing file.
 
 > Back to the [design system overview](../README.md).
 
@@ -48,8 +55,9 @@ tokens with their own owners.
 - The vendor's palette values are not restated here. They live in
   `node_modules/heroui-native/src/styles/variables.css` and can change with a package
   upgrade, so this page deliberately points at them instead of copying numbers.
-- No check enforces "semantic role only". A component that writes `bg-white` or an
-  inline literal passes today.
+- No check enforces "semantic role only": a component that writes `bg-white` or an inline
+  literal passes, and 18 such lines exist in `src/` today (see the
+  [overview](../README.md#the-one-ui-rule)).
 - No check reads, resolves or compares color values, and there is no contrast or
   perceptual requirement recorded anywhere in the repository.
 - The derived families (`*-hover`, `*-soft`, `*-secondary`) are vendor formulas over the
