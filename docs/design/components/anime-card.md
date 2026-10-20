@@ -58,7 +58,7 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | Shortcuts | icon-only `Button size="sm" variant="tertiary"` with `hitSlop={4}`, labels `Abrir página del anime` / `Abrir carpeta del anime` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:34`–`:57` |
 | Note star | icon-only `Button` (`star-outline`, `text-accent`), `size="sm" variant="tertiary"` with `hitSlop={4}`, label `Abrir la calificación de la nota`, drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:58`–`:69` |
 | Locked state | labelled `Reanudar` button with a play icon and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:71`–`:81` |
-| Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="danger"` and `"primary"`, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, with a count `AppText` between them | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:50` |
+| Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="tertiary"` and `"primary"`, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, with a count `AppText` between them | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:50` |
 
 ## The meta line
 
@@ -251,6 +251,7 @@ kind of sheet (`src/features/animes/ui/AnimeStateSheet/AnimeStateSheet.tsx:19`).
   (`src/features/animes/ui/AnimeListScreen/AnimeListScreenContent.tsx:32`).
 - **No claim about native appearance.** The season row was removed, so the note is drawn once; that
   is a code fact. Nothing here proves how the resulting card looks on a device.
-- **No claim that the whole proposals page is implemented.** The 16/13/11 type scale, the note star and
-  the removal of the `Temporada` button are on the card from these changes on. The neutral decrease
-  control is not: the minus button still uses the danger variant.
+- **No claim that the whole proposals page is implemented.** The 16/13/11 type scale, the note star, the
+  removal of the `Temporada` button and the neutral decrease control are on the card from these changes
+  on. Both chapter icons take their colour from the role of the button they sit in, so no literal white
+  is left in that row.
