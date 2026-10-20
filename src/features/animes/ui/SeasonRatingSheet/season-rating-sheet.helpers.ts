@@ -1,6 +1,7 @@
 import { SEASON_RATING_SHEET_COPY, SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import type {
   SeasonRatingSheetBridgeSummary,
+  SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
   SeasonRatingSheetStatus,
   SeasonRatingValue,
@@ -21,6 +22,37 @@ export function getInitialSeasonRatingSelection(
   }
 
   return value as SeasonRatingValue;
+}
+
+/**
+ * Builds the comparison between the saved note and the draft selected in the sheet.
+ * Returns null unless both values exist and differ, so an unchanged or first note draws no comparison;
+ * the returned labels are the numbers alone and the words live in the spoken label.
+ */
+export function buildSeasonRatingComparison(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): SeasonRatingSheetComparison | null {
+  if (savedRating === null || selectedRating === null || savedRating === selectedRating) {
+    return null;
+  }
+
+  return {
+    savedValueLabel: String(savedRating),
+    draftValueLabel: String(selectedRating),
+    accessibilityLabel: `${SEASON_RATING_SHEET_COPY.comparisonSavedLabel} ${savedRating}. ${SEASON_RATING_SHEET_COPY.comparisonDraftLabel} ${selectedRating}.`,
+  };
+}
+
+/**
+ * Decides whether the save action is rendered.
+ * Only a draft that differs from the saved note may show it; the action is never drawn in a disabled state.
+ */
+export function isSeasonRatingSaveVisible(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): boolean {
+  return selectedRating !== null && selectedRating !== savedRating;
 }
 
 /**

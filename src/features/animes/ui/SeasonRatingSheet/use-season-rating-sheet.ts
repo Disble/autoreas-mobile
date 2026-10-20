@@ -2,8 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
   buildSeasonRatingBridgeSummary,
+  buildSeasonRatingComparison,
   buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
+  isSeasonRatingSaveVisible,
 } from "./season-rating-sheet.helpers";
 import type {
   SeasonRatingSheetProps,
@@ -11,11 +13,15 @@ import type {
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 
-/** Coordinates season rating sheet state and actions. */
+/**
+ * Coordinates season rating sheet state and actions.
+ * The saved note is the sheet's current truth (pending intent before bridge truth); the draft is the selection.
+ */
 export function useSeasonRatingSheet(
   props: SeasonRatingSheetProps,
 ): SeasonRatingSheetViewModel & {
   readonly handleClose: () => void;
+  readonly handleOpenChange: (nextIsOpen: boolean) => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
 } {
@@ -47,11 +53,24 @@ export function useSeasonRatingSheet(
       }),
     [props.pendingFailureKind, props.pendingStatus],
   );
-  const isSubmitDisabled = selectedRating === null;
+  const comparison = useMemo(
+    () => buildSeasonRatingComparison(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
+  );
+  const isSaveVisible = useMemo(
+    () => isSeasonRatingSaveVisible(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleClose = useCallback(() => {
     props.onClose();
+  }, [props]);
+
+  const handleOpenChange = useCallback((nextIsOpen: boolean) => {
+    if (!nextIsOpen) {
+      props.onClose();
+    }
   }, [props]);
 
   const handleSelectRating = useCallback((rating: SeasonRatingValue) => {
@@ -68,13 +87,14 @@ export function useSeasonRatingSheet(
 
   return {
     isOpen: props.isOpen,
-    animeTitle: props.animeTitle,
     selectedRating,
     bridgeSummary,
     status,
+    comparison,
+    isSaveVisible,
     ratingOptions: SEASON_RATING_VALUES,
-    isSubmitDisabled,
     handleClose,
+    handleOpenChange,
     handleSelectRating,
     handleSubmit,
   };

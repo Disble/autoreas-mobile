@@ -2,21 +2,34 @@ import { act, renderHook } from '@testing-library/react-native';
 import { useSeasonRatingSheet } from '../../../../src/features/animes/ui/SeasonRatingSheet/use-season-rating-sheet';
 import type { SeasonRatingSheetProps } from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.types';
 
+/** Builds a complete prop set for the sheet hook so each test states only what it exercises. */
+function buildProps(
+  overrides: Partial<SeasonRatingSheetProps> = {},
+): SeasonRatingSheetProps {
+  return {
+    isOpen: true,
+    animeTitle: 'Test',
+    bridgeRating: null,
+    pendingRating: null,
+    pendingStatus: null,
+    pendingFailureKind: null,
+    onClose: jest.fn(),
+    onSubmit: jest.fn(),
+    ...overrides,
+  };
+}
+
 describe('useSeasonRatingSheet', () => {
   it('derives pending truth ahead of bridge truth', () => {
-    const onClose = jest.fn();
-    const onSubmit = jest.fn();
     const { result } = renderHook(() =>
-      useSeasonRatingSheet({
-        isOpen: true,
-        animeTitle: 'Dan Da Dan',
-        bridgeRating: 4,
-        pendingRating: 6,
-        pendingStatus: 'pending',
-        pendingFailureKind: null,
-        onClose,
-        onSubmit,
-      }),
+      useSeasonRatingSheet(
+        buildProps({
+          animeTitle: 'Dan Da Dan',
+          bridgeRating: 4,
+          pendingRating: 6,
+          pendingStatus: 'pending',
+        }),
+      ),
     );
 
     expect(result.current.selectedRating).toBe(6);
@@ -25,19 +38,9 @@ describe('useSeasonRatingSheet', () => {
   });
 
   it('submits the selected rating through the public callback', () => {
-    const onClose = jest.fn();
     const onSubmit = jest.fn();
     const { result } = renderHook(() =>
-      useSeasonRatingSheet({
-        isOpen: true,
-        animeTitle: 'Sakamoto Days',
-        bridgeRating: null,
-        pendingRating: null,
-        pendingStatus: null,
-        pendingFailureKind: null,
-        onClose,
-        onSubmit,
-      }),
+      useSeasonRatingSheet(buildProps({ animeTitle: 'Sakamoto Days', onSubmit })),
     );
 
     act(() => {
@@ -52,18 +55,7 @@ describe('useSeasonRatingSheet', () => {
   });
 
   it('preserves user choice when props change', () => {
-    const onClose = jest.fn();
-    const onSubmit = jest.fn();
-    const initialProps: SeasonRatingSheetProps = {
-      isOpen: true,
-      animeTitle: 'Test',
-      bridgeRating: 3,
-      pendingRating: null,
-      pendingStatus: null,
-      pendingFailureKind: null,
-      onClose,
-      onSubmit,
-    };
+    const initialProps = buildProps({ bridgeRating: 3 });
     const { result, rerender } = renderHook(
       (p) => useSeasonRatingSheet(p as SeasonRatingSheetProps),
       { initialProps },
@@ -83,5 +75,72 @@ describe('useSeasonRatingSheet', () => {
     });
 
     expect(result.current.selectedRating).toBe(6);
+  });
+
+  it('compares the draft with the saved note only while they differ', () => {
+    const { result } = renderHook(() =>
+      useSeasonRatingSheet(buildProps({ bridgeRating: 3 })),
+    );
+
+    expect(result.current.comparison).toBeNull();
+    expect(result.current.isSaveVisible).toBe(false);
+
+    act(() => {
+      result.current.handleSelectRating(5);
+    });
+
+    expect(result.current.comparison).toEqual({
+      savedValueLabel: '3',
+      draftValueLabel: '5',
+      accessibilityLabel: 'Nota guardada 3. Nota nueva 5.',
+    });
+    expect(result.current.isSaveVisible).toBe(true);
+
+    act(() => {
+      result.current.handleSelectRating(3);
+    });
+
+    expect(result.current.comparison).toBeNull();
+    expect(result.current.isSaveVisible).toBe(false);
+  });
+
+  it('offers the save action for a first note and never as a disabled control', () => {
+    const { result } = renderHook(() => useSeasonRatingSheet(buildProps()));
+
+    expect(result.current.isSaveVisible).toBe(false);
+
+    act(() => {
+      result.current.handleSelectRating(2);
+    });
+
+    expect(result.current.isSaveVisible).toBe(true);
+    expect('isSubmitDisabled' in result.current).toBe(false);
+  });
+
+  it('does not repeat the anime title in the view model', () => {
+    const { result } = renderHook(() =>
+      useSeasonRatingSheet(buildProps({ animeTitle: 'Kaiju No. 8' })),
+    );
+
+    expect('animeTitle' in result.current).toBe(false);
+  });
+
+  it('closes on a dismissal request and ignores an open request', () => {
+    const onClose = jest.fn();
+    const { result } = renderHook(() =>
+      useSeasonRatingSheet(buildProps({ onClose })),
+    );
+
+    act(() => {
+      result.current.handleOpenChange(true);
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.handleOpenChange(false);
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

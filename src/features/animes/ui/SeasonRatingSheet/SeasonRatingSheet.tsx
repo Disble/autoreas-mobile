@@ -1,9 +1,11 @@
 import { Alert, BottomSheet, Button, Chip, cn } from "heroui-native";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 import { AppText } from "../../../../components/app-text";
 import { SEASON_RATING_SHEET_COPY } from "./season-rating-sheet.constants";
 import type {
+  SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
   SeasonRatingSheetStatus,
   SeasonRatingSheetViewModel,
@@ -49,7 +51,7 @@ function RatingOptionsSection({
   return (
     <View className="bg-surface-secondary gap-3 rounded-2xl p-3">
       <AppText className="text-foreground text-sm font-semibold">
-        Elige una nota
+        {SEASON_RATING_SHEET_COPY.ratingPrompt}
       </AppText>
       <View className="flex-row gap-2">
         {ratingOptions.map((rating) => (
@@ -60,6 +62,55 @@ function RatingOptionsSection({
             rating={rating}
           />
         ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Renders the saved → draft comparison shown while the selection differs from the saved note.
+ * Only the two numbers and the arrow are drawn; the spoken label supplies the words, and the draft
+ * number is ringed with the `secondary` role while the saved one uses `accent`.
+ */
+function RatingComparison({
+  comparison,
+}: {
+  readonly comparison: SeasonRatingSheetComparison | null;
+}) {
+  const [draftRingColor] = useCSSVariable(["--color-secondary"]);
+  const draftRingStyle = useMemo(
+    () => ({
+      borderColor: typeof draftRingColor === "string" ? draftRingColor : undefined,
+    }),
+    [draftRingColor],
+  );
+
+  if (!comparison) {
+    return null;
+  }
+
+  return (
+    <View
+      accessibilityLabel={comparison.accessibilityLabel}
+      accessibilityLiveRegion="polite"
+      accessible
+      className="flex-row items-center gap-2 self-start"
+      testID="season-rating-comparison"
+    >
+      <AppText className="text-accent text-xl font-semibold">
+        {comparison.savedValueLabel}
+      </AppText>
+      <AppText className="text-foreground text-xl font-bold">
+        {SEASON_RATING_SHEET_COPY.comparisonArrow}
+      </AppText>
+      <View
+        className="h-10 min-w-10 items-center justify-center rounded-full border-2 px-1"
+        style={draftRingStyle}
+        testID="season-rating-draft"
+      >
+        <AppText className="text-foreground text-xl font-semibold">
+          {comparison.draftValueLabel}
+        </AppText>
       </View>
     </View>
   );
@@ -86,54 +137,53 @@ function SheetStatusAlert({
   );
 }
 
-/** Renders the close and save action buttons for the sheet. */
-function SheetFooterActions({
-  handleClose,
+/**
+ * Renders the save action, only while the draft differs from the saved note.
+ * It is never drawn in a disabled state: an unchanged note shows no action at all.
+ */
+function SheetSaveAction({
   handleSubmit,
-  isSubmitDisabled,
+  isSaveVisible,
 }: {
-  readonly handleClose: () => void;
   readonly handleSubmit: () => void;
-  readonly isSubmitDisabled: boolean;
+  readonly isSaveVisible: boolean;
 }) {
+  if (!isSaveVisible) {
+    return null;
+  }
+
   return (
-    <View className="flex-row gap-2">
-      <Button className="flex-1" onPress={handleClose} variant="tertiary">
-        <Button.Label>{SEASON_RATING_SHEET_COPY.closeButton}</Button.Label>
-      </Button>
-      <Button className="flex-1" isDisabled={isSubmitDisabled} onPress={handleSubmit}>
-        <Button.Label>{SEASON_RATING_SHEET_COPY.saveButton}</Button.Label>
-      </Button>
-    </View>
+    <Button accessibilityLabel={SEASON_RATING_SHEET_COPY.saveButton} onPress={handleSubmit}>
+      <Button.Label>{SEASON_RATING_SHEET_COPY.saveButton}</Button.Label>
+    </Button>
   );
 }
 
 /** Renders the sheet body content inside the BottomSheet portal. */
 function SeasonRatingSheetContent({
-  animeTitle,
   bridgeSummary,
+  comparison,
   handleClose,
   handleSelectRating,
   handleSubmit,
-  isSubmitDisabled,
+  isSaveVisible,
   ratingOptions,
   selectedRating,
   status,
-}: Readonly<Omit<SeasonRatingSheetViewModel, 'isOpen'>> & {
+}: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen">> & {
   readonly handleClose: () => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
 }) {
   return (
-    <BottomSheet.Content contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5">
-      <View className="gap-1">
-        <BottomSheet.Title className="text-foreground text-lg font-semibold">
-          {SEASON_RATING_SHEET_COPY.title}
-        </BottomSheet.Title>
-        <BottomSheet.Description className="text-muted text-sm">
-          {animeTitle}
-        </BottomSheet.Description>
-      </View>
+    <BottomSheet.Content
+      accessibilityLabel={SEASON_RATING_SHEET_COPY.title}
+      contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5"
+      onAccessibilityEscape={handleClose}
+    >
+      <BottomSheet.Title className="text-foreground text-lg font-semibold">
+        {SEASON_RATING_SHEET_COPY.title}
+      </BottomSheet.Title>
 
       <Chip color="accent" size="sm" variant="secondary" className="self-start">
         <Chip.Label>{SEASON_RATING_SHEET_COPY.candidate}</Chip.Label>
@@ -150,47 +200,54 @@ function SeasonRatingSheetContent({
 
       <SheetStatusAlert status={status} />
 
+      <RatingComparison comparison={comparison} />
+
       <RatingOptionsSection
         onSelect={handleSelectRating}
         ratingOptions={ratingOptions}
         selectedRating={selectedRating}
       />
 
-      <SheetFooterActions
-        handleClose={handleClose}
-        handleSubmit={handleSubmit}
-        isSubmitDisabled={isSubmitDisabled}
-      />
+      <SheetSaveAction handleSubmit={handleSubmit} isSaveVisible={isSaveVisible} />
     </BottomSheet.Content>
   );
 }
 
-/** Renders the season rating sheet interface. */
+/**
+ * Renders the season rating sheet interface.
+ * It has no close control: the backdrop and the accessibility escape dismiss it, and the portal keeps
+ * VoiceOver inside the sheet while it is open so dismissal hands focus back to the opening control.
+ */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
-    animeTitle,
     bridgeSummary,
+    comparison,
     handleClose,
+    handleOpenChange,
     handleSelectRating,
     handleSubmit,
     isOpen,
-    isSubmitDisabled,
+    isSaveVisible,
     ratingOptions,
     selectedRating,
     status,
   } = useSeasonRatingSheet(props);
 
   return (
-    <BottomSheet isOpen={isOpen} onOpenChange={handleClose}>
-      <BottomSheet.Portal>
-        <BottomSheet.Overlay />
+    <BottomSheet isOpen={isOpen} onOpenChange={handleOpenChange}>
+      <BottomSheet.Portal unstable_accessibilityContainerViewIsModal>
+        <BottomSheet.Overlay
+          accessibilityLabel={SEASON_RATING_SHEET_COPY.overlayLabel}
+          isCloseOnPress={false}
+          onPress={handleClose}
+        />
         <SeasonRatingSheetContent
-          animeTitle={animeTitle}
           bridgeSummary={bridgeSummary}
+          comparison={comparison}
           handleClose={handleClose}
           handleSelectRating={handleSelectRating}
           handleSubmit={handleSubmit}
-          isSubmitDisabled={isSubmitDisabled}
+          isSaveVisible={isSaveVisible}
           ratingOptions={ratingOptions}
           selectedRating={selectedRating}
           status={status}
