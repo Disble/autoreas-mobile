@@ -13,6 +13,9 @@
       --font-bold: 'Inter-Bold';
       
       --radius: 0.33rem;
+
+      /* Violet, for the draft note ring. Not a vendor role: see docs/design. */
+      --secondary: oklch(0.54 0.2 300);
     }
 
     @variant dark {
@@ -22,6 +25,12 @@
       --font-bold: 'Inter-Bold';
 
       --radius: 0.33rem;
+
+      --secondary: oklch(0.62 0.19 300);
     }
   }
+}
+
+@theme inline {
+  --color-secondary: var(--secondary);
 }

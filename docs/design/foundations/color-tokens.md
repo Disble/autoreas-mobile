@@ -41,6 +41,7 @@ variable (for example `--accent`) inside the matching `@variant` block — overr
 | Accent | `accent`, `accent-foreground` | Primary action and selection |
 | Status | `success`, `warning`, `danger` and their `*-foreground` pairs | Inline feedback, alerts, destructive actions |
 | Derived emphasis | `accent-soft`, `accent-soft-foreground`, `danger-soft`, `surface-hover` and siblings | Low-emphasis banners and pressed/hover states |
+| App-declared | `secondary` | The draft note ring in the rating sheet |
 
 The vocabulary extends beyond this table with vendor roles the app does not reference
 directly (`default-*`, `field-*`, `segment-*`, `background-secondary`, the `*-hover` and
@@ -49,6 +50,16 @@ should reach for a role from this table rather than inventing a hue.
 
 Not color roles: `--radius`, the `--font-*` aliases and the shadow roles. They are real
 tokens with their own owners.
+
+### The one role the app declares itself
+
+`secondary` is not a vendor role. It is the app's own violet, used for the draft note ring in the
+rating sheet, and it is declared in both modes in `global.css`. Because it does not exist in
+HeroUI Native, `useThemeColor` refuses the name: read it with
+`useCSSVariable('--color-secondary')` or use it through a class, which works because `global.css`
+also maps `--color-secondary: var(--secondary)` inside `@theme inline`. Both halves are guarded by
+`tests/design/secondary-role.test.ts`, because a variable without the alias is invisible to the
+class utilities and an alias without the variable resolves to nothing.
 
 ## What is not documented or enforced yet
 

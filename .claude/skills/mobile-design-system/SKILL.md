@@ -22,8 +22,10 @@ the evidence boundary. When code and a page disagree, the code wins; fix the pag
 ### 1. Semantic roles, never a color
 
 New and refactored UI names a role — `bg-surface`, `text-foreground`, `text-muted`,
-`border-border`, `accent`, `danger` — and never a hex, `text-white`, or a per-screen duplicate. The
-role's value lives in `global.css` or the vendor theme, never in the component.
+`border-border`, `accent`, `danger`, `secondary` — and never a hex, `text-white`, or a per-screen
+duplicate. The role's value lives in `global.css` or the vendor theme, never in the component.
+`secondary` is the app's own violet for a draft note: HeroUI Native does not ship it, so read it with
+`useCSSVariable('--color-secondary')` instead of `useThemeColor`.
 
 **That is policy, not compliance.** `src/` still has 18 literal-color lines: 12 SVG paint props, 5
 Ionicons `color` props, 1 `text-white` class. Ionicons `color` and SVG `fill`/`stroke`/`stopColor`
