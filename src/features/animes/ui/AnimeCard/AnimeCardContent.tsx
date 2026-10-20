@@ -8,6 +8,7 @@ import type { AnimeCardContentProps } from './anime-card.types';
 export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   const {
     title,
+    metaSegments,
     metaLabel,
     onToggleMeta,
     seasonStatus,
@@ -34,6 +35,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
       <View className="flex-row items-start gap-2">
         <AnimeCardInfo
           title={title}
+          metaSegments={metaSegments}
           metaLabel={metaLabel}
           onToggleMeta={onToggleMeta}
           longEpisodeLabel={longEpisodeLabel}

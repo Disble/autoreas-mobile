@@ -3,6 +3,7 @@ import type { AnimeSeasonProjection } from '../../anime-season.types';
 import { META_SEPARATOR, STATE_CHIP_BY_ESTADO } from './anime-card.constants';
 import type {
   AnimeCardMetaParams,
+  AnimeCardMetaSegment,
   AnimeSeasonStatusDescriptor,
   AnimeStateChipDescriptor,
 } from './anime-card.types';
@@ -78,16 +79,35 @@ export function composeMetaLine(segments: readonly (string | null | undefined)[]
 }
 
 /**
- * Builds the single meta line under the card title: the count, then the state, then the note.
- * The state is always part of the line, so `En pausa` can no longer fall out of it, and while the
- * toggle is on only the count segment becomes the remaining form instead of replacing the line.
+ * Builds the meta line as ordered segments, each carrying its own text and kind: the count first, then
+ * the state, then the note. Absent and blank segments are dropped here, so the view can only ever draw
+ * a separator between two segments that carry text.
+ * While the toggle is on only the count segment changes its text to the remaining form; the state and
+ * the note stay where they are.
  */
-export function getAnimeCardMetaLabel(params: AnimeCardMetaParams): string {
+export function getAnimeCardMetaSegments(
+  params: AnimeCardMetaParams,
+): AnimeCardMetaSegment[] {
   const { nrocapvisto, stateLabel, noteLabel, restantesLabel, restantesShown } = params;
   const countLabel =
     restantesShown && restantesLabel ? restantesLabel : getWatchedCountLabel(nrocapvisto);
 
-  return composeMetaLine([countLabel, stateLabel, noteLabel]);
+  const segments: AnimeCardMetaSegment[] = [
+    { kind: 'count', text: countLabel },
+    { kind: 'state', text: stateLabel },
+    { kind: 'note', text: noteLabel ?? '' },
+  ];
+
+  return segments.filter((segment) => Boolean(segment.text.trim()));
+}
+
+/**
+ * Builds the whole meta line as one string: the count, the state and the note joined by the dot
+ * separator. It is the accessible label of the toggling control and the value the tests assert, and
+ * it is composed from the same segments the view draws, so label and render cannot drift apart.
+ */
+export function getAnimeCardMetaLabel(params: AnimeCardMetaParams): string {
+  return composeMetaLine(getAnimeCardMetaSegments(params).map((segment) => segment.text));
 }
 
 /**

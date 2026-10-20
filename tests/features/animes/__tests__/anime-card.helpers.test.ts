@@ -3,6 +3,7 @@ import {
   canIncrease,
   composeMetaLine,
   getAnimeCardMetaLabel,
+  getAnimeCardMetaSegments,
   getAnimeSeasonStatus,
   getLongEpisodeLabel,
   getNoteSegmentLabel,
@@ -201,6 +202,77 @@ describe("composeMetaLine", () => {
     expect(composeMetaLine(["Viendo", null, "Nota 3/6"])).toBe("Viendo · Nota 3/6");
     expect(composeMetaLine(["Viendo", "   ", "Nota 3/6"])).toBe("Viendo · Nota 3/6");
     expect(composeMetaLine([null, null, null])).toBe("");
+  });
+});
+
+describe("getAnimeCardMetaSegments", () => {
+  it("returns the count, the state and the note as ordered segments with their kind", () => {
+    expect(
+      getAnimeCardMetaSegments({
+        nrocapvisto: 1,
+        stateLabel: "Viendo",
+        noteLabel: "Nota 3/6",
+      }),
+    ).toEqual([
+      { kind: "count", text: "1 capítulo visto" },
+      { kind: "state", text: "Viendo" },
+      { kind: "note", text: "Nota 3/6" },
+    ]);
+  });
+
+  it("drops the note segment when the anime has no note to show", () => {
+    expect(
+      getAnimeCardMetaSegments({
+        nrocapvisto: 3,
+        stateLabel: "Viendo",
+        noteLabel: null,
+      }),
+    ).toEqual([
+      { kind: "count", text: "3 capítulos vistos" },
+      { kind: "state", text: "Viendo" },
+    ]);
+  });
+
+  it("keeps the count kind while the toggle swaps its text for the remaining form", () => {
+    expect(
+      getAnimeCardMetaSegments({
+        nrocapvisto: 6,
+        stateLabel: "En pausa",
+        noteLabel: "Nota 4/6",
+        restantesLabel: "6 restantes",
+        restantesShown: true,
+      }),
+    ).toEqual([
+      { kind: "count", text: "6 restantes" },
+      { kind: "state", text: "En pausa" },
+      { kind: "note", text: "Nota 4/6" },
+    ]);
+  });
+
+  it("drops blank segments so no separator can be drawn with nothing beside it", () => {
+    expect(
+      getAnimeCardMetaSegments({
+        nrocapvisto: 0,
+        stateLabel: "   ",
+        noteLabel: "",
+      }),
+    ).toEqual([{ kind: "count", text: "0 capítulos vistos" }]);
+  });
+
+  it("composes the accessible label from the same segments the view draws", () => {
+    const params = {
+      nrocapvisto: 6,
+      stateLabel: "En pausa",
+      noteLabel: "Nota 4/6",
+    };
+    const segments = getAnimeCardMetaSegments(params);
+
+    expect(getAnimeCardMetaLabel(params)).toBe(
+      composeMetaLine(segments.map((segment) => segment.text)),
+    );
+    expect(getAnimeCardMetaLabel(params)).toBe(
+      "6 capítulos vistos · En pausa · Nota 4/6",
+    );
   });
 });
 

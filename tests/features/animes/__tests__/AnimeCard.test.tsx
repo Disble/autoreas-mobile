@@ -180,6 +180,103 @@ describe('AnimeCard', () => {
     expect(getByLabelText('Abrir carpeta del anime')).toBeTruthy();
   });
 
+  it('draws the title at 16 pt with regular weight in the foreground role', () => {
+    const { getByText } = render(<AnimeCard {...buildAnimeCardProps()} />);
+
+    const title = getByText('Dandadan');
+
+    // `text-base` is 16 pt and `font-normal` is the 400 face AppText prepends.
+    expect(title.props.className).toContain('text-base');
+    expect(title.props.className).toContain('font-normal');
+    expect(title.props.className).toContain('text-foreground');
+    expect(title.props.className).not.toContain('text-sm');
+    expect(title.props.className).not.toContain('font-semibold');
+    expect(title.props.numberOfLines).toBe(2);
+  });
+
+  it('draws the count at 13 pt and the state and note at 11 pt, each in the muted role', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 0,
+            nrocapvisto: 1,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 3,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    // The count is the first segment, so it carries no separator; the state and the note carry the dot.
+    const count = getByText('1 capítulo visto');
+    const state = getByText(/· Viendo/);
+    const note = getByText(/· Nota 3\/6/);
+
+    expect(count.props.children).toBe('1 capítulo visto');
+    expect(state.props.children).toBe(' · Viendo');
+    expect(note.props.children).toBe(' · Nota 3/6');
+    expect(count.props.className).toContain('text-[13px]');
+    expect(count.props.className).toContain('text-muted');
+    expect(count.props.className).toContain('font-normal');
+    expect(state.props.className).toContain('text-[11px]');
+    expect(state.props.className).toContain('text-muted');
+    expect(state.props.className).toContain('font-normal');
+    expect(note.props.className).toContain('text-[11px]');
+    expect(note.props.className).toContain('text-muted');
+    expect(note.props.className).toContain('font-normal');
+  });
+
+  it('exposes the whole composed meta line as one accessible label on the toggle', () => {
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 3,
+            nrocapvisto: 6,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 4,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    const toggle = getByLabelText('6 capítulos vistos · En pausa · Nota 4/6');
+
+    expect(toggle.props.accessibilityHint).toBe('Alternar episodios restantes');
+  });
+
+  it('leaves every meta span free to wrap instead of capping its lines', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 1,
+            nrocapvisto: 6,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 4,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('6 capítulos vistos').props.numberOfLines).toBeUndefined();
+    expect(getByText(/· Finalizado/).props.numberOfLines).toBeUndefined();
+    expect(getByText(/· Nota 4\/6/).props.numberOfLines).toBeUndefined();
+  });
+
   it('renders one watched chapter, the state and the note as a single line', () => {
     const { getByText } = render(
       <AnimeCard
@@ -329,7 +426,7 @@ describe('AnimeCard', () => {
   it('gives the meta toggle a 44 pt minimum touch area', () => {
     const { getByLabelText } = render(<AnimeCard {...buildAnimeCardProps()} />);
 
-    const toggle = getByLabelText('Alternar episodios restantes');
+    const toggle = getByLabelText('4 capítulos vistos · Viendo');
 
     expect(toggle.props.className).toContain('min-h-11');
     expect(toggle.props.className).toContain('min-w-11');

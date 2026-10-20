@@ -46,6 +46,22 @@ export interface AnimeCardMetaParams {
 }
 
 /**
+ * Identifies which part of the meta line a segment is, because the parts carry different type sizes.
+ * `count` is drawn larger; `state` and `note` share the smaller detail size.
+ */
+export type AnimeCardMetaSegmentKind = 'count' | 'state' | 'note';
+
+/**
+ * One drawn piece of the meta line: its text and the kind that decides how it is styled.
+ * The separator lives between segments, never inside one, so a list of segments can never render a
+ * leading, trailing or doubled dot.
+ */
+export interface AnimeCardMetaSegment {
+  readonly kind: AnimeCardMetaSegmentKind;
+  readonly text: string;
+}
+
+/**
  * Describes the season status presented on an anime card.
  * The card reads `label` for the note segment and `showRatingCta` to decide whether the season CTA
  * is drawn. Nothing else in the descriptor is rendered: the row that drew a description and a tone
@@ -61,9 +77,21 @@ export interface AnimeCardCoverProps {
   readonly coverUri: string | null | undefined;
 }
 
+/** Defines the data contract for the toggling meta line inside the info block. */
+export interface AnimeCardMetaToggleProps {
+  /** The segments to draw, in order; the view never reorders or filters them. */
+  readonly segments: readonly AnimeCardMetaSegment[];
+  /** The whole line as one string, exposed as the pressable's accessible label. */
+  readonly label: string;
+  readonly onPress: () => void;
+}
+
 /** Defines the data contract for the anime card info block (title, meta line and long-episode mark). */
 export interface AnimeCardInfoProps {
   readonly title: string;
+  /** The ordered segments the meta line draws, each with its own kind and therefore its own size. */
+  readonly metaSegments: readonly AnimeCardMetaSegment[];
+  /** The whole composed meta line as one string, used as the pressable's accessible label. */
   readonly metaLabel: string;
   readonly onToggleMeta: () => void;
   /** "Ep. 7 · 45 min" when the next episode is long; `null` hides the mark. */
@@ -118,6 +146,8 @@ export interface AnimeCardChapterControlsProps {
  */
 export interface AnimeCardContentProps {
   readonly title: string;
+  /** Forwarded untouched to `AnimeCardInfo`, which draws one span per segment. */
+  readonly metaSegments: readonly AnimeCardMetaSegment[];
   readonly metaLabel: string;
   readonly onToggleMeta: () => void;
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
