@@ -12,7 +12,9 @@ proof of rendered appearance, Native compilation, contrast, or device output.
 > Back to the [README](../../README.md) · Foundations: [Color tokens](foundations/color-tokens.md) ·
 > [Typography](foundations/typography.md).
 > Components: [HeroUI Native primitives](components/heroui-native.md) · [AppText](components/app-text.md) ·
-> Patterns: [Loading, empty and error states](patterns/states.md).
+> Patterns: [Loading, empty and error states](patterns/states.md) ·
+> Process: [Proposals and evidence](process/proposals-and-evidence.md).
+> Rule layer for agents: [`.agents/skills/mobile-design-system/SKILL.md`](../../.agents/skills/mobile-design-system/SKILL.md).
 
 ---
 
@@ -108,6 +110,14 @@ records that fact only.
   what its default `font-normal` means for the four declared weights.
 - [Loading, empty and error states](patterns/states.md) — the states that exist, each with its
   real trigger and component, plus the ones that do not exist at all.
+- [Proposals and evidence](process/proposals-and-evidence.md) — how a proposal, an approved but
+  unimplemented direction and an implemented change stay visibly separate, and why a mockup or
+  artifact is a reference view rather than a render.
+
+Two more files are part of the system without being documentation: the project skill
+`.agents/skills/mobile-design-system/SKILL.md` (mirrored byte-for-byte under `.claude/skills/`) holds
+only the rules every UI change must know, and `tests/design/skill-contract.test.ts` fails when the two
+copies diverge or when a `docs/design/` path the skill names stops existing.
 
 ## Checklist before merging a token change
 
@@ -129,3 +139,6 @@ records that fact only.
   runtime.
 - No screenshot, device, simulator or Native-compilation claim is made or implied by
   anything in `docs/design/`.
+- A claim about appearance needs an observation on a device or simulator, made by whoever makes the
+  claim. No page here, no test and no design artifact substitutes for it — see
+  [Proposals and evidence](process/proposals-and-evidence.md).
