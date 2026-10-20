@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
-  buildSeasonRatingBridgeSummary,
   buildSeasonRatingComparison,
   buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
@@ -41,10 +40,6 @@ export function useSeasonRatingSheet(
   );
   const selectedRating = userRatingChoice ?? derivedSelectedRating;
 
-  const bridgeSummary = useMemo(
-    () => buildSeasonRatingBridgeSummary(props.bridgeRating),
-    [props.bridgeRating],
-  );
   const status = useMemo(
     () =>
       buildSeasonRatingSheetStatus({
@@ -88,7 +83,6 @@ export function useSeasonRatingSheet(
   return {
     isOpen: props.isOpen,
     selectedRating,
-    bridgeSummary,
     status,
     comparison,
     isSaveVisible,

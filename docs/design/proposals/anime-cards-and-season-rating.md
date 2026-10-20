@@ -66,6 +66,8 @@ Further decisions taken on that sheet:
 - the sheet heading is `Calificar nota`, not `Calificar temporada`;
 - the sheet has **no close button**: it closes from the scrim or with Escape, and focus returns to
   the control that opened it;
+- the sheet does **not** repeat the note the bridge already knows: the `Candidato activo` chip and the
+  bridge `n/6` block are removed, so the note appears once, in the comparison;
 - `Guardar nota` appears only when the selected value differs from the saved one, and it is never
   shown in a disabled state.
 

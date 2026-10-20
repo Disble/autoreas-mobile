@@ -1,6 +1,5 @@
 import { SEASON_RATING_SHEET_COPY, SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import type {
-  SeasonRatingSheetBridgeSummary,
   SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
   SeasonRatingSheetStatus,
@@ -55,25 +54,6 @@ export function isSeasonRatingSaveVisible(
   return selectedRating !== null && selectedRating !== savedRating;
 }
 
-/**
- * Builds the bridge summary copy shown inside the season rating sheet.
- * Confirmed bridge data stays visually distinct from local pending or failed intent.
- */
-export function buildSeasonRatingBridgeSummary(
-  bridgeRating: number | null,
-): SeasonRatingSheetBridgeSummary {
-  if (bridgeRating == null) {
-    return {
-      title: SEASON_RATING_SHEET_COPY.currentBridgeTitle,
-      valueLabel: SEASON_RATING_SHEET_COPY.currentBridgeMissing,
-    };
-  }
-
-  return {
-    title: SEASON_RATING_SHEET_COPY.confirmedTitle,
-    valueLabel: `${bridgeRating}/6`,
-  };
-}
 
 /**
  * Derives pending or repair status messaging for one season rating intent.

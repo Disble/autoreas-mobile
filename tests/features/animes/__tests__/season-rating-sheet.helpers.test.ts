@@ -1,5 +1,4 @@
 import {
-  buildSeasonRatingBridgeSummary,
   buildSeasonRatingComparison,
   buildSeasonRatingSheetStatus,
   getInitialSeasonRatingSelection,
@@ -25,17 +24,6 @@ describe('season rating sheet helpers', () => {
   it('prefers pending rating over bridge rating for local truth', () => {
     expect(getInitialSeasonRatingSelection(6, 4)).toBe(6);
     expect(getInitialSeasonRatingSelection(null, 4)).toBe(4);
-  });
-
-  it('formats confirmed bridge summary and missing summary', () => {
-    expect(buildSeasonRatingBridgeSummary(5)).toEqual({
-      title: 'Bridge confirmó esta nota',
-      valueLabel: '5/6',
-    });
-    expect(buildSeasonRatingBridgeSummary(null)).toEqual({
-      title: 'Nota actual del bridge',
-      valueLabel: 'Sin nota confirmada todavía',
-    });
   });
 
   it('builds pending and failed status copy without claiming bridge confirmation', () => {

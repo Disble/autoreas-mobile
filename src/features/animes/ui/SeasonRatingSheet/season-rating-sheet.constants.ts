@@ -7,7 +7,6 @@ export const SEASON_RATING_VALUES = [1, 2, 3, 4, 5, 6] as const;
  */
 export const SEASON_RATING_SHEET_COPY = {
   title: "Nota",
-  candidate: "Candidato activo",
   ratingPrompt: "Elige una nota",
   overlayLabel: "Cerrar la nota",
   comparisonArrow: "→",
@@ -20,7 +19,5 @@ export const SEASON_RATING_SHEET_COPY = {
   failedDescription:
     "La nota quedó guardada. Revisa el bridge para reintentar sin perder la intención.",
   confirmedTitle: "Bridge confirmó esta nota",
-  currentBridgeTitle: "Nota actual del bridge",
-  currentBridgeMissing: "Sin nota confirmada todavía",
   saveButton: "Guardar",
 } as const;

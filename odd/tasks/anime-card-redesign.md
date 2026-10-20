@@ -49,11 +49,11 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
   existing constants, the note labelled `Nota`, the coloured state chip removed, the ellipsis still
   wired to the existing `AnimeStateSheet`, plus its tests. Acceptance also covers the two defects the
   design review found in this surface: touch targets of at least 44 pt and no `nowrap` overflow of the
-  meta line at narrow widths. Status: in progress (mvgu1k2e-1-ym2x). Commit: —
+  meta line at narrow widths. Status: done. Commits: 4e81497 (unit), plus the completion unit mvgulxrx-3-9ge2.
 - T3 [S5] — The sheet: heading `Nota`, no subtitle, no season selector, numeric comparison with the
   prominent arrow, the saved value in `accent` and the draft ring in `secondary`, values 1–6,
   `Guardar` only on change, no close button, backdrop close with focus return, plus its tests.
-  Status: in progress (mvgu2cgs-2-ljac). Commit: —
+  Status: done. Commit: a38ca79 (unit mvgu2cgs-2-ljac).
 - T4 [S7] — Connect the sheet to the real mutation path and implement the chosen failure behaviour
   (O2), with tests. Blocked until O2 is decided. Commit: —
 - T5 — Verification and close: repository gate, lab APK on device with before/after screenshots,
@@ -118,6 +118,19 @@ design, balance or data-model changes, and anything in `.pi/`.
   native reach of `onAccessibilityEscape` are unconfirmed. The `Candidato activo` chip and the bridge
   `n/6` line remain above the comparison, so a reviewer may see the note twice there too: a decision
   for the user, not a defect to fix silently.
+- L7 — T2 and T3 committed through the repository gate: 4e81497 (card) and a38ca79 (sheet), each
+  green on quick (typecheck, fallow, lint) and heavy (full suite plus the staged mutation guard).
+  The full anime feature suite ran before committing: 30 suites, 332 tests, exit 0, so card, sheet
+  and list screens coexist.
+- L8 — Cleanup the parent did before committing, because the units left it behind: deleted
+  `AnimeCardSeasonStatus.tsx` with its props and the two descriptor fields nothing rendered (fallow
+  would have failed on them); centralised the hit-slop arithmetic as `CARD_TOUCH_SLOP` and
+  `CARD_ELLIPSIS_TOUCH_SLOP` instead of six duplicated literals; corrected the two documentation
+  sentences that still described the removed component.
+- L9 — Open and blocking, each recorded above: O2 failure behaviour blocks T4; whether the sheet
+  keeps the `Candidato activo` chip and the bridge `n/6` line above the comparison is the user’s
+  call; focus return needs `AnimeListScreenSheets`, outside the surfaces used so far, so it is
+  reasoned from the modal container and not proven.
 - L3 — Document restructured from eight specs and seven tasks to seven specs and five tasks: the
   test task was folded into each behaviour unit, and the two review-found defects became acceptance
   criteria instead of a task with no specification behind it.

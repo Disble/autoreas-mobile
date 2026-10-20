@@ -33,7 +33,6 @@ describe('useSeasonRatingSheet', () => {
     );
 
     expect(result.current.selectedRating).toBe(6);
-    expect(result.current.bridgeSummary.valueLabel).toBe('4/6');
     expect(result.current.status?.kind).toBe('pending');
   });
 

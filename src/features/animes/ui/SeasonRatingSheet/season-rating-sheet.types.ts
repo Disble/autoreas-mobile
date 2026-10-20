@@ -14,10 +14,6 @@ export interface SeasonRatingSheetStatus {
 }
 
 /** Defines the data contract for season rating sheet bridge summary. */
-export interface SeasonRatingSheetBridgeSummary {
-  readonly title: string;
-  readonly valueLabel: string;
-}
 
 /**
  * Defines the data contract for the change comparison between the saved note and the draft.
@@ -33,7 +29,6 @@ export interface SeasonRatingSheetComparison {
 export interface SeasonRatingSheetViewModel {
   readonly isOpen: boolean;
   readonly selectedRating: SeasonRatingValue | null;
-  readonly bridgeSummary: SeasonRatingSheetBridgeSummary;
   readonly status: SeasonRatingSheetStatus | null;
   readonly comparison: SeasonRatingSheetComparison | null;
   readonly isSaveVisible: boolean;

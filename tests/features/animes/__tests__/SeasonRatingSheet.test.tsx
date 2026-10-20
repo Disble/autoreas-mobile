@@ -56,8 +56,8 @@ describe('SeasonRatingSheet', () => {
     expect(queryByText('Cerrar')).toBeNull();
   });
 
-  it('keeps bridge truth and pending local truth separately', () => {
-    const { getByText } = render(
+  it('shows the pending local truth and no bridge summary block', () => {
+    const { getByText, queryByText } = render(
       <SeasonRatingSheet
         animeTitle="Kaiju No. 8"
         bridgeRating={3}
@@ -70,8 +70,8 @@ describe('SeasonRatingSheet', () => {
       />,
     );
 
-    expect(getByText('Bridge confirmó esta nota')).toBeTruthy();
-    expect(getByText('3/6')).toBeTruthy();
+    expect(queryByText('Bridge confirmó esta nota')).toBeNull();
+    expect(queryByText('3/6')).toBeNull();
     expect(getByText('Pendiente de sync')).toBeTruthy();
     expect(
       getByText('Tu nota queda guardada en este teléfono hasta que el bridge la confirme.'),

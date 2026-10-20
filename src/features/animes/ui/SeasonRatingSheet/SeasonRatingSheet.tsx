@@ -1,4 +1,4 @@
-import { Alert, BottomSheet, Button, Chip, cn } from "heroui-native";
+import { Alert, BottomSheet, Button, cn } from "heroui-native";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
@@ -161,7 +161,6 @@ function SheetSaveAction({
 
 /** Renders the sheet body content inside the BottomSheet portal. */
 function SeasonRatingSheetContent({
-  bridgeSummary,
   comparison,
   handleClose,
   handleSelectRating,
@@ -185,19 +184,6 @@ function SeasonRatingSheetContent({
         {SEASON_RATING_SHEET_COPY.title}
       </BottomSheet.Title>
 
-      <Chip color="accent" size="sm" variant="secondary" className="self-start">
-        <Chip.Label>{SEASON_RATING_SHEET_COPY.candidate}</Chip.Label>
-      </Chip>
-
-      <View className="bg-surface-secondary gap-1 rounded-2xl p-3">
-        <AppText className="text-muted text-xs font-medium uppercase">
-          {bridgeSummary.title}
-        </AppText>
-        <AppText className="text-foreground text-lg font-semibold">
-          {bridgeSummary.valueLabel}
-        </AppText>
-      </View>
-
       <SheetStatusAlert status={status} />
 
       <RatingComparison comparison={comparison} />
@@ -220,7 +206,6 @@ function SeasonRatingSheetContent({
  */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
-    bridgeSummary,
     comparison,
     handleClose,
     handleOpenChange,
@@ -242,7 +227,6 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
           onPress={handleClose}
         />
         <SeasonRatingSheetContent
-          bridgeSummary={bridgeSummary}
           comparison={comparison}
           handleClose={handleClose}
           handleSelectRating={handleSelectRating}
