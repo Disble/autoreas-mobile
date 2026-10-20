@@ -11,6 +11,8 @@ proof of rendered appearance, Native compilation, contrast, or device output.
 
 > Back to the [README](../../README.md) · Foundations: [Color tokens](foundations/color-tokens.md) ·
 > [Typography](foundations/typography.md).
+> Components: [HeroUI Native primitives](components/heroui-native.md) · [AppText](components/app-text.md) ·
+> Patterns: [Loading, empty and error states](patterns/states.md).
 
 ---
 
@@ -100,6 +102,12 @@ records that fact only.
   consumes, per-mode ownership, and what is not documented or enforced yet.
 - [Typography](foundations/typography.md) — the four Inter weight roles, where the faces are loaded
   and declared, and the executable contract that keeps `--font-*` on shipped PostScript names.
+- [HeroUI Native primitives](components/heroui-native.md) — the 14 components the app renders,
+  the repository rules that hold today, and where the code does not follow them.
+- [AppText](components/app-text.md) — what the text wrapper adds over React Native `Text`, and
+  what its default `font-normal` means for the four declared weights.
+- [Loading, empty and error states](patterns/states.md) — the states that exist, each with its
+  real trigger and component, plus the ones that do not exist at all.
 
 ## Checklist before merging a token change
 
@@ -113,6 +121,9 @@ records that fact only.
 
 - Docs and static configuration only. No automated check reads palette values, resolves
   `var()` references, measures contrast, or renders a mode.
+- The component and pattern pages **document the code as it is**, not a specification the code
+  is guaranteed to satisfy. Where a convention is followed only in some places, the page states
+  the measured count instead of presenting the convention as true.
 - The `--font-*` aliases are a typography concern, documented in
   [Typography](foundations/typography.md). This page makes no claim about which font file wins at
   runtime.
