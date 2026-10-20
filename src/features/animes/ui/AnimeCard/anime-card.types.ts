@@ -26,21 +26,33 @@ export interface AnimeCardProps {
 /** Defines the visual tone for an anime state chip. */
 export type AnimeStateChipTone = 'accent' | 'success' | 'warning' | 'danger';
 
-/** Describes the state chip rendered for a persisted anime state. */
+/** Describes the state of a persisted anime as the card presents it. */
 export interface AnimeStateChipDescriptor {
   readonly label: string;
   readonly tone: AnimeStateChipTone;
   readonly isDefault: boolean;
 }
 
-/** Defines the visual tone for an anime season status. */
-export type AnimeSeasonStatusTone = 'accent' | 'warning';
+/** Defines the inputs that compose the single meta line under the card title. */
+export interface AnimeCardMetaParams {
+  readonly nrocapvisto: number;
+  /** The persisted state label; it is always part of the line. */
+  readonly stateLabel: string;
+  /** The note segment, or `null` when the anime has no season candidacy to rate. */
+  readonly noteLabel: string | null;
+  /** The "X restantes" form; it replaces only the count segment while the toggle is on. */
+  readonly restantesLabel?: string | null;
+  readonly restantesShown?: boolean;
+}
 
-/** Describes the season status presented on an anime card. */
+/**
+ * Describes the season status presented on an anime card.
+ * The card reads `label` for the note segment and `showRatingCta` to decide whether the season CTA
+ * is drawn. Nothing else in the descriptor is rendered: the row that drew a description and a tone
+ * was removed so the note appears once.
+ */
 export interface AnimeSeasonStatusDescriptor {
   readonly label: string;
-  readonly description: string;
-  readonly tone: AnimeSeasonStatusTone;
   readonly showRatingCta: boolean;
 }
 
@@ -49,28 +61,26 @@ export interface AnimeCardCoverProps {
   readonly coverUri: string | null | undefined;
 }
 
-/** Defines the data contract for the anime card season status block. */
-export interface AnimeCardSeasonStatusProps {
-  readonly status: AnimeSeasonStatusDescriptor;
-}
-
-/** Defines the data contract for the anime card info block (title, meta, season status). */
+/** Defines the data contract for the anime card info block (title, meta line and long-episode mark). */
 export interface AnimeCardInfoProps {
   readonly title: string;
   readonly metaLabel: string;
   readonly onToggleMeta: () => void;
-  readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
   /** "Ep. 7 · 45 min" when the next episode is long; `null` hides the mark. */
   readonly longEpisodeLabel: string | null;
 }
 
-/** Defines the data contract for the anime card state badge (ellipsis or state chip). */
+/** Defines the data contract for the anime card state affordance (the ellipsis). */
 export interface AnimeCardStateBadgeProps {
+  /** Carries the state label; the card no longer renders it as a coloured chip. */
   readonly stateChip: AnimeStateChipDescriptor;
   readonly onPress: () => void;
 }
 
-/** Defines the data contract for the anime card actions row (season CTA and chapter controls). */
+/**
+ * Defines the data contract for the anime card actions row (season CTA and chapter controls).
+ * `seasonStatus` is read only for `showRatingCta`.
+ */
 export interface AnimeCardActionsProps {
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
   readonly isMutationLocked: boolean;
@@ -102,7 +112,10 @@ export interface AnimeCardChapterControlsProps {
   readonly onCapPlusLongPress: () => void;
 }
 
-/** Defines the data contract for the anime card right column (info, state badge, and actions). */
+/**
+ * Defines the data contract for the anime card right column (info, state badge, and actions).
+ * `seasonStatus` goes only to the actions row, which reads `showRatingCta`.
+ */
 export interface AnimeCardContentProps {
   readonly title: string;
   readonly metaLabel: string;

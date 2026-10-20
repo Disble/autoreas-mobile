@@ -1,6 +1,7 @@
 import { Card } from "heroui-native";
 import { AnimeCardContent } from "./AnimeCardContent";
 import { AnimeCardCover } from "./AnimeCardCover";
+import { getAnimeCardMetaLabel, getNoteSegmentLabel } from "./anime-card.helpers";
 import type { AnimeCardProps } from "./anime-card.types";
 import { useAnimeCard } from "./use-anime-card";
 
@@ -29,13 +30,13 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     handleOpenFolder,
   } = useAnimeCard(props);
 
-  const chaptersLabel =
-    anime.nrocapvisto === 1
-      ? "1 capítulo"
-      : `${anime.nrocapvisto} capítulos`;
-  const defaultMeta = `${chaptersLabel} · ${stateChip.label}`;
-  const metaLabel =
-    restantesShown && restantesLabel ? restantesLabel : defaultMeta;
+  const metaLabel = getAnimeCardMetaLabel({
+    nrocapvisto: anime.nrocapvisto,
+    stateLabel: stateChip.label,
+    noteLabel: getNoteSegmentLabel(seasonStatus),
+    restantesLabel,
+    restantesShown,
+  });
 
   return (
     <Card className="mb-3 overflow-hidden p-0">

@@ -4,7 +4,7 @@ import { AnimeCardInfo } from './AnimeCardInfo';
 import { AnimeCardStateBadge } from './AnimeCardStateBadge';
 import type { AnimeCardContentProps } from './anime-card.types';
 
-/** Renders the anime card right column: title/meta/season info, the state badge, and the actions row. */
+/** Renders the anime card right column: title/meta info, the state badge, and the actions row. */
 export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   const {
     title,
@@ -36,7 +36,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
           title={title}
           metaLabel={metaLabel}
           onToggleMeta={onToggleMeta}
-          seasonStatus={seasonStatus}
           longEpisodeLabel={longEpisodeLabel}
         />
         <AnimeCardStateBadge stateChip={stateChip} onPress={onStateBadgePress} />

@@ -1,11 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import { CARD_TOUCH_SLOP } from './anime-card.constants';
 import { StyledIonicons } from '../../../../components/theme-toggle.constants';
 import { Button } from 'heroui-native';
 import { View } from 'react-native';
 import { AnimeCardChapterControls } from './AnimeCardChapterControls';
 import type { AnimeCardActionsProps } from './anime-card.types';
 
-/** Renders the page and folder shortcuts on the left, and the season CTA plus chapter progress on the right. */
+/**
+ * Renders the page and folder shortcuts on the left, and the season CTA plus chapter progress on the right.
+ * Every button here draws a 40 pt box (`size="sm"`) and reaches a 48 pt touch target through
+ * `hitSlop={CARD_TOUCH_SLOP}`, so neither the visual weight nor the row rhythm changes.
+ */
 export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   const {
     seasonStatus,
@@ -33,6 +38,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           isIconOnly
           size="sm"
           variant="tertiary"
+          hitSlop={CARD_TOUCH_SLOP}
           onPress={onOpenPage}
         >
           <StyledIonicons name="link" size={18} className="text-foreground" />
@@ -44,6 +50,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           isIconOnly
           size="sm"
           variant="tertiary"
+          hitSlop={CARD_TOUCH_SLOP}
           onPress={onOpenFolder}
         >
           <StyledIonicons name="folder-open" size={18} className="text-foreground" />
@@ -56,6 +63,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           onPress={onOpenSeasonRatingSheet}
           size="sm"
           variant="secondary"
+          hitSlop={CARD_TOUCH_SLOP}
           className="mr-4"
         >
           <Button.Label>Temporada</Button.Label>
@@ -66,6 +74,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           accessibilityLabel="Reanudar anime"
           variant="secondary"
           size="sm"
+          hitSlop={CARD_TOUCH_SLOP}
           onPress={onReanudarPress}
         >
           <Ionicons name="play" size={14} />

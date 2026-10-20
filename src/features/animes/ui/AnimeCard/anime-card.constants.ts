@@ -1,14 +1,18 @@
-import type { AnimeStateChipDescriptor, AnimeStateChipTone } from './anime-card.types';
+import type { AnimeStateChipDescriptor } from './anime-card.types';
 
-/** Maps semantic chip tones to HeroUI color tokens. */
-export const CHIP_TONE_COLOR_MAP: Readonly<Record<AnimeStateChipTone, AnimeStateChipTone>> = {
-  accent: 'accent',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-};
+/** Separates the segments of the single meta line under the card title. */
+export const META_SEPARATOR = ' · ';
 
-/** Maps persisted anime states to their user-facing chip descriptors. */
+/**
+ * Horizontal and vertical hit-slop added to a 40 pt button so its touch area reaches 48 pt.
+ * A visual size stays at 40 pt; only the reachable area grows.
+ */
+export const CARD_TOUCH_SLOP = 4;
+
+/** Hit-slop for the 28 pt ellipsis, bringing its touch area to the 44 pt minimum. */
+export const CARD_ELLIPSIS_TOUCH_SLOP = 8;
+
+/** Maps persisted anime states to their user-facing labels and tones. */
 export const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescriptor>> = {
   0: { label: 'Viendo', tone: 'accent', isDefault: true },
   1: { label: 'Finalizado', tone: 'success', isDefault: false },

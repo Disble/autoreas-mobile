@@ -58,8 +58,8 @@ describe('AnimeCard', () => {
     expect(queryByText('Temporada')).toBeNull();
   });
 
-  it('shows confirmed bridge rating for active candidate', () => {
-    const { getByText } = render(
+  it('reads the confirmed note on the meta line only, with no bridge description beside it', () => {
+    const { getAllByText, getByText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           anime: {
@@ -74,14 +74,15 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('Temporada 4/6')).toBeTruthy();
-    expect(getByText('Confirmado por bridge')).toBeTruthy();
+    // The note appears exactly once, on the meta line; the season status row that repeated it is gone.
+    expect(getAllByText(/Nota 4\/6/)).toHaveLength(1);
+    expect(queryByText('Confirmado por bridge')).toBeNull();
     expect(getByText('Temporada')).toBeTruthy();
   });
 
   it('shows pending local truth without claiming bridge confirmation', () => {
     const onOpenSeasonRatingSheet = jest.fn();
-    const { getByText } = render(
+    const { getAllByText, getByText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           onOpenSeasonRatingSheet,
@@ -103,8 +104,8 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('Pendiente 6/6')).toBeTruthy();
-    expect(getByText('Esperando confirmación del bridge')).toBeTruthy();
+    expect(getAllByText(/Pendiente 6\/6/)).toHaveLength(1);
+    expect(queryByText('Esperando confirmación del bridge')).toBeNull();
 
     fireEvent.press(getByText('Temporada'));
 
@@ -112,7 +113,7 @@ describe('AnimeCard', () => {
   });
 
   it('shows the season CTA for an ungraded candidate without bridge confirmation', () => {
-    const { getByText } = render(
+    const { getAllByText, getByText, queryByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
           anime: {
@@ -127,8 +128,8 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('Sin nota de temporada')).toBeTruthy();
-    expect(getByText('Disponible para calificar')).toBeTruthy();
+    expect(getAllByText(/Sin nota/)).toHaveLength(1);
+    expect(queryByText('Disponible para calificar')).toBeNull();
     expect(getByText('Temporada')).toBeTruthy();
   });
 
@@ -176,5 +177,218 @@ describe('AnimeCard', () => {
     expect(getByText('Reanudar')).toBeTruthy();
     expect(getByLabelText('Abrir página del anime')).toBeTruthy();
     expect(getByLabelText('Abrir carpeta del anime')).toBeTruthy();
+  });
+
+  it('renders one watched chapter, the state and the note as a single line', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 0,
+            nrocapvisto: 1,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 3,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('1 capítulo visto · Viendo · Nota 3/6')).toBeTruthy();
+  });
+
+  it('keeps the paused state on the same meta line as several watched chapters and the note', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 3,
+            nrocapvisto: 6,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 4,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('6 capítulos vistos · En pausa · Nota 4/6')).toBeTruthy();
+  });
+
+  it('stops the meta line at the state when the anime has no season candidacy', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), estado: 0, nrocapvisto: 3, seasonProjection: null },
+        })}
+      />,
+    );
+
+    expect(getByText('3 capítulos vistos · Viendo')).toBeTruthy();
+  });
+
+  it('reads Sin nota on the meta line when the candidate has no rating yet', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 0,
+            nrocapvisto: 1,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: null,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('1 capítulo visto · Viendo · Sin nota')).toBeTruthy();
+  });
+
+  it('leaves the meta line free to wrap instead of capping its lines', () => {
+    const { getByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 1,
+            nrocapvisto: 6,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 4,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByText('6 capítulos vistos · Finalizado · Nota 4/6').props.numberOfLines).toBeUndefined();
+  });
+
+  it('shows the state once, inside the meta line, with no coloured chip beside it', () => {
+    const { getAllByText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 3,
+            nrocapvisto: 6,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: 4,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getAllByText(/En pausa/)).toHaveLength(1);
+  });
+
+  it('opens the state sheet from the ellipsis for a non-default state', () => {
+    const onOpenStateSheet = jest.fn();
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          onOpenStateSheet,
+          anime: { ...buildAnimeCardAnime(), estado: 3 },
+        })}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('Cambiar estado: En pausa'));
+
+    expect(onOpenStateSheet).toHaveBeenCalledWith('anime-1', 3);
+  });
+
+  it('gives the ellipsis a 44 pt touch area without enlarging its icon', () => {
+    const { getByLabelText } = render(
+      <AnimeCard {...buildAnimeCardProps({ anime: { ...buildAnimeCardAnime(), estado: 3 } })} />,
+    );
+
+    const ellipsis = getByLabelText('Cambiar estado: En pausa');
+
+    // 28 pt box (h-7/w-7) plus 8 pt of hit slop on every side reaches the 44 pt minimum.
+    expect(ellipsis.props.hitSlop).toBe(8);
+    expect(ellipsis.props.className).toContain('h-7');
+    expect(ellipsis.props.className).toContain('w-7');
+  });
+
+  it('gives the meta toggle a 44 pt minimum touch area', () => {
+    const { getByLabelText } = render(<AnimeCard {...buildAnimeCardProps()} />);
+
+    const toggle = getByLabelText('Alternar episodios restantes');
+
+    expect(toggle.props.className).toContain('min-h-11');
+    expect(toggle.props.className).toContain('min-w-11');
+  });
+
+  it('gives the page and folder shortcuts a 48 pt touch area at their 40 pt visual size', () => {
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), pagina: 'https://jkanime.net/dandadan/' },
+          folderPath: '/storage/0123-4567/Videos/Anime/Dandadan',
+        })}
+      />,
+    );
+
+    // `size="sm"` draws a 40 pt box and `hitSlop={4}` adds 4 pt per side, so the target is 48 pt.
+    expect(getByLabelText('Abrir página del anime').props.hitSlop).toBe(4);
+    expect(getByLabelText('Abrir carpeta del anime').props.hitSlop).toBe(4);
+  });
+
+  it('gives the Temporada CTA and Reanudar a 48 pt touch area', () => {
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: {
+            ...buildAnimeCardAnime(),
+            estado: 2,
+            seasonProjection: {
+              seasonId: 'season-2026-q3',
+              bridgeRating: null,
+              localIntent: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(getByLabelText('Abrir calificación de temporada').props.hitSlop).toBe(4);
+    expect(getByLabelText('Reanudar anime').props.hitSlop).toBe(4);
+  });
+
+  it('labels the chapter buttons in Spanish and gives them a 48 pt touch area', () => {
+    const onCapMinus = jest.fn();
+    const onCapPlus = jest.fn();
+    const { getByLabelText, queryByLabelText } = render(
+      <AnimeCard {...buildAnimeCardProps({ onCapMinus, onCapPlus })} />,
+    );
+
+    const minus = getByLabelText('Restar un capítulo visto');
+    const plus = getByLabelText('Sumar un capítulo visto');
+
+    expect(minus.props.hitSlop).toBe(4);
+    expect(plus.props.hitSlop).toBe(4);
+    expect(queryByLabelText('Decrease chapter')).toBeNull();
+    expect(queryByLabelText('Increase chapter')).toBeNull();
+
+    fireEvent.press(minus);
+    fireEvent.press(plus);
+
+    expect(onCapMinus).toHaveBeenCalledTimes(1);
+    expect(onCapPlus).toHaveBeenCalledTimes(1);
   });
 });
