@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
   buildSeasonRatingComparison,
+  buildSeasonRatingSegments,
   getInitialSeasonRatingSelection,
   isSeasonRatingSaveVisible,
 } from "./season-rating-sheet.helpers";
@@ -45,6 +45,10 @@ export function useSeasonRatingSheet(
     () => buildSeasonRatingComparison(derivedSelectedRating, selectedRating),
     [derivedSelectedRating, selectedRating],
   );
+  const segments = useMemo(
+    () => buildSeasonRatingSegments(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
+  );
   const isSaveVisible = useMemo(
     () => isSeasonRatingSaveVisible(derivedSelectedRating, selectedRating),
     [derivedSelectedRating, selectedRating],
@@ -78,7 +82,7 @@ export function useSeasonRatingSheet(
     selectedRating,
     comparison,
     isSaveVisible,
-    ratingOptions: SEASON_RATING_VALUES,
+    segments,
     handleClose,
     handleOpenChange,
     handleSelectRating,

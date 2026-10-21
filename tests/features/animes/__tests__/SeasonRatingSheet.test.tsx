@@ -125,8 +125,8 @@ describe('SeasonRatingSheet', () => {
     expect(getAllByTestId('heroui-alert')).toHaveLength(1);
   });
 
-  it('compares the saved and the draft number with a prominent arrow when they differ', () => {
-    const { getByLabelText, getByTestId } = render(
+  it('compares the saved and the draft number on one plain line when they differ', () => {
+    const { getByLabelText, getByTestId, queryByTestId } = render(
       <SeasonRatingSheet
         animeTitle="Kaiju No. 8"
         bridgeRating={3}
@@ -146,10 +146,31 @@ describe('SeasonRatingSheet', () => {
     expect(within(comparison).getByText('5')).toBeTruthy();
     expect(comparison.props.accessibilityLabel).toBe('Nota guardada 3. Nota nueva 5.');
     expect(comparison.props.accessibilityLiveRegion).toBe('polite');
-    expect(within(comparison).getByText('3').props.className).toContain('text-accent');
-    expect(getByTestId('season-rating-draft').props.style).toMatchObject({
-      borderColor: 'mocked---color-secondary',
-    });
+    // The colours live on the rating track (saved filled, draft ringed); the line is plain text.
+    expect(within(comparison).getByText('3').props.className).toContain('text-reading');
+    expect(within(comparison).getByText('5').props.className).toContain('text-reading');
+    expect(within(comparison).getByText('3').props.className).toContain('text-[13px]');
+    expect(queryByTestId('season-rating-draft')).toBeNull();
+  });
+
+  it('draws the six ratings as one track with no prompt above it', () => {
+    const { getByLabelText, queryByText } = render(
+      <SeasonRatingSheet
+        animeTitle="Kaiju No. 8"
+        bridgeRating={3}
+        isOpen
+        onClose={jest.fn()}
+        onSubmit={jest.fn()}
+        pendingRating={null}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('Calificar 5 de 6'));
+
+    expect(queryByText('Elige una nota')).toBeNull();
+    expect(getByLabelText('Calificar 3 de 6').props.accessibilityState).toMatchObject({ selected: true });
+    expect(getByLabelText('Calificar 5 de 6').props.accessibilityState).toMatchObject({ selected: true });
+    expect(getByLabelText('Calificar 4 de 6').props.accessibilityState).toMatchObject({ selected: false });
   });
 
   it('shows neither the comparison nor an action while the value is unchanged', () => {

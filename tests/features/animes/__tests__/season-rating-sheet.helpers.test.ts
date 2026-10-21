@@ -1,9 +1,36 @@
 import {
   buildSeasonRatingComparison,
+  buildSeasonRatingSegments,
   getInitialSeasonRatingSelection,
   isSeasonRatingSaveVisible,
 } from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.helpers';
 import { SEASON_RATING_SHEET_COPY } from '../../../../src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.constants';
+
+describe('buildSeasonRatingSegments', () => {
+  /** Reads the six states in rating order. */
+  const states = (saved: Parameters<typeof buildSeasonRatingSegments>[0], selected: Parameters<typeof buildSeasonRatingSegments>[1]) =>
+    buildSeasonRatingSegments(saved, selected).map((segment) => segment.state);
+
+  it('fills the saved note and rings the draft while they differ, as the approved sheet draws them', () => {
+    expect(states(3, 5)).toEqual(['idle', 'idle', 'saved', 'idle', 'draft', 'idle']);
+  });
+
+  it('marks only the saved note while nothing changed', () => {
+    expect(states(3, 3)).toEqual(['idle', 'idle', 'saved', 'idle', 'idle', 'idle']);
+  });
+
+  it('marks nothing for an anime with no note yet', () => {
+    expect(states(null, null)).toEqual(['idle', 'idle', 'idle', 'idle', 'idle', 'idle']);
+  });
+
+  it('rings a first choice as a draft, since nothing is saved to fill', () => {
+    expect(states(null, 4)).toEqual(['idle', 'idle', 'idle', 'draft', 'idle', 'idle']);
+  });
+
+  it('lists the six ratings in order', () => {
+    expect(buildSeasonRatingSegments(null, null).map((segment) => segment.rating)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+});
 
 describe('season rating sheet copy', () => {
   it('names the sheet Nota and its action Guardar', () => {
@@ -15,6 +42,7 @@ describe('season rating sheet copy', () => {
     const copy: Record<string, string | undefined> = SEASON_RATING_SHEET_COPY;
 
     expect(copy.closeButton).toBeUndefined();
+    expect(copy.ratingPrompt).toBeUndefined();
     expect(Object.values(copy).join(' ').toLowerCase()).not.toContain('temporada');
   });
 

@@ -70,6 +70,13 @@ Further decisions taken on that sheet:
   bridge `n/6` block are removed, so the note appears once, in the comparison;
 - `Guardar` appears only when the selected value differs from the saved one, and it is never
   shown in a disabled state;
+- implemented as approved on 2026-10-20: the six ratings sit on one segmented track (`default`
+  surface, 3 pt inset, 2 pt between segments) with no prompt above it; the **saved** note stays filled
+  with `accent` while a different **draft** sits on the `segment` surface ringed with `secondary`, so
+  both values are visible on the same rail; the comparison line above is plain 13 pt text, numbers in
+  `reading` and the arrow in `foreground`
+  (`src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.constants.ts`,
+  `buildSeasonRatingSegments` in `season-rating-sheet.helpers.ts`);
 - the sheet carries **no sync copy**: no `Pendiente de sync`, no `Requiere reparación`, no
   `Bridge confirmó esta nota`, and no status alert. Sync health is reported once, by the single
   status card above the list

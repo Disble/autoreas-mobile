@@ -77,6 +77,12 @@ References: `.pi/mockups/season-rating-workflow.html` (private, uncommitted, ref
   íconos. Usa un sistema de spacing y teoría de jerarquía (todo basado en las skills de design) para
   equilibrar esas row gaps.» Resolved by `docs/design/foundations/spacing.md`: 4 pt grid, tiers 4/8/12/16,
   a gap inside a group at most half the gap around it, and touch areas through slop, never a minimum box.
+- S12 — Note sheet parity, user verbatim: «sí haz los cambios», answering the comparison of the device
+  sheet with the approved mockup states (saved only, no note, and `3 → 5` with `Guardar`). Four changes:
+  the track fills the **saved** note and rings the **draft** (it was inverted); the comparison is a plain
+  13 pt line; no `Elige una nota` prompt or inner panel; one segmented track with muted digits instead of
+  six separate blue-text buttons. The sheet's full width on a tablet is out of scope (the mockup does not
+  define a tablet sheet).
 
 ## Tasks
 
@@ -114,6 +120,7 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
   it that way: the meta line stays one pressable with the remaining-episodes toggle, and the note gets
   no underline. Commit: none.
 - T10 [S11] — Spacing tiers and the meta line: `min-h-11` box replaced by `META_TOGGLE_HIT_SLOP`, line at `leading-[18px]`, 4 pt under the title and 12 pt above the actions; spacing page, skill rule 2b (version 1.4). Inline. Commit: see L25.
+- T11 [S12] — Note sheet track and comparison, inline: `buildSeasonRatingSegments` (saved, draft, idle), `SEASON_RATING_SEGMENT_PRESENTATION`, `RatingTrack`, plain comparison line, prompt copy removed. Commit: see L27.
 - T9 — Close: anime feature suite, `react-doctor --diff`, pre-commit gate, lab APK on the tablet with
   `Vistos` before/after next to the mockup, docs `docs/design/components/anime-card.md`. Status: done with two items unproven on device (L24). Commit: see L24.
 
@@ -253,3 +260,4 @@ design, balance or data-model changes, and anything in `.pi/`.
 - L24 — T9 on the tablet (R52T30686RV) with the lab APK built at f3f919a, `Vistos` open. Verified on hardware: every card icon is the outline variant (closed outline folder); link, folder and star form the left group; the stepper is `−` and `+` with no number; the count reads brighter than the muted state and note; segments are separated by the round dot; the star is drawn only on candidates. Not proven on the device: `Reanudar` (no paused anime in that list) and the remaining-episodes toggle (tapping the Ao Ashi meta line changed nothing visible, most likely because that anime has no total and so no remaining label; covered by `AnimeCard.test.tsx` and `anime-card-info.test.tsx`). Gate green on every commit (lint, typecheck, fallow, full suite, staged mutation guard). Nothing pushed or merged.
 - L25 — 2026-10-20, T10 for S11. Cause measured on the device capture before changing anything: the meta line's `min-h-11` drew a 44 pt box around 18 pt of text, so the line sat ~50 px under the title and ~60 px over the actions, the same distance both ways, which reads as belonging to neither group. Fix: slop instead of size, title group 4 pt, groups 12 pt (1:3). RED 2 of 2 (the old `min-h-11` assertion in `AnimeCard.test.tsx` was rewritten to the new rule; the 44 pt requirement itself is kept and asserted as 18 pt + 26 pt of slop). Mutation: `min-h-11` restored on the staged file, 1 test failed, restored. Checks: anime + design suites 35 / 380, typecheck clean, react-doctor `--diff` no issues.
 - L26 — T10 on the tablet with the lab APK at 3100b4a, `Vistos`: the meta line now sits right under the title and the actions row is clearly further away, so title and meta read as one group; the cards are shorter. Measured on the capture, glyph edge to glyph edge: title → meta about 14 px, meta → button top about 21 px. The drawn ratio is gentler than the 4:12 pt layout values because the text lines carry their own leading; recorded, not tuned, pending the user's look.
+- L27 — 2026-10-20, T11 for S12. RED 8 (five segment-state cases, the prompt copy, the plain comparison, the one-track rendering). GREEN: the hook exposes `segments` instead of `ratingOptions`; the view draws `RatingTrack` with HeroUI `Button variant="ghost"` segments, the draft ring through the `border-secondary` class (no `useCSSVariable` left in the sheet). Mutation: the saved branch limited to an unchanged value, 1 test failed, restored. Checks: animes 32 suites / 361 tests, typecheck clean, lint clean after hoisting the per-state `accessibilityState` objects into the presentation constant, react-doctor `--diff` no issues. Docs: proposals page and `color-tokens.md`.

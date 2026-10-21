@@ -1,10 +1,13 @@
 import { BottomSheet, Button, cn } from "heroui-native";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { View } from "react-native";
-import { useCSSVariable } from "uniwind";
 import { AppText } from "../../../../components/app-text";
-import { SEASON_RATING_SHEET_COPY } from "./season-rating-sheet.constants";
+import {
+  SEASON_RATING_SEGMENT_PRESENTATION,
+  SEASON_RATING_SHEET_COPY,
+} from "./season-rating-sheet.constants";
 import type {
+  SeasonRatingSegment,
   SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
   SeasonRatingSheetViewModel,
@@ -12,78 +15,64 @@ import type {
 } from "./season-rating-sheet.types";
 import { useSeasonRatingSheet } from "./use-season-rating-sheet";
 
-/** Renders a single selectable rating option button. */
-function RatingOptionButton({
-  isSelected,
+/** Renders one rating on the track, drawn by its state: saved filled, draft ringed, the rest muted. */
+function RatingSegmentButton({
   onSelect,
-  rating,
+  segment,
 }: {
-  readonly isSelected: boolean;
   readonly onSelect: (rating: SeasonRatingValue) => void;
-  readonly rating: SeasonRatingValue;
+  readonly segment: SeasonRatingSegment;
 }) {
+  const { rating, state } = segment;
+  const presentation = SEASON_RATING_SEGMENT_PRESENTATION[state];
   const handlePress = useCallback(() => onSelect(rating), [onSelect, rating]);
 
   return (
     <Button
       accessibilityLabel={`Calificar ${rating} de 6`}
-      className={cn("flex-1", isSelected ? undefined : "bg-overlay")}
+      accessibilityState={presentation.accessibilityState}
+      className={cn("h-10 flex-1 rounded-[13px] px-0", presentation.button)}
       onPress={handlePress}
       size="sm"
-      variant={isSelected ? "primary" : "secondary"}
+      variant="ghost"
     >
-      <Button.Label>{rating}</Button.Label>
+      <Button.Label className={cn("text-[15px] tabular-nums", presentation.label)}>
+        {rating}
+      </Button.Label>
     </Button>
   );
 }
 
-/** Renders the rating options section with one button per allowed rating. */
-function RatingOptionsSection({
+/**
+ * Renders the six ratings as one segmented track: a `default` surface with a 3 pt inset and 2 pt
+ * between segments, so the saved and the draft value sit on the same rail.
+ */
+function RatingTrack({
   onSelect,
-  ratingOptions,
-  selectedRating,
+  segments,
 }: {
   readonly onSelect: (rating: SeasonRatingValue) => void;
-  readonly ratingOptions: readonly SeasonRatingValue[];
-  readonly selectedRating: SeasonRatingValue | null;
+  readonly segments: readonly SeasonRatingSegment[];
 }) {
   return (
-    <View className="bg-surface-secondary gap-3 rounded-2xl p-3">
-      <AppText className="text-foreground text-sm font-semibold">
-        {SEASON_RATING_SHEET_COPY.ratingPrompt}
-      </AppText>
-      <View className="flex-row gap-2">
-        {ratingOptions.map((rating) => (
-          <RatingOptionButton
-            key={rating}
-            isSelected={selectedRating === rating}
-            onSelect={onSelect}
-            rating={rating}
-          />
-        ))}
-      </View>
+    <View className="bg-default flex-row gap-0.5 rounded-2xl p-[3px]">
+      {segments.map((segment) => (
+        <RatingSegmentButton key={segment.rating} onSelect={onSelect} segment={segment} />
+      ))}
     </View>
   );
 }
 
 /**
  * Renders the saved → draft comparison shown while the selection differs from the saved note.
- * Only the two numbers and the arrow are drawn; the spoken label supplies the words, and the draft
- * number is ringed with the `secondary` role while the saved one uses `accent`.
+ * It is one plain 13 pt line, the numbers in `reading` and the arrow in `foreground`; the colours that
+ * tell saved from draft live on the track, and the spoken label supplies the words.
  */
 function RatingComparison({
   comparison,
 }: {
   readonly comparison: SeasonRatingSheetComparison | null;
 }) {
-  const [draftRingColor] = useCSSVariable(["--color-secondary"]);
-  const draftRingStyle = useMemo(
-    () => ({
-      borderColor: typeof draftRingColor === "string" ? draftRingColor : undefined,
-    }),
-    [draftRingColor],
-  );
-
   if (!comparison) {
     return null;
   }
@@ -96,21 +85,15 @@ function RatingComparison({
       className="flex-row items-center gap-2 self-start"
       testID="season-rating-comparison"
     >
-      <AppText className="text-accent text-xl font-semibold">
+      <AppText className="text-reading text-[13px] tabular-nums">
         {comparison.savedValueLabel}
       </AppText>
-      <AppText className="text-foreground text-xl font-bold">
+      <AppText className="text-foreground text-[13px] font-medium">
         {SEASON_RATING_SHEET_COPY.comparisonArrow}
       </AppText>
-      <View
-        className="h-10 min-w-10 items-center justify-center rounded-full border-2 px-1"
-        style={draftRingStyle}
-        testID="season-rating-draft"
-      >
-        <AppText className="text-foreground text-xl font-semibold">
-          {comparison.draftValueLabel}
-        </AppText>
-      </View>
+      <AppText className="text-reading text-[13px] tabular-nums">
+        {comparison.draftValueLabel}
+      </AppText>
     </View>
   );
 }
@@ -144,9 +127,8 @@ function SeasonRatingSheetContent({
   handleSelectRating,
   handleSubmit,
   isSaveVisible,
-  ratingOptions,
-  selectedRating,
-}: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen">> & {
+  segments,
+}: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen" | "selectedRating">> & {
   readonly handleClose: () => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
@@ -163,11 +145,7 @@ function SeasonRatingSheetContent({
 
       <RatingComparison comparison={comparison} />
 
-      <RatingOptionsSection
-        onSelect={handleSelectRating}
-        ratingOptions={ratingOptions}
-        selectedRating={selectedRating}
-      />
+      <RatingTrack onSelect={handleSelectRating} segments={segments} />
 
       <SheetSaveAction handleSubmit={handleSubmit} isSaveVisible={isSaveVisible} />
     </BottomSheet.Content>
@@ -189,8 +167,7 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
     handleSubmit,
     isOpen,
     isSaveVisible,
-    ratingOptions,
-    selectedRating,
+    segments,
   } = useSeasonRatingSheet(props);
 
   return (
@@ -207,8 +184,7 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
           handleSelectRating={handleSelectRating}
           handleSubmit={handleSubmit}
           isSaveVisible={isSaveVisible}
-          ratingOptions={ratingOptions}
-          selectedRating={selectedRating}
+          segments={segments}
         />
       </BottomSheet.Portal>
     </BottomSheet>

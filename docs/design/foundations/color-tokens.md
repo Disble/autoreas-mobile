@@ -53,8 +53,8 @@ tokens with their own owners.
 
 ### The roles the app declares itself
 
-`secondary` is not a vendor role. It is the app's own violet, used for the draft note ring in the
-rating sheet, and it is declared in both modes in `global.css`. Because it does not exist in
+`secondary` is not a vendor role. It is the app's own violet, used for the ring around a draft on
+the note sheet's rating track (`border-secondary`), and it is declared in both modes in `global.css`. Because it does not exist in
 HeroUI Native, `useThemeColor` refuses the name: read it with
 `useCSSVariable('--color-secondary')` or use it through a class, which works because `global.css`
 also maps `--color-secondary: var(--secondary)` inside `@theme inline`. Both halves are guarded by

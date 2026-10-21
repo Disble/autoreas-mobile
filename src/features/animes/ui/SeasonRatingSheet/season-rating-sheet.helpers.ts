@@ -1,5 +1,6 @@
 import { SEASON_RATING_SHEET_COPY, SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import type {
+  SeasonRatingSegment,
   SeasonRatingSheetComparison,
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
@@ -50,4 +51,26 @@ export function isSeasonRatingSaveVisible(
   selectedRating: SeasonRatingValue | null,
 ): boolean {
   return selectedRating !== null && selectedRating !== savedRating;
+}
+
+/**
+ * Builds the six ratings of the track with the state each one is drawn in.
+ * The saved note stays filled while a different draft is ringed, so both values are visible at once;
+ * with nothing saved, a choice is a draft, and with no choice nothing is marked.
+ */
+export function buildSeasonRatingSegments(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): readonly SeasonRatingSegment[] {
+  return SEASON_RATING_VALUES.map((rating) => {
+    if (rating === savedRating) {
+      return { rating, state: "saved" };
+    }
+
+    if (rating === selectedRating) {
+      return { rating, state: "draft" };
+    }
+
+    return { rating, state: "idle" };
+  });
 }

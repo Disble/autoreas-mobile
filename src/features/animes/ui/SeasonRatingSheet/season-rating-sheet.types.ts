@@ -2,6 +2,18 @@
 export type SeasonRatingValue = 1 | 2 | 3 | 4 | 5 | 6;
 
 /**
+ * Defines how one rating is drawn on the track: `saved` is the stored note (filled), `draft` is a
+ * different choice not saved yet (ringed), `idle` is every other value.
+ */
+export type SeasonRatingSegmentState = "saved" | "draft" | "idle";
+
+/** Defines one rating on the track with the state it is drawn in. */
+export interface SeasonRatingSegment {
+  readonly rating: SeasonRatingValue;
+  readonly state: SeasonRatingSegmentState;
+}
+
+/**
  * Defines the data contract for the change comparison between the saved note and the draft.
  * Only the two numbers are drawn; the spoken label carries the words "guardada" and "nueva".
  */
@@ -21,7 +33,8 @@ export interface SeasonRatingSheetViewModel {
   readonly selectedRating: SeasonRatingValue | null;
   readonly comparison: SeasonRatingSheetComparison | null;
   readonly isSaveVisible: boolean;
-  readonly ratingOptions: readonly SeasonRatingValue[];
+  /** The six ratings in order, each with the state the track draws it in. */
+  readonly segments: readonly SeasonRatingSegment[];
 }
 
 /**
