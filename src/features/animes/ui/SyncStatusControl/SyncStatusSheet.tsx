@@ -6,6 +6,7 @@ import { SyncStatusGlyph } from './SyncStatusGlyph';
 import { SYNC_STATUS_SHEET_TITLE } from './sync-status-control.constants';
 import type { SyncStatusSheetProps } from './sync-status-control.types';
 import { useSyncStatusSheet } from './use-sync-status-sheet';
+import { SheetContent } from '../../../../components/sheet-content';
 
 /**
  * Renders the "Sincronización" sheet: the state once, a second line only when it adds something,
@@ -19,7 +20,7 @@ export function SyncStatusSheet(props: Readonly<SyncStatusSheetProps>) {
     <BottomSheet isOpen={isOpen} onOpenChange={handleOpenChange}>
       <BottomSheet.Portal>
         <BottomSheet.Overlay />
-        <BottomSheet.Content contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5">
+        <SheetContent isOpen={isOpen} contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5">
           <BottomSheet.Title className="text-foreground text-lg font-semibold">
             {SYNC_STATUS_SHEET_TITLE}
           </BottomSheet.Title>
@@ -49,7 +50,7 @@ export function SyncStatusSheet(props: Readonly<SyncStatusSheetProps>) {
               ))}
             </View>
           ) : null}
-        </BottomSheet.Content>
+        </SheetContent>
       </BottomSheet.Portal>
     </BottomSheet>
   );

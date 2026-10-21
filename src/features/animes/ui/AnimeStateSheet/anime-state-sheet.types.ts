@@ -30,3 +30,11 @@ export interface AnimeStateSheetProps {
   readonly onSelect: (estado: number) => void;
   readonly onClose: () => void;
 }
+
+/** Defines the data contract for one option row of the anime state sheet. */
+export interface AnimeStateSheetOptionRowProps {
+  readonly option: AnimeStateSheetOption;
+  readonly iconColor: string;
+  readonly selectedIconColor: string;
+  readonly onSelect: (estado: number) => void;
+}
