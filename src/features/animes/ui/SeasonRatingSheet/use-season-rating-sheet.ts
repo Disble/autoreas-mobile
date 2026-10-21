@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
-import { SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import {
-  buildSeasonRatingBridgeSummary,
-  buildSeasonRatingSheetStatus,
+  buildSeasonRatingComparison,
+  buildSeasonRatingSegments,
   getInitialSeasonRatingSelection,
+  isSeasonRatingSaveVisible,
 } from "./season-rating-sheet.helpers";
 import type {
   SeasonRatingSheetProps,
@@ -11,11 +11,17 @@ import type {
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 
-/** Coordinates season rating sheet state and actions. */
+/**
+ * Coordinates season rating sheet state and actions.
+ * The saved note is the sheet's current truth (pending intent before bridge truth); the draft is the selection.
+ * The sheet reports no sync state: the note is queued like any other anime mutation and the single
+ * status card above the list is what narrates sync health.
+ */
 export function useSeasonRatingSheet(
   props: SeasonRatingSheetProps,
 ): SeasonRatingSheetViewModel & {
   readonly handleClose: () => void;
+  readonly handleOpenChange: (nextIsOpen: boolean) => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
 } {
@@ -35,23 +41,28 @@ export function useSeasonRatingSheet(
   );
   const selectedRating = userRatingChoice ?? derivedSelectedRating;
 
-  const bridgeSummary = useMemo(
-    () => buildSeasonRatingBridgeSummary(props.bridgeRating),
-    [props.bridgeRating],
+  const comparison = useMemo(
+    () => buildSeasonRatingComparison(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
   );
-  const status = useMemo(
-    () =>
-      buildSeasonRatingSheetStatus({
-        pendingStatus: props.pendingStatus,
-        pendingFailureKind: props.pendingFailureKind,
-      }),
-    [props.pendingFailureKind, props.pendingStatus],
+  const segments = useMemo(
+    () => buildSeasonRatingSegments(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
   );
-  const isSubmitDisabled = selectedRating === null;
+  const isSaveVisible = useMemo(
+    () => isSeasonRatingSaveVisible(derivedSelectedRating, selectedRating),
+    [derivedSelectedRating, selectedRating],
+  );
 
   // 6. Callbacks (useCallback calling pure helpers)
   const handleClose = useCallback(() => {
     props.onClose();
+  }, [props]);
+
+  const handleOpenChange = useCallback((nextIsOpen: boolean) => {
+    if (!nextIsOpen) {
+      props.onClose();
+    }
   }, [props]);
 
   const handleSelectRating = useCallback((rating: SeasonRatingValue) => {
@@ -68,13 +79,12 @@ export function useSeasonRatingSheet(
 
   return {
     isOpen: props.isOpen,
-    animeTitle: props.animeTitle,
     selectedRating,
-    bridgeSummary,
-    status,
-    ratingOptions: SEASON_RATING_VALUES,
-    isSubmitDisabled,
+    comparison,
+    isSaveVisible,
+    segments,
     handleClose,
+    handleOpenChange,
     handleSelectRating,
     handleSubmit,
   };

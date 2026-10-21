@@ -16,6 +16,25 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-20
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Changed
+
+- Anime cards are redesigned: the title sits above one line that reads the watched chapters, the state and the note together (for example `1 capítulo visto • Viendo • Nota 4/6`), with no coloured state chip beside it.
+- The watched-chapter count reads a little brighter than the state and the note, so it stands out on the line, and the parts of the line are separated by a round dot.
+- Every icon on the card uses its outline style. The page, folder and note star sit together on the left, and the chapter buttons on the right show only `−` and `+`, with no number between them.
+- The note star now sits with the page and folder shortcuts and opens the note sheet; it only appears on animes that can be rated this season.
+- The title and the chapter line sit close together, with more room before the buttons, so each card reads as a title group and an actions row.
+- Cards with a one-line title no longer leave an empty strip under the buttons, and in the two-column tablet layout the two cards of a row share the same height with their buttons lined up.
+- The note sheet shows the six ratings on one track: your saved note is filled, a new choice is ringed in violet, and a short `3 → 5` line above shows the change before you tap `Guardar`. The sheet no longer repeats the anime title, the Bridge's note or any sync wording.
+- Sync status is now shown only once, in the card above the list; cards and the note sheet no longer describe it.
+
+### Internal
+
+- The Inter font weights are registered under one name each, so every weight the app asks for is the one it loads, and two theme files nothing used were removed, leaving one base theme in light and dark.
+
 ## [2.1.0] — 2026-10-18
 
 Works with any Bridge 2.0.0 or later. A Bridge that does not know the new request id simply ignores it.

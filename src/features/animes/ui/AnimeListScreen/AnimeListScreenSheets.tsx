@@ -18,9 +18,7 @@ export function AnimeListScreenSheets(props: Readonly<AnimeListScreenSheetsProps
       <AnimeStateSheet
         visible={stateSheetRequest !== null}
         currentEstado={stateSheetRequest?.currentEstado ?? 0}
-        onSelect={(estado) => {
-          void handleStateSheetSelect(estado);
-        }}
+        onSelect={handleStateSheetSelect}
         onClose={handleCloseStateSheet}
       />
 
@@ -29,12 +27,8 @@ export function AnimeListScreenSheets(props: Readonly<AnimeListScreenSheetsProps
         bridgeRating={seasonRatingSheetRequest?.bridgeRating ?? null}
         isOpen={seasonRatingSheetRequest !== null}
         onClose={handleCloseSeasonRatingSheet}
-        onSubmit={(rating) => {
-          void handleSeasonRatingSubmit(rating);
-        }}
-        pendingFailureKind={seasonRatingSheetRequest?.pendingFailureKind ?? null}
+        onSubmit={handleSeasonRatingSubmit}
         pendingRating={seasonRatingSheetRequest?.pendingRating ?? null}
-        pendingStatus={seasonRatingSheetRequest?.pendingStatus ?? null}
       />
     </>
   );

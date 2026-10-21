@@ -1,8 +1,7 @@
 import { SEASON_RATING_SHEET_COPY, SEASON_RATING_VALUES } from "./season-rating-sheet.constants";
 import type {
-  SeasonRatingSheetBridgeSummary,
-  SeasonRatingSheetProps,
-  SeasonRatingSheetStatus,
+  SeasonRatingSegment,
+  SeasonRatingSheetComparison,
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 
@@ -24,47 +23,54 @@ export function getInitialSeasonRatingSelection(
 }
 
 /**
- * Builds the bridge summary copy shown inside the season rating sheet.
- * Confirmed bridge data stays visually distinct from local pending or failed intent.
+ * Builds the comparison between the saved note and the draft selected in the sheet.
+ * Returns null unless both values exist and differ, so an unchanged or first note draws no comparison;
+ * the returned labels are the numbers alone and the words live in the spoken label.
  */
-export function buildSeasonRatingBridgeSummary(
-  bridgeRating: number | null,
-): SeasonRatingSheetBridgeSummary {
-  if (bridgeRating == null) {
-    return {
-      title: SEASON_RATING_SHEET_COPY.currentBridgeTitle,
-      valueLabel: SEASON_RATING_SHEET_COPY.currentBridgeMissing,
-    };
+export function buildSeasonRatingComparison(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): SeasonRatingSheetComparison | null {
+  if (savedRating === null || selectedRating === null || savedRating === selectedRating) {
+    return null;
   }
 
   return {
-    title: SEASON_RATING_SHEET_COPY.confirmedTitle,
-    valueLabel: `${bridgeRating}/6`,
+    savedValueLabel: String(savedRating),
+    draftValueLabel: String(selectedRating),
+    accessibilityLabel: `${SEASON_RATING_SHEET_COPY.comparisonSavedLabel} ${savedRating}. ${SEASON_RATING_SHEET_COPY.comparisonDraftLabel} ${selectedRating}.`,
   };
 }
 
 /**
- * Derives pending or repair status messaging for one season rating intent.
- * The copy makes local queue truth explicit so the sheet never implies bridge confirmation.
+ * Decides whether the save action is rendered.
+ * Only a draft that differs from the saved note may show it; the action is never drawn in a disabled state.
  */
-export function buildSeasonRatingSheetStatus(
-  props: Pick<SeasonRatingSheetProps, "pendingStatus" | "pendingFailureKind">,
-): SeasonRatingSheetStatus | null {
-  if (props.pendingStatus === "pending") {
-    return {
-      kind: "pending",
-      label: SEASON_RATING_SHEET_COPY.pendingTitle,
-      description: SEASON_RATING_SHEET_COPY.pendingDescription,
-    };
-  }
+export function isSeasonRatingSaveVisible(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): boolean {
+  return selectedRating !== null && selectedRating !== savedRating;
+}
 
-  if (props.pendingStatus === "failed") {
-    return {
-      kind: "failed",
-      label: SEASON_RATING_SHEET_COPY.failedTitle,
-      description: SEASON_RATING_SHEET_COPY.failedDescription,
-    };
-  }
+/**
+ * Builds the six ratings of the track with the state each one is drawn in.
+ * The saved note stays filled while a different draft is ringed, so both values are visible at once;
+ * with nothing saved, a choice is a draft, and with no choice nothing is marked.
+ */
+export function buildSeasonRatingSegments(
+  savedRating: SeasonRatingValue | null,
+  selectedRating: SeasonRatingValue | null,
+): readonly SeasonRatingSegment[] {
+  return SEASON_RATING_VALUES.map((rating) => {
+    if (rating === savedRating) {
+      return { rating, state: "saved" };
+    }
 
-  return null;
+    if (rating === selectedRating) {
+      return { rating, state: "draft" };
+    }
+
+    return { rating, state: "idle" };
+  });
 }

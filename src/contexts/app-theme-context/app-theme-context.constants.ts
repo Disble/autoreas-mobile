@@ -8,10 +8,4 @@ export const AppThemeContext = createContext<AppThemeContextValue | undefined>(u
 export const THEME_TOGGLE_MAP: Readonly<Record<ThemeName, ThemeName>> = {
   light: 'dark',
   dark: 'light',
-  'lavender-light': 'lavender-dark',
-  'lavender-dark': 'lavender-light',
-  'mint-light': 'mint-dark',
-  'mint-dark': 'mint-light',
-  'sky-light': 'sky-dark',
-  'sky-dark': 'sky-light',
 };

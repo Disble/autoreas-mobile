@@ -1,0 +1,93 @@
+# Color tokens
+
+**Rule — for new and refactored UI.** A component names a **semantic role**
+(`bg-surface`, `text-muted`, `border-border`) instead of a color, and the role resolves to
+a value per mode. The app has two modes, `light` and `dark`; both take their color values
+from the vendor theme `heroui-native/styles`, and the app adds no color overrides of its
+own today.
+
+**Current state — the repository does not meet that rule yet.** It has 18 literal-color
+lines in `src/`, broken down in the [overview](../README.md#the-one-ui-rule); 17 of them
+pass a raw value to a prop that accepts no class (Ionicons `color`, or SVG
+`fill`/`stroke`/`stopColor`), and one is a `text-white` class. This page describes the
+vocabulary and its owners, not the compliance of every existing file.
+
+> Back to the [design system overview](../README.md).
+
+---
+
+## How a role resolves
+
+| Layer | What it provides | Where |
+| --- | --- | --- |
+| Base variable | The value for the mode, e.g. `--background`, `--accent`, `--surface` | `heroui-native/styles` → `variables.css`, under `@variant light` / `@variant dark` |
+| Alias | The utility-facing name, e.g. `--color-background: var(--background)` | `heroui-native/styles` → `theme.css` |
+| Derived roles | Values built from base roles, e.g. `--color-accent-soft`, `--color-danger-soft`, `--color-surface-hover` | `heroui-native/styles` → `theme.css` |
+| App overrides | Optional per-mode overrides declared after the vendor import | `global.css` → `@layer theme` |
+
+Today the app overrides only `--font-*` and `--radius` in `global.css`. Every color role
+in both modes is therefore the vendor value. An override is added by declaring the base
+variable (for example `--accent`) inside the matching `@variant` block — overriding
+`--color-accent` directly bypasses the layer the rest of the system reads from.
+
+## Role vocabulary the app consumes
+
+| Group | Roles | Typical use |
+| --- | --- | --- |
+| Base | `background`, `foreground` | Screen background behind the app shell; default text |
+| Surface | `surface`, `surface-secondary`, `surface-tertiary` and their `*-foreground` pairs | Cards, grouped sections, nested panels |
+| Overlay | `overlay`, `overlay-foreground`, `backdrop` | Sheets, dialogs and what sits behind them |
+| Text and chrome | `muted`, `border`, `separator`, `focus`, `link` | Secondary text, dividers, focus rings, links |
+| Accent | `accent`, `accent-foreground` | Primary action and selection |
+| Status | `success`, `warning`, `danger` and their `*-foreground` pairs | Inline feedback, alerts, destructive actions |
+| Derived emphasis | `accent-soft`, `accent-soft-foreground`, `danger-soft`, `surface-hover` and siblings | Low-emphasis banners and pressed/hover states |
+| App-declared | `secondary`, `reading` | The draft note ring in the rating sheet; the watched count on the card meta line |
+
+The vocabulary extends beyond this table with vendor roles the app does not reference
+directly (`default-*`, `field-*`, `segment-*`, `background-secondary`, the `*-hover` and
+`*-soft` families). HeroUI Native components may consume them internally; app code
+should reach for a role from this table rather than inventing a hue.
+
+Not color roles: `--radius`, the `--font-*` aliases and the shadow roles. They are real
+tokens with their own owners.
+
+### The roles the app declares itself
+
+`secondary` is not a vendor role. It is the app's own violet, used for the ring around a draft on
+the note sheet's rating track (`border-secondary`), and it is declared in both modes in `global.css`. Because it does not exist in
+HeroUI Native, `useThemeColor` refuses the name: read it with
+`useCSSVariable('--color-secondary')` or use it through a class, which works because `global.css`
+also maps `--color-secondary: var(--secondary)` inside `@theme inline`. Both halves are guarded by
+`tests/design/app-declared-roles.test.ts`, because a variable without the alias is invisible to the
+class utilities and an alias without the variable resolves to nothing.
+
+`reading` is the second app-declared role: a neutral one step brighter than `muted`, for text that is
+read rather than skimmed next to muted details, today only the watched count on the card meta line.
+Values come from the approved card mockup: light `oklch(0.37 0.0125 285.94)`, dark
+`oklch(0.86 0.012 286)`. It is used through `text-reading` (alias `--color-reading: var(--reading)`)
+and guarded by the same test.
+
+## What is not documented or enforced yet
+
+- The vendor's palette values are not restated here. They live in
+  `node_modules/heroui-native/src/styles/variables.css` and can change with a package
+  upgrade, so this page deliberately points at them instead of copying numbers.
+- No check enforces "semantic role only": a component that writes `bg-white` or an inline
+  literal passes, and 18 such lines exist in `src/` today (see the
+  [overview](../README.md#the-one-ui-rule)).
+- No check reads, resolves or compares color values, and there is no contrast or
+  perceptual requirement recorded anywhere in the repository.
+- The derived families (`*-hover`, `*-soft`, `*-secondary`) are vendor formulas over the
+  base roles. None of them have been reviewed as design decisions on this project.
+- Roles the app never references — `field-*`, `segment-*`, `default-*` — are undocumented
+  beyond the vendor source.
+
+## Evidence boundary
+
+- Statements here come from reading `global.css`, `metro.config.js` and the installed
+  `heroui-native` style files. No rendering, screenshot, contrast measurement or device
+  run was performed or is claimed.
+- Font registration and weight choices are a separate typography concern; the `--font-*`
+  aliases are listed here only to say they are not color roles.
+- `themes/alpha.css` exists in the repository but is not imported by `global.css`. It is
+  not an active mode and contributes no role values.

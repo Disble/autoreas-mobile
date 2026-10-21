@@ -1,15 +1,7 @@
 import type { ReactNode } from 'react';
 
 /** Defines every theme supported by the application. */
-export type ThemeName =
-  | 'light'
-  | 'dark'
-  | 'lavender-light'
-  | 'lavender-dark'
-  | 'mint-light'
-  | 'mint-dark'
-  | 'sky-light'
-  | 'sky-dark';
+export type ThemeName = 'light' | 'dark';
 
 /** Defines the application theme context contract. */
 export interface AppThemeContextValue {

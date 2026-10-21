@@ -50,10 +50,10 @@ export function useStartupBoundary(
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const [fontsLoaded, fontLoadError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    'Inter-Regular': Inter_400Regular,
+    'Inter-Medium': Inter_500Medium,
+    'Inter-SemiBold': Inter_600SemiBold,
+    'Inter-Bold': Inter_700Bold,
   });
 
   // 4. Queries/Mutations

@@ -4,10 +4,16 @@ import { AnimeCardInfo } from './AnimeCardInfo';
 import { AnimeCardStateBadge } from './AnimeCardStateBadge';
 import type { AnimeCardContentProps } from './anime-card.types';
 
-/** Renders the anime card right column: title/meta/season info, the state badge, and the actions row. */
+/**
+ * Renders the anime card right column: title/meta info, the state badge, and the actions row.
+ * The title group sits at the top and the actions row at the bottom (`justify-between`), so when
+ * a grid row stretches the shorter card, its spare height lands between the two groups and the
+ * buttons of both cards in the row line up; `gap-3` stays the minimum distance between them.
+ */
 export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   const {
     title,
+    metaSegments,
     metaLabel,
     onToggleMeta,
     seasonStatus,
@@ -15,7 +21,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     stateChip,
     onStateBadgePress,
     isMutationLocked,
-    nrocapvisto,
     disableDecrease,
     disableIncrease,
     onOpenSeasonRatingSheet,
@@ -30,13 +35,13 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   } = props;
 
   return (
-    <View className="flex-1 gap-3 p-4">
+    <View className="flex-1 justify-between gap-3 p-4">
       <View className="flex-row items-start gap-2">
         <AnimeCardInfo
           title={title}
+          metaSegments={metaSegments}
           metaLabel={metaLabel}
           onToggleMeta={onToggleMeta}
-          seasonStatus={seasonStatus}
           longEpisodeLabel={longEpisodeLabel}
         />
         <AnimeCardStateBadge stateChip={stateChip} onPress={onStateBadgePress} />
@@ -44,7 +49,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
       <AnimeCardActions
         seasonStatus={seasonStatus}
         isMutationLocked={isMutationLocked}
-        nrocapvisto={nrocapvisto}
         disableDecrease={disableDecrease}
         disableIncrease={disableIncrease}
         onOpenSeasonRatingSheet={onOpenSeasonRatingSheet}

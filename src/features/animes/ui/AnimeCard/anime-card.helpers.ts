@@ -1,7 +1,12 @@
 import type { EpisodeLength } from '../../../../infrastructure/validation/anime-schema';
 import type { AnimeSeasonProjection } from '../../anime-season.types';
-import { STATE_CHIP_BY_ESTADO } from './anime-card.constants';
-import type { AnimeSeasonStatusDescriptor, AnimeStateChipDescriptor } from './anime-card.types';
+import { META_SEPARATOR, STATE_CHIP_BY_ESTADO } from './anime-card.constants';
+import type {
+  AnimeCardMetaParams,
+  AnimeCardMetaSegment,
+  AnimeSeasonStatusDescriptor,
+  AnimeStateChipDescriptor,
+} from './anime-card.types';
 
 /**
  * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
@@ -28,12 +33,81 @@ export const canIncrease = (nrocapvisto: number, totalcap: number | null | undef
 };
 
 /**
- * Maps the legacy `estado` integer into the chip descriptor shown at the card header.
+ * Maps the legacy `estado` integer into the state descriptor shown on the card.
  * Unknown values fall back to "Viendo" so corrupt rows never break the UI.
- * The `isDefault` flag lets the card render Viendo implicitly (no chip noise on the happy path).
+ * The `isDefault` flag is kept for callers that still need to tell Viendo apart from the states
+ * that ask for attention; the card now renders the label for every state.
  */
 export function getStateChip(estado: number): AnimeStateChipDescriptor {
   return STATE_CHIP_BY_ESTADO[estado] ?? STATE_CHIP_BY_ESTADO[0];
+}
+
+/**
+ * Builds the watched-episode segment of the meta line. It keeps the singular for exactly one
+ * chapter and preserves fractional counts instead of rounding a half-watched chapter away.
+ */
+export function getWatchedCountLabel(nrocapvisto: number): string {
+  return nrocapvisto === 1 ? '1 capítulo visto' : `${nrocapvisto} capítulos vistos`;
+}
+
+/**
+ * Reads the note segment out of the season status: `Nota 3/6` for a confirmed rating, `Pendiente 4/6`
+ * for a local intent and `Sin nota` for an ungraded candidate.
+ * Returns null when the anime has no season candidacy at all, so the card shows the state alone
+ * rather than a note it cannot express.
+ */
+export function getNoteSegmentLabel(
+  seasonStatus: AnimeSeasonStatusDescriptor | null | undefined,
+): string | null {
+  return seasonStatus ? seasonStatus.label : null;
+}
+
+/**
+ * Joins the meta segments with the dot separator, dropping the absent and blank ones first.
+ * Dropping before joining is what keeps a separator from ever leading, trailing or doubling.
+ */
+export function composeMetaLine(segments: readonly (string | null | undefined)[]): string {
+  const present = segments.reduce<string[]>((kept, segment) => {
+    const trimmed = segment?.trim();
+    if (trimmed) {
+      kept.push(trimmed);
+    }
+    return kept;
+  }, []);
+
+  return present.join(META_SEPARATOR);
+}
+
+/**
+ * Builds the meta line as ordered segments, each carrying its own text and kind: the count first, then
+ * the state, then the note. Absent and blank segments are dropped here, so the view can only ever draw
+ * a separator between two segments that carry text.
+ * While the toggle is on only the count segment changes its text to the remaining form; the state and
+ * the note stay where they are.
+ */
+export function getAnimeCardMetaSegments(
+  params: AnimeCardMetaParams,
+): AnimeCardMetaSegment[] {
+  const { nrocapvisto, stateLabel, noteLabel, restantesLabel, restantesShown } = params;
+  const countLabel =
+    restantesShown && restantesLabel ? restantesLabel : getWatchedCountLabel(nrocapvisto);
+
+  const segments: AnimeCardMetaSegment[] = [
+    { kind: 'count', text: countLabel },
+    { kind: 'state', text: stateLabel },
+    { kind: 'note', text: noteLabel ?? '' },
+  ];
+
+  return segments.filter((segment) => Boolean(segment.text.trim()));
+}
+
+/**
+ * Builds the whole meta line as one string: the count, the state and the note joined by the dot
+ * separator. It is the accessible label of the toggling control and the value the tests assert, and
+ * it is composed from the same segments the view draws, so label and render cannot drift apart.
+ */
+export function getAnimeCardMetaLabel(params: AnimeCardMetaParams): string {
+  return composeMetaLine(getAnimeCardMetaSegments(params).map((segment) => segment.text));
 }
 
 /**
@@ -85,37 +159,12 @@ export function getAnimeSeasonStatus(
     return null;
   }
 
-  if (seasonProjection.localIntent?.status === 'failed') {
-    return {
-      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
-      description: 'Requiere reparación en bridge',
-      tone: 'warning',
-      showRatingCta: true,
-    };
-  }
-
-  if (seasonProjection.localIntent?.status === 'pending') {
-    return {
-      label: `Pendiente ${seasonProjection.localIntent.nota}/6`,
-      description: 'Esperando confirmación del bridge',
-      tone: 'warning',
-      showRatingCta: true,
-    };
-  }
-
-  if (seasonProjection.bridgeRating != null) {
-    return {
-      label: `Temporada ${seasonProjection.bridgeRating}/6`,
-      description: 'Confirmado por bridge',
-      tone: 'accent',
-      showRatingCta: true,
-    };
-  }
+  // The note is a value of the anime, never a sync state: a local intent is the newest choice, so it
+  // wins over the bridge value, and sync health is reported once above the list rather than here.
+  const note = seasonProjection.localIntent?.nota ?? seasonProjection.bridgeRating;
 
   return {
-    label: 'Sin nota de temporada',
-    description: 'Disponible para calificar',
-    tone: 'accent',
+    label: note == null ? 'Sin nota' : `Nota ${note}/6`,
     showRatingCta: true,
   };
 }

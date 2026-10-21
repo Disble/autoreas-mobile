@@ -96,8 +96,6 @@ describe('useAnimeListScreen season rating integration', () => {
       animeTitle: 'Blue Box',
       bridgeRating: 4,
       pendingRating: 6,
-      pendingStatus: 'pending',
-      pendingFailureKind: null,
     });
   });
 
@@ -121,8 +119,6 @@ describe('useAnimeListScreen season rating integration', () => {
       animeTitle: 'Blue Box',
       bridgeRating: null,
       pendingRating: null,
-      pendingStatus: null,
-      pendingFailureKind: null,
     });
   });
 

@@ -1,38 +1,24 @@
-import { Chip } from 'heroui-native';
 import { Pressable } from 'react-native';
 import { StyledIonicons } from '../../../../components/theme-toggle.constants';
-import { CHIP_TONE_COLOR_MAP } from './anime-card.constants';
 import type { AnimeCardStateBadgeProps } from './anime-card.types';
+import { CARD_ELLIPSIS_TOUCH_SLOP } from './anime-card.constants';
 
 /**
- * Renders the anime card state affordance: a muted ellipsis for the default
- * Viendo state, or a state chip for every other persisted state.
+ * Renders the anime card state affordance: one muted ellipsis for every persisted state.
+ * The state itself is text on the meta line, so no coloured chip is drawn here; the ellipsis
+ * only carries the state into its accessibility label and opens the existing state sheet.
+ * Its 28 pt box plus 8 pt of hit slop on every side reaches the 44 pt touch target.
  */
 export function AnimeCardStateBadge({ stateChip, onPress }: Readonly<AnimeCardStateBadgeProps>) {
-  if (stateChip.isDefault) {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Cambiar estado del anime"
-        onPress={onPress}
-        hitSlop={10}
-        className="h-7 w-7 items-center justify-center rounded-full"
-      >
-        <StyledIonicons className="text-muted" name="ellipsis-horizontal" size={18} />
-      </Pressable>
-    );
-  }
-
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Cambiar estado: ${stateChip.label}`}
       onPress={onPress}
-      hitSlop={8}
+      hitSlop={CARD_ELLIPSIS_TOUCH_SLOP}
+      className="h-7 w-7 items-center justify-center rounded-full"
     >
-      <Chip size="sm" variant="secondary" color={CHIP_TONE_COLOR_MAP[stateChip.tone]}>
-        <Chip.Label>{stateChip.label}</Chip.Label>
-      </Chip>
+      <StyledIonicons className="text-muted" name="ellipsis-horizontal-outline" size={18} />
     </Pressable>
   );
 }

@@ -53,6 +53,14 @@ historical evidence, not execution contracts.
   from `src/`.
 - Before changing a helper or hook, update or create its corresponding test. Follow
   RED → GREEN → MUTATE → REFACTOR.
+- A UI change updates the tests that already cover that component; it does not open a new
+  test file. Find the existing suite first (`grep -rl "<ComponentName>" tests/`), add or edit
+  cases there, and delete the cases the change makes redundant. When the suite would pass 500
+  lines, refactor it: remove duplicates, move shared helpers into the suite's existing
+  `*-test.helpers.ts`, and move a case to the subcomponent that owns the behaviour. A new test
+  file is only for a component that has no suite yet. (2026-10-20: the anime card redesign added
+  `anime-card-cover` and `anime-card-layout` beside `AnimeCard.test.tsx`, which already held
+  duplicated meta-line cases; they were folded back in.)
 - For mutation checks, stage the green implementation, delete the guarded behavior,
   run the focused test and confirm failure, then use `git checkout -- <file>` to
   restore from the index. Do not use `git checkout HEAD -- <file>` or restore from

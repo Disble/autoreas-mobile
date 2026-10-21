@@ -27,7 +27,6 @@ export default [
     // does not own or execute. `coverage/` and the Stryker sandbox are generated output.
     ignores: [
       'uniwind-types.d.ts',
-      'uniwind.d.ts',
       '.agents/**',
       '.claude/**',
       'coverage/**',

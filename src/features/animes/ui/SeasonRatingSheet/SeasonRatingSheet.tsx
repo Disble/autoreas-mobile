@@ -1,199 +1,190 @@
-import { Alert, BottomSheet, Button, Chip, cn } from "heroui-native";
+import { BottomSheet, Button, cn } from "heroui-native";
 import { useCallback } from "react";
 import { View } from "react-native";
 import { AppText } from "../../../../components/app-text";
-import { SEASON_RATING_SHEET_COPY } from "./season-rating-sheet.constants";
+import {
+  SEASON_RATING_SEGMENT_PRESENTATION,
+  SEASON_RATING_SHEET_COPY,
+} from "./season-rating-sheet.constants";
 import type {
+  SeasonRatingSegment,
+  SeasonRatingSheetComparison,
   SeasonRatingSheetProps,
-  SeasonRatingSheetStatus,
   SeasonRatingSheetViewModel,
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 import { useSeasonRatingSheet } from "./use-season-rating-sheet";
 
-/** Renders a single selectable rating option button. */
-function RatingOptionButton({
-  isSelected,
+/** Renders one rating on the track, drawn by its state: saved filled, draft ringed, the rest muted. */
+function RatingSegmentButton({
   onSelect,
-  rating,
+  segment,
 }: {
-  readonly isSelected: boolean;
   readonly onSelect: (rating: SeasonRatingValue) => void;
-  readonly rating: SeasonRatingValue;
+  readonly segment: SeasonRatingSegment;
 }) {
+  const { rating, state } = segment;
+  const presentation = SEASON_RATING_SEGMENT_PRESENTATION[state];
   const handlePress = useCallback(() => onSelect(rating), [onSelect, rating]);
 
   return (
     <Button
       accessibilityLabel={`Calificar ${rating} de 6`}
-      className={cn("flex-1", isSelected ? undefined : "bg-overlay")}
+      accessibilityState={presentation.accessibilityState}
+      className={cn("h-10 flex-1 rounded-[13px] px-0", presentation.button)}
       onPress={handlePress}
       size="sm"
-      variant={isSelected ? "primary" : "secondary"}
+      variant="ghost"
     >
-      <Button.Label>{rating}</Button.Label>
+      <Button.Label className={cn("text-[15px] tabular-nums", presentation.label)}>
+        {rating}
+      </Button.Label>
     </Button>
   );
 }
 
-/** Renders the rating options section with one button per allowed rating. */
-function RatingOptionsSection({
+/**
+ * Renders the six ratings as one segmented track: a `default` surface with a 3 pt inset and 2 pt
+ * between segments, so the saved and the draft value sit on the same rail.
+ */
+function RatingTrack({
   onSelect,
-  ratingOptions,
-  selectedRating,
+  segments,
 }: {
   readonly onSelect: (rating: SeasonRatingValue) => void;
-  readonly ratingOptions: readonly SeasonRatingValue[];
-  readonly selectedRating: SeasonRatingValue | null;
+  readonly segments: readonly SeasonRatingSegment[];
 }) {
   return (
-    <View className="bg-surface-secondary gap-3 rounded-2xl p-3">
-      <AppText className="text-foreground text-sm font-semibold">
-        Elige una nota
-      </AppText>
-      <View className="flex-row gap-2">
-        {ratingOptions.map((rating) => (
-          <RatingOptionButton
-            key={rating}
-            isSelected={selectedRating === rating}
-            onSelect={onSelect}
-            rating={rating}
-          />
-        ))}
-      </View>
+    <View className="bg-default flex-row gap-0.5 rounded-2xl p-[3px]">
+      {segments.map((segment) => (
+        <RatingSegmentButton key={segment.rating} onSelect={onSelect} segment={segment} />
+      ))}
     </View>
   );
 }
 
-/** Renders the submit status alert, or nothing while there is no status to show. */
-function SheetStatusAlert({
-  status,
+/**
+ * Renders the saved → draft comparison shown while the selection differs from the saved note.
+ * It is one plain 13 pt line, the numbers in `reading` and the arrow in `foreground`; the colours that
+ * tell saved from draft live on the track, and the spoken label supplies the words.
+ */
+function RatingComparison({
+  comparison,
 }: {
-  readonly status: SeasonRatingSheetStatus | null;
+  readonly comparison: SeasonRatingSheetComparison | null;
 }) {
-  if (!status) {
+  if (!comparison) {
     return null;
   }
 
   return (
-    <Alert status={status.kind === "failed" ? "warning" : "accent"}>
-      <Alert.Indicator />
-      <Alert.Content>
-        <Alert.Title>{status.label}</Alert.Title>
-        <Alert.Description>{status.description}</Alert.Description>
-      </Alert.Content>
-    </Alert>
+    <View
+      accessibilityLabel={comparison.accessibilityLabel}
+      accessibilityLiveRegion="polite"
+      accessible
+      className="flex-row items-center gap-2 self-start"
+      testID="season-rating-comparison"
+    >
+      <AppText className="text-reading text-[13px] tabular-nums">
+        {comparison.savedValueLabel}
+      </AppText>
+      <AppText className="text-foreground text-[13px] font-medium">
+        {SEASON_RATING_SHEET_COPY.comparisonArrow}
+      </AppText>
+      <AppText className="text-reading text-[13px] tabular-nums">
+        {comparison.draftValueLabel}
+      </AppText>
+    </View>
   );
 }
 
-/** Renders the close and save action buttons for the sheet. */
-function SheetFooterActions({
-  handleClose,
+/**
+ * Renders the save action, only while the draft differs from the saved note.
+ * It is never drawn in a disabled state: an unchanged note shows no action at all.
+ */
+function SheetSaveAction({
   handleSubmit,
-  isSubmitDisabled,
+  isSaveVisible,
 }: {
-  readonly handleClose: () => void;
   readonly handleSubmit: () => void;
-  readonly isSubmitDisabled: boolean;
+  readonly isSaveVisible: boolean;
 }) {
+  if (!isSaveVisible) {
+    return null;
+  }
+
   return (
-    <View className="flex-row gap-2">
-      <Button className="flex-1" onPress={handleClose} variant="tertiary">
-        <Button.Label>{SEASON_RATING_SHEET_COPY.closeButton}</Button.Label>
-      </Button>
-      <Button className="flex-1" isDisabled={isSubmitDisabled} onPress={handleSubmit}>
-        <Button.Label>{SEASON_RATING_SHEET_COPY.saveButton}</Button.Label>
-      </Button>
-    </View>
+    <Button accessibilityLabel={SEASON_RATING_SHEET_COPY.saveButton} onPress={handleSubmit}>
+      <Button.Label>{SEASON_RATING_SHEET_COPY.saveButton}</Button.Label>
+    </Button>
   );
 }
 
 /** Renders the sheet body content inside the BottomSheet portal. */
 function SeasonRatingSheetContent({
-  animeTitle,
-  bridgeSummary,
+  comparison,
   handleClose,
   handleSelectRating,
   handleSubmit,
-  isSubmitDisabled,
-  ratingOptions,
-  selectedRating,
-  status,
-}: Readonly<Omit<SeasonRatingSheetViewModel, 'isOpen'>> & {
+  isSaveVisible,
+  segments,
+}: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen" | "selectedRating">> & {
   readonly handleClose: () => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
 }) {
   return (
-    <BottomSheet.Content contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5">
-      <View className="gap-1">
-        <BottomSheet.Title className="text-foreground text-lg font-semibold">
-          {SEASON_RATING_SHEET_COPY.title}
-        </BottomSheet.Title>
-        <BottomSheet.Description className="text-muted text-sm">
-          {animeTitle}
-        </BottomSheet.Description>
-      </View>
+    <BottomSheet.Content
+      accessibilityLabel={SEASON_RATING_SHEET_COPY.title}
+      contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5"
+      onAccessibilityEscape={handleClose}
+    >
+      <BottomSheet.Title className="text-foreground text-lg font-semibold">
+        {SEASON_RATING_SHEET_COPY.title}
+      </BottomSheet.Title>
 
-      <Chip color="accent" size="sm" variant="secondary" className="self-start">
-        <Chip.Label>{SEASON_RATING_SHEET_COPY.candidate}</Chip.Label>
-      </Chip>
+      <RatingComparison comparison={comparison} />
 
-      <View className="bg-surface-secondary gap-1 rounded-2xl p-3">
-        <AppText className="text-muted text-xs font-medium uppercase">
-          {bridgeSummary.title}
-        </AppText>
-        <AppText className="text-foreground text-lg font-semibold">
-          {bridgeSummary.valueLabel}
-        </AppText>
-      </View>
+      <RatingTrack onSelect={handleSelectRating} segments={segments} />
 
-      <SheetStatusAlert status={status} />
-
-      <RatingOptionsSection
-        onSelect={handleSelectRating}
-        ratingOptions={ratingOptions}
-        selectedRating={selectedRating}
-      />
-
-      <SheetFooterActions
-        handleClose={handleClose}
-        handleSubmit={handleSubmit}
-        isSubmitDisabled={isSubmitDisabled}
-      />
+      <SheetSaveAction handleSubmit={handleSubmit} isSaveVisible={isSaveVisible} />
     </BottomSheet.Content>
   );
 }
 
-/** Renders the season rating sheet interface. */
+/**
+ * Renders the season rating sheet interface.
+ * It has no close control: the backdrop and the accessibility escape dismiss it, and the portal keeps
+ * VoiceOver inside the sheet while it is open so dismissal hands focus back to the opening control.
+ * It also draws no sync state: the status card above the list is the one place sync health appears.
+ */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
-    animeTitle,
-    bridgeSummary,
+    comparison,
     handleClose,
+    handleOpenChange,
     handleSelectRating,
     handleSubmit,
     isOpen,
-    isSubmitDisabled,
-    ratingOptions,
-    selectedRating,
-    status,
+    isSaveVisible,
+    segments,
   } = useSeasonRatingSheet(props);
 
   return (
-    <BottomSheet isOpen={isOpen} onOpenChange={handleClose}>
-      <BottomSheet.Portal>
-        <BottomSheet.Overlay />
+    <BottomSheet isOpen={isOpen} onOpenChange={handleOpenChange}>
+      <BottomSheet.Portal unstable_accessibilityContainerViewIsModal>
+        <BottomSheet.Overlay
+          accessibilityLabel={SEASON_RATING_SHEET_COPY.overlayLabel}
+          isCloseOnPress={false}
+          onPress={handleClose}
+        />
         <SeasonRatingSheetContent
-          animeTitle={animeTitle}
-          bridgeSummary={bridgeSummary}
+          comparison={comparison}
           handleClose={handleClose}
           handleSelectRating={handleSelectRating}
           handleSubmit={handleSubmit}
-          isSubmitDisabled={isSubmitDisabled}
-          ratingOptions={ratingOptions}
-          selectedRating={selectedRating}
-          status={status}
+          isSaveVisible={isSaveVisible}
+          segments={segments}
         />
       </BottomSheet.Portal>
     </BottomSheet>

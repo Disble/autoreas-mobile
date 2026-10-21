@@ -1,46 +1,17 @@
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
-import { ThemeToggle } from '../../../../components/theme-toggle';
 import type { AnimeTabsLayoutProps } from './anime-tabs-layout.types';
 import { useAnimeTabsLayout } from './use-anime-tabs-layout';
 
 /** Renders the anime tabs layout interface. */
 export function AnimeTabsLayout(props: Readonly<AnimeTabsLayoutProps>) {
-  const {
-    headerBackgroundColor,
-    isDark,
-    themeColorBackground,
-    themeColorForeground,
-  } = useAnimeTabsLayout(props);
+  const { screenOptions, settingsScreenOptions } = useAnimeTabsLayout(props);
 
   return (
     <View className="flex-1 bg-background">
-      <Stack
-        screenOptions={{
-          contentStyle: {
-            backgroundColor: themeColorBackground,
-          },
-          gestureDirection: 'horizontal',
-          gestureEnabled: true,
-          headerBackButtonDisplayMode: 'generic',
-          headerBlurEffect: isDark ? 'dark' : 'light',
-          headerRight: () => <ThemeToggle />,
-          headerStyle: {
-            backgroundColor: headerBackgroundColor,
-          },
-          headerTintColor: themeColorForeground,
-          headerTitleAlign: 'center',
-          headerTitleStyle: {
-            fontFamily: 'Inter_600SemiBold',
-          },
-          headerTransparent: true,
-        }}
-      >
+      <Stack screenOptions={screenOptions}>
         <Stack.Screen name="index" />
-        <Stack.Screen
-          name="settings"
-          options={{ headerTitle: 'Configuración' }}
-        />
+        <Stack.Screen name="settings" options={settingsScreenOptions} />
       </Stack>
     </View>
   );
