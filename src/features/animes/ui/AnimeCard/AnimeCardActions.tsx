@@ -41,7 +41,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           hitSlop={CARD_TOUCH_SLOP}
           onPress={onOpenPage}
         >
-          <StyledIonicons name="link" size={18} className="text-foreground" />
+          <StyledIonicons name="link-outline" size={18} className="text-foreground" />
         </Button>
       ) : null}
       {hasFolder ? (
@@ -53,7 +53,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           hitSlop={CARD_TOUCH_SLOP}
           onPress={onOpenFolder}
         >
-          <StyledIonicons name="folder-open" size={18} className="text-foreground" />
+          <StyledIonicons name="folder-outline" size={18} className="text-foreground" />
         </Button>
       ) : null}
       <View className="flex-1" />
@@ -77,7 +77,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
           hitSlop={CARD_TOUCH_SLOP}
           onPress={onReanudarPress}
         >
-          <Ionicons name="play" size={14} />
+          <Ionicons name="play-outline" size={14} />
           <Button.Label>Reanudar</Button.Label>
         </Button>
       ) : (

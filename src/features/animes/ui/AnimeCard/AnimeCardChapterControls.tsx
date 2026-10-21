@@ -32,7 +32,7 @@ export function AnimeCardChapterControls(props: Readonly<AnimeCardChapterControl
         isDisabled={disableDecrease}
         className={cn('size-10', disableDecrease ? 'opacity-40' : undefined)}
       >
-        <StyledIonicons name="remove" size={22} className="text-default-foreground" />
+        <StyledIonicons name="remove-outline" size={22} className="text-default-foreground" />
       </Button>
       <AppText className="text-foreground min-w-9 text-center text-base font-semibold tabular-nums">
         {nrocapvisto}
@@ -47,7 +47,7 @@ export function AnimeCardChapterControls(props: Readonly<AnimeCardChapterControl
         isDisabled={disableIncrease}
         className={cn('size-10', disableIncrease ? 'opacity-40' : undefined)}
       >
-        <StyledIonicons name="add" size={22} className="text-accent-foreground" />
+        <StyledIonicons name="add-outline" size={22} className="text-accent-foreground" />
       </Button>
     </>
   );

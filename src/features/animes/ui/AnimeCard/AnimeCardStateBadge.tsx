@@ -18,7 +18,7 @@ export function AnimeCardStateBadge({ stateChip, onPress }: Readonly<AnimeCardSt
       hitSlop={CARD_ELLIPSIS_TOUCH_SLOP}
       className="h-7 w-7 items-center justify-center rounded-full"
     >
-      <StyledIonicons className="text-muted" name="ellipsis-horizontal" size={18} />
+      <StyledIonicons className="text-muted" name="ellipsis-horizontal-outline" size={18} />
     </Pressable>
   );
 }
