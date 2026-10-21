@@ -54,6 +54,9 @@ build-*.apk
 build-*.aab
 build-*/
 
+# Machine-local Pi agent artifacts
+/.pi/
+
 # Machine-local agent skill registry (embeds absolute paths from the developer's home directory)
 .atl/
 # dlinter: mutation testing runtime artifacts
