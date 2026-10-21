@@ -48,6 +48,17 @@ describe('AnimeCardInfo meta line', () => {
     expect(getByText('• Nota 3/6').props.className).toContain('text-muted');
   });
 
+  it('keeps the meta line in the title group: 4 pt below the title and no slop past the actions gap', () => {
+    const { getByLabelText } = render(<AnimeCardInfo {...buildProps()} />);
+
+    const toggle = getByLabelText(META_LABEL);
+    const { bottom } = toggle.props.hitSlop as { bottom: number };
+
+    expect(toggle.props.className).toContain('mt-1');
+    // The actions row starts 12 pt below (`gap-3`), so the slop must stop at its edge.
+    expect(bottom).toBeLessThanOrEqual(12);
+  });
+
   it('keeps the whole line as the remaining-episodes toggle and gives the note no press of its own', () => {
     const onToggleMeta = jest.fn();
     const { getByLabelText, getAllByRole } = render(

@@ -10,7 +10,7 @@ Everything on this page describes the **checked-in static contract**. Nothing he
 proof of rendered appearance, Native compilation, contrast, or device output.
 
 > Back to the [README](../../README.md) · Foundations: [Color tokens](foundations/color-tokens.md) ·
-> [Typography](foundations/typography.md).
+> [Typography](foundations/typography.md) · [Spacing](foundations/spacing.md).
 > Components: [HeroUI Native primitives](components/heroui-native.md) · [AppText](components/app-text.md) ·
 > [Anime card](components/anime-card.md) ·
 > Patterns: [Loading, empty and error states](patterns/states.md) · [Responsive layout](patterns/layout.md) ·

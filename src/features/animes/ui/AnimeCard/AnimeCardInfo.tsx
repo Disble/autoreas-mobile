@@ -1,7 +1,7 @@
 import { Chip } from 'heroui-native';
 import { Pressable, View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
-import { META_DOT_SEPARATOR } from './anime-card.constants';
+import { META_DOT_SEPARATOR, META_TOGGLE_HIT_SLOP } from './anime-card.constants';
 import type { AnimeCardInfoProps, AnimeCardMetaToggleProps } from './anime-card.types';
 
 /**
@@ -12,8 +12,8 @@ import type { AnimeCardInfoProps, AnimeCardMetaToggleProps } from './anime-card.
  * No span caps its lines or asks for nowrap, so a long count or note wraps inside the text column.
  * The whole composed line is the accessible label of the pressable, so a screen reader hears one
  * string even though the line is drawn as several spans; the toggle keeps its action as a hint.
- * min-h-11/min-w-11 keep the tap target at 44 pt without enlarging the text: the Pressable box
- * grows, the visible line does not.
+ * The line is 18 pt tall (`leading-[18px]`) and reaches 44 pt through `META_TOGGLE_HIT_SLOP`, never
+ * through a minimum height: a taller box would add drawn space and pull the line away from the title.
  */
 function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
   const { segments, label, onPress } = props;
@@ -24,9 +24,10 @@ function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
       accessibilityLabel={label}
       accessibilityHint="Alternar episodios restantes"
       onPress={onPress}
-      className="mt-1 min-h-11 min-w-11 justify-center self-start"
+      hitSlop={META_TOGGLE_HIT_SLOP}
+      className="mt-1 self-start"
     >
-      <AppText className="text-muted">
+      <AppText className="text-muted leading-[18px]">
         {segments.map((segment, index) => (
           <AppText
             key={segment.kind}

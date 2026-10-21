@@ -42,10 +42,10 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | Cover column | `View className="min-h-36 w-24 self-stretch"` | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:18` |
 | Cover content | `StyledImage` with `contentFit="cover"` at `absolute inset-0` when `coverUri` exists, otherwise `CoverPlaceholderScene` in the same box | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:20`–`:24` |
 | Cover source rule | never reads `anime.portada`, never falls back to a network URL | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:8`–`:9` |
-| Text column | `View className="flex-1 gap-3 p-4"` | `src/features/animes/ui/AnimeCard/AnimeCardContent.tsx:34` |
+| Text column | `View className="flex-1 gap-3 p-4"`: 16 pt container edge, 12 pt between the text group and the actions row ([spacing tiers](../foundations/spacing.md)) | `src/features/animes/ui/AnimeCard/AnimeCardContent.tsx:34` |
 | Info row | `flex-row items-start gap-2` holding info and the state ellipsis | `src/features/animes/ui/AnimeCard/AnimeCardContent.tsx:35` |
 | Title | `AppText`, `text-foreground text-base leading-tight`, two lines maximum; weight 400 is the `font-normal` AppText prepends | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:56` |
-| Meta line | `Pressable` whose accessible label is the whole composed line, with `mt-1 min-h-11 min-w-11`, wrapping one `AppText className="text-muted"` that holds one span per segment | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:41` |
+| Meta line | `Pressable` whose accessible label is the whole composed line, with `mt-1` (4 pt under the title, inside the title group) and `hitSlop={META_TOGGLE_HIT_SLOP}`, wrapping one `AppText className="text-muted leading-[18px]"` that holds one span per segment | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:41` |
 | Meta line, drawn spans | one `AppText` per segment: `text-reading text-[13px]` for the count, `text-muted text-[11px]` for the state and the note, each later segment prefixed with the round dot ` • ` (`META_DOT_SEPARATOR`) while the spoken label keeps ` · `; no span sets `numberOfLines` or nowrap | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:29`–`:40` |
 | Meta line composition | `getAnimeCardMetaSegments({ nrocapvisto, stateLabel, noteLabel, restantesLabel, restantesShown })` for the drawn segments, and `getAnimeCardMetaLabel` for the composed accessible label | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:33`–`:41`, `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:88`–`:102`, `:109`–`:111` |
 | Meta line, count segment | `{ kind: 'count', text }`: `1 capítulo visto` / `{n} capítulos vistos`, fractional counts kept | `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:49`–`:51`, `:96` |
@@ -116,14 +116,16 @@ and nothing on the card reads it. The ellipsis still opens the existing `AnimeSt
 
 ## Touch targets and narrow widths
 
-Every pressable this surface owns reaches at least 44 pt as a **hit area**, and none of them grew a
-size class to get there: the drawn sizes, the `gap-2` row rhythm and the `p-4 gap-3` column are the
-same as before the change.
+Every pressable this surface owns reaches at least 44 pt as a **hit area**, and none of them grows a
+size class to get there: the drawn sizes, the `gap-2` row rhythm and the `p-4 gap-3` column follow the
+[spacing tiers](../foundations/spacing.md). The meta line used to reach 44 pt through `min-h-11`,
+which drew 26 pt of invisible box around the text and left it as far from the title as from the
+actions; it now uses slop.
 
 | Control | Drawn size | Hit area | Citation |
 | --- | --- | --- | --- |
 | State ellipsis | 28 pt (`h-7 w-7`), icon `size={18}` | `hitSlop={8}` on every side = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:17`–`:18` |
-| Meta toggle | the 13/11 pt line itself | `min-h-11 min-w-11` on the `Pressable` = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:28` |
+| Meta toggle | the 13/11 pt line, 18 pt tall (`leading-[18px]`) | `META_TOGGLE_HIT_SLOP` = 14 pt above + 12 pt below = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:28` |
 | Page shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:20`–`:29` |
 | Folder shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:32`–`:41` |
 | Note star | 40 pt (`size="sm"`, icon only) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:44`–`:53` |
@@ -240,7 +242,7 @@ kind of sheet (`src/features/animes/ui/AnimeStateSheet/AnimeStateSheet.tsx:19`).
 - **No appearance, no rendering.** Nothing here approves spacing, contrast, hierarchy or polish, and
   no screenshot, simulator, device or Native-compilation observation backs any statement.
 - **No measured touch target and no measured wrap.** The 44 pt and 48 pt areas and the wrapping meta
-  line are read from props and class names (`min-h-11`, `hitSlop={8}`, `hitSlop={4}`, no
+  line are read from props and class names (`META_TOGGLE_HIT_SLOP`, `hitSlop={8}`, `hitSlop={4}`, no
   `numberOfLines`); nothing here measured a device.
 - **No responsive claim for the card.** `AnimeCardProps` carries no layout mode
   (`src/features/animes/ui/AnimeCard/anime-card.types.ts:5`–`:24`), so the card does not change its own

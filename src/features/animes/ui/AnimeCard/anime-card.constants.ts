@@ -7,6 +7,13 @@ export const META_SEPARATOR = ' · ';
 export const META_DOT_SEPARATOR = ' • ';
 
 /**
+ * Grows the 18 pt meta line to a 44 pt touch area without adding drawn space, so the line stays 4 pt
+ * under the title. The bottom edge stops at 12 pt, where the actions row begins (`gap-3`); the rest
+ * of the 26 pt goes above, over the title, which is not pressable.
+ */
+export const META_TOGGLE_HIT_SLOP = { top: 14, bottom: 12, left: 0, right: 0 } as const;
+
+/**
  * Horizontal and vertical hit-slop added to a 40 pt button so its touch area reaches 48 pt.
  * A visual size stays at 40 pt; only the reachable area grows.
  */

@@ -3,7 +3,7 @@ name: mobile-design-system
 description: "Trigger: design system, UI, token, color, colour, typography, theme, component, style, restyle, mockup. Use before changing UI in autoreas-mobile; the rules here, the detail in docs/design/."
 metadata:
   author: autoreas-mobile
-  version: "1.3"
+  version: "1.4"
   scope: project
   updates: living
 ---
@@ -38,6 +38,13 @@ step brighter than `muted`, for a count read next to muted details (`text-readin
 (`Inter_400Regular`) as a family, and never invent a second family — Inter is all the app ships.
 `AppText` supplies `font-normal` by default, so a heavier weight is named at the call site.
 Detail: `docs/design/foundations/typography.md`, `docs/design/components/app-text.md`.
+
+### 2b. Spacing on a 4 pt grid, by relationship
+
+4 pt inside a group, 8 pt between siblings in a row, 12 pt between groups, 16 pt at a container
+edge. A gap inside a group is at most half the gap around it. A touch area reaches 44 pt through
+`hitSlop`, never `min-h-11` or padding, because a taller box shows up as spacing.
+Detail: `docs/design/foundations/spacing.md`.
 
 ### 3. `.tsx` is dumb UI
 
@@ -106,6 +113,7 @@ indicator. Detail: `docs/design/patterns/states.md`.
 - `docs/design/README.md` — the index, token ownership, and where the app is behind its own rules.
 - `docs/design/foundations/color-tokens.md` — the role vocabulary and what owns each value.
 - `docs/design/foundations/typography.md` — the four weight roles and the one-name contract.
+- `docs/design/foundations/spacing.md` — the 4 pt tiers, the grouping rule, slop over size.
 - `docs/design/components/heroui-native.md` — the primitives that are actually rendered.
 - `docs/design/components/app-text.md` — the text wrapper and its default weight.
 - `docs/design/patterns/states.md` — every state that exists, with its trigger and component.

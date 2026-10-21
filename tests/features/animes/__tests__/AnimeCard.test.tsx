@@ -423,13 +423,17 @@ describe('AnimeCard', () => {
     expect(ellipsis.props.className).toContain('w-7');
   });
 
-  it('gives the meta toggle a 44 pt minimum touch area', () => {
-    const { getByLabelText } = render(<AnimeCard {...buildAnimeCardProps()} />);
+  it('reaches a 44 pt touch area on the meta toggle through hit slop, not a taller box', () => {
+    const { getByLabelText, getByText } = render(<AnimeCard {...buildAnimeCardProps()} />);
 
     const toggle = getByLabelText('4 capítulos vistos · Viendo');
+    const line = getByText('4 capítulos vistos • Viendo');
+    const { top, bottom } = toggle.props.hitSlop as { top: number; bottom: number };
 
-    expect(toggle.props.className).toContain('min-h-11');
-    expect(toggle.props.className).toContain('min-w-11');
+    // The drawn line is 18 pt tall, so 44 pt needs 26 pt of slop split across the two edges.
+    expect(line.props.className).toContain('leading-[18px]');
+    expect(top + bottom).toBe(26);
+    expect(toggle.props.className).not.toContain('min-h-11');
   });
 
   it('gives the page and folder shortcuts a 48 pt touch area at their 40 pt visual size', () => {
