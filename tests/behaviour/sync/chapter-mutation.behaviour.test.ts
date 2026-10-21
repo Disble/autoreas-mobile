@@ -112,22 +112,36 @@ describe('a local chapter mutation updates the row and queues exactly one outbox
     expect((await readAnime(adapter))?.nrocapvisto).toBe(3);
   });
 
-  it('changes the estado and queues it for the bridge', async () => {
-    const adapter = await openWithAnime(4, 0);
+  it.each([0, 1, 2, 3])('changes only estado to %s and queues only status', async (estado) => {
+    const adapter = await openWithAnime(1, (estado + 1) % 4);
+    await adapter.runAsync(
+      'UPDATE animes SET totalcap = 12, fechaUltCapVisto = 1700000000000 WHERE _id = ?',
+      'anime-1',
+    );
+    const before = await adapter.getFirstAsync<Record<string, unknown>>(
+      'SELECT * FROM animes WHERE _id = ?',
+      'anime-1',
+    );
+    // Without the seeded row the whole-row assertion below would compare against nothing.
+    if (!before) throw new Error('expected the seeded anime row to exist');
 
-    await applyAnimeMutationPatch(
+    const changed = await applyAnimeMutationPatch(
       adapter,
       'anime-1',
-      (anime, now) => buildSetEstadoPatch(anime, 2, now),
+      () => buildSetEstadoPatch(estado),
       'estado',
     );
 
-    const anime = await readAnime(adapter);
+    expect(changed).toBe(true);
+    expect(await adapter.getFirstAsync('SELECT * FROM animes WHERE _id = ?', 'anime-1'))
+      .toEqual({ ...before, estado });
     const outbox = await readOutbox(adapter);
-
-    expect(anime?.estado).toBe(2);
-    expect(outbox).toHaveLength(1);
-    expect(JSON.parse(outbox[0].payload)).toMatchObject({ status: 2 });
+    expect(outbox).toEqual([{
+      anime_id: 'anime-1',
+      operation: 'update',
+      payload: JSON.stringify({ status: estado }),
+      status: 'pending',
+    }]);
   });
 
   it('writes nothing at all when the anime does not exist', async () => {

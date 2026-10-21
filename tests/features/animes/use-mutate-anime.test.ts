@@ -376,8 +376,15 @@ describe('useMutateAnime', () => {
     });
   });
 
-  it('setEstado escribe el patch de estado y registra operation_log pendiente', async () => {
-    const selectMock = buildSelectMock(baseAnimeRow);
+  it.each([0, 1, 2, 3])('setEstado only writes and queues status %s', async (estado) => {
+    const selectMock = buildSelectMock({
+      ...baseAnimeRow,
+      estado: (estado + 1) % 4,
+      nrocapvisto: 1,
+      totalcap: 12,
+      primeravez: 1,
+      fechaUltCapVisto: now - 86400000,
+    });
     const txMocks = createTxDbMocks();
 
     mockCreateDrizzleDb.mockReturnValue(selectMock);
@@ -386,40 +393,18 @@ describe('useMutateAnime', () => {
     const { result } = renderHook(() => useMutateAnime());
 
     await act(async () => {
-      await result.current.setEstado('anime-1', 3);
+      await result.current.setEstado('anime-1', estado);
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 3,
-      fechaUltCapVisto: now,
-      estado: 3,
-    });
-
-    const insertPayload = txMocks.values.mock.calls[0][0];
-    expect(JSON.parse(insertPayload.payload)).toEqual({
-      episodesWatched: 3,
-      lastWatchedAt: now,
-      status: 3,
-    });
-  });
-
-  it('setEstado snapea nrocapvisto a totalcap cuando se marca finalizado', async () => {
-    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 5, totalcap: 12 });
-    const txMocks = createTxDbMocks();
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
-
-    const { result } = renderHook(() => useMutateAnime());
-
-    await act(async () => {
-      await result.current.setEstado('anime-1', 1);
-    });
-
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 12,
-      fechaUltCapVisto: now,
-      estado: 1,
+    expect(txMocks.set).toHaveBeenCalledTimes(1);
+    expect(txMocks.set).toHaveBeenCalledWith({ estado });
+    expect(txMocks.values).toHaveBeenCalledTimes(1);
+    expect(txMocks.values).toHaveBeenCalledWith({
+      animeId: 'anime-1',
+      operation: 'update',
+      payload: JSON.stringify({ status: estado }),
+      status: 'pending',
+      createdAt: now,
     });
   });
 

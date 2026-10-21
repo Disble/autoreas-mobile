@@ -95,48 +95,12 @@ describe('anime mutation helpers', () => {
     });
   });
 
-  it('buildSetEstadoPatch envía el nuevo estado sin tocar nrocapvisto cuando no es finalizado', () => {
-    expect(buildSetEstadoPatch(baseAnime, 3, now)).toEqual({
-      episodesWatched: 3,
-      lastWatchedAt: now,
-      status: 3,
-    });
+  it.each([0, 1, 2, 3])('buildSetEstadoPatch only includes status %s', (estado) => {
+    expect(buildSetEstadoPatch(estado)).toEqual({ status: estado });
   });
 
-  it('buildSetEstadoPatch snapea nrocapvisto a totalcap cuando se marca finalizado y hay totalcap', () => {
-    expect(
-      buildSetEstadoPatch(
-        {
-          ...baseAnime,
-          nrocapvisto: 5,
-          totalcap: 12,
-        },
-        1,
-        now,
-      ),
-    ).toEqual({
-      episodesWatched: 12,
-      lastWatchedAt: now,
-      status: 1,
-    });
-  });
-
-  it('buildSetEstadoPatch deja nrocapvisto intacto cuando se marca finalizado sin totalcap', () => {
-    expect(
-      buildSetEstadoPatch(
-        {
-          ...baseAnime,
-          nrocapvisto: 7,
-          totalcap: null,
-        },
-        1,
-        now,
-      ),
-    ).toEqual({
-      episodesWatched: 7,
-      lastWatchedAt: now,
-      status: 1,
-    });
+  it('toLocalAnimeUpdate omits every field absent from a status-only patch', () => {
+    expect(toLocalAnimeUpdate({ status: 1 })).toEqual({ estado: 1 });
   });
 
   it('buildCapPlusHalfPatch suma medio capítulo desde un entero', () => {
