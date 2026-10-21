@@ -109,7 +109,7 @@ export function useMutateAnime() {
     async (animeId: string, estado: number): Promise<void> =>
       runTrackedMutation(
         animeId,
-        (anime, now) => buildSetEstadoPatch(anime, estado, now),
+        () => buildSetEstadoPatch(estado),
         "setEstado",
       ),
     [runTrackedMutation],

@@ -3,10 +3,15 @@ import type { Anime } from '../../infrastructure/validation/anime-schema';
 /** Defines a mutation patch factory derived from the current anime snapshot. */
 export type AnimeMutationPatchBuilder = (anime: Anime, now: number) => AnimeMutationSyncPatch;
 
-/** Defines the fields that an anime mutation synchronizes with the bridge. */
+/**
+ * Defines the fields that an anime mutation synchronizes with the bridge.
+ *
+ * Every field is optional on purpose: a mutation carries only the fields it actually changes, so a
+ * status change never resends chapter progress or viewing dates it did not touch.
+ */
 export interface AnimeMutationSyncPatch {
-  readonly episodesWatched: number;
-  readonly lastWatchedAt: number;
+  readonly episodesWatched?: number;
+  readonly lastWatchedAt?: number;
   readonly status?: number;
   readonly premieredAt?: number;
   readonly firstCycle?: boolean;

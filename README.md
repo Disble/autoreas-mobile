@@ -88,7 +88,9 @@ success, backlog read, and whether the persistent foreground service is actually
 - **Estrenos workflow** — move new-season titles across the *Sin ver → Ver hoy → Visto* pseudo-days.
 - **One-tap chapter tracking** — Cap+ / Cap- always visible on the card, never behind a submenu.
 - **Status machine** — Viendo, Finalizado, No me gustó, En pausa. Reaching the last chapter
-  (`nrocapvisto == totalcap`) auto-transitions the anime to *Finalizado* in the same transaction.
+  (`nrocapvisto == totalcap`) auto-transitions the anime to *Finalizado* in the same transaction,
+  while a manual status change persists and syncs only the status: it never rewrites watched
+  chapters, the last-viewed date or the first-cycle metadata.
 - **Season ratings** — rate active-season titles; ratings queue and sync like any other mutation.
 
 ### Sync

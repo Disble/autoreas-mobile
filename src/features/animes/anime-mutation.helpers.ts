@@ -86,22 +86,13 @@ export function buildCapMinusPatch(
 
 /**
  * Builds the absolute bridge patch for changing only the `estado` (Viendo/Finalizado/etc).
- * When transitioning to Finalizado and a `totalcap` exists, snaps `nrocapvisto` to the total
- * so progress and completion stay consistent in a single idempotent payload.
+ *
+ * The patch carries nothing but `status`, because a manual status change must not move watched
+ * chapters, the last-viewed date or the first-cycle metadata. Those fields belong to the chapter
+ * builders, which keep their own auto-completion and auto-reopening rules.
  */
-export function buildSetEstadoPatch(
-  anime: Anime,
-  estado: number,
-  now: number,
-): AnimeMutationSyncPatch {
-  const shouldSnapToTotal =
-    estado === 1 && anime.totalcap != null && anime.totalcap > 0;
-
-  return {
-    episodesWatched: shouldSnapToTotal ? (anime.totalcap as number) : anime.nrocapvisto,
-    lastWatchedAt: now,
-    status: estado,
-  };
+export function buildSetEstadoPatch(estado: number): AnimeMutationSyncPatch {
+  return { status: estado };
 }
 
 /**
@@ -149,19 +140,26 @@ export function buildCapMinusHalfPatch(
 
 /**
  * Converts a bridge-facing patch into the SQLite row shape used by the local anime table.
- * The mapping keeps local integer flags aligned with remote boolean semantics.
+ * The mapping keeps local integer flags aligned with remote boolean semantics, and writes only the
+ * fields the patch actually carries: a patch without `episodesWatched` or `lastWatchedAt` leaves the
+ * stored chapter count and viewing date untouched.
  */
 export function toLocalAnimeUpdate(patch: AnimeMutationSyncPatch) {
   const localUpdate: {
-    nrocapvisto: number;
-    fechaUltCapVisto: number;
+    nrocapvisto?: number;
+    fechaUltCapVisto?: number;
     estado?: number;
     fechaEstreno?: number;
     primeravez?: 0 | 1;
-  } = {
-    nrocapvisto: patch.episodesWatched,
-    fechaUltCapVisto: patch.lastWatchedAt,
-  };
+  } = {};
+
+  if (patch.episodesWatched !== undefined) {
+    localUpdate.nrocapvisto = patch.episodesWatched;
+  }
+
+  if (patch.lastWatchedAt !== undefined) {
+    localUpdate.fechaUltCapVisto = patch.lastWatchedAt;
+  }
 
   if (patch.status !== undefined) {
     localUpdate.estado = patch.status;
