@@ -1,27 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "heroui-native";
+import { View } from "react-native";
+import { SyncStatusButton } from "../SyncStatusControl/SyncStatusButton";
 import type { AnimeListScreenHeaderRightProps } from "./anime-list-screen.types";
 
-/** Renders the anime list screen header right interface. */
+/** Renders the bar's fixed-width end column: the sync status button, then manual refresh. */
 export function AnimeListScreenHeaderRight({
   refreshAccessibilityLabel,
   isRefreshing,
   isManualSyncEnabled,
+  sideColumnStyle,
+  syncStatus,
   themeColorForeground,
-  handleRefresh,
+  handleOpenSyncSheet,
+  handleRefreshPress,
 }: Readonly<AnimeListScreenHeaderRightProps>) {
   return (
-    <Button
-      accessibilityLabel={refreshAccessibilityLabel}
-      isDisabled={isRefreshing || !isManualSyncEnabled}
-      isIconOnly
-      onPress={() => {
-        void handleRefresh();
-      }}
-      size="sm"
-      variant="ghost"
-    >
-      <Ionicons name="refresh" color={themeColorForeground} size={20} />
-    </Button>
+    <View className="flex-row items-center justify-end gap-1" style={sideColumnStyle}>
+      <SyncStatusButton onPress={handleOpenSyncSheet} status={syncStatus} />
+      <Button
+        accessibilityLabel={refreshAccessibilityLabel}
+        className="size-11 rounded-full"
+        isDisabled={isRefreshing || !isManualSyncEnabled}
+        isIconOnly
+        onPress={handleRefreshPress}
+        variant="ghost"
+      >
+        <Ionicons name="refresh" color={themeColorForeground} size={22} />
+      </Button>
+    </View>
   );
 }

@@ -1,47 +1,23 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
-import { AnimeListScreenContent } from './AnimeListScreenContent';
 import { AnimeListScreenFilterSection } from './AnimeListScreenFilterSection';
+import { AnimeListScreenListColumn } from './AnimeListScreenListColumn';
 import { AnimeListScreenSheets } from './AnimeListScreenSheets';
-import { AnimeListScreenStatusSection } from './AnimeListScreenStatusSection';
-import {
-  buildHeaderLeftRenderer,
-  buildHeaderRightRenderer,
-} from './anime-list-screen.helpers';
+import { buildAnimeListScreenOptions } from './anime-list-screen.helpers';
 import type { AnimeListScreenViewProps } from './anime-list-screen.types';
 
 /** Renders the anime list screen view interface. */
 export function AnimeListScreenView(props: Readonly<AnimeListScreenViewProps>) {
   const { model } = props;
-  const headerLeft = buildHeaderLeftRenderer({
-    handleOpenSettings: model.handleOpenSettings,
-    themeColorForeground: model.themeColorForeground,
-  });
-  const headerRight = buildHeaderRightRenderer({
-    refreshAccessibilityLabel: model.refreshAccessibilityLabel,
-    isRefreshing: model.isRefreshing,
-    isManualSyncEnabled: model.isManualSyncEnabled,
-    themeColorForeground: model.themeColorForeground,
-    handleRefresh: model.handleRefresh,
-  });
+  const screenOptions = buildAnimeListScreenOptions(model);
 
   return (
     <View className="bg-background flex-1">
-      <Stack.Screen
-        options={{
-          headerTitle: model.contextualHeader.title,
-          headerLeft,
-          headerRight,
-        }}
-      />
+      <Stack.Screen options={screenOptions} />
 
       <View
-        className={
-          model.layoutMode === 'tablet-landscape'
-            ? 'flex-1 flex-row pt-16'
-            : 'flex-1 pt-16'
-        }
+        className={model.layoutMode === 'tablet-landscape' ? 'flex-1 flex-row pt-16' : 'flex-1 pt-16'}
       >
         <AnimeListScreenFilterSection
           filterOptions={model.filterOptions}
@@ -51,33 +27,34 @@ export function AnimeListScreenView(props: Readonly<AnimeListScreenViewProps>) {
           layoutMode={model.layoutMode}
           handleSelectedFilterChange={model.handleSelectedFilterChange}
         />
-
-        <View className="flex-1">
-          <AnimeListScreenStatusSection
-            contextualHeader={model.contextualHeader}
-            isSeasonMode={model.isSeasonMode}
-            syncStatus={model.syncStatus}
-            handleOpenSettings={model.handleOpenSettings}
-          />
-          <AnimeListScreenContent
-            animes={model.animes}
-            isEmpty={model.isEmpty}
-            isManualSyncEnabled={model.isManualSyncEnabled}
-            isMutatingAnimeById={model.isMutatingAnimeById}
-            isRefreshing={model.isRefreshing}
-            layoutMode={model.layoutMode}
-            selectedFilter={model.selectedFilter}
-            getAnimeCardProps={model.getAnimeCardProps}
-            handleRefresh={model.handleRefresh}
-          />
-        </View>
+        <AnimeListScreenListColumn
+          animes={model.animes}
+          contextualHeader={model.contextualHeader}
+          isEmpty={model.isEmpty}
+          isManualSyncEnabled={model.isManualSyncEnabled}
+          isMutatingAnimeById={model.isMutatingAnimeById}
+          isRefreshing={model.isRefreshing}
+          isSeasonMode={model.isSeasonMode}
+          layoutMode={model.layoutMode}
+          selectedFilter={model.selectedFilter}
+          syncStatus={model.syncStatus}
+          getAnimeCardProps={model.getAnimeCardProps}
+          handleOpenSettings={model.handleOpenSettings}
+          handleRefresh={model.handleRefresh}
+        />
       </View>
 
       <AnimeListScreenSheets
         stateSheetRequest={model.stateSheetRequest}
         seasonRatingSheetRequest={model.seasonRatingSheetRequest}
+        isManualSyncEnabled={model.isManualSyncEnabled}
+        isSyncSheetOpen={model.isSyncSheetOpen}
+        syncStatus={model.syncStatus}
         handleCloseSeasonRatingSheet={model.handleCloseSeasonRatingSheet}
         handleCloseStateSheet={model.handleCloseStateSheet}
+        handleCloseSyncSheet={model.handleCloseSyncSheet}
+        handleOpenSettings={model.handleOpenSettings}
+        handleRefresh={model.handleRefresh}
         handleSeasonRatingSubmit={model.handleSeasonRatingSubmit}
         handleStateSheetSelect={model.handleStateSheetSelect}
       />

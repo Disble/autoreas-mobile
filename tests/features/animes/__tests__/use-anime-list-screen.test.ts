@@ -100,6 +100,7 @@ describe("useAnimeListScreen", () => {
     }));
     mockUseResponsiveLayout.mockReturnValue({
       layout: "phone",
+      width: 412,
       isCompact: true,
     });
   });
@@ -353,6 +354,7 @@ describe("useAnimeListScreen", () => {
   it("expone el layoutMode desde useResponsiveLayout", () => {
     mockUseResponsiveLayout.mockReturnValueOnce({
       layout: "tablet-landscape",
+      width: 1400,
       isCompact: false,
     });
 

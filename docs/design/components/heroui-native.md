@@ -18,7 +18,7 @@ size, spacing, radius, colour or appearance value as guidance.
 | `Button` | 17 files | Every action: confirm, cancel, retry, refresh, save, chapter `±` | `src/features/startup/ui/StartupBoundary/StartupBoundaryFallback.tsx:67` |
 | `Card` | 10 files | Screen-level containers and the anime list-item shell | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:41` |
 | `Chip` | 7 files | Compact state and status labels; 6 use `size="sm" variant="secondary"`, the filter rail uses `size="md"` with `primary`/`tertiary` (`src/features/animes/ui/AnimeFilterRail/AnimeFilterRail.tsx:34`) | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:33` |
-| `Alert` | 8 files | Persistent inline status and error blocks, colour chosen by `status` | `src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx:28` |
+| `Alert` | 8 files | Persistent inline status and error blocks, colour chosen by `status` | `src/features/animes/ui/SyncStatusControl/SyncStatusAlert.tsx` |
 | `BottomSheet` | 3 files | Panels opened from a screen action: state choice, folder setup, season rating | `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx:184` |
 | `Spinner` | 3 files | Indeterminate loading while a payload or the database is not ready | `src/features/startup/ui/StartupBoundary/StartupBoundaryLoading.tsx:16` |
 | `Dialog` | 2 files | Blocking decisions rendered without a trigger (reset, battery exemption) | `src/features/battery-exemption/ui/BatteryExemptionPrompt/BatteryExemptionPrompt.tsx:47` |

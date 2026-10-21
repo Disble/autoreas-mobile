@@ -26,6 +26,7 @@ import {
   buildContextualHeader,
   computeFilterCounts,
   deriveManualSyncEnabled,
+  deriveHeaderLayout,
   deriveVisibleSyncStatus,
 } from "./anime-list-screen.helpers";
 import type {
@@ -59,13 +60,14 @@ export function useAnimeListScreen(
     useState<AnimeStateSheetRequest | null>(null);
   const [seasonRatingSheetRequest, setSeasonRatingSheetRequest] =
     useState<SeasonRatingSheetRequest | null>(null);
+  const [isSyncSheetOpen, setIsSyncSheetOpen] = useState(false);
 
   // 3. Context/3rd Party Hooks
   const router = useRouter();
   const { toast } = useToast();
   const { isDark } = useAppTheme();
   const [themeColorForeground] = useThemeColor(["foreground"]);
-  const { layout: layoutMode } = useResponsiveLayout();
+  const { layout: layoutMode, width: frameWidth } = useResponsiveLayout();
   const networkState = useNetworkState();
 
   // 4. Queries/Mutations
@@ -128,6 +130,10 @@ export function useAnimeListScreen(
         new Date(),
       ),
     [connectionStatus, isConfigured, isDeviceOnline, lastSyncAt, pendingOpsCount],
+  );
+  const headerLayout = useMemo(
+    () => deriveHeaderLayout(layoutMode, frameWidth),
+    [frameWidth, layoutMode],
   );
   const isManualSyncEnabled = useMemo(
     () =>
@@ -326,6 +332,18 @@ export function useAnimeListScreen(
     router.push(settingsHref);
   }, [router, settingsHref]);
 
+  const handleRefreshPress = useCallback(() => {
+    void handleRefresh();
+  }, [handleRefresh]);
+
+  const handleOpenSyncSheet = useCallback(() => {
+    setIsSyncSheetOpen(true);
+  }, []);
+
+  const handleCloseSyncSheet = useCallback(() => {
+    setIsSyncSheetOpen(false);
+  }, []);
+
   // 7. Effects
   // Soft-follow the season-mode default: while the user has not manually picked a filter,
   // keep the active filter aligned with the bridge-owned season mode (ON -> 'Ver hoy',
@@ -345,11 +363,13 @@ export function useAnimeListScreen(
     filterCounts,
     contextualHeader,
     layoutMode,
+    headerLayout,
     isMutatingAnimeById,
     isDark,
     isEmpty,
     isRefreshing,
     isManualSyncEnabled,
+    isSyncSheetOpen,
     refreshAccessibilityLabel: ANIME_LIST_SCREEN_REFRESH_LABEL,
     selectedFilter,
     syncStatus,
@@ -365,10 +385,13 @@ export function useAnimeListScreen(
     handleCapPlusHalf,
     handleCloseStateSheet,
     handleCloseSeasonRatingSheet,
+    handleCloseSyncSheet,
     handleOpenSettings,
+    handleOpenSyncSheet,
     handleOpenSeasonRatingSheet,
     handleOpenStateSheet,
     handleRefresh,
+    handleRefreshPress,
     handleSelectedFilterChange,
     handleSeasonRatingSubmit,
     handleStateSheetSelect,

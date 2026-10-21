@@ -202,8 +202,8 @@ what any device paints.
 The card has **no season-mode branch**. Season mode is read from the pairing row
 (`src/features/animes/ui/AnimeListScreen/use-anime-list-screen.ts:89`) and changes the default filter
 to `Ver hoy` (`src/features/animes/ui/AnimeListScreen/use-anime-list-screen.ts:321`,
-`src/features/animes/anime.helpers.ts:90`–`:91`) plus a `Modo temporada` chip in the list's status
-section (`src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx:20`–`:24`). What
+`src/features/animes/anime.helpers.ts:90`–`:91`) plus a `Modo temporada` chip in the list's
+head (`src/features/animes/ui/AnimeListScreen/AnimeListScreenListHead.tsx`). What
 appears on the card is projection-driven: `buildAnimeSeasonProjection` returns `null` unless the anime
 is a candidate of the open season (`src/features/animes/anime-season.helpers.ts:55`–`:57`), and
 `getAnimeSeasonStatus` returns `null` without a projection

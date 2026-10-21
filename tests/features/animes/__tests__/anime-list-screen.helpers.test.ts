@@ -2,6 +2,7 @@ import {
   buildRefreshFailureFeedback,
   buildContextualHeader,
   buildHeaderLeftRenderer,
+  deriveHeaderLayout,
   deriveManualSyncEnabled,
   deriveVisibleSyncStatus,
   buildHeaderRightRenderer,
@@ -415,6 +416,7 @@ describe("anime-list-screen helpers", () => {
       const handleOpenSettings = jest.fn();
       const renderer = buildHeaderLeftRenderer({
         handleOpenSettings,
+        sideColumnStyle: { width: 96 },
         themeColorForeground: "#fff",
       });
 
@@ -433,8 +435,11 @@ describe("anime-list-screen helpers", () => {
         refreshAccessibilityLabel: "Actualizar lista",
         isRefreshing: true,
         isManualSyncEnabled: false,
+        sideColumnStyle: { width: 240 },
+        syncStatus: SYNCED_STATUS,
         themeColorForeground: "#000",
-        handleRefresh,
+        handleOpenSyncSheet: jest.fn(),
+        handleRefreshPress: handleRefresh,
       });
 
       const element = renderer();
@@ -445,8 +450,30 @@ describe("anime-list-screen helpers", () => {
           isRefreshing: true,
           isManualSyncEnabled: false,
           themeColorForeground: "#000",
-          handleRefresh,
+          handleRefreshPress: handleRefresh,
         });
+    });
+
+    it("deriveHeaderLayout fixes the side columns at 96 on a phone and 240 on a tablet", () => {
+      expect(deriveHeaderLayout("phone", 412)).toEqual({
+        sideColumnStyle: { width: 96 },
+        titleStyle: { maxWidth: 188 },
+      });
+      expect(deriveHeaderLayout("tablet-landscape", 1400)).toEqual({
+        sideColumnStyle: { width: 240 },
+        titleStyle: { maxWidth: 888 },
+      });
+      expect(deriveHeaderLayout("tablet-portrait", 400).titleStyle.maxWidth).toBe(0);
     });
   });
 });
+
+/** An up-to-date sync status, the bar button's resting state. */
+const SYNCED_STATUS = {
+  actionLabel: null,
+  chipLabel: "Al día",
+  description: "Último sync hace un momento.",
+  kind: "synced",
+  title: "Al día",
+  tone: "success",
+} as const;

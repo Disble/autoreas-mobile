@@ -156,7 +156,7 @@ function SeasonRatingSheetContent({
  * Renders the season rating sheet interface.
  * It has no close control: the backdrop and the accessibility escape dismiss it, and the portal keeps
  * VoiceOver inside the sheet while it is open so dismissal hands focus back to the opening control.
- * It also draws no sync state: the status card above the list is the one place sync health appears.
+ * It also draws no sync state: the sync button in the bar is the one place sync health appears.
  */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {

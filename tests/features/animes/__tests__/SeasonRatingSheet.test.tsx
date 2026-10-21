@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, within } from '@testing-library/react-native';
-import { AnimeListScreenStatusSection } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection';
-import type { AnimeListScreenStatusSectionProps } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
+import { AnimeListScreenListHead } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenListHead';
+import type { AnimeListScreenListHeadProps } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 import { SeasonRatingSheet } from '../../../../src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet';
 
 jest.mock('../../../../src/features/anime-folders/ui/AnimeFolderBanner', () => ({
@@ -16,18 +16,19 @@ const STATUS_SECTION_CONTEXTUAL_HEADER = {
 };
 
 /** Fixture sync status for the shared status card, hoisted so the prop is not a fresh object per render. */
-const STATUS_SECTION_SYNC_STATUS: AnimeListScreenStatusSectionProps['syncStatus'] = {
+const STATUS_SECTION_SYNC_STATUS: AnimeListScreenListHeadProps['syncStatus'] = {
   actionLabel: null,
-  chipLabel: 'Catálogo local',
-  description: 'La copia local sigue disponible.',
-  title: 'Catálogo local listo',
-  tone: 'default',
+  chipLabel: 'Envío rechazado',
+  description: 'La PC respondió, pero rechazó el envío.',
+  kind: 'rejected',
+  title: 'La PC no aceptó tus cambios',
+  tone: 'danger',
 };
 
 /** Renders the one shared sync surface that sits above the list. */
 function renderStatusSection() {
   return (
-    <AnimeListScreenStatusSection
+    <AnimeListScreenListHead
       contextualHeader={STATUS_SECTION_CONTEXTUAL_HEADER}
       handleOpenSettings={jest.fn()}
       isSeasonMode
@@ -106,7 +107,7 @@ describe('SeasonRatingSheet', () => {
     expect(within(sheet).queryByText('Bridge confirmó esta nota')).toBeNull();
   });
 
-  it('renders no status alert while the shared card above the list still renders its chip', () => {
+  it('renders no status alert while the list-head alert still renders its chip', () => {
     const { getAllByTestId, getByText } = render(
       <>
         {renderStatusSection()}
@@ -121,7 +122,7 @@ describe('SeasonRatingSheet', () => {
       </>,
     );
 
-    expect(getByText('Catálogo local')).toBeTruthy();
+    expect(getByText('Envío rechazado')).toBeTruthy();
     expect(getAllByTestId('heroui-alert')).toHaveLength(1);
   });
 

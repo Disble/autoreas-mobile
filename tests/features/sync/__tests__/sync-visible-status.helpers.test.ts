@@ -94,6 +94,7 @@ describe('sync-visible-status.helpers', () => {
     it('reports an in-flight sync with the accent tone', () => {
       expect(derive({ connectionStatus: 'syncing', pendingOpsCount: 2 })).toEqual({
         chipLabel: 'Sincronizando',
+        kind: 'syncing',
         description: 'Enviando tus cambios a la PC.',
         title: 'Sincronizando',
         tone: 'accent',
@@ -105,6 +106,7 @@ describe('sync-visible-status.helpers', () => {
         derive({ connectionStatus: 'online', lastSyncAt: NOW.getTime() - 2 * 60 * 1000 }),
       ).toEqual({
         chipLabel: 'Al día',
+        kind: 'synced',
         description: 'Último sync hace 2 min.',
         title: 'Al día',
         tone: 'success',
@@ -126,6 +128,7 @@ describe('sync-visible-status.helpers', () => {
         }),
       ).toEqual({
         chipLabel: 'Envío rechazado',
+        kind: 'rejected',
         description:
           'La PC respondió, pero rechazó el envío. Tus cambios siguen guardados en este dispositivo.',
         title: 'La PC no aceptó tus cambios',
@@ -140,6 +143,7 @@ describe('sync-visible-status.helpers', () => {
     it('keeps a calm local mode when no PC is paired and nothing is pending', () => {
       expect(derive({ connectionStatus: 'idle', isBridgeConfigured: false })).toEqual({
         chipLabel: 'Modo local',
+        kind: 'local',
         description:
           'La app funciona igual con tu catálogo en este dispositivo. Empareja una PC para tener una copia allí.',
         title: 'Sin PC emparejada',
@@ -150,6 +154,7 @@ describe('sync-visible-status.helpers', () => {
     it('keeps a neutral no-Wi-Fi state when the device is offline and nothing is pending', () => {
       expect(derive({ isDeviceOnline: false })).toEqual({
         chipLabel: 'Sin Wi-Fi',
+        kind: 'offline',
         description: 'Tu catálogo sigue disponible en este dispositivo.',
         title: 'Sin Wi-Fi',
         tone: 'default',
@@ -161,6 +166,7 @@ describe('sync-visible-status.helpers', () => {
         derive({ lastSyncAt: NOW.getTime() - HOUR_MS }),
       ).toEqual({
         chipLabel: 'Nada por enviar',
+        kind: 'idle',
         description: 'Último sync hace 1 h.',
         title: 'Nada por enviar',
         tone: 'default',
@@ -178,6 +184,7 @@ describe('sync-visible-status.helpers', () => {
         derive({ connectionStatus: 'idle', isBridgeConfigured: false, pendingOpsCount: 2 }),
       ).toEqual({
         chipLabel: 'Modo local',
+        kind: 'local',
         description: 'Empareja una PC para tener una copia allí.',
         title: '2 cambios guardados en este dispositivo',
         tone: 'default',
@@ -199,6 +206,7 @@ describe('sync-visible-status.helpers', () => {
         }),
       ).toEqual({
         chipLabel: 'Sin Wi-Fi',
+        kind: 'offline',
         description:
           'Tienes 2 cambios guardados en este dispositivo. Se enviarán cuando vuelvas a conectarte.',
         title: 'Sin Wi-Fi',
@@ -217,6 +225,7 @@ describe('sync-visible-status.helpers', () => {
         derive({ lastSyncAt: NOW.getTime() - (72 * HOUR_MS - 1), pendingOpsCount: 3 }),
       ).toEqual({
         chipLabel: 'Esperando a la PC',
+        kind: 'waiting',
         description:
           'Tienes 3 cambios guardados en este dispositivo. Se enviarán solos cuando la PC esté encendida.',
         title: 'Esperando a la PC',
@@ -235,6 +244,7 @@ describe('sync-visible-status.helpers', () => {
     it('warns once a pending backlog reaches 72 hours without a sync', () => {
       expect(derive({ lastSyncAt: NOW.getTime() - 72 * HOUR_MS, pendingOpsCount: 2 })).toEqual({
         chipLabel: 'Esperando a la PC',
+        kind: 'stale',
         description:
           'Tus 2 cambios siguen guardados en este dispositivo, pero la PC no los ha recibido. ¿Está encendida y en la misma red?',
         title: 'Hace 3 días que no hay sync',

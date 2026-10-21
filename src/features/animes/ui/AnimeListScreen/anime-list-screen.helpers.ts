@@ -3,7 +3,10 @@ import { createElement } from "react";
 import type { ListRenderItemInfo, RefreshControlProps } from "react-native";
 import { RefreshControl, View } from "react-native";
 import type { Anime } from "../../../../infrastructure/validation/anime-schema";
+import type { LayoutMode } from "../../../../hooks/responsive-layout.types";
 import {
+  ANIME_LIST_SCREEN_HEADER_EDGE_INSET,
+  ANIME_LIST_SCREEN_HEADER_SIDE_WIDTH,
   ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL,
   ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL,
   PSEUDO_DAY_TITLE,
@@ -21,6 +24,7 @@ import { AnimeCard } from "../AnimeCard/AnimeCard";
 import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
 import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
 import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
+import { AnimeListScreenHeaderTitle } from "./AnimeListScreenHeaderTitle";
 import {
   deriveVisibleSyncStatus as deriveSharedVisibleSyncStatus,
   isManualSyncAvailableNow,
@@ -28,10 +32,13 @@ import {
 import type {
   AnimeListScreenContextualHeader,
   AnimeListScreenFilterCounts,
+  AnimeListScreenHeaderLayout,
   AnimeListScreenHeaderLeftProps,
   AnimeListScreenHeaderRightProps,
+  AnimeListScreenHeaderTitleProps,
   AnimeListScreenManualSyncAvailabilityFacts,
   AnimeListScreenRefreshFeedback,
+  AnimeListScreenRenderModel,
   AnimeListScreenSyncFacts,
   AnimeListScreenVisibleSyncStatus,
 } from "./anime-list-screen.types";
@@ -188,6 +195,39 @@ export function buildContextualHeader(
 }
 
 /**
+ * Derives the bar's fixed side columns (96 on a phone, 240 on a tablet) and the width left for the
+ * centered title, so the status button never covers the title.
+ */
+export function deriveHeaderLayout(
+  layoutMode: LayoutMode,
+  frameWidth: number,
+): AnimeListScreenHeaderLayout {
+  const sideColumnWidth =
+    layoutMode === "phone"
+      ? ANIME_LIST_SCREEN_HEADER_SIDE_WIDTH.phone
+      : ANIME_LIST_SCREEN_HEADER_SIDE_WIDTH.tablet;
+
+  return {
+    sideColumnStyle: { width: sideColumnWidth },
+    titleStyle: {
+      maxWidth: Math.max(
+        0,
+        frameWidth - 2 * (sideColumnWidth + ANIME_LIST_SCREEN_HEADER_EDGE_INSET),
+      ),
+    },
+  };
+}
+
+/** Builds the Stack header-title renderer that truncates the title inside its column. */
+function buildHeaderTitleRenderer(
+  props: AnimeListScreenHeaderTitleProps,
+): () => ReactElement {
+  return function renderHeaderTitle() {
+    return createElement(AnimeListScreenHeaderTitle, props);
+  };
+}
+
+/**
  * Builds the stable Stack header-left renderer outside the screen component.
  * This avoids redefining JSX-producing functions on every AnimeListScreen render.
  */
@@ -208,6 +248,34 @@ export function buildHeaderRightRenderer(
 ): () => ReactElement {
   return function renderHeaderRight() {
     return createElement(AnimeListScreenHeaderRight, props);
+  };
+}
+
+/**
+ * Builds the Stack screen options of the anime list: the truncated title and both fixed-width
+ * side columns, from the render model.
+ */
+export function buildAnimeListScreenOptions(model: AnimeListScreenRenderModel) {
+  return {
+    headerTitle: buildHeaderTitleRenderer({
+      title: model.contextualHeader.title,
+      style: model.headerLayout.titleStyle,
+    }),
+    headerLeft: buildHeaderLeftRenderer({
+      handleOpenSettings: model.handleOpenSettings,
+      sideColumnStyle: model.headerLayout.sideColumnStyle,
+      themeColorForeground: model.themeColorForeground,
+    }),
+    headerRight: buildHeaderRightRenderer({
+      refreshAccessibilityLabel: model.refreshAccessibilityLabel,
+      isRefreshing: model.isRefreshing,
+      isManualSyncEnabled: model.isManualSyncEnabled,
+      sideColumnStyle: model.headerLayout.sideColumnStyle,
+      syncStatus: model.syncStatus,
+      themeColorForeground: model.themeColorForeground,
+      handleOpenSyncSheet: model.handleOpenSyncSheet,
+      handleRefreshPress: model.handleRefreshPress,
+    }),
   };
 }
 

@@ -3,7 +3,7 @@ name: mobile-design-system
 description: "Trigger: design system, UI, token, color, colour, typography, theme, component, style, restyle, mockup. Use before changing UI in autoreas-mobile; the rules here, the detail in docs/design/."
 metadata:
   author: autoreas-mobile
-  version: "1.5"
+  version: "1.6"
   scope: project
   updates: living
 ---
@@ -28,7 +28,7 @@ per-screen duplicate. The role's value lives in `global.css` or the vendor theme
 `useCSSVariable('--color-secondary')` instead of `useThemeColor`. `reading` is the app's own neutral one
 step brighter than `muted`, for a count read next to muted details (`text-reading`).
 
-**That holds today.** No card and no sheet renders a sync state; the only sync surface is the card above the list.
+**That holds today.** No card and no note or state sheet renders a sync state; sync health lives in the bar button and its "Sincronización" sheet.
 
 ### 2. Four Inter weight roles, one name per role
 
@@ -66,23 +66,25 @@ Inventory: `docs/design/components/heroui-native.md`.
 
 Exists: a startup loading card (`Card` + `Spinner` + copy, gaining a slow-start notice), a
 SQLite-unavailable screen, a startup failure card with recovery actions, one anime-list empty state,
-one shared sync-status model (banner and settings card), a danger toast, an inline danger `Alert`,
+one shared sync-status model (bar button, its sheet, a gated list alert, and the settings card), a danger toast, an inline danger `Alert`,
 and blocking dialogs whose overlay, drag and close all mean "no".
 
-**Sync state is reported once, above the list** — never inside a card and never inside a sheet.
-`AnimeListScreenStatusSection` is that one surface: it renders the `syncStatus` alert and its chip,
-and it is the only place sync health is narrated. A note or a chapter is queued like any other anime
-mutation, so no sheet and no card grows a status block, a banner or copy of its own to describe it.
-Season mode is not an exception: the note sheet names the note and nothing else, and it has no
-pending, failed or confirmed copy to draw.
+**Sync state is reported in one place: the bar's sync button and its own sheet.** The 44 pt
+button (`SyncStatusButton`) draws a dot in the state's color (green up to date, blue syncing or
+queued, amber waiting for the PC, red rejected) or an icon when no sync can run (offline,
+unpaired); the dot breathes while syncing and stays still under reduce motion. Tapping it opens
+the "Sincronización" sheet (`SyncStatusSheet`), the one sheet allowed to narrate sync health. The
+list column shows an `Alert` (`SyncStatusAlert`) only for a rejected send or a backlog stale past
+72 h. A note or a chapter is queued like any other anime mutation, so no card and no other sheet
+grows a status block, a banner or copy of its own to describe it. Season mode is not an exception:
+the note sheet names the note and nothing else.
 
-**That holds today.** No card and no sheet renders a sync state: the card shows `Nota n/6` or
-`Sin nota`, taking the newest local choice over the bridge value, and the only sync surface is the
-card above the list.
+**That holds today.** No card, no note sheet and no state sheet renders a sync state: the card
+shows `Nota n/6` or `Sin nota`, taking the newest local choice over the bridge value.
 
 Does not exist, so do not cite it as a pattern: no skeleton component, no `ActivityIndicator`, no
 React error boundary, no first-load spinner for the anime list, no retry inside the empty state, no
-dedicated offline screen, no sync alert inside a sheet. `Spinner` is the only indeterminate
+dedicated offline screen, no sync alert inside the note or state sheet, no "Cerrar" button on any sheet. `Spinner` is the only indeterminate
 indicator. Detail: `docs/design/patterns/states.md`.
 
 ## Before you change UI
