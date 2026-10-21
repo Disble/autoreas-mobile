@@ -78,9 +78,8 @@ Further decisions taken on that sheet:
   (`src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.constants.ts`,
   `buildSeasonRatingSegments` in `season-rating-sheet.helpers.ts`);
 - the sheet carries **no sync copy**: no `Pendiente de sync`, no `Requiere reparación`, no
-  `Bridge confirmó esta nota`, and no status alert. Sync health is reported once, by the single
-  status card above the list
-  (`src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx`), exactly as it is for a
+  `Bridge confirmó esta nota`, and no status alert. Sync health is reported once, by the sync
+  button in the bar and its sheet (`src/features/animes/ui/SyncStatusControl/`), exactly as it is for a
   card. The rule and its citations are in
   [loading, empty and error states](../patterns/states.md).
 

@@ -29,3 +29,12 @@ export const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescrip
   2: { label: 'No me gustó', tone: 'danger', isDefault: false },
   3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
+
+/**
+ * Counter feedback after a chapter change: the count lifts 1 pt and turns accent, peaking at 40 %
+ * of 300 ms, so the answer to a press is drawn on the card itself instead of a toast.
+ */
+export const COUNT_BUMP = { durationMs: 300, liftPt: 1, peakAt: 0.4 } as const;
+
+/** Plus-button feedback after a chapter is added: a 1.12 scale pulse peaking at 40 % of 320 ms. */
+export const PLUS_PULSE = { durationMs: 320, scale: 1.12, peakAt: 0.4 } as const;

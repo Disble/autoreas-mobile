@@ -1,6 +1,7 @@
 import type { AnimePseudoDayFilter } from '../../anime.types';
 import { PSEUDO_DAY_SET } from './anime-filter-rail.constants';
 import type {
+  AnimeFilterRailChipLayout,
   AnimeFilterRailItem,
   BuildAnimeFilterRailItemsInput,
 } from './anime-filter-rail.types';
@@ -33,4 +34,22 @@ export function buildAnimeFilterRailItems(
       isFirstPseudoDay,
     };
   });
+}
+
+/**
+ * Returns the horizontal scroll offset that centers a chip in the rail viewport, clamped at the
+ * start so the first chips never scroll past the edge.
+ */
+export function computeRailScrollOffset(
+  chip: AnimeFilterRailChipLayout,
+  viewportWidth: number,
+): number {
+  return Math.max(0, chip.x - (viewportWidth - chip.width) / 2);
+}
+
+/** Builds a rail entry's accessibility label: the filter, ", hoy" when it is today, and its count. */
+export function buildRailItemAccessibilityLabel(item: AnimeFilterRailItem): string {
+  const today = item.isToday ? ', hoy' : '';
+  const count = item.count > 0 ? `, ${item.count}` : '';
+  return `${item.label}${today}${count}`;
 }

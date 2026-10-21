@@ -103,6 +103,7 @@ function deriveNoPendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sy
   if (facts.isBridgeConfigured === false) {
     return {
       chipLabel: 'Modo local',
+      kind: 'local',
       description:
         'La app funciona igual con tu catálogo en este dispositivo. Empareja una PC para tener una copia allí.',
       title: 'Sin PC emparejada',
@@ -113,6 +114,7 @@ function deriveNoPendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sy
   if (facts.isDeviceOnline === false) {
     return {
       chipLabel: 'Sin Wi-Fi',
+      kind: 'offline',
       description: 'Tu catálogo sigue disponible en este dispositivo.',
       title: 'Sin Wi-Fi',
       tone: 'default',
@@ -130,6 +132,7 @@ function deriveNoPendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sy
 
   return {
     chipLabel: 'Nada por enviar',
+    kind: 'idle',
     description,
     title: 'Nada por enviar',
     tone: 'default',
@@ -149,6 +152,7 @@ function deriveStaleBacklogStatus(pendingOpsCount: number, elapsedMilliseconds: 
 
   return {
     chipLabel: 'Esperando a la PC',
+    kind: 'stale',
     description: `${backlogPhrase} ¿Está encendida y en la misma red?`,
     title: `Hace ${daysSinceLastSync} días que no hay sync`,
     tone: 'warning',
@@ -167,6 +171,7 @@ function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sync
   if (facts.isBridgeConfigured === false) {
     return {
       chipLabel: 'Modo local',
+      kind: 'local',
       description: 'Empareja una PC para tener una copia allí.',
       title: `${savedChanges} en este dispositivo`,
       tone: 'default',
@@ -176,6 +181,7 @@ function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sync
   if (facts.isDeviceOnline === false) {
     return {
       chipLabel: 'Sin Wi-Fi',
+      kind: 'offline',
       description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} cuando vuelvas a conectarte.`,
       title: 'Sin Wi-Fi',
       tone: 'default',
@@ -187,6 +193,7 @@ function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sync
   if (isBridgeKnownReachable(facts)) {
     return {
       chipLabel: 'Por enviar',
+      kind: 'queued',
       description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} en el próximo sync.`,
       title: 'Bridge conectado',
       tone: 'default',
@@ -203,6 +210,7 @@ function derivePendingSyncStatus(facts: SyncVisibleStatusFacts, now: Date): Sync
 
   return {
     chipLabel: 'Esperando a la PC',
+    kind: 'waiting',
     description: `Tienes ${savedChanges} en este dispositivo. ${willBeSent} ${
       pendingOpsCount === 1 ? 'solo' : 'solos'
     } cuando la PC esté encendida.`,
@@ -223,6 +231,7 @@ export function deriveVisibleSyncStatus(
   if (facts.connectionStatus === 'syncing') {
     return {
       chipLabel: 'Sincronizando',
+      kind: 'syncing',
       description: 'Enviando tus cambios a la PC.',
       title: 'Sincronizando',
       tone: 'accent',
@@ -234,6 +243,7 @@ export function deriveVisibleSyncStatus(
 
     return {
       chipLabel: 'Al día',
+      kind: 'synced',
       description: lastSyncRecency
         ? `Último sync ${lastSyncRecency}.`
         : 'Todo lo que cambiaste ya está en la PC.',
@@ -245,6 +255,7 @@ export function deriveVisibleSyncStatus(
   if (facts.connectionStatus === 'sync_error') {
     return {
       chipLabel: 'Envío rechazado',
+      kind: 'rejected',
       description:
         'La PC respondió, pero rechazó el envío. Tus cambios siguen guardados en este dispositivo.',
       title: 'La PC no aceptó tus cambios',

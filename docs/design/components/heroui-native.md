@@ -18,8 +18,8 @@ size, spacing, radius, colour or appearance value as guidance.
 | `Button` | 17 files | Every action: confirm, cancel, retry, refresh, save, chapter `±` | `src/features/startup/ui/StartupBoundary/StartupBoundaryFallback.tsx:67` |
 | `Card` | 10 files | Screen-level containers and the anime list-item shell | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:41` |
 | `Chip` | 7 files | Compact state and status labels; 6 use `size="sm" variant="secondary"`, the filter rail uses `size="md"` with `primary`/`tertiary` (`src/features/animes/ui/AnimeFilterRail/AnimeFilterRail.tsx:34`) | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:33` |
-| `Alert` | 8 files | Persistent inline status and error blocks, colour chosen by `status` | `src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection.tsx:28` |
-| `BottomSheet` | 3 files | Panels opened from a screen action: state choice, folder setup, season rating | `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx:184` |
+| `Alert` | 8 files | Persistent inline status and error blocks, colour chosen by `status` | `src/features/animes/ui/SyncStatusControl/SyncStatusAlert.tsx` |
+| `BottomSheet` | 4 files | Panels opened from a screen action: state choice, folder setup, season rating, sync status. The content is always `SheetContent` (`src/components/sheet-content.tsx`), never `BottomSheet.Content` directly: HeroUI keeps closed sheets mounted and gorhom leaves a closed sheet at the old height after a rotation, so `SheetContent` moves it back off screen; ESLint rejects `BottomSheet.Content` in `src/features` | `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx` |
 | `Spinner` | 3 files | Indeterminate loading while a payload or the database is not ready | `src/features/startup/ui/StartupBoundary/StartupBoundaryLoading.tsx:16` |
 | `Dialog` | 2 files | Blocking decisions rendered without a trigger (reset, battery exemption) | `src/features/battery-exemption/ui/BatteryExemptionPrompt/BatteryExemptionPrompt.tsx:47` |
 | `Surface` | 2 files | Rounded icon badges behind a single Ionicons glyph | `src/components/sqlite-unavailable-screen.tsx:10` |
@@ -47,7 +47,7 @@ wrapper at `:407`.
 `Button.Label` (14 files), `Card.Body` (10), `Chip.Label` (7), `Card.Header` (4),
 `Card.Title` (2), `Card.Description` (2), `Alert.Indicator` (8), `Alert.Content` (8),
 `Alert.Description` (8), `Alert.Title` (5), `Dialog.Portal`/`Overlay`/`Content`/`Title`/
-`Description`/`Close` (2), `BottomSheet.Portal`/`Overlay`/`Content`/`Title` (3),
+`Description`/`Close` (2), `BottomSheet.Portal`/`Overlay`/`Title` (4), `BottomSheet.Content` (only inside `SheetContent`),
 `BottomSheet.Description` (1), `Label.Text` (1). Counts include both the `Alert` and
 `HeroAlert` names.
 

@@ -10,6 +10,7 @@ import {
   ANIME_FOLDER_SETUP_TITLE,
 } from './anime-folder-setup-sheet.constants';
 import type { AnimeFolderSetupSheetProps } from './anime-folder-setup-sheet.types';
+import { SheetContent } from '../../../../components/sheet-content';
 
 /** Renders the guided onboarding sheet shown before the system folder picker. */
 export function AnimeFolderSetupSheet(props: Readonly<AnimeFolderSetupSheetProps>) {
@@ -19,7 +20,7 @@ export function AnimeFolderSetupSheet(props: Readonly<AnimeFolderSetupSheetProps
     <BottomSheet isOpen={isOpen} onOpenChange={onClose}>
       <BottomSheet.Portal>
         <BottomSheet.Overlay />
-        <BottomSheet.Content contentContainerClassName="flex-none gap-5 p-5 pb-safe-offset-5">
+        <SheetContent isOpen={isOpen} contentContainerClassName="flex-none gap-5 p-5 pb-safe-offset-5">
           <View className="flex-row items-start gap-4">
             <View className="bg-accent-soft h-14 w-14 items-center justify-center rounded-2xl">
               <StyledIonicons name="folder-open" size={28} className="text-accent-soft-foreground" />
@@ -54,7 +55,7 @@ export function AnimeFolderSetupSheet(props: Readonly<AnimeFolderSetupSheetProps
               <Button.Label>Elegir carpeta</Button.Label>
             </Button>
           </View>
-        </BottomSheet.Content>
+        </SheetContent>
       </BottomSheet.Portal>
     </BottomSheet>
   );

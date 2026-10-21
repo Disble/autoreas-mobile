@@ -1,4 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
+import * as Haptics from 'expo-haptics';
+import * as Reanimated from 'react-native-reanimated';
 import { useAnimeCard } from '../../../src/features/animes/ui/AnimeCard/use-anime-card';
 import type { AnimeCardProps } from '../../../src/features/animes/ui/AnimeCard/anime-card.types';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
@@ -404,5 +406,68 @@ describe('useAnimeCard', () => {
     expect(firstOnOpenSeasonRatingSheet).not.toHaveBeenCalled();
     expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledTimes(1);
     expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledWith('anime-2');
+  });
+
+  describe('chapter-change feedback', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    /** Renders the card hook for an anime at `watched` chapters, rerenderable to a new count. */
+    function renderWithWatched(watched: number) {
+      return renderHook(
+        ({ nrocapvisto }: { nrocapvisto: number }) =>
+          useAnimeCard({
+            anime: { ...baseAnime, nrocapvisto },
+            onCapMinus: jest.fn(),
+            onCapPlus: jest.fn(),
+            isMutating: false,
+          }),
+        { initialProps: { nrocapvisto: watched } },
+      );
+    }
+
+    it('bumps the count and pulses the plus when a chapter is added, and draws nothing on mount', () => {
+      const withSequence = jest.spyOn(Reanimated, 'withSequence');
+      const { rerender } = renderWithWatched(3);
+
+      expect(withSequence).not.toHaveBeenCalled();
+
+      rerender({ nrocapvisto: 4 });
+
+      expect(withSequence).toHaveBeenCalledTimes(2);
+    });
+
+    it('bumps only the count when a chapter is removed', () => {
+      const withSequence = jest.spyOn(Reanimated, 'withSequence');
+      const { rerender } = renderWithWatched(3);
+
+      rerender({ nrocapvisto: 2 });
+
+      expect(withSequence).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays still when reduce motion is on', () => {
+      jest.spyOn(Reanimated, 'useReducedMotion').mockReturnValue(true);
+      const withSequence = jest.spyOn(Reanimated, 'withSequence');
+      const { rerender } = renderWithWatched(3);
+
+      rerender({ nrocapvisto: 4 });
+
+      expect(withSequence).not.toHaveBeenCalled();
+    });
+
+    it('taps a light haptic on every chapter press and long press, before the change', () => {
+      const impact = jest.spyOn(Haptics, 'impactAsync').mockResolvedValue(undefined);
+      const { result } = renderWithWatched(3);
+
+      act(() => {
+        result.current.handleCapPlusPress();
+        result.current.handleCapMinusPress();
+        result.current.handleCapPlusLongPress();
+        result.current.handleCapMinusLongPress();
+      });
+
+      expect(impact).toHaveBeenCalledTimes(4);
+      expect(impact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    });
   });
 });

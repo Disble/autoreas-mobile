@@ -14,6 +14,7 @@ import type {
   SeasonRatingValue,
 } from "./season-rating-sheet.types";
 import { useSeasonRatingSheet } from "./use-season-rating-sheet";
+import { SheetContent } from "../../../../components/sheet-content";
 
 /** Renders one rating on the track, drawn by its state: saved filled, draft ringed, the rest muted. */
 function RatingSegmentButton({
@@ -123,18 +124,20 @@ function SheetSaveAction({
 /** Renders the sheet body content inside the BottomSheet portal. */
 function SeasonRatingSheetContent({
   comparison,
+  isOpen,
   handleClose,
   handleSelectRating,
   handleSubmit,
   isSaveVisible,
   segments,
-}: Readonly<Omit<SeasonRatingSheetViewModel, "isOpen" | "selectedRating">> & {
+}: Readonly<Omit<SeasonRatingSheetViewModel, "selectedRating">> & {
   readonly handleClose: () => void;
   readonly handleSelectRating: (rating: SeasonRatingValue) => void;
   readonly handleSubmit: () => void;
 }) {
   return (
-    <BottomSheet.Content
+    <SheetContent
+      isOpen={isOpen}
       accessibilityLabel={SEASON_RATING_SHEET_COPY.title}
       contentContainerClassName="flex-none gap-4 p-5 pb-safe-offset-5"
       onAccessibilityEscape={handleClose}
@@ -148,7 +151,7 @@ function SeasonRatingSheetContent({
       <RatingTrack onSelect={handleSelectRating} segments={segments} />
 
       <SheetSaveAction handleSubmit={handleSubmit} isSaveVisible={isSaveVisible} />
-    </BottomSheet.Content>
+    </SheetContent>
   );
 }
 
@@ -156,7 +159,7 @@ function SeasonRatingSheetContent({
  * Renders the season rating sheet interface.
  * It has no close control: the backdrop and the accessibility escape dismiss it, and the portal keeps
  * VoiceOver inside the sheet while it is open so dismissal hands focus back to the opening control.
- * It also draws no sync state: the status card above the list is the one place sync health appears.
+ * It also draws no sync state: the sync button in the bar is the one place sync health appears.
  */
 export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
   const {
@@ -183,6 +186,7 @@ export function SeasonRatingSheet(props: Readonly<SeasonRatingSheetProps>) {
           handleClose={handleClose}
           handleSelectRating={handleSelectRating}
           handleSubmit={handleSubmit}
+          isOpen={isOpen}
           isSaveVisible={isSaveVisible}
           segments={segments}
         />

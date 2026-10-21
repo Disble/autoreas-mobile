@@ -23,7 +23,7 @@ jest.mock('../../../../src/contexts/app-theme-context', () => ({
 }));
 
 jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
-  useResponsiveLayout: () => ({ layout: 'phone' }),
+  useResponsiveLayout: () => ({ layout: 'phone', width: 412 }),
 }));
 
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({

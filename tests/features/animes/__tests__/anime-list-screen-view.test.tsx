@@ -1,10 +1,10 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
-import { FlatList } from 'react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
+import { FlatList, View } from 'react-native';
 import { Button } from 'heroui-native';
 import { AnimeListScreenView } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreen';
 import { AnimeListScreenHeaderRight } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenHeaderRight';
-import { AnimeListScreenStatusSection } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenStatusSection';
+import { AnimeListScreenListHead } from '../../../../src/features/animes/ui/AnimeListScreen/AnimeListScreenListHead';
 import type { AnimeListScreenRenderModel } from '../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types';
 
 /** Narrows the render model's item type down to a single anime fixture shape. */
@@ -20,8 +20,9 @@ const STATUS_SECTION_CONTEXTUAL_HEADER = {
 /** Fixture sync status for the status section test, hoisted so the prop is not a fresh object per render. */
 const STATUS_SECTION_SYNC_STATUS: AnimeListScreenRenderModel['syncStatus'] = {
   actionLabel: null,
-  chipLabel: 'Catálogo local',
+  chipLabel: 'Nada por enviar',
   description: 'La copia local sigue disponible.',
+  kind: 'idle',
   title: 'Catálogo local listo',
   tone: 'default',
 };
@@ -117,17 +118,20 @@ function buildProps(
       isToday: false,
     },
     layoutMode: 'tablet-landscape',
+    headerLayout: { sideColumnStyle: { width: 240 }, titleStyle: { maxWidth: 800 } },
     isMutatingAnimeById: {},
     isDark: false,
     isEmpty: false,
     isRefreshing: false,
     isManualSyncEnabled: true,
     isSeasonMode: false,
+    isSyncSheetOpen: false,
     refreshAccessibilityLabel: 'Refrescar Mis Animes',
     syncStatus: {
       actionLabel: null,
       chipLabel: 'Catálogo local',
       description: 'Puedes seguir usando esta copia local mientras el bridge no esté disponible.',
+      kind: 'idle',
       title: 'Catálogo local listo',
       tone: 'default',
     },
@@ -146,10 +150,13 @@ function buildProps(
     handleCapPlusHalf: jest.fn().mockResolvedValue(undefined),
      handleCloseStateSheet: jest.fn(),
       handleCloseSeasonRatingSheet: jest.fn(),
+      handleCloseSyncSheet: jest.fn(),
       handleOpenSettings: jest.fn(),
+      handleOpenSyncSheet: jest.fn(),
       handleOpenSeasonRatingSheet: jest.fn(),
       handleOpenStateSheet: jest.fn(),
       handleRefresh: jest.fn().mockResolvedValue(undefined),
+      handleRefreshPress: jest.fn(),
       handleSelectedFilterChange: jest.fn(),
       handleSeasonRatingSubmit: jest.fn().mockResolvedValue(undefined),
       handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
@@ -181,10 +188,10 @@ describe('AnimeListScreenView', () => {
     );
   });
 
-  it('renders season and sync status copy without inventing a missing action', () => {
+  it('renders the subtitle and season chip but no sync block while the state needs no attention', () => {
     const handleOpenSettings = jest.fn();
-    const { getByText, queryByText } = render(
-      <AnimeListScreenStatusSection
+    const { getByText, queryByText, queryByTestId } = render(
+      <AnimeListScreenListHead
         contextualHeader={STATUS_SECTION_CONTEXTUAL_HEADER}
         isSeasonMode
         syncStatus={STATUS_SECTION_SYNC_STATUS}
@@ -193,7 +200,9 @@ describe('AnimeListScreenView', () => {
     );
 
     expect(getByText('Modo temporada')).toBeTruthy();
-    expect(getByText('Catálogo local listo')).toBeTruthy();
+    expect(getByText('1 anime para ver')).toBeTruthy();
+    expect(queryByText('Catálogo local listo')).toBeNull();
+    expect(queryByTestId('heroui-alert')).toBeNull();
     expect(queryByText('Revisar conexión')).toBeNull();
     expect(handleOpenSettings).not.toHaveBeenCalled();
   });
@@ -228,26 +237,25 @@ describe('AnimeListScreenView', () => {
     expect(list.props.columnWrapperClassName).toBeUndefined();
   });
 
-  it('insets the tablet-landscape content container by px-3 so 12dp plus the cell px-2 aligns with the status banner', () => {
-    const { UNSAFE_getByType } = render(
-      <AnimeListScreenView model={buildProps({ layoutMode: 'tablet-landscape' })} />,
-    );
-
-    const list = UNSAFE_getByType(FlatList);
-
-    expect(list.props.contentContainerClassName).toContain('px-3');
-    expect(list.props.contentContainerClassName).not.toContain('px-5');
-  });
-
-  it('keeps the phone content container at px-5, matching the status banner inset', () => {
-    const { UNSAFE_getByType } = render(
+  it('scrolls the list inside a card-radius container with a 16 pt bottom margin', () => {
+    const { getByTestId } = render(
       <AnimeListScreenView model={buildProps({ layoutMode: 'phone' })} />,
     );
 
-    const list = UNSAFE_getByType(FlatList);
+    const container = getByTestId('anime-list-container');
 
-    expect(list.props.contentContainerClassName).toContain('px-5');
-    expect(list.props.contentContainerClassName).not.toContain('px-3');
+    expect(container.props.className).toContain('rounded-3xl');
+    expect(container.props.className).toContain('overflow-hidden');
+    expect(container.props.className).toContain('mb-4');
+    expect(container.props.className).not.toContain('-mx-2');
+  });
+
+  it('pulls the two-column grid back by the cells\' 8 pt inset so cards meet the container edge', () => {
+    const { getByTestId } = render(
+      <AnimeListScreenView model={buildProps({ layoutMode: 'tablet-landscape' })} />,
+    );
+
+    expect(getByTestId('anime-list-container').props.className).toContain('-mx-2');
   });
 
   it('triggers the same handleRefresh from pull-to-refresh as the header refresh button', () => {
@@ -284,40 +292,59 @@ describe('AnimeListScreenView', () => {
     expect(list.props.extraData).toBe(props.isMutatingAnimeById);
   });
 
-  it('renders the inline sync status copy above the list', () => {
+  it('shows the sync alert inside the list column when the PC rejected the send', () => {
     const props = buildProps({
       syncStatus: {
-        actionLabel: 'Revisar conexión',
-        chipLabel: 'Sync pendiente',
-        description: 'Tus cambios siguen guardados en este dispositivo. Hace 6 días que el bridge no confirma cambios.',
-        title: '2 cambios esperando sync',
+        actionLabel: null,
+        chipLabel: 'Envío rechazado',
+        description: 'La PC respondió, pero rechazó el envío.',
+        kind: 'rejected',
+        title: 'La PC no aceptó tus cambios',
         tone: 'danger',
       },
     });
 
-    const { getByText } = render(<AnimeListScreenView model={props} />);
+    const { getByTestId } = render(<AnimeListScreenView model={props} />);
+    const column = within(getByTestId('anime-list-column'));
 
-    expect(getByText('Sync pendiente')).toBeTruthy();
-    expect(getByText('2 cambios esperando sync')).toBeTruthy();
-    expect(getByText('Revisar conexión')).toBeTruthy();
+    expect(column.getByText('La PC no aceptó tus cambios')).toBeTruthy();
+    expect(column.getByTestId('heroui-alert')).toBeTruthy();
   });
 
-  it('opens settings from the inline sync action when the bridge needs attention', () => {
+  it('keeps the alert away while the PC has been unreachable for less than 72 h', () => {
+    const props = buildProps({
+      syncStatus: {
+        actionLabel: 'Revisar conexión',
+        chipLabel: 'Esperando a la PC',
+        description: 'Tienes 2 cambios guardados en este dispositivo.',
+        kind: 'waiting',
+        title: 'Esperando a la PC',
+        tone: 'default',
+      },
+    });
+
+    const { queryByTestId } = render(<AnimeListScreenView model={props} />);
+
+    expect(queryByTestId('heroui-alert')).toBeNull();
+  });
+
+  it('opens settings from the alert action once the backlog is stale', () => {
     const handleOpenSettings = jest.fn();
     const props = buildProps({
       handleOpenSettings,
       syncStatus: {
         actionLabel: 'Revisar conexión',
-        chipLabel: 'Sync pendiente',
+        chipLabel: 'Esperando a la PC',
         description: 'Tus cambios siguen guardados en este dispositivo.',
-        title: '2 cambios esperando sync',
+        kind: 'stale',
+        title: 'Hace 3 días que no hay sync',
         tone: 'warning',
       },
     });
 
-    const { getByText } = render(<AnimeListScreenView model={props} />);
+    const { getByTestId } = render(<AnimeListScreenView model={props} />);
 
-    fireEvent.press(getByText('Revisar conexión'));
+    fireEvent.press(within(getByTestId('anime-list-column')).getByText('Revisar conexión'));
 
     expect(handleOpenSettings).toHaveBeenCalledTimes(1);
   });
@@ -345,19 +372,55 @@ describe('AnimeListScreenView', () => {
   });
 
   it('disables the header refresh button from the same manual-sync gate', () => {
-    const handleRefresh = jest.fn().mockResolvedValue(undefined);
-    const { UNSAFE_getByType } = render(
-      <AnimeListScreenHeaderRight
-        refreshAccessibilityLabel="Refrescar Mis Animes"
-        isRefreshing={false}
-        isManualSyncEnabled={false}
-        themeColorForeground="#ffffff"
-        handleRefresh={handleRefresh}
-      />,
+    const { getByLabelText } = render(renderHeaderRight({ isManualSyncEnabled: false }));
+
+    expect(getByLabelText('Refrescar Mis Animes').props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: true }),
+    );
+  });
+
+  it('opens the sync sheet from the status button in a fixed-width end column', () => {
+    const handleOpenSyncSheet = jest.fn();
+    const { getByLabelText, UNSAFE_getAllByType } = render(
+      renderHeaderRight({ handleOpenSyncSheet, sideColumnStyle: PHONE_SIDE_COLUMN }),
     );
 
-    const button = UNSAFE_getByType(Button);
+    fireEvent.press(getByLabelText('Sincronización: Al día'));
 
-    expect(button.props.isDisabled).toBe(true);
+    expect(handleOpenSyncSheet).toHaveBeenCalledTimes(1);
+    expect(UNSAFE_getAllByType(Button)).toHaveLength(2);
+    expect(UNSAFE_getAllByType(View)[0]?.props.style).toEqual({ width: 96 });
   });
 });
+
+/** The phone's fixed side column, hoisted so the prop is not a fresh object per render. */
+const PHONE_SIDE_COLUMN = { width: 96 };
+
+/** An up-to-date sync status, hoisted so the prop is not a fresh object per render. */
+const SYNCED_STATUS: AnimeListScreenRenderModel['syncStatus'] = {
+  actionLabel: null,
+  chipLabel: 'Al día',
+  description: 'Último sync hace un momento.',
+  kind: 'synced',
+  title: 'Al día',
+  tone: 'success',
+};
+
+/** Renders the bar's end column with an up-to-date sync status, overriding any prop. */
+function renderHeaderRight(
+  overrides: Partial<React.ComponentProps<typeof AnimeListScreenHeaderRight>> = {},
+) {
+  return (
+    <AnimeListScreenHeaderRight
+      refreshAccessibilityLabel="Refrescar Mis Animes"
+      isRefreshing={false}
+      isManualSyncEnabled
+      sideColumnStyle={PHONE_SIDE_COLUMN}
+      syncStatus={SYNCED_STATUS}
+      themeColorForeground="#ffffff"
+      handleOpenSyncSheet={jest.fn()}
+      handleRefreshPress={jest.fn()}
+      {...overrides}
+    />
+  );
+}

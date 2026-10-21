@@ -32,8 +32,15 @@ export interface BuildAnimeFilterRailItemsInput {
   readonly today: AnimeDayFilter;
 }
 
-/** Defines the data contract for vertical rail row props. */
-export interface VerticalRailRowProps {
+/** Defines the measured x offset and width of one horizontal rail chip. */
+export interface AnimeFilterRailChipLayout {
+  readonly x: number;
+  readonly width: number;
+}
+
+/** Defines the data contract for one rail entry: the item and the rail's select and layout handlers. */
+export interface AnimeFilterRailEntryProps {
   readonly item: AnimeFilterRailItem;
   readonly onSelect: (value: AnimeFilterRailItem['value']) => void;
+  readonly onChipLayout?: (value: AnimeFilterRailItem['value'], layout: AnimeFilterRailChipLayout) => void;
 }

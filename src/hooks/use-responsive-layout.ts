@@ -14,11 +14,11 @@ import type { LayoutMode } from './responsive-layout.types';
  * full-screen tablet stuck in the compact layout without its day sidebar. The measured frame is
  * the size the screen is actually laid out at.
  */
-export function useResponsiveLayout(): { layout: LayoutMode; isCompact: boolean } {
+export function useResponsiveLayout(): { layout: LayoutMode; isCompact: boolean; width: number } {
   const { width, height } = useSafeAreaFrame();
 
   return useMemo(() => {
     const layout = resolveLayoutMode(width, height);
-    return { layout, isCompact: layout === 'phone' };
+    return { layout, isCompact: layout === 'phone', width };
   }, [width, height]);
 }

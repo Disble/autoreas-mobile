@@ -1,11 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { ViewStyle } from 'react-native';
 import type { Href } from 'expo-router';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type { ChapterActionContext } from '../../chapter-action-diagnostics.types';
 import type {
   SyncVisibleStatus,
   SyncVisibleStatusFacts,
-  SyncVisibleStatusTone,
 } from '../../../sync/sync-visible-status.types';
 import type { AnimeListItem } from '../../anime-season.types';
 import type { SeasonRatingValue } from '../SeasonRatingSheet';
@@ -34,7 +34,7 @@ export interface AnimeStateSheetRequest {
 /**
  * Defines the data contract for season rating sheet request.
  * It carries the note only: per-note sync status is deliberately absent, because sync health is
- * reported once by the status card above the list, exactly as it is for any other anime mutation.
+ * reported once by the sync button in the bar and its sheet, exactly as for any other anime mutation.
  */
 export interface SeasonRatingSheetRequest {
   readonly animeId: string;
@@ -45,9 +45,19 @@ export interface SeasonRatingSheetRequest {
   readonly pendingRating: number | null;
 }
 
+/**
+ * Defines the bar's fixed side columns and the room left for the title, so the sync button never
+ * covers the title however long it is.
+ */
+export interface AnimeListScreenHeaderLayout {
+  readonly sideColumnStyle: Readonly<ViewStyle>;
+  readonly titleStyle: Readonly<{ maxWidth: number }>;
+}
+
 /** Defines the data contract for anime list screen header left props. */
 export interface AnimeListScreenHeaderLeftProps {
   readonly handleOpenSettings: () => void;
+  readonly sideColumnStyle: Readonly<ViewStyle>;
   readonly themeColorForeground: string;
 }
 
@@ -56,12 +66,18 @@ export interface AnimeListScreenHeaderRightProps {
   readonly refreshAccessibilityLabel: string;
   readonly isRefreshing: boolean;
   readonly isManualSyncEnabled: boolean;
+  readonly sideColumnStyle: Readonly<ViewStyle>;
+  readonly syncStatus: AnimeListScreenVisibleSyncStatus;
   readonly themeColorForeground: string;
-  readonly handleRefresh: () => Promise<void>;
+  readonly handleOpenSyncSheet: () => void;
+  readonly handleRefreshPress: () => void;
 }
 
-/** Defines the anime list screen sync tone value shape. */
-export type AnimeListScreenSyncTone = SyncVisibleStatusTone;
+/** Defines the data contract for the anime list screen header title props. */
+export interface AnimeListScreenHeaderTitleProps {
+  readonly title: string;
+  readonly style: Readonly<{ maxWidth: number }>;
+}
 
 /** Defines the anime list screen sync facts value shape. */
 export type AnimeListScreenSyncFacts = SyncVisibleStatusFacts;
@@ -123,12 +139,14 @@ export interface AnimeListScreenViewModel {
   readonly filterCounts: AnimeListScreenFilterCounts;
   readonly contextualHeader: AnimeListScreenContextualHeader;
   readonly layoutMode: LayoutMode;
+  readonly headerLayout: AnimeListScreenHeaderLayout;
   readonly isMutatingAnimeById: Readonly<Record<string, boolean>>;
   readonly isDark: boolean;
   readonly isEmpty: boolean;
   readonly isRefreshing: boolean;
   readonly isManualSyncEnabled: boolean;
   readonly isSeasonMode: boolean;
+  readonly isSyncSheetOpen: boolean;
   readonly refreshAccessibilityLabel: string;
   readonly syncStatus: AnimeListScreenVisibleSyncStatus;
   readonly selectedFilter: AnimeDayFilter;
@@ -145,9 +163,12 @@ export interface AnimeListScreenViewModel {
   readonly handleCloseStateSheet: () => void;
   readonly handleOpenSettings: () => void;
   readonly handleCloseSeasonRatingSheet: () => void;
+  readonly handleCloseSyncSheet: () => void;
+  readonly handleOpenSyncSheet: () => void;
   readonly handleOpenSeasonRatingSheet: (animeId: string) => void;
   readonly handleOpenStateSheet: (animeId: string, currentEstado: number) => void;
   readonly handleRefresh: () => Promise<void>;
+  readonly handleRefreshPress: () => void;
   readonly handleSelectedFilterChange: (filter: AnimeDayFilter) => void;
   readonly handleSeasonRatingSubmit: (rating: SeasonRatingValue) => Promise<void>;
   readonly handleStateSheetSelect: (estado: number) => Promise<void>;
@@ -174,11 +195,15 @@ export type AnimeListScreenFilterSectionProps = Pick<
   | 'handleSelectedFilterChange'
 >;
 
-/** Defines the data contract for the contextual status section. */
-export type AnimeListScreenStatusSectionProps = Pick<
+/** Defines the data contract for the list head: sync alert, contextual subtitle and folder banner. */
+export type AnimeListScreenListHeadProps = Pick<
   AnimeListScreenViewModel,
   'contextualHeader' | 'isSeasonMode' | 'syncStatus' | 'handleOpenSettings'
 >;
+
+/** Defines the data contract for the list column: its head and the scrolling list. */
+export type AnimeListScreenListColumnProps = AnimeListScreenListHeadProps &
+  AnimeListScreenContentProps;
 
 /** Defines the data contract for the anime list content section. */
 export type AnimeListScreenContentProps = Pick<
@@ -199,8 +224,14 @@ export type AnimeListScreenSheetsProps = Pick<
   AnimeListScreenViewModel,
   | 'stateSheetRequest'
   | 'seasonRatingSheetRequest'
+  | 'isManualSyncEnabled'
+  | 'isSyncSheetOpen'
+  | 'syncStatus'
   | 'handleCloseSeasonRatingSheet'
   | 'handleCloseStateSheet'
+  | 'handleCloseSyncSheet'
+  | 'handleOpenSettings'
+  | 'handleRefresh'
   | 'handleSeasonRatingSubmit'
   | 'handleStateSheetSelect'
 >;

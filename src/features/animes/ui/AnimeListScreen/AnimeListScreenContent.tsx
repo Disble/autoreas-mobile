@@ -1,4 +1,4 @@
-import { FlatList } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { AnimeEmptyState } from '../AnimeEmptyState';
 import {
   ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME,
@@ -11,7 +11,11 @@ import {
 } from './anime-list-screen.helpers';
 import type { AnimeListScreenContentProps } from './anime-list-screen.types';
 
-/** Renders either the empty state or the responsive anime grid. */
+/**
+ * Renders either the empty state or the responsive anime grid. The grid scrolls inside a container
+ * with the card radius, so a card leaving the viewport is clipped by a rounded corner instead of a
+ * straight cut; the two-column grid's 8 pt cell insets are pulled back with a negative margin.
+ */
 export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentProps>) {
   const {
     animes,
@@ -42,20 +46,25 @@ export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentPro
   }
 
   return (
-    <FlatList
-      contentContainerClassName={
+    <View
+      className={
         numColumns > 1
-          ? 'mx-auto w-full max-w-5xl px-3 pb-12'
-          : 'mx-auto w-full max-w-5xl px-5 pb-12'
+          ? '-mx-2 mb-4 flex-1 overflow-hidden rounded-3xl'
+          : 'mb-4 flex-1 overflow-hidden rounded-3xl'
       }
-      data={animes}
-      extraData={isMutatingAnimeById}
-      key={`anime-list-${numColumns}`}
-      keyExtractor={getAnimeListItemKey}
-      numColumns={numColumns}
-      refreshControl={refreshControl}
-      renderItem={renderItem}
-      showsVerticalScrollIndicator={false}
-    />
+      testID="anime-list-container"
+    >
+      <FlatList
+        contentContainerClassName="pb-12"
+        data={animes}
+        extraData={isMutatingAnimeById}
+        key={`anime-list-${numColumns}`}
+        keyExtractor={getAnimeListItemKey}
+        numColumns={numColumns}
+        refreshControl={refreshControl}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
   );
 }

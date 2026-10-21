@@ -1,5 +1,9 @@
 import { ANIME_DAY_FILTER_OPTIONS } from '../../../src/features/animes/anime.constants';
-import { buildAnimeFilterRailItems } from '../../../src/features/animes/ui/AnimeFilterRail/anime-filter-rail.helpers';
+import {
+  buildAnimeFilterRailItems,
+  buildRailItemAccessibilityLabel,
+  computeRailScrollOffset,
+} from '../../../src/features/animes/ui/AnimeFilterRail/anime-filter-rail.helpers';
 
 describe('buildAnimeFilterRailItems', () => {
   it('maps options into rail items with counts and today flag', () => {
@@ -107,5 +111,30 @@ describe('buildAnimeFilterRailItems', () => {
     weekdayItems.forEach((item) => {
       expect(item.isFirstPseudoDay).toBe(false);
     });
+  });
+});
+
+describe('computeRailScrollOffset', () => {
+  it('centers the chip in the viewport', () => {
+    expect(computeRailScrollOffset({ x: 500, width: 100 }, 400)).toBe(350);
+  });
+
+  it('never scrolls before the start of the rail', () => {
+    expect(computeRailScrollOffset({ x: 16, width: 80 }, 400)).toBe(0);
+  });
+});
+
+describe('buildRailItemAccessibilityLabel', () => {
+  it('names today and the count, and leaves a zero count out', () => {
+    const [jueves, lunes] = buildAnimeFilterRailItems({
+      options: ANIME_DAY_FILTER_OPTIONS.filter((o) => o.value === 'Jueves' || o.value === 'Lunes')
+        .reverse(),
+      counts: { Jueves: 3 },
+      today: 'Jueves',
+      selected: 'Lunes',
+    });
+
+    expect(buildRailItemAccessibilityLabel(jueves!)).toBe('Jueves, hoy, 3');
+    expect(buildRailItemAccessibilityLabel(lunes!)).toBe('Lunes');
   });
 });

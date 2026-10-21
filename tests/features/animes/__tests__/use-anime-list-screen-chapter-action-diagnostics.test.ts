@@ -171,7 +171,7 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
       data: filter === "Jueves" ? [animeFixture] : [],
       allActiveAnimes: [animeFixture],
     }));
-    mockUseResponsiveLayout.mockReturnValue({ layout: "phone", isCompact: true });
+    mockUseResponsiveLayout.mockReturnValue({ layout: "phone", isCompact: true, width: 412 });
   });
 
   it("persists a received observation when the enabled chapter callback runs", async () => {

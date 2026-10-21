@@ -50,6 +50,7 @@ jest.mock("heroui-native", () => {
   };
 });
 
+/** Builds rail props with Jueves selected and today, overriding any field. */
 function buildProps(
   overrides?: Partial<AnimeFilterRailProps>,
 ): AnimeFilterRailProps {
@@ -118,9 +119,39 @@ describe("AnimeFilterRail", () => {
         expect.objectContaining({ selected: true }),
       );
     });
+
+    it("marks the group change with an Estrenos separator before the pseudo-days", () => {
+      const { getByTestId, getByText } = render(<AnimeFilterRail {...buildProps()} />);
+
+      expect(getByTestId("anime-filter-rail-separator")).toBeTruthy();
+      expect(getByText("Estrenos")).toBeTruthy();
+    });
   });
 
   describe("vertical orientation", () => {
+    it("hides a zero count instead of drawing a dash, and marks today with a dot", () => {
+      const { getByTestId, queryByText } = render(
+        <AnimeFilterRail {...buildProps({ orientation: "vertical" })} />,
+      );
+
+      expect(queryByText("—")).toBeNull();
+      expect(queryByText("0")).toBeNull();
+      expect(queryByText("3")).toBeTruthy();
+      expect(getByTestId("anime-filter-today-dot")).toBeTruthy();
+    });
+
+    it("marks the selection with a soft accent fill and no side bar", () => {
+      const { getAllByRole } = render(
+        <AnimeFilterRail {...buildProps({ orientation: "vertical" })} />,
+      );
+      const jueves = getAllByRole("button").find((btn) =>
+        btn.props.accessibilityLabel?.startsWith("Jueves"),
+      );
+
+      expect(jueves?.props.className).toContain("bg-accent/15");
+      expect(jueves?.props.className).not.toContain("w-1");
+    });
+
     it("renders the pseudo-day section label as Estrenos", () => {
       const { getByText } = render(
         <AnimeFilterRail {...buildProps({ orientation: "vertical" })} />,

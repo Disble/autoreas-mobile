@@ -60,6 +60,7 @@ describe('bridge reachability (ADR 009 R-9): no "Esperando a la PC" while the br
     expect(resolveNow()).toBe('reachable');
     expect(visibleFor(null, 2)).toEqual({
       chipLabel: 'Por enviar',
+      kind: 'queued',
       description: 'Tienes 2 cambios guardados en este dispositivo. Se enviarán en el próximo sync.',
       title: 'Bridge conectado',
       tone: 'default',
@@ -118,6 +119,7 @@ describe('bridge reachability (ADR 009 R-9): no "Esperando a la PC" while the br
 
     expect(visibleFor(null, 0)).toEqual({
       chipLabel: 'Nada por enviar',
+      kind: 'idle',
       description: 'El Bridge está conectado.',
       title: 'Nada por enviar',
       tone: 'default',

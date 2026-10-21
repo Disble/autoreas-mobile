@@ -1,5 +1,3 @@
-import type { AnimeListScreenSyncTone } from './anime-list-screen.types';
-
 /** Provides the shared anime list screen refresh label value. */
 export const ANIME_LIST_SCREEN_REFRESH_LABEL = 'Refrescar Mis Animes';
 /** Provides the shared anime list screen tablet landscape columns value. */
@@ -19,18 +17,10 @@ export const ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL = 'Revisar conexión';
 /** Provides the shared anime list screen sync pair action label value. */
 export const ANIME_LIST_SCREEN_SYNC_PAIR_ACTION_LABEL = 'Emparejar PC';
 
-/** Provides the shared anime list screen sync chip color by tone value. */
-export const ANIME_LIST_SCREEN_SYNC_CHIP_COLOR_BY_TONE: Record<
-  AnimeListScreenSyncTone,
-  'default' | 'accent' | 'success' | 'warning' | 'danger'
-> = {
-  default: 'default',
-  accent: 'accent',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-};
-
+/** Width of each fixed side column of the bar, by layout: wide enough for two 44 pt buttons. */
+export const ANIME_LIST_SCREEN_HEADER_SIDE_WIDTH = { phone: 96, tablet: 240 } as const;
+/** Horizontal inset the native bar keeps at each edge, subtracted from the title's room. */
+export const ANIME_LIST_SCREEN_HEADER_EDGE_INSET = 16;
 
 /** Maps pseudo-day filters to contextual header titles. */
 export const PSEUDO_DAY_TITLE: Readonly<Record<string, string>> = {

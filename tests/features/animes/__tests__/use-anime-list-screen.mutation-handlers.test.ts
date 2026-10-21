@@ -100,6 +100,7 @@ describe("useAnimeListScreen", () => {
     }));
     mockUseResponsiveLayout.mockReturnValue({
       layout: "phone",
+      width: 412,
       isCompact: true,
     });
   });
