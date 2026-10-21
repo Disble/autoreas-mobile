@@ -113,6 +113,19 @@ describe('AnimeCardActions', () => {
     expect(groups).toEqual([[PAGE, FOLDER, STAR], [MINUS, PLUS]]);
   });
 
+  it('never lets the stepper group shrink', () => {
+    const { getByLabelText } = render(<AnimeCardActions {...buildProps()} />);
+    let node = getByLabelText(MINUS).parent;
+    while (node && typeof node.props.className !== 'string') {
+      node = node.parent;
+    }
+    while (node && !String(node.props.className).includes('gap-3')) {
+      node = node.parent;
+    }
+
+    expect(node?.props.className).toContain('shrink-0');
+  });
+
   it('draws no chapter number between the stepper buttons', () => {
     // The count used to arrive as a prop; it is passed anyway so a row that draws it again fails here.
     const legacyCount: object = { nrocapvisto: 7 };

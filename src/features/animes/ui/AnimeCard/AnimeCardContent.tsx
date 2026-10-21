@@ -12,6 +12,7 @@ import type { AnimeCardContentProps } from './anime-card.types';
  */
 export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
   const {
+    feedback,
     title,
     metaSegments,
     metaLabel,
@@ -43,10 +44,13 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
           metaLabel={metaLabel}
           onToggleMeta={onToggleMeta}
           longEpisodeLabel={longEpisodeLabel}
+          lineStyle={feedback?.lineStyle}
+          countStyle={feedback?.countStyle}
         />
         <AnimeCardStateBadge stateChip={stateChip} onPress={onStateBadgePress} />
       </View>
       <AnimeCardActions
+        plusStyle={feedback?.plusStyle}
         seasonStatus={seasonStatus}
         isMutationLocked={isMutationLocked}
         disableDecrease={disableDecrease}

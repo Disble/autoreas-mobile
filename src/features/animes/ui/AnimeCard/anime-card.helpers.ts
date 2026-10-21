@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import type { EpisodeLength } from '../../../../infrastructure/validation/anime-schema';
 import type { AnimeSeasonProjection } from '../../anime-season.types';
 import { META_SEPARATOR, STATE_CHIP_BY_ESTADO } from './anime-card.constants';
@@ -7,6 +8,7 @@ import type {
   AnimeSeasonStatusDescriptor,
   AnimeStateChipDescriptor,
 } from './anime-card.types';
+import { Easing, withSequence, withTiming } from 'react-native-reanimated';
 
 /**
  * Locks chapter mutations when the anime is already marked as Finalizado in domain state.
@@ -167,4 +169,18 @@ export function getAnimeSeasonStatus(
     label: note == null ? 'Sin nota' : `Nota ${note}/6`,
     showRatingCta: true,
   };
+}
+
+/** Builds a rise-and-settle animation from 0 to 1 and back that peaks at `peakAt` of `durationMs`. */
+export function buildPeakAnimation(durationMs: number, peakAt: number) {
+  const easing = Easing.out(Easing.cubic);
+  return withSequence(
+    withTiming(1, { duration: durationMs * peakAt, easing }),
+    withTiming(0, { duration: durationMs * (1 - peakAt), easing }),
+  );
+}
+
+/** Confirms a chapter change by touch with a light haptic; a failed haptic never blocks the change. */
+export function tapChapterHaptic(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
 }

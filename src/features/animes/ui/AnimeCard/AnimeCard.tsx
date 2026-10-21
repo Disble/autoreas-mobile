@@ -28,6 +28,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     hasFolder,
     handleOpenPage,
     handleOpenFolder,
+    feedback,
   } = useAnimeCard(props);
 
   const metaParams = {
@@ -45,6 +46,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
       <Card.Body className="grow flex-row">
         <AnimeCardCover coverUri={coverUri} />
         <AnimeCardContent
+          feedback={feedback}
           title={anime.nombre}
           metaSegments={metaSegments}
           metaLabel={metaLabel}

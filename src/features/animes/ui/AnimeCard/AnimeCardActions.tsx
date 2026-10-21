@@ -14,6 +14,7 @@ import type { AnimeCardActionsProps } from './anime-card.types';
  */
 export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   const {
+    plusStyle,
     seasonStatus,
     isMutationLocked,
     disableDecrease,
@@ -54,6 +55,7 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
         </Button>
       ) : (
         <AnimeCardChapterControls
+          plusStyle={plusStyle}
           disableDecrease={disableDecrease}
           disableIncrease={disableIncrease}
           onCapMinusPress={onCapMinusPress}
