@@ -3,7 +3,7 @@ name: mobile-design-system
 description: "Trigger: design system, UI, token, color, colour, typography, theme, component, style, restyle, mockup. Use before changing UI in autoreas-mobile; the rules here, the detail in docs/design/."
 metadata:
   author: autoreas-mobile
-  version: "1.4"
+  version: "1.5"
   scope: project
   updates: living
 ---
@@ -91,6 +91,8 @@ indicator. Detail: `docs/design/patterns/states.md`.
       for both `light` and `dark` first, then read `docs/design/foundations/color-tokens.md`.
 - [ ] Confirm the primitive you picked is one this app renders, or say in the change that it is new.
 - [ ] Keep logic out of `.tsx`, and keep every file at or below 500 lines.
+- [ ] Update the component's existing tests instead of adding a new test file; remove the cases
+      your change makes redundant and keep the suite at or below 500 lines (`AGENTS.md`, Tests).
 - [ ] Say which state you added or changed, including the provably absent ones you did not add.
 - [ ] Claim no appearance. Nothing in this repository verifies rendering, so an appearance claim
       needs your own device or simulator observation —
