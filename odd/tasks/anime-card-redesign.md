@@ -50,6 +50,29 @@ References: `.pi/mockups/season-rating-workflow.html` (private, uncommitted, ref
   season; a season is the time range in which an anime first airs; season mode is a range inside it
   where the user evaluates what they will watch; one anime has one note and there is no season picker
   inside an anime. A later series season is a separate anime (`Date A Live V`).
+- S10 — Card parity with the approved mockup, user verbatim: «necesito que le revises al rediseño
+  aprobado y lo que se está mostrando actualmente en la app para que planifiques el ODD de refactor».
+  The gaps below were read from `.pi/mockups/season-rating-workflow.html` (card markup and CSS) against
+  the device capture of `Vistos` at b7d2a2c; each is a requirement only because the mockup draws it:
+  - S10a — Stepper without a number: only `−` and `+`, 12 px apart; the `nrocapvisto` digit between them
+    is removed, since the count already lives in the meta line.
+  - S10b — Star in the left group: link, folder, star, then the spacer, then the stepper or `Reanudar`.
+    The star is still rendered only for an anime with a note to give (`showRatingCta`).
+  - S10c — One button recipe for the row: every icon button is a 40 pt box with a 20 pt icon on the
+    `default` surface (touch target stays at 48 pt through `CARD_TOUCH_SLOP`); the star uses
+    `accent-soft-foreground`; `+` keeps the accent fill. The mockup draws its own inline SVGs, not
+    Ionicons, so its glyphs are not copied; instead, user verbatim: «cambia los todos los íconos de la
+    card a outline version para mejor consistencia». Every card icon uses the Ionicons `-outline`
+    variant: `link-outline`, `folder-outline`, `star-outline`, `remove-outline`, `add-outline`,
+    `play-outline`, `ellipsis-horizontal-outline`. Done in the working tree, not committed.
+  - S10d — Count emphasis: the count reads brighter than the state and the note (mockup role
+    `--reading-count`: dark `oklch(0.86 0.012 286)`, light `oklch(0.37 0.0125 285.94)`), not `muted`.
+  - S10e — Separator: a small round dot between segments (3 px, `currentColor` at 60 %), never a lone dot;
+    S2's conditional rule still holds.
+  - S10f — Deviation from the mockup, user verbatim: «manten lo de mostrar los episodio restantes,
+    quita lo de abrir la hoja inferior al tocar la nota». The whole meta line keeps toggling the
+    remaining episodes; the note is plain text with no underline and no press of its own; the star is
+    the only way to the note sheet.
 
 ## Tasks
 
@@ -75,6 +98,19 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
   above the list stays untouched. Commit: —
 - T5 — Verification and close: repository gate, lab APK on device with before/after screenshots,
   reconcile docs and skill. Commit: —
+- T6 [S10a,S10b,S10c] — Actions row parity, inline: drop the digit from `AnimeCardChapterControls`
+  (and the `nrocapvisto` prop down the chain if nothing else reads it), move the star before the spacer in
+  `AnimeCardActions`, unify the 40/20 recipe (glyphs unchanged). Tests: star order and presence by
+  `showRatingCta`, no count text in the row, `Reanudar` still replaces the stepper when locked. Status: done (RED 5/5, GREEN, mutation killed). Commit: see L21.
+- T7 [S10d,S10e] — Meta line emphasis, inline: declare the count role per O5 (contract test like
+  `tests/design/secondary-role.test.ts`, docs in `color-tokens.md`, both skill mirrors), apply it to the
+  count span, and draw the dot separator. Tests: helpers still never emit a leading/trailing/double
+  separator. Status: done (RED observed, mutation killed). Commit: see L23.
+- T8 [S10f] — Dropped: the app already behaves as S10f asks, so there is no code change. T7 must keep
+  it that way: the meta line stays one pressable with the remaining-episodes toggle, and the note gets
+  no underline. Commit: none.
+- T9 — Close: anime feature suite, `react-doctor --diff`, pre-commit gate, lab APK on the tablet with
+  `Vistos` before/after next to the mockup, docs `docs/design/components/anime-card.md`. Commit: —
 
 ## Open questions
 
@@ -99,6 +135,11 @@ One task is one reviewable unit with its own tests and, where behaviour changes,
   The old O2a/O2b split is superseded: it assumed a per-note workflow that does not exist.
 - **O3 — branch base.** Resolved: this feature branches from the unintegrated design-system branch.
   That stacks two features, so the design-system branch must be integrated or reviewed first.
+- **O4 — meta line press.** Resolved by the user (L18, S10f): keep the remaining-episodes toggle, no
+  note press.
+- **O5 — count role.** Applied in T7 with the mockup's values (L23); reversible by editing two lines of `global.css`. The app has no lighter reading role (the current code says so). Proposal:
+  add `reading` per mode with the mockup values, the same way `secondary` was added in T1. Not chosen
+  silently; T7 shows it in the commit.
 
 ## Scope boundaries
 
@@ -190,3 +231,17 @@ design, balance or data-model changes, and anything in `.pi/`.
 - L14 — T4 closed by the parent after reviewing the worker's unit (mvgu1k2e-class work: the sheet's sync states are deleted and the note was traced to the same outbox, write door and flush entry point as a chapter change). Two violations the worker correctly reported but could not fix inside its surfaces were fixed here: the card rendered `Pendiente n/6` as the last per-card sync state (now `Nota n/6`/`Sin nota`, newest local choice over the bridge value), and the note submit awaited without a catch while its promise was discarded, so a failed write rejected unhandled and told the user nothing (now recorded and narrated with the same failure feedback a chapter change uses, with the sheet staying open because nothing was stored). Anime suite after both fixes: 30 suites, 336 tests, exit 0. Docs and both skill mirrors updated to state the rule as compliance rather than policy, version 1.2.
 - L15 — T5 device verification, with the user driving the tablet to a list that has season candidates (Vistos). Verified on hardware, from the built APK at 061538b: the card reads `1 capítulo visto · Viendo · Nota 5/6` on one line with no coloured chip and no duplicated season row; tapping `Temporada` opens a sheet titled `Nota` with the 1-6 row and the saved value filled; choosing 3 shows `5 → 3` with the draft in the **secondary violet ring**, clearly distinct from the accent blue, and `Guardar` appears only then; confirming closes the sheet and updates the card to `Nota 3/6` immediately, while the single status card above the list moves to `Sincronizando · Enviando tus cambios a la PC` with `Revisar conexión`. That last observation is the architectural proof the spec wanted: the note entered the ordinary queue, and the only surface narrating it is the shared card.
   Two gaps seen on the device and not fixed: (a) the approved recipe reaches the note through a **star**, and the implemented card still shows the existing `Temporada` text button — the star was never added; (b) the shared status card repeats its own label (chip `Sincronizando` above title `Sincronizando`, previously `Nada para enviar` / `Nada por enviar`), which is pre-existing and outside this feature.
+- L16 — Delivery slice boundary recorded, as the repository asks once a branch passes the review budget. `feat/anime-card-redesign` carries 17 commits and roughly 5,100 authored changed lines, which is past one reviewable slice. The feature keeps the agreed Feature Branch Chain: the branch is the tracker, and the review units are these slices, each green on its own gate run.
+  - Slice 1, token foundation: e1e8b8e (secondary role).
+  - Slice 2, card text layer: 4e81497 (one meta line, state, chip removal, 44 pt, Spanish labels).
+  - Slice 3, note sheet: a38ca79 and c71073d (Nota, comparison, Guardar, no close button, bridge summary removed).
+  - Slice 4, sync alignment: 061538b (sheet sync states deleted, note is a value, failure narrated like a chapter).
+  - Slice 5, visual parity: 2b587d6 (16/13/11 scale), 57bba76 (star instead of the labelled button), and the neutral decrease control with its docs commit b7d2a2c.
+  No slice is published; pushing, PRs and merging remain the user's decision.
+- L17 — 2026-10-20, user request verbatim: «este mockup es para un rediseño de las anime cards, especificamenente para el estado de temporada. [...] necesito que le revises al rediseño aprobado y lo que se está mostrando actualmente en la app para que planifiques el ODD de refactor». Comparison done against the mockup source and the `Vistos` capture: six gaps recorded as S10a–S10f, planned as T6–T9 (all inline, Risk item 3 for the shared card surface, item 3 again for a new colour role). Already matching, no task: meta line text and order, ellipsis to the state sheet, `Reanudar` replacing the stepper, star hidden without a note, neutral `−` and accent `+`. Open: O4 blocks T8; O5 is a proposal inside T7.
+- L18 — 2026-10-20, user decision verbatim: «manten lo de mostrar los episodio restantes, quita lo de abrir la hoja inferior al tocar la nota». O4 resolved, S10f rewritten as a deliberate deviation from the mockup, T8 dropped (current behaviour already matches). Remaining plan: T6, T7 (O5 still a proposal), T9.
+- L19 — 2026-10-20, user verbatim: «los íconos revisales, porque no sé si el mockup tenía los íconos que se están usando en la app, si es de la misma librería entonces sí». Checked the mockup source: its nine icons are hand-drawn `<symbol>` SVGs with no library reference, not Ionicons. S10c amended: the glyph swap (outline folder) is removed and the app keeps its Ionicons; size, surface and star colour stay in scope.
+- L20 — 2026-10-20, user verbatim: «sí, cambia los todos los íconos de la card a outline version para mejor consistencia». The «sí» answers the parent's question folder-outline vs folder-open-outline with the recommended closed `folder-outline`, matching the mockup. Seven glyph names swapped in `AnimeCardActions`, `AnimeCardChapterControls` and `AnimeCardStateBadge`; all seven exist in the installed Ionicons glyph map. No test renders these components, so there is no RED: typecheck (the `name` prop is typed against the glyph map), staged lint and the anime suite are the checks. Sizes and the star colour remain in T6.
+- L21 — T6 done inline. RED: `tests/features/animes/anime-card-actions.test.tsx`, 5 of 5 failing on the old row (the no-number case passes the legacy `nrocapvisto` prop on purpose so it fails while the row draws it). GREEN: star moved into a left group with link and folder, stepper wrapped with `gap-3` and no digit, `nrocapvisto` removed from the actions, stepper and content props, every row icon at 20 pt, star in `accent-soft-foreground`. Mutation: star moved back next to the stepper on the staged file, 2 tests failed, restored with `git checkout --`. Checks: typecheck clean, react-doctor `--diff` no issues, anime suite 31 suites / 350 tests. Docs: `docs/design/components/anime-card.md` rows for the actions, stepper, star, icons and touch targets; it also dropped a stale claim of `#ffffff` literals the code no longer has.
+- L22 — First T6 commit attempt rejected by the gate's lint job only (fallow, typecheck, test and mutation guard green): seven test constants without JSDoc, and `react-doctor/jsx-max-depth` on the new left group. Fixed by documenting the constants and extracting the group as `AnimeCardShortcuts.tsx` with `AnimeCardShortcutsProps` (`showNoteStar` instead of the whole season descriptor); the doc's line references moved with it.
+- L23 — T7 done inline after the user's «commit y continua con el resto del plan». O5 applied as proposed: `--reading` declared per mode with the approved mockup values (light `oklch(0.37 0.0125 285.94)`, dark `oklch(0.86 0.012 286)`) and aliased as `--color-reading`; `secondary-role.test.ts` generalised to `app-declared-roles.test.ts` over both roles (RED: the three `reading` cases failed, `secondary` stayed green). Meta line: count in `text-reading`, drawn separator ` • ` (`META_DOT_SEPARATOR`) while the spoken label keeps ` · `, so screen readers hear the same string as before. New `tests/features/animes/anime-card-info.test.tsx` (RED 2 of 4; the other two pin S10f: one toggle, no note press). Seven expectations in `__tests__/AnimeCard.test.tsx` that pinned the old drawn dot and the muted count were updated, because those two things are exactly what S10d/S10e changed; the spoken-label expectations were left untouched. Mutation: count back to `text-muted`, 1 test failed, restored with `git checkout --`. Checks: typecheck clean, react-doctor `--diff` no issues, anime + design suites 35 suites / 379 tests. Docs: `color-tokens.md`, `anime-card.md`, both skill mirrors at version 1.3. Deviation recorded: the mockup draws the dot at 60 % opacity; the app draws it in the segment's `muted` colour, since nested RN text cannot take its own opacity.
