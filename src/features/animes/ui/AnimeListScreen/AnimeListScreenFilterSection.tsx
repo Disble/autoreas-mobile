@@ -2,7 +2,10 @@ import { View } from 'react-native';
 import { AnimeFilterRail } from '../AnimeFilterRail';
 import type { AnimeListScreenFilterSectionProps } from './anime-list-screen.types';
 
-/** Renders the responsive horizontal or vertical anime filter rail. */
+/**
+ * Renders the responsive filter rail: on a tablet in landscape, a floating panel with the card's
+ * radius, surface and 16 pt margin; otherwise the phone's horizontal chip rail.
+ */
 export function AnimeListScreenFilterSection(
   props: Readonly<AnimeListScreenFilterSectionProps>,
 ) {
@@ -17,7 +20,7 @@ export function AnimeListScreenFilterSection(
 
   if (layoutMode === 'tablet-landscape') {
     return (
-      <View className="bg-surface-secondary/40 border-border/40 w-60 border-r">
+      <View className="bg-surface mb-4 ml-4 mt-1 w-60 overflow-hidden rounded-3xl" testID="anime-filter-panel">
         <AnimeFilterRail
           options={filterOptions}
           counts={filterCounts}
