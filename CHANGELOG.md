@@ -16,6 +16,30 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-21
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Changed
+
+- The sync status no longer takes a block above the list. It is now a button in the top bar, the same on phone and tablet, showing a coloured dot: green when everything is up to date, blue while syncing or with changes waiting to be sent, amber while waiting for the Bridge, red when a change was rejected, and an icon instead of the dot with no Wi-Fi or in local mode.
+- The dot gently pulses while syncing, and stays still when the system's reduce-motion setting is on.
+- Tapping the sync button opens a "Sincronización" sheet with the current state, a short description and its actions.
+- A warning above the list now appears only when a change was rejected or the Bridge has been unreachable for more than 72 hours.
+- On tablets the filters sit in a floating rounded panel. The selected filter has a soft accent fill, "Estrenos" is a group title, and a count of 0 is hidden.
+- On phones the filter row shows an "Estrenos" separator and scrolls by itself to the selected filter.
+- The list scrolls inside a container with rounded corners, so cards are clipped with a rounded edge instead of a straight cut.
+- The card's info line uses one text size; the chapter count stands out by colour alone.
+- Changing chapters is answered on the card itself: the count jumps briefly, the `+` button pulses and the device gives a light vibration. No extra message appears for changes the card already shows.
+
+### Fixed
+
+- After rotating the device, closed sheets no longer show up over the screen.
+
+### Internal
+
+- A lint rule now requires every sheet to use the shared sheet content component that prevents the rotation problem.
+
 ## [2.2.1] — 2026-10-21
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
