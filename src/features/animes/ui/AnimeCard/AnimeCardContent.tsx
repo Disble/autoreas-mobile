@@ -16,6 +16,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     title,
     metaSegments,
     metaLabel,
+    metaToggleHint,
     onToggleMeta,
     seasonStatus,
     longEpisodeLabel,
@@ -42,6 +43,7 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
           title={title}
           metaSegments={metaSegments}
           metaLabel={metaLabel}
+          metaToggleHint={metaToggleHint}
           onToggleMeta={onToggleMeta}
           longEpisodeLabel={longEpisodeLabel}
           lineStyle={feedback?.lineStyle}

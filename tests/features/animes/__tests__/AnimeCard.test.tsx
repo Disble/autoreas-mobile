@@ -221,6 +221,18 @@ describe('AnimeCard', () => {
     expect(toggle.props.accessibilityHint).toBe('Alternar episodios restantes');
   });
 
+  it('announces no toggle hint when there are no remaining episodes to show', () => {
+    const { getByLabelText } = render(
+      <AnimeCard
+        {...buildAnimeCardProps({
+          anime: { ...buildAnimeCardAnime(), estado: 3, nrocapvisto: 6, totalcap: null },
+        })}
+      />,
+    );
+
+    expect(getByLabelText('6 capítulos vistos · En pausa').props.accessibilityHint).toBeUndefined();
+  });
+
   it('leaves every meta span free to wrap instead of capping its lines', () => {
     const { getByText } = render(
       <AnimeCard

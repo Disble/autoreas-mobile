@@ -85,6 +85,8 @@ export interface AnimeCardMetaToggleProps {
   readonly segments: readonly AnimeCardMetaSegment[];
   /** The whole line as one string, exposed as the pressable's accessible label. */
   readonly label: string;
+  /** The toggle's action, announced only when there are remaining episodes to switch to. */
+  readonly hint?: string;
   readonly onPress: () => void;
   /** Lifts the line during the chapter-change bump. */
   readonly lineStyle?: AnimatedStyle<ViewStyle>;
@@ -99,6 +101,8 @@ export interface AnimeCardInfoProps {
   readonly metaSegments: readonly AnimeCardMetaSegment[];
   /** The whole composed meta line as one string, used as the pressable's accessible label. */
   readonly metaLabel: string;
+  /** The meta toggle's accessibility hint; undefined when the toggle has nothing to switch to. */
+  readonly metaToggleHint?: string;
   readonly onToggleMeta: () => void;
   /** "Ep. 7 · 45 min" when the next episode is long; `null` hides the mark. */
   readonly longEpisodeLabel: string | null;
@@ -173,6 +177,7 @@ export interface AnimeCardContentProps {
   /** Forwarded untouched to `AnimeCardInfo`, which draws one span per segment. */
   readonly metaSegments: readonly AnimeCardMetaSegment[];
   readonly metaLabel: string;
+  readonly metaToggleHint?: string;
   readonly onToggleMeta: () => void;
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
   readonly longEpisodeLabel: string | null;

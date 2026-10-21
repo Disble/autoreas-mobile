@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { getOpenablePageUrl } from '../../../anime-folders/anime-folders.helpers';
 import { openDeviceFolder, openPageUrl } from '../../../anime-folders/anime-folders-io.helpers';
+import { META_TOGGLE_HINT } from './anime-card.constants';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
@@ -39,6 +40,7 @@ export function useAnimeCard(props: AnimeCardProps) {
   const stateChip = getStateChip(props.anime.estado);
 
   const restantesLabel = getRestantesLabel(props.anime.nrocapvisto, props.anime.totalcap);
+  const metaToggleHint = restantesLabel ? META_TOGGLE_HINT : undefined;
   const seasonStatus = getAnimeSeasonStatus(props.anime.seasonProjection);
   const longEpisodeLabel = getLongEpisodeLabel(props.anime.episodes, props.anime.nrocapvisto);
   const pageUrl = getOpenablePageUrl(props.anime.pagina);
@@ -104,6 +106,7 @@ export function useAnimeCard(props: AnimeCardProps) {
     longEpisodeLabel,
     restantesShown,
     restantesLabel,
+    metaToggleHint,
     toggleRestantesShown,
     handleCapMinusPress,
     handleCapPlusPress,

@@ -13,6 +13,9 @@ export const META_DOT_SEPARATOR = ' • ';
  */
 export const META_TOGGLE_HIT_SLOP = { top: 14, bottom: 12, left: 0, right: 0 } as const;
 
+/** Announces the meta line's toggle; only spoken when there are remaining episodes to switch to. */
+export const META_TOGGLE_HINT = 'Alternar episodios restantes';
+
 /**
  * Horizontal and vertical hit-slop added to a 40 pt button so its touch area reaches 48 pt.
  * A visual size stays at 40 pt; only the reachable area grows.
