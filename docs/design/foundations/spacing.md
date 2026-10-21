@@ -41,6 +41,14 @@ Applied on the card: the 18 pt meta line (`leading-[18px]`) carries
 (`src/features/animes/ui/AnimeCard/anime-card.constants.ts`). The bottom 12 pt stops where the
 actions row begins; the top 14 pt lies over the title, which is not pressable.
 
+## Content sets the height
+
+A container's height comes from its content plus its edge padding. A sibling that only decorates,
+such as the card cover, stretches to that height and never imposes a minimum: on the card a 144 pt
+cover minimum was taller than a one-line card's content (about 126 pt), so the extra 18 pt showed up
+as an empty strip under the actions row and the bottom edge no longer matched the top. The cover now
+crops to whatever height the text column sets.
+
 ## Evidence boundary
 
 The tiers and the rule are a convention recorded on 2026-10-20 at the user's request to balance the
