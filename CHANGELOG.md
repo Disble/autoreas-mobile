@@ -16,6 +16,18 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-10-21
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Fixed
+
+- Choosing an anime's state by hand now changes only the state: the watched chapters and the viewing dates stay exactly as they were.
+
+### Internal
+
+- Repository tooling now ignores machine-local assistant work folders, so they cannot be committed by accident.
+
 ## [2.2.0] — 2026-10-20
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
