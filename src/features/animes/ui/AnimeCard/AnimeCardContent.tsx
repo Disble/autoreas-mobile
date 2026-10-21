@@ -16,7 +16,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
     stateChip,
     onStateBadgePress,
     isMutationLocked,
-    nrocapvisto,
     disableDecrease,
     disableIncrease,
     onOpenSeasonRatingSheet,
@@ -45,7 +44,6 @@ export function AnimeCardContent(props: Readonly<AnimeCardContentProps>) {
       <AnimeCardActions
         seasonStatus={seasonStatus}
         isMutationLocked={isMutationLocked}
-        nrocapvisto={nrocapvisto}
         disableDecrease={disableDecrease}
         disableIncrease={disableIncrease}
         onOpenSeasonRatingSheet={onOpenSeasonRatingSheet}

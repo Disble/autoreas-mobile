@@ -1,21 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CARD_TOUCH_SLOP } from './anime-card.constants';
-import { StyledIonicons } from '../../../../components/theme-toggle.constants';
 import { Button } from 'heroui-native';
 import { View } from 'react-native';
 import { AnimeCardChapterControls } from './AnimeCardChapterControls';
+import { AnimeCardShortcuts } from './AnimeCardShortcuts';
 import type { AnimeCardActionsProps } from './anime-card.types';
 
 /**
- * Renders the page and folder shortcuts on the left, and the season CTA plus chapter progress on the right.
- * Every button here draws a 40 pt box (`size="sm"`) and reaches a 48 pt touch target through
- * `hitSlop={CARD_TOUCH_SLOP}`, so neither the visual weight nor the row rhythm changes.
+ * Renders the page, folder and note shortcuts as one group on the left, and the chapter stepper (or
+ * `Reanudar` for a locked anime) on the right.
+ * `Reanudar` draws a 40 pt box (`size="sm"`) and reaches a 48 pt touch target through
+ * `hitSlop={CARD_TOUCH_SLOP}`, like every icon button in the row.
  */
 export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
   const {
     seasonStatus,
     isMutationLocked,
-    nrocapvisto,
     disableDecrease,
     disableIncrease,
     onOpenSeasonRatingSheet,
@@ -32,43 +32,15 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
 
   return (
     <View className="flex-row items-center gap-2">
-      {hasPageLink ? (
-        <Button
-          accessibilityLabel="Abrir página del anime"
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          hitSlop={CARD_TOUCH_SLOP}
-          onPress={onOpenPage}
-        >
-          <StyledIonicons name="link-outline" size={18} className="text-foreground" />
-        </Button>
-      ) : null}
-      {hasFolder ? (
-        <Button
-          accessibilityLabel="Abrir carpeta del anime"
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          hitSlop={CARD_TOUCH_SLOP}
-          onPress={onOpenFolder}
-        >
-          <StyledIonicons name="folder-outline" size={18} className="text-foreground" />
-        </Button>
-      ) : null}
+      <AnimeCardShortcuts
+        hasPageLink={hasPageLink}
+        hasFolder={hasFolder}
+        showNoteStar={seasonStatus?.showRatingCta === true}
+        onOpenPage={onOpenPage}
+        onOpenFolder={onOpenFolder}
+        onOpenSeasonRatingSheet={onOpenSeasonRatingSheet}
+      />
       <View className="flex-1" />
-      {seasonStatus?.showRatingCta ? (
-        <Button
-          accessibilityLabel="Abrir la calificación de la nota"
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          hitSlop={CARD_TOUCH_SLOP}
-          onPress={onOpenSeasonRatingSheet}
-        >
-          <StyledIonicons name="star-outline" size={18} className="text-accent" />
-        </Button>
-      ) : null}
       {isMutationLocked ? (
         <Button
           accessibilityLabel="Reanudar anime"
@@ -82,7 +54,6 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
         </Button>
       ) : (
         <AnimeCardChapterControls
-          nrocapvisto={nrocapvisto}
           disableDecrease={disableDecrease}
           disableIncrease={disableIncrease}
           onCapMinusPress={onCapMinusPress}

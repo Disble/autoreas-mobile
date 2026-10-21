@@ -54,7 +54,6 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           stateChip={stateChip}
           onStateBadgePress={handleStateBadgePress}
           isMutationLocked={isMutationLocked}
-          nrocapvisto={anime.nrocapvisto}
           disableDecrease={disableDecrease}
           disableIncrease={disableIncrease}
           onOpenSeasonRatingSheet={handleOpenSeasonRatingSheet}

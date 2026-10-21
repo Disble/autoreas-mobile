@@ -112,7 +112,6 @@ export interface AnimeCardStateBadgeProps {
 export interface AnimeCardActionsProps {
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
   readonly isMutationLocked: boolean;
-  readonly nrocapvisto: number;
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onOpenSeasonRatingSheet: () => void;
@@ -129,9 +128,21 @@ export interface AnimeCardActionsProps {
   readonly onCapPlusLongPress: () => void;
 }
 
-/** Defines the data contract for the anime card decrease/count/increase chapter controls. */
+/** Defines the data contract for the left group of the actions row: page, folder and note star. */
+export interface AnimeCardShortcutsProps {
+  /** Shows the page shortcut; only an http(s) url with a host has a page. */
+  readonly hasPageLink: boolean;
+  /** Shows the folder shortcut; only when the anime resolved to exactly one folder. */
+  readonly hasFolder: boolean;
+  /** Shows the note star; true only when `seasonStatus.showRatingCta` is. */
+  readonly showNoteStar: boolean;
+  readonly onOpenPage: () => void;
+  readonly onOpenFolder: () => void;
+  readonly onOpenSeasonRatingSheet: () => void;
+}
+
+/** Defines the data contract for the anime card decrease/increase chapter stepper. */
 export interface AnimeCardChapterControlsProps {
-  readonly nrocapvisto: number;
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onCapMinusPress: () => void;
@@ -155,7 +166,6 @@ export interface AnimeCardContentProps {
   readonly stateChip: AnimeStateChipDescriptor;
   readonly onStateBadgePress: () => void;
   readonly isMutationLocked: boolean;
-  readonly nrocapvisto: number;
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onOpenSeasonRatingSheet: () => void;

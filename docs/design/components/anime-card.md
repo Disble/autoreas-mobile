@@ -24,8 +24,9 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | `AnimeCardInfo.tsx` | title at 16 pt/400, the meta line drawn as one span per segment plus its toggle, long-episode chip |
 | (removed) `AnimeCardSeasonStatus.tsx` | season chip plus its description in one row — **deleted with this change** |
 | `AnimeCardStateBadge.tsx` | the state ellipsis: one control for every state, no chip |
-| `AnimeCardActions.tsx` | page and folder shortcuts, season CTA, chapter controls or `Reanudar` |
-| `AnimeCardChapterControls.tsx` | minus, count, plus |
+| `AnimeCardActions.tsx` | the `AnimeCardShortcuts` group on the left; chapter controls or `Reanudar` on the right |
+| `AnimeCardShortcuts.tsx` | page, folder and note star |
+| `AnimeCardChapterControls.tsx` | minus and plus, no count between them |
 | `anime-card.constants.ts` | the meta separator and the four state labels |
 | `anime-card-cover.constants.ts` | `StyledImage = withUniwind(Image)` |
 | `anime-card.helpers.ts` | the pure derivations the card reads, including the meta-line segments and their composed label |
@@ -54,11 +55,11 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | Remaining form | `{n} restantes`, which replaces only the count segment's text while the toggle is on | `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:117`–`:131` |
 | Long-episode chip | `Chip color="warning" size="sm" variant="secondary"`, only for a bridge-flagged next episode | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:64`–`:68`, `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:138`–`:149` |
 | State control | one muted ellipsis `Pressable`, `h-7 w-7 rounded-full`, `hitSlop={8}`, label `Cambiar estado: {label}`, for every state | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:13`–`:21` |
-| Actions row | `flex-row items-center gap-2`, with a `flex-1` spacer before the CTA | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:33`, `:58` |
-| Shortcuts | icon-only `Button size="sm" variant="tertiary"` with `hitSlop={4}`, labels `Abrir página del anime` / `Abrir carpeta del anime` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:34`–`:57` |
-| Note star | icon-only `Button` (`star-outline`, `text-accent`), `size="sm" variant="tertiary"` with `hitSlop={4}`, label `Abrir la calificación de la nota`, drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:58`–`:69` |
-| Locked state | labelled `Reanudar` button with a play icon and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:71`–`:81` |
-| Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="tertiary"` and `"primary"`, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, with a count `AppText` between them | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:50` |
+| Actions row | `flex-row items-center gap-2`: the `AnimeCardShortcuts` group, a `flex-1` spacer, then the stepper or `Reanudar` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:34`–`:43` |
+| Shortcuts | icon-only `Button size="sm" variant="tertiary"` with `hitSlop={4}`, icons `link-outline` / `folder-outline` at 20 pt, labels `Abrir página del anime` / `Abrir carpeta del anime`, first in the left group | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:19`–`:42` |
+| Note star | icon-only `Button` (`star-outline` at 20 pt, `text-accent-soft-foreground`), `size="sm" variant="tertiary"` with `hitSlop={4}`, label `Abrir la calificación de la nota`, last in the left group and drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:43`–`:54` |
+| Locked state | labelled `Reanudar` button with a `play-outline` icon and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:44`–`:54` |
+| Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="tertiary"` and `"primary"`, `remove-outline` / `add-outline` at 20 pt, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, 12 pt apart (`gap-3`) with no count between them; the count lives on the meta line | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:49` |
 
 ## The meta line
 
@@ -124,10 +125,10 @@ same as before the change.
 | --- | --- | --- | --- |
 | State ellipsis | 28 pt (`h-7 w-7`), icon `size={18}` | `hitSlop={8}` on every side = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:17`–`:18` |
 | Meta toggle | the 13/11 pt line itself | `min-h-11 min-w-11` on the `Pressable` = 44 pt | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:28` |
-| Page shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:35`–`:42` |
-| Folder shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:47`–`:54` |
-| Note star | 40 pt (`size="sm"`, icon only) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:59`–`:66` |
-| `Reanudar` | 40 pt tall (`size="sm"`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:72`–`:78` |
+| Page shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:20`–`:29` |
+| Folder shortcut | 40 pt (`size="sm"`, `isIconOnly`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:32`–`:41` |
+| Note star | 40 pt (`size="sm"`, icon only) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:44`–`:53` |
+| `Reanudar` | 40 pt tall (`size="sm"`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:45`–`:54` |
 | Chapter minus | 40 pt (`size-10`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:33` |
 | Chapter plus | 40 pt (`size-10`) | `hitSlop={4}` on every side = 48 pt | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:39`–`:48` |
 
@@ -163,21 +164,20 @@ decrement needs `nrocapvisto > 0`, increment is blocked once a known total is re
 | --- | --- | --- |
 | Shell | `Card`, `Card.Body` | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:1`, `:42`–`:43` |
 | Chips | `Chip`, `Chip.Label`, only for the long-episode mark | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:38`–`:40` |
-| Buttons | `Button`, `Button.Label` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:60`–`:69`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:35` |
-| Icons | `StyledIonicons` (`withUniwind(Ionicons)`) takes classes; plain `Ionicons` takes `color="#ffffff"` | `src/components/theme-toggle.constants.ts:6`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:43`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:34` |
+| Buttons | `Button`, `Button.Label` | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:20`–`:53`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:45`–`:54`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:25`–`:48` |
+| Icons | Every card icon is the Ionicons `-outline` variant, at 20 pt in the actions row; `StyledIonicons` (`withUniwind(Ionicons)`) takes classes, and the plain `Ionicons` play glyph inherits the `Reanudar` button colour | `src/components/theme-toggle.constants.ts:6`, `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:28`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:52`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:35` |
 | Text | `AppText`, which prepends `font-normal` | `src/components/app-text.tsx:9` |
 | Placeholder | `CoverPlaceholderScene` | `src/components/cover-placeholder-scene.tsx:86` |
 | Touches | React Native `View` and `Pressable` only | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`, `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:13` |
 
-Semantic roles on the card: `text-foreground` for the title and the chapter count, and `text-muted`
+Semantic roles on the card: `text-foreground` for the title, and `text-muted`
 for every meta segment (count, state and note) and the ellipsis icon. The count keeps `muted` rather
 than a lighter role because the app declares none; its 13 pt size is what separates it from the 11 pt
 details. The card draws one chip: the long-episode mark, on
 `warning` (`src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:65`). The season chip and its
 `warning`/`accent` tone lived in the deleted `AnimeCardSeasonStatus.tsx` and no longer exist anywhere,
-but nothing on the card mounts that row any more. The two `#ffffff` icon colours of the chapter
-buttons are the card's only colour literals
-(`src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:34`, `:49`).
+but nothing on the card mounts that row any more. The card holds no colour literal: every icon takes
+a role class or inherits its button's colour.
 
 ## Type scale as written on the card
 
@@ -186,9 +186,8 @@ buttons are the card's only colour literals
 | Title | `text-foreground text-base leading-tight`, weight 400 from AppText's `font-normal`, `numberOfLines={2}` | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:56` |
 | Meta line, count | `text-muted text-[13px]` on its own span, weight 400 | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35` |
 | Meta line, state and note | `text-muted text-[11px]` on their own spans, weight 400 | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35` |
-| Chapter count | `text-base font-semibold tabular-nums` | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:37` |
 | Every chip | `size="sm" variant="secondary"`; only the long-episode mark is drawn | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:65` |
-| Icon-only chrome | `size-10` plus `hitSlop={4}` for chapters, `size="sm"` plus `hitSlop={4}` for shortcuts and CTAs | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:32`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:38` |
+| Icon-only chrome | `size-10` plus `hitSlop={4}` for chapters, `size="sm"` plus `hitSlop={4}` for shortcuts and CTAs | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:33`, `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:23` |
 
 The card now renders the 16/13/11 scale the proposals page asks for
 ([proposals](../proposals/anime-cards-and-season-rating.md)): 16 pt for the title, 13 pt for the count
@@ -220,7 +219,7 @@ meta line, and no bridge wording reaches the card. Two things still read `season
   (`src/features/animes/ui/AnimeCard/anime-card.helpers.ts:59`–`:63`,
   `src/features/animes/ui/AnimeCard/AnimeCard.tsx:36`).
 - `AnimeCardActions` reads `showRatingCta`, which is always `true`, to decide whether
-the note star is drawn (`src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:58`).
+the note star is drawn (`src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:38`, passed to `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:43`).
 
 `description` and `tone` were removed from `getAnimeSeasonStatus` and from
 `AnimeSeasonStatusDescriptor`. The component that drew them, `AnimeCardSeasonStatus.tsx`, was deleted
