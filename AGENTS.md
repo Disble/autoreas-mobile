@@ -31,6 +31,9 @@ historical evidence, not execution contracts.
   `cn()` only. Do not put business logic, `useEffect`, or database access there.
 - Use HeroUI Native for new or refactored UI. Do not use raw React Native controls
   or `StyleSheet.create()` when Tailwind/Uniwind can express the result.
+- Bottom sheets render their content with `SheetContent` (`src/components/sheet-content.tsx`),
+  passing the sheet's `isOpen`, never `BottomSheet.Content`. Without it a closed sheet shows over
+  the screen after a rotation. ESLint enforces this in `src/features`.
 - Custom hooks follow this order: imports, signature, refs, state, context/third-party
   hooks, queries/mutations, derived state, callbacks, effects, return.
 - Complex features use a public `index.ts`, dumb `.tsx` UI, `use-*.ts` logic, and

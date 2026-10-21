@@ -3,7 +3,7 @@ name: mobile-design-system
 description: "Trigger: design system, UI, token, color, colour, typography, theme, component, style, restyle, mockup. Use before changing UI in autoreas-mobile; the rules here, the detail in docs/design/."
 metadata:
   author: autoreas-mobile
-  version: "1.6"
+  version: "1.7"
   scope: project
   updates: living
 ---
@@ -61,6 +61,11 @@ Reach for the primitive instead of hand-rolling a control: `Button` + `Button.La
 `Separator`, `Switch`, `Surface`, `Typography`. `Card.Footer`, `Dialog.Trigger` and
 `BottomSheet.Trigger` are rendered nowhere in this app — check before you assume otherwise.
 Inventory: `docs/design/components/heroui-native.md`.
+
+A sheet's content is always `SheetContent` (`src/components/sheet-content.tsx`) with the sheet's
+`isOpen`, never `BottomSheet.Content`: HeroUI keeps closed sheets mounted, and after a rotation the
+gorhom sheet under it leaves a closed sheet at the old height, showing it over the screen.
+`SheetContent` moves it back. ESLint rejects `BottomSheet.Content` in `src/features`.
 
 ### 5. The states that exist, and the ones that do not
 

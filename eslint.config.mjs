@@ -148,6 +148,13 @@ export default [
           message:
             'No raw fetch inside a write door (and no raw fetch in feature code at all -- transport belongs to src/infrastructure/api). A network await inside withLocalWrite jams the write door for every writer on that database file.',
         },
+        {
+          // Lives in this block, not its own: a second `no-restricted-syntax` entry matching the
+          // same files would replace the write-door selectors above (see the note below).
+          selector: "JSXMemberExpression[object.name='BottomSheet'][property.name='Content']",
+          message:
+            'Render sheet content with SheetContent (src/components/sheet-content.tsx), not BottomSheet.Content. HeroUI keeps closed sheets mounted, and after a rotation gorhom leaves a closed sheet at the old height, showing it over the screen; SheetContent moves it back off screen. Pass isOpen from the sheet.',
+        },
       ],
     },
   },
