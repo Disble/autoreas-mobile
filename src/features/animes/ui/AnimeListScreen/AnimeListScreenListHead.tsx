@@ -18,12 +18,17 @@ export function AnimeListScreenListHead(props: Readonly<AnimeListScreenListHeadP
     <View className="pb-4 pt-1">
       <SyncStatusAlert onAction={handleOpenSettings} status={syncStatus} />
       <View className="flex-row flex-wrap items-center gap-2">
-        {contextualHeader.isToday && <View className="bg-accent h-1.5 w-1.5 rounded-full" />}
-        <AppText
-          className={contextualHeader.isToday ? 'text-reading text-sm' : 'text-muted text-sm'}
-        >
-          {contextualHeader.subtitle}
-        </AppText>
+        {contextualHeader.subtitle !== '' && contextualHeader.isToday && (
+          <View className="bg-accent h-1.5 w-1.5 rounded-full" />
+        )}
+        {contextualHeader.subtitle !== '' && (
+          <AppText
+            className={contextualHeader.isToday ? 'text-reading text-sm' : 'text-muted text-sm'}
+            testID="list-head-subtitle"
+          >
+            {contextualHeader.subtitle}
+          </AppText>
+        )}
         {isSeasonMode && (
           <Chip color="accent" size="sm" variant="secondary">
             <Chip.Label>Modo temporada</Chip.Label>

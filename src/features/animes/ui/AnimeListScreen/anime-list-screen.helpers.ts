@@ -90,23 +90,6 @@ function buildCountSubtitle(count: number): string {
   return `${count} animes para ver`;
 }
 
-/** Builds the Spanish empty-state subtitle copy for a given day filter and today-ness. */
-function buildEmptySubtitle(filter: AnimeDayFilter, isToday: boolean): string {
-  if (filter === "Ver hoy") {
-    return "Al día. Nada pendiente para hoy.";
-  }
-  if (filter === "Sin ver") {
-    return "Todo empezado. Bien ahí.";
-  }
-  if (filter === "Visto") {
-    return "Todavía no archivaste ningún anime.";
-  }
-  if (isToday) {
-    return "Al día. Nada pendiente para hoy.";
-  }
-  return `Sin pendientes para ${filter}`;
-}
-
 /**
  * Derives the sync banner shown inside AnimeListScreen from runtime sync facts.
  * The screen stays dumb while product copy, escalation thresholds, and tone decisions live in one pure helper.
@@ -178,12 +161,12 @@ export function buildContextualHeader(
   const isToday = filter === todayWeekday || filter === "Ver hoy";
   const title = PSEUDO_DAY_TITLE[filter] ?? filter;
 
-  let subtitle: string;
-  if (count === 0) {
-    subtitle = buildEmptySubtitle(filter, isToday);
-  } else if (isToday) {
+  // An empty list leaves the subtitle empty: the empty state in the middle already names the filter
+  // and says there is nothing, so a second line here would only repeat it.
+  let subtitle = "";
+  if (count > 0 && isToday) {
     subtitle = `${buildCountSubtitle(count).replace(" para ver", "")} · ${formatTodayLabel(now)}`;
-  } else {
+  } else if (count > 0) {
     subtitle = buildCountSubtitle(count);
   }
 

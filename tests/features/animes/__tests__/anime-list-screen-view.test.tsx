@@ -17,6 +17,9 @@ const STATUS_SECTION_CONTEXTUAL_HEADER = {
   isToday: true,
 };
 
+/** Fixture contextual header for an empty list on today's filter: the subtitle is left empty. */
+const EMPTY_LIST_CONTEXTUAL_HEADER = { title: 'Para ver hoy', subtitle: '', isToday: true };
+
 /** Fixture sync status for the status section test, hoisted so the prop is not a fresh object per render. */
 const STATUS_SECTION_SYNC_STATUS: AnimeListScreenRenderModel['syncStatus'] = {
   actionLabel: null,
@@ -205,6 +208,21 @@ describe('AnimeListScreenView', () => {
     expect(queryByTestId('heroui-alert')).toBeNull();
     expect(queryByText('Revisar conexión')).toBeNull();
     expect(handleOpenSettings).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the season chip when the subtitle is empty: no blank text and no today dot', () => {
+    const { getByText, queryByTestId, UNSAFE_queryAllByProps } = render(
+      <AnimeListScreenListHead
+        contextualHeader={EMPTY_LIST_CONTEXTUAL_HEADER}
+        isSeasonMode
+        syncStatus={STATUS_SECTION_SYNC_STATUS}
+        handleOpenSettings={jest.fn()}
+      />,
+    );
+
+    expect(getByText('Modo temporada')).toBeTruthy();
+    expect(queryByTestId('list-head-subtitle')).toBeNull();
+    expect(UNSAFE_queryAllByProps({ className: 'bg-accent h-1.5 w-1.5 rounded-full' })).toHaveLength(0);
   });
 
   it('uses two columns in tablet landscape layout so each card keeps room for its cover, title and actions', () => {
