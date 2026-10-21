@@ -49,6 +49,12 @@ cover minimum was taller than a one-line card's content (about 126 pt), so the e
 as an empty strip under the actions row and the bottom edge no longer matched the top. The cover now
 crops to whatever height the text column sets.
 
+In the two-column tablet grid a row takes the height of its taller card, so a card may not stop at
+its own content there. Both cards grow to the row (`grow` on `Card` and `Card.Body`), and the text
+column spreads its two groups with `justify-between`: the title and meta line stay at the top, the
+actions row sits at the bottom, and any spare height lands between them. The buttons of paired cards
+then line up, and no strip appears under the actions or between the cards.
+
 ## Evidence boundary
 
 The tiers and the rule are a convention recorded on 2026-10-20 at the user's request to balance the

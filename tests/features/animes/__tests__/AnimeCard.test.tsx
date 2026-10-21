@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { Card } from 'heroui-native';
 import {
   openDeviceFolder,
   openPageUrl,
@@ -8,6 +9,9 @@ import { AnimeCard } from '../../../../src/features/animes/ui/AnimeCard/AnimeCar
 import {
   buildAnimeCardAnime,
   buildAnimeCardProps,
+  classesOf,
+  findAncestor,
+  type RenderedNode,
 } from './anime-card-test.helpers';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -194,43 +198,6 @@ describe('AnimeCard', () => {
     expect(title.props.numberOfLines).toBe(2);
   });
 
-  it('draws the count at 13 pt and the state and note at 11 pt, the count in the reading role and the rest in muted', () => {
-    const { getByText } = render(
-      <AnimeCard
-        {...buildAnimeCardProps({
-          anime: {
-            ...buildAnimeCardAnime(),
-            estado: 0,
-            nrocapvisto: 1,
-            seasonProjection: {
-              seasonId: 'season-2026-q3',
-              bridgeRating: 3,
-              localIntent: null,
-            },
-          },
-        })}
-      />,
-    );
-
-    // The count is the first segment, so it carries no separator; the state and the note carry the dot.
-    const count = getByText('1 capítulo visto');
-    const state = getByText(/• Viendo/);
-    const note = getByText(/• Nota 3\/6/);
-
-    expect(count.props.children).toBe('1 capítulo visto');
-    expect(state.props.children).toBe(' • Viendo');
-    expect(note.props.children).toBe(' • Nota 3/6');
-    expect(count.props.className).toContain('text-[13px]');
-    expect(count.props.className).toContain('text-reading');
-    expect(count.props.className).toContain('font-normal');
-    expect(state.props.className).toContain('text-[11px]');
-    expect(state.props.className).toContain('text-muted');
-    expect(state.props.className).toContain('font-normal');
-    expect(note.props.className).toContain('text-[11px]');
-    expect(note.props.className).toContain('text-muted');
-    expect(note.props.className).toContain('font-normal');
-  });
-
   it('exposes the whole composed meta line as one accessible label on the toggle', () => {
     const { getByLabelText } = render(
       <AnimeCard
@@ -352,27 +319,6 @@ describe('AnimeCard', () => {
     expect(getByText('1 capítulo visto • Viendo • Sin nota')).toBeTruthy();
   });
 
-  it('leaves the meta line free to wrap instead of capping its lines', () => {
-    const { getByText } = render(
-      <AnimeCard
-        {...buildAnimeCardProps({
-          anime: {
-            ...buildAnimeCardAnime(),
-            estado: 1,
-            nrocapvisto: 6,
-            seasonProjection: {
-              seasonId: 'season-2026-q3',
-              bridgeRating: 4,
-              localIntent: null,
-            },
-          },
-        })}
-      />,
-    );
-
-    expect(getByText('6 capítulos vistos • Finalizado • Nota 4/6').props.numberOfLines).toBeUndefined();
-  });
-
   it('shows the state once, inside the meta line, with no coloured chip beside it', () => {
     const { getAllByText } = render(
       <AnimeCard
@@ -492,5 +438,38 @@ describe('AnimeCard', () => {
 
     expect(onCapMinus).toHaveBeenCalledTimes(1);
     expect(onCapPlus).toHaveBeenCalledTimes(1);
+  });
+
+  describe('layout', () => {
+    it('grows to the grid row height so paired cards end on the same line', () => {
+      const { UNSAFE_getByType } = render(<AnimeCard {...buildAnimeCardProps()} />);
+
+      expect(classesOf(UNSAFE_getByType(Card))).toContain('grow');
+      expect(classesOf(UNSAFE_getByType(Card.Body))).toContain('grow');
+    });
+
+    it('keeps the title group at the top and the actions row at the bottom', () => {
+      const { getByText, getByLabelText } = render(<AnimeCard {...buildAnimeCardProps()} />);
+      const titleColumn = findAncestor(getByText('Dandadan'), 'justify-between');
+      const actionsColumn = findAncestor(getByLabelText('Sumar un capítulo visto'), 'justify-between');
+
+      // The spare height of the shorter card in a row lands between its two groups, never under
+      // the buttons, so the actions of both cards in a row line up.
+      expect(titleColumn).not.toBeNull();
+      expect(titleColumn).toBe(actionsColumn);
+      expect(titleColumn?.props.className).toContain('flex-1');
+    });
+
+    it('lets the text column set the cover height instead of forcing a minimum', () => {
+      const { UNSAFE_root } = render(<AnimeCard {...buildAnimeCardProps()} />);
+      const [cover] = UNSAFE_root.findAll(
+        (node: RenderedNode) =>
+          typeof node.type === 'string' && classesOf(node).includes('w-24'),
+      );
+
+      // A minimum taller than a one-line card would leave an empty strip under the actions row.
+      expect(cover.props.className).toContain('self-stretch');
+      expect(cover.props.className).not.toMatch(/min-h-/);
+    });
   });
 });

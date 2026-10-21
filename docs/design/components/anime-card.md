@@ -40,6 +40,7 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | --- | --- | --- |
 | Card shell | `Card className="mb-3 overflow-hidden p-0"` around `Card.Body className="flex-row"` | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:42`–`:43` |
 | Cover column | `View className="w-24 self-stretch"`: 96 pt wide, no minimum height, so the text column sets the card height and a one-line card keeps its 16 pt bottom edge | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:18` |
+| Grid row | `Card className="grow ..."`, `Card.Body className="grow flex-row"`, text column `flex-1 justify-between gap-3 p-4`: paired cards share the row height, the title group stays on top, the actions row at the bottom, and the spare height sits between them | `src/features/animes/ui/AnimeCard/AnimeCard.tsx`, `AnimeCardContent.tsx` |
 | Cover content | `StyledImage` with `contentFit="cover"` at `absolute inset-0` when `coverUri` exists, otherwise `CoverPlaceholderScene` in the same box | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:20`–`:24` |
 | Cover source rule | never reads `anime.portada`, never falls back to a network URL | `src/features/animes/ui/AnimeCard/AnimeCardCover.tsx:8`–`:9` |
 | Text column | `View className="flex-1 gap-3 p-4"`: 16 pt container edge, 12 pt between the text group and the actions row ([spacing tiers](../foundations/spacing.md)) | `src/features/animes/ui/AnimeCard/AnimeCardContent.tsx:34` |

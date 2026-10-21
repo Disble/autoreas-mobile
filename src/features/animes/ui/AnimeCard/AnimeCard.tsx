@@ -41,8 +41,8 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
   const metaLabel = getAnimeCardMetaLabel(metaParams);
 
   return (
-    <Card className="mb-3 overflow-hidden p-0">
-      <Card.Body className="flex-row">
+    <Card className="mb-3 grow overflow-hidden p-0">
+      <Card.Body className="grow flex-row">
         <AnimeCardCover coverUri={coverUri} />
         <AnimeCardContent
           title={anime.nombre}

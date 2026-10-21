@@ -39,13 +39,21 @@ describe('AnimeCardInfo meta line', () => {
     expect(getByText('Viendo')).toBeTruthy();
   });
 
-  it('draws the count in the reading role and the state and the note in muted', () => {
+  it('draws the count at 13 pt in the reading role and the state and the note at 11 pt in muted', () => {
     const { getByText } = render(<AnimeCardInfo {...buildProps()} />);
+    const count = getByText('1 capítulo visto').props.className;
+    const state = getByText('• Viendo').props.className;
+    const note = getByText('• Nota 3/6').props.className;
 
-    expect(getByText('1 capítulo visto').props.className).toContain('text-reading');
-    expect(getByText('1 capítulo visto').props.className).toContain('text-[13px]');
-    expect(getByText('• Viendo').props.className).toContain('text-muted');
-    expect(getByText('• Nota 3/6').props.className).toContain('text-muted');
+    expect(count).toEqual(expect.stringContaining('text-[13px]'));
+    expect(count).toEqual(expect.stringContaining('text-reading'));
+    for (const detail of [state, note]) {
+      expect(detail).toEqual(expect.stringContaining('text-[11px]'));
+      expect(detail).toEqual(expect.stringContaining('text-muted'));
+    }
+    for (const span of [count, state, note]) {
+      expect(span).toEqual(expect.stringContaining('font-normal'));
+    }
   });
 
   it('keeps the meta line in the title group: 4 pt below the title and no slop past the actions gap', () => {

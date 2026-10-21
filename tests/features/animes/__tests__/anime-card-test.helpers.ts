@@ -49,3 +49,27 @@ export function buildAnimeCardProps(
     ...overrides,
   };
 }
+
+/** The slice of a rendered test node these layout checks read. */
+export interface RenderedNode {
+  readonly type: unknown;
+  readonly props: { readonly className?: unknown };
+  readonly parent: RenderedNode | null;
+}
+
+/** Walks up from a rendered node to the nearest one whose classes include the given class. */
+export function findAncestor(node: RenderedNode, className: string): RenderedNode | null {
+  let current: RenderedNode | null = node;
+  while (current) {
+    if (classesOf(current).includes(className)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/** Splits a rendered node's class string into its class names. */
+export function classesOf(node: Pick<RenderedNode, 'props'>): string[] {
+  return String(node.props.className ?? '').split(' ');
+}
