@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
- * Guards the `secondary` role, the one colour the app declares that HeroUI Native does not ship.
+ * Guards the colour roles the app declares itself, the ones HeroUI Native does not ship:
+ * `secondary` (the draft note ring) and `reading` (the watched count on the card meta line).
  *
- * It exists for the draft note ring. `useThemeColor` only accepts the vendor's own colour names, so
- * this role is reachable in JavaScript through `useCSSVariable('--color-secondary')` and in classes
- * through the `@theme inline` alias asserted here. Both halves are needed: a variable without the
- * alias is invisible to Tailwind, and an alias without the variable resolves to nothing.
+ * `useThemeColor` only accepts the vendor's own colour names, so each role is reachable in JavaScript
+ * through `useCSSVariable('--color-<role>')` and in classes through the `@theme inline` alias asserted
+ * here. Both halves are needed: a variable without the alias is invisible to Tailwind, and an alias
+ * without the variable resolves to nothing.
  */
 
 /** Repository root of the checkout running this test. */
@@ -46,7 +47,10 @@ function variantBlock(css: string, mode: string): string | null {
   return null;
 }
 
-describe('secondary role', () => {
+/** Every role the app declares on top of the vendor theme. */
+const APP_DECLARED_ROLES = ['secondary', 'reading'] as const;
+
+describe.each(APP_DECLARED_ROLES)('%s role', (role) => {
   it('declares a value for the light and the dark mode', () => {
     const css = readGlobalCss();
 
@@ -54,14 +58,14 @@ describe('secondary role', () => {
       const block = variantBlock(css, mode);
 
       expect(block).not.toBeNull();
-      expect(block).toMatch(/--secondary:\s*oklch\(/);
+      expect(block).toMatch(new RegExp(`--${role}:\\s*oklch\\(`));
     }
   });
 
   it('gives the two modes different values so a mode switch is visible', () => {
     const css = readGlobalCss();
     const values = ['light', 'dark'].map((mode) => {
-      const match = /--secondary:\s*([^;]+);/.exec(variantBlock(css, mode) ?? '');
+      const match = new RegExp(`--${role}:\\s*([^;]+);`).exec(variantBlock(css, mode) ?? '');
 
       return match?.[1]?.trim() ?? '';
     });
@@ -73,6 +77,6 @@ describe('secondary role', () => {
   it('exposes the Tailwind alias components and hooks resolve', () => {
     const css = readGlobalCss();
 
-    expect(css).toMatch(/--color-secondary:\s*var\(--secondary\)/);
+    expect(css).toMatch(new RegExp(`--color-${role}:\\s*var\\(--${role}\\)`));
   });
 });

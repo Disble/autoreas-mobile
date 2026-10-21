@@ -3,7 +3,7 @@ name: mobile-design-system
 description: "Trigger: design system, UI, token, color, colour, typography, theme, component, style, restyle, mockup. Use before changing UI in autoreas-mobile; the rules here, the detail in docs/design/."
 metadata:
   author: autoreas-mobile
-  version: "1.2"
+  version: "1.3"
   scope: project
   updates: living
 ---
@@ -22,10 +22,11 @@ the evidence boundary. When code and a page disagree, the code wins; fix the pag
 ### 1. Semantic roles, never a color
 
 New and refactored UI names a role — `bg-surface`, `text-foreground`, `text-muted`,
-`border-border`, `accent`, `danger`, `secondary` — and never a hex, `text-white`, or a per-screen
-duplicate. The role's value lives in `global.css` or the vendor theme, never in the component.
+`border-border`, `accent`, `danger`, `secondary`, `reading` — and never a hex, `text-white`, or a
+per-screen duplicate. The role's value lives in `global.css` or the vendor theme, never in the component.
 `secondary` is the app's own violet for a draft note: HeroUI Native does not ship it, so read it with
-`useCSSVariable('--color-secondary')` instead of `useThemeColor`.
+`useCSSVariable('--color-secondary')` instead of `useThemeColor`. `reading` is the app's own neutral one
+step brighter than `muted`, for a count read next to muted details (`text-reading`).
 
 **That holds today.** No card and no sheet renders a sync state; the only sync surface is the card above the list.
 

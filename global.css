@@ -16,6 +16,9 @@
 
       /* Violet, for the draft note ring. Not a vendor role: see docs/design. */
       --secondary: oklch(0.54 0.2 300);
+
+      /* The watched count on the card meta line: one step brighter than muted. Not a vendor role. */
+      --reading: oklch(0.37 0.0125 285.94);
     }
 
     @variant dark {
@@ -27,10 +30,13 @@
       --radius: 0.33rem;
 
       --secondary: oklch(0.62 0.19 300);
+
+      --reading: oklch(0.86 0.012 286);
     }
   }
 }
 
 @theme inline {
   --color-secondary: var(--secondary);
+  --color-reading: var(--reading);
 }

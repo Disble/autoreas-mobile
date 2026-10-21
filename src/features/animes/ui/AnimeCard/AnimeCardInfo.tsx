@@ -1,14 +1,14 @@
 import { Chip } from 'heroui-native';
 import { Pressable, View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
-import { META_SEPARATOR } from './anime-card.constants';
+import { META_DOT_SEPARATOR } from './anime-card.constants';
 import type { AnimeCardInfoProps, AnimeCardMetaToggleProps } from './anime-card.types';
 
 /**
- * Renders the meta line as one span per segment, so each part carries its own size: the count at
- * 13 pt and the state and the note at 11 pt, all in `muted` because the app declares no lighter
- * reading role. The dot is prepended only to a segment that is not first and the helper already
- * dropped the blank ones, so it can never lead, trail or double.
+ * Renders the meta line as one span per segment, so each part carries its own size and role: the
+ * count at 13 pt in the app's `reading` role, the state and the note at 11 pt in `muted`. The round
+ * dot is prepended only to a segment that is not first and the helper already dropped the blank
+ * ones, so it can never lead, trail or double; the spoken label keeps its own text separator.
  * No span caps its lines or asks for nowrap, so a long count or note wraps inside the text column.
  * The whole composed line is the accessible label of the pressable, so a screen reader hears one
  * string even though the line is drawn as several spans; the toggle keeps its action as a hint.
@@ -31,10 +31,10 @@ function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
           <AppText
             key={segment.kind}
             className={
-              segment.kind === 'count' ? 'text-muted text-[13px]' : 'text-muted text-[11px]'
+              segment.kind === 'count' ? 'text-reading text-[13px]' : 'text-muted text-[11px]'
             }
           >
-            {index > 0 ? `${META_SEPARATOR}${segment.text}` : segment.text}
+            {index > 0 ? `${META_DOT_SEPARATOR}${segment.text}` : segment.text}
           </AppText>
         ))}
       </AppText>

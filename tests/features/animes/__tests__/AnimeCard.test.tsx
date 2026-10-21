@@ -194,7 +194,7 @@ describe('AnimeCard', () => {
     expect(title.props.numberOfLines).toBe(2);
   });
 
-  it('draws the count at 13 pt and the state and note at 11 pt, each in the muted role', () => {
+  it('draws the count at 13 pt and the state and note at 11 pt, the count in the reading role and the rest in muted', () => {
     const { getByText } = render(
       <AnimeCard
         {...buildAnimeCardProps({
@@ -214,14 +214,14 @@ describe('AnimeCard', () => {
 
     // The count is the first segment, so it carries no separator; the state and the note carry the dot.
     const count = getByText('1 capítulo visto');
-    const state = getByText(/· Viendo/);
-    const note = getByText(/· Nota 3\/6/);
+    const state = getByText(/• Viendo/);
+    const note = getByText(/• Nota 3\/6/);
 
     expect(count.props.children).toBe('1 capítulo visto');
-    expect(state.props.children).toBe(' · Viendo');
-    expect(note.props.children).toBe(' · Nota 3/6');
+    expect(state.props.children).toBe(' • Viendo');
+    expect(note.props.children).toBe(' • Nota 3/6');
     expect(count.props.className).toContain('text-[13px]');
-    expect(count.props.className).toContain('text-muted');
+    expect(count.props.className).toContain('text-reading');
     expect(count.props.className).toContain('font-normal');
     expect(state.props.className).toContain('text-[11px]');
     expect(state.props.className).toContain('text-muted');
@@ -273,8 +273,8 @@ describe('AnimeCard', () => {
     );
 
     expect(getByText('6 capítulos vistos').props.numberOfLines).toBeUndefined();
-    expect(getByText(/· Finalizado/).props.numberOfLines).toBeUndefined();
-    expect(getByText(/· Nota 4\/6/).props.numberOfLines).toBeUndefined();
+    expect(getByText(/• Finalizado/).props.numberOfLines).toBeUndefined();
+    expect(getByText(/• Nota 4\/6/).props.numberOfLines).toBeUndefined();
   });
 
   it('renders one watched chapter, the state and the note as a single line', () => {
@@ -295,7 +295,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('1 capítulo visto · Viendo · Nota 3/6')).toBeTruthy();
+    expect(getByText('1 capítulo visto • Viendo • Nota 3/6')).toBeTruthy();
   });
 
   it('keeps the paused state on the same meta line as several watched chapters and the note', () => {
@@ -316,7 +316,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('6 capítulos vistos · En pausa · Nota 4/6')).toBeTruthy();
+    expect(getByText('6 capítulos vistos • En pausa • Nota 4/6')).toBeTruthy();
   });
 
   it('stops the meta line at the state when the anime has no season candidacy', () => {
@@ -328,7 +328,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('3 capítulos vistos · Viendo')).toBeTruthy();
+    expect(getByText('3 capítulos vistos • Viendo')).toBeTruthy();
   });
 
   it('reads Sin nota on the meta line when the candidate has no rating yet', () => {
@@ -349,7 +349,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('1 capítulo visto · Viendo · Sin nota')).toBeTruthy();
+    expect(getByText('1 capítulo visto • Viendo • Sin nota')).toBeTruthy();
   });
 
   it('leaves the meta line free to wrap instead of capping its lines', () => {
@@ -370,7 +370,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('6 capítulos vistos · Finalizado · Nota 4/6').props.numberOfLines).toBeUndefined();
+    expect(getByText('6 capítulos vistos • Finalizado • Nota 4/6').props.numberOfLines).toBeUndefined();
   });
 
   it('shows the state once, inside the meta line, with no coloured chip beside it', () => {

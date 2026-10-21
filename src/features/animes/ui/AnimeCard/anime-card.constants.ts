@@ -1,7 +1,10 @@
 import type { AnimeStateChipDescriptor } from './anime-card.types';
 
-/** Separates the segments of the single meta line under the card title. */
+/** Separates the segments of the meta line's accessible label, the string a screen reader speaks. */
 export const META_SEPARATOR = ' · ';
+
+/** Separates the drawn segments of the meta line: the round dot of the approved card. */
+export const META_DOT_SEPARATOR = ' • ';
 
 /**
  * Horizontal and vertical hit-slop added to a 40 pt button so its touch area reaches 48 pt.

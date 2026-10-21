@@ -46,7 +46,7 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | Info row | `flex-row items-start gap-2` holding info and the state ellipsis | `src/features/animes/ui/AnimeCard/AnimeCardContent.tsx:35` |
 | Title | `AppText`, `text-foreground text-base leading-tight`, two lines maximum; weight 400 is the `font-normal` AppText prepends | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:56` |
 | Meta line | `Pressable` whose accessible label is the whole composed line, with `mt-1 min-h-11 min-w-11`, wrapping one `AppText className="text-muted"` that holds one span per segment | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`–`:41` |
-| Meta line, drawn spans | one `AppText` per segment: `text-muted text-[13px]` for the count, `text-muted text-[11px]` for the state and the note; no span sets `numberOfLines` or nowrap | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:29`–`:40` |
+| Meta line, drawn spans | one `AppText` per segment: `text-reading text-[13px]` for the count, `text-muted text-[11px]` for the state and the note, each later segment prefixed with the round dot ` • ` (`META_DOT_SEPARATOR`) while the spoken label keeps ` · `; no span sets `numberOfLines` or nowrap | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:29`–`:40` |
 | Meta line composition | `getAnimeCardMetaSegments({ nrocapvisto, stateLabel, noteLabel, restantesLabel, restantesShown })` for the drawn segments, and `getAnimeCardMetaLabel` for the composed accessible label | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:33`–`:41`, `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:88`–`:102`, `:109`–`:111` |
 | Meta line, count segment | `{ kind: 'count', text }`: `1 capítulo visto` / `{n} capítulos vistos`, fractional counts kept | `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:49`–`:51`, `:96` |
 | Meta line, state segment | `{ kind: 'state', text: label }`, the label of the persisted state, always present | `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:41`–`:43`, `:97`, `src/features/animes/ui/AnimeCard/anime-card.constants.ts:7`–`:12` |
@@ -96,10 +96,9 @@ Three consequences worth stating plainly:
   (`src/features/animes/ui/AnimeCard/anime-card.helpers.ts:91`–`:93`).
 
 The sizes are per segment, because the line is drawn as several spans rather than one string: the
-count is `text-[13px]`, and the state and the note are `text-[11px]`. All three carry `text-muted`:
-the proposal asks for a light gray for the count and `muted` for the details, and the app declares no
-lighter reading role than `muted` (`docs/design/foundations/color-tokens.md`), so the count keeps the
-role it already had and is told apart by size. Weight is 400 for all three, from the `font-normal`
+count is `text-[13px]`, and the state and the note are `text-[11px]`. The count carries the app's
+`reading` role, one step brighter than `muted`, and the state and the note carry `text-muted`, as the
+approved card asks (`docs/design/foundations/color-tokens.md`). Weight is 400 for all three, from the `font-normal`
 `AppText` prepends (`src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35`,
 `src/components/app-text.tsx:9`).
 
@@ -170,10 +169,9 @@ decrement needs `nrocapvisto > 0`, increment is blocked once a known total is re
 | Placeholder | `CoverPlaceholderScene` | `src/components/cover-placeholder-scene.tsx:86` |
 | Touches | React Native `View` and `Pressable` only | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`, `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:13` |
 
-Semantic roles on the card: `text-foreground` for the title, and `text-muted`
-for every meta segment (count, state and note) and the ellipsis icon. The count keeps `muted` rather
-than a lighter role because the app declares none; its 13 pt size is what separates it from the 11 pt
-details. The card draws one chip: the long-episode mark, on
+Semantic roles on the card: `text-foreground` for the title, `text-reading` for the watched count,
+and `text-muted` for the state, the note and the ellipsis icon; the count's role and its 13 pt size
+both separate it from the 11 pt details. The card draws one chip: the long-episode mark, on
 `warning` (`src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:65`). The season chip and its
 `warning`/`accent` tone lived in the deleted `AnimeCardSeasonStatus.tsx` and no longer exist anywhere,
 but nothing on the card mounts that row any more. The card holds no colour literal: every icon takes
@@ -184,7 +182,7 @@ a role class or inherits its button's colour.
 | Element | Classes / props in code | Citation |
 | --- | --- | --- |
 | Title | `text-foreground text-base leading-tight`, weight 400 from AppText's `font-normal`, `numberOfLines={2}` | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:56` |
-| Meta line, count | `text-muted text-[13px]` on its own span, weight 400 | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35` |
+| Meta line, count | `text-reading text-[13px]` on its own span, weight 400 | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35` |
 | Meta line, state and note | `text-muted text-[11px]` on their own spans, weight 400 | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:33`–`:35` |
 | Every chip | `size="sm" variant="secondary"`; only the long-episode mark is drawn | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:65` |
 | Icon-only chrome | `size-10` plus `hitSlop={4}` for chapters, `size="sm"` plus `hitSlop={4}` for shortcuts and CTAs | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:33`, `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:23` |
