@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { getOpenablePageUrl } from '../../../anime-folders/anime-folders.helpers';
 import { openDeviceFolder, openPageUrl } from '../../../anime-folders/anime-folders-io.helpers';
 import { META_TOGGLE_HINT } from './anime-card.constants';
@@ -11,9 +11,7 @@ import {
   getRestantesLabel,
   getStateChip,
   isAnimeMutationLocked,
-  tapChapterHaptic,
 } from './anime-card.helpers';
-import { useAnimeCardFeedback } from './use-anime-card-feedback';
 
 /** Coordinates anime card state and actions. */
 export function useAnimeCard(props: AnimeCardProps) {
@@ -23,7 +21,6 @@ export function useAnimeCard(props: AnimeCardProps) {
   const [restantesShown, setRestantesShown] = useState(false);
 
   // 3. Third-party/Context hooks
-  const { countStyle, lineStyle, plusStyle } = useAnimeCardFeedback(props.anime.nrocapvisto);
   // 4. Mutations/Queries
 
   // 5. Derived state
@@ -45,10 +42,6 @@ export function useAnimeCard(props: AnimeCardProps) {
   const longEpisodeLabel = getLongEpisodeLabel(props.anime.episodes, props.anime.nrocapvisto);
   const pageUrl = getOpenablePageUrl(props.anime.pagina);
   const folderPath = props.folderPath ?? null;
-  const feedback = useMemo(
-    () => ({ countStyle, lineStyle, plusStyle }),
-    [countStyle, lineStyle, plusStyle],
-  );
 
   // 6. Callbacks
   const toggleRestantesShown = () => {
@@ -56,12 +49,10 @@ export function useAnimeCard(props: AnimeCardProps) {
   };
 
   const handleCapMinusPress = () => {
-    tapChapterHaptic();
     props.onCapMinus();
   };
 
   const handleCapPlusPress = () => {
-    tapChapterHaptic();
     props.onCapPlus();
   };
 
@@ -70,12 +61,10 @@ export function useAnimeCard(props: AnimeCardProps) {
   };
 
   const handleCapPlusLongPress = () => {
-    tapChapterHaptic();
     props.onCapPlusHalf?.();
   };
 
   const handleCapMinusLongPress = () => {
-    tapChapterHaptic();
     props.onCapMinusHalf?.();
   };
 
@@ -118,6 +107,5 @@ export function useAnimeCard(props: AnimeCardProps) {
     hasFolder: folderPath !== null,
     handleOpenPage,
     handleOpenFolder,
-    feedback,
   };
 }
