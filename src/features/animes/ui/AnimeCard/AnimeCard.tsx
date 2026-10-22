@@ -17,6 +17,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     longEpisodeLabel,
     restantesShown,
     restantesLabel,
+    metaToggleHint,
     toggleRestantesShown,
     handleCapMinusPress,
     handleCapPlusPress,
@@ -50,6 +51,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
           title={anime.nombre}
           metaSegments={metaSegments}
           metaLabel={metaLabel}
+          metaToggleHint={metaToggleHint}
           onToggleMeta={toggleRestantesShown}
           seasonStatus={seasonStatus}
           longEpisodeLabel={longEpisodeLabel}

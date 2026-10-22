@@ -126,26 +126,17 @@ describe("anime-list-screen helpers", () => {
       expect(header.subtitle).toBe("1 anime para ver");
     });
 
-    it("uses a specific empty-state subtitle when a non-today weekday has zero animes", () => {
-      // 2026-04-09 is a Thursday. Saturday is not today, so the copy should name the weekday.
-      const header = buildContextualHeader(
-        "Sábado",
-        0,
-        new Date("2026-04-09T10:00:00.000Z"),
-      );
+    it.each([
+      ["Sábado", "Ningún anime para ver"],
+      ["Sin ver", "Ningún anime para ver"],
+      ["Visto", "Ningún anime visto"],
+      ["Jueves", "Ningún anime · Jue 9 abr"],
+      ["Ver hoy", "Ningún anime · Jue 9 abr"],
+    ] as const)("keeps the count for an empty %s list: %s", (filter, subtitle) => {
+      // 2026-04-09 is a Thursday, so Jueves and Ver hoy are today and the others are not.
+      const header = buildContextualHeader(filter, 0, new Date("2026-04-09T10:00:00.000Z"));
 
-      expect(header.subtitle).toBe("Sin pendientes para Sábado");
-    });
-
-    it("celebrates zero animes when the weekday is today", () => {
-      // 2026-04-09 is a Thursday → Jueves is today, count=0 should feel like a win.
-      const header = buildContextualHeader(
-        "Jueves",
-        0,
-        new Date("2026-04-09T10:00:00.000Z"),
-      );
-
-      expect(header.subtitle).toBe("Al día. Nada pendiente para hoy.");
+      expect(header.subtitle).toBe(subtitle);
     });
 
     it("appends the formatted current date to the subtitle when the weekday filter matches today", () => {
@@ -171,16 +162,6 @@ describe("anime-list-screen helpers", () => {
       expect(header.subtitle).toBe("2 animes · Jue 9 abr");
     });
 
-    it("celebrates zero animes for Ver hoy", () => {
-      const header = buildContextualHeader(
-        "Ver hoy",
-        0,
-        new Date("2026-04-09T10:00:00.000Z"),
-      );
-
-      expect(header.subtitle).toBe("Al día. Nada pendiente para hoy.");
-    });
-
     it("uses pseudo-day copy for Visto", () => {
       const header = buildContextualHeader(
         "Visto",
@@ -189,17 +170,13 @@ describe("anime-list-screen helpers", () => {
       );
 
       expect(header.title).toBe("Vistos");
-      expect(header.subtitle).toBe("5 animes para ver");
+      expect(header.subtitle).toBe("5 animes vistos");
     });
 
-    it("uses a purposeful empty-state subtitle for Visto", () => {
-      const header = buildContextualHeader(
-        "Visto",
-        0,
-        new Date("2026-04-09T10:00:00.000Z"),
-      );
+    it("counts one watched anime in the singular for Visto", () => {
+      const header = buildContextualHeader("Visto", 1, new Date("2026-04-09T10:00:00.000Z"));
 
-      expect(header.subtitle).toBe("Todavía no archivaste ningún anime.");
+      expect(header.subtitle).toBe("1 anime visto");
     });
 
     it("uses pseudo-day copy for Sin ver", () => {
@@ -213,15 +190,6 @@ describe("anime-list-screen helpers", () => {
       expect(header.subtitle).toBe("4 animes para ver");
     });
 
-    it("uses a purposeful empty-state subtitle for Sin ver", () => {
-      const header = buildContextualHeader(
-        "Sin ver",
-        0,
-        new Date("2026-04-09T10:00:00.000Z"),
-      );
-
-      expect(header.subtitle).toBe("Todo empezado. Bien ahí.");
-    });
   });
 
   describe("deriveVisibleSyncStatus", () => {

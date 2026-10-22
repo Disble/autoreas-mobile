@@ -19,13 +19,13 @@ import type { AnimeCardInfoProps, AnimeCardMetaToggleProps } from './anime-card.
  * through a minimum height: a taller box would add drawn space and pull the line away from the title.
  */
 function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
-  const { segments, label, onPress, lineStyle, countStyle } = props;
+  const { segments, label, hint, onPress, lineStyle, countStyle } = props;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Alternar episodios restantes"
+      accessibilityHint={hint}
       onPress={onPress}
       hitSlop={META_TOGGLE_HIT_SLOP}
       className="mt-1 self-start"
@@ -60,8 +60,16 @@ function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
  * `foreground` role, capped at two lines with `leading-tight`.
  */
 export function AnimeCardInfo(props: Readonly<AnimeCardInfoProps>) {
-  const { title, metaSegments, metaLabel, longEpisodeLabel, onToggleMeta, lineStyle, countStyle } =
-    props;
+  const {
+    title,
+    metaSegments,
+    metaLabel,
+    metaToggleHint,
+    longEpisodeLabel,
+    onToggleMeta,
+    lineStyle,
+    countStyle,
+  } = props;
 
   return (
     <View className="flex-1">
@@ -71,6 +79,7 @@ export function AnimeCardInfo(props: Readonly<AnimeCardInfoProps>) {
       <AnimeCardMetaToggle
         segments={metaSegments}
         label={metaLabel}
+        hint={metaToggleHint}
         onPress={onToggleMeta}
         lineStyle={lineStyle}
         countStyle={countStyle}
