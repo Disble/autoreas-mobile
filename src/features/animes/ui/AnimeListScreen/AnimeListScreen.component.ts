@@ -7,7 +7,7 @@ import { useAnimeListScreen } from './use-anime-list-screen';
 /** Composes anime-list behavior with its presentational screen. */
 export function AnimeListScreen(props: Readonly<AnimeListScreenProps>) {
   const viewModel = useAnimeListScreen(props);
-  const { getAnimeCardProps } = useAnimeListItemRenderer(
+  const { getAnimeListItemProps } = useAnimeListItemRenderer(
     viewModel.isMutatingAnimeById,
     viewModel.handleCapMinus,
     viewModel.handleCapPlus,
@@ -20,7 +20,7 @@ export function AnimeListScreen(props: Readonly<AnimeListScreenProps>) {
   return createElement(AnimeListScreenView, {
     model: {
       ...viewModel,
-      getAnimeCardProps,
+      getAnimeListItemProps,
     },
   });
 }

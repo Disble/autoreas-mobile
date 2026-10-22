@@ -32,13 +32,12 @@ export function AnimeListScreenView(props: Readonly<AnimeListScreenViewProps>) {
           contextualHeader={model.contextualHeader}
           isEmpty={model.isEmpty}
           isManualSyncEnabled={model.isManualSyncEnabled}
-          isMutatingAnimeById={model.isMutatingAnimeById}
           isRefreshing={model.isRefreshing}
           isSeasonMode={model.isSeasonMode}
           layoutMode={model.layoutMode}
           selectedFilter={model.selectedFilter}
           syncStatus={model.syncStatus}
-          getAnimeCardProps={model.getAnimeCardProps}
+          getAnimeListItemProps={model.getAnimeListItemProps}
           handleOpenSettings={model.handleOpenSettings}
           handleRefresh={model.handleRefresh}
         />

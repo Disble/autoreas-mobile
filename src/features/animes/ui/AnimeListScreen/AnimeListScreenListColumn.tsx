@@ -13,13 +13,12 @@ export function AnimeListScreenListColumn(props: Readonly<AnimeListScreenListCol
     contextualHeader,
     isEmpty,
     isManualSyncEnabled,
-    isMutatingAnimeById,
     isRefreshing,
     isSeasonMode,
     layoutMode,
     selectedFilter,
     syncStatus,
-    getAnimeCardProps,
+    getAnimeListItemProps,
     handleOpenSettings,
     handleRefresh,
   } = props;
@@ -39,11 +38,10 @@ export function AnimeListScreenListColumn(props: Readonly<AnimeListScreenListCol
         animes={animes}
         isEmpty={isEmpty}
         isManualSyncEnabled={isManualSyncEnabled}
-        isMutatingAnimeById={isMutatingAnimeById}
         isRefreshing={isRefreshing}
         layoutMode={layoutMode}
         selectedFilter={selectedFilter}
-        getAnimeCardProps={getAnimeCardProps}
+        getAnimeListItemProps={getAnimeListItemProps}
         handleRefresh={handleRefresh}
       />
     </View>

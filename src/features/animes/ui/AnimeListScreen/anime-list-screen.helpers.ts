@@ -20,11 +20,10 @@ import {
 import { matchesAnimeDayFilter } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import type { AnimeListItem } from "../../anime-season.types";
-import { AnimeCard } from "../AnimeCard/AnimeCard";
-import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
 import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
 import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import { AnimeListScreenHeaderTitle } from "./AnimeListScreenHeaderTitle";
+import { AnimeListScreenItem } from "./AnimeListScreenItem";
 import {
   deriveVisibleSyncStatus as deriveSharedVisibleSyncStatus,
   isManualSyncAvailableNow,
@@ -36,6 +35,7 @@ import type {
   AnimeListScreenHeaderLeftProps,
   AnimeListScreenHeaderRightProps,
   AnimeListScreenHeaderTitleProps,
+  AnimeListScreenItemProps,
   AnimeListScreenManualSyncAvailabilityFacts,
   AnimeListScreenRefreshFeedback,
   AnimeListScreenRenderModel,
@@ -269,19 +269,20 @@ export function getAnimeListItemKey(item: AnimeListItem): string {
 }
 
 /**
- * Builds the stable FlatList renderItem function outside the screen component.
- * This avoids redefining a JSX-producing function (and the inline-FlatList-renderItem
- * perf trap) on every AnimeListScreenContent render.
+ * Builds the FlatList renderItem function outside the screen component: a grid cell wrapping one
+ * `AnimeListScreenItem`. React Compiler memoizes this call in the screen, so the renderer keeps its
+ * identity while `getAnimeListItemProps` does; FlatList's cells then skip every row whose item did
+ * not change, and a row that does re-render keeps its card unless the card's own props changed.
  */
 export function buildAnimeListItemRenderer(
-  getAnimeCardProps: (item: AnimeListItem) => AnimeCardProps,
+  getAnimeListItemProps: (item: AnimeListItem) => AnimeListScreenItemProps,
   cellClassName: string | undefined,
 ): (info: ListRenderItemInfo<AnimeListItem>) => ReactElement {
   return function renderAnimeListItem({ item }: ListRenderItemInfo<AnimeListItem>) {
     return createElement(
       View,
       { className: cellClassName },
-      createElement(AnimeCard, getAnimeCardProps(item)),
+      createElement(AnimeListScreenItem, getAnimeListItemProps(item)),
     );
   };
 }

@@ -4,9 +4,11 @@ import {
   recordChapterActionSkipped,
 } from '../../chapter-action-diagnostics.helpers';
 import type { ChapterActionLabel } from '../../chapter-action-diagnostics.types';
+import { buildRefreshFailureFeedback } from './anime-list-screen.helpers';
 import type {
   AnimeListScreenChapterActionRunner,
   AnimeListScreenChapterMutationDeps,
+  AnimeListScreenManualRefreshDeps,
 } from './anime-list-screen.types';
 
 /**
@@ -19,8 +21,8 @@ import type {
  * that throws while reporting that rejection -- and a module-level function is not memoized, so it
  * is the compiler-safe home for that statement.
  *
- * `handleRefresh` in the hook keeps its own, simpler `try/catch/finally`: the same compiler accepts
- * that shape, so only this one had to move.
+ * `handleRefresh` had the same problem later (`runManualRefresh` below): the compiler does not lower a
+ * `try` with a `finally` clause at all, so any such statement in a hook body bails out the whole hook.
  *
  * The `received` observation is opened BEFORE the guard, because this is the only point that can
  * answer "did the tap reach JS at all": a disabled button never gets here, and neither does a tap
@@ -79,5 +81,32 @@ export async function runChapterMutation(
     delete releasedState[animeId];
     deps.mutatingAnimeByIdRef.current = releasedState;
     deps.setIsMutatingAnimeById(releasedState);
+  }
+}
+
+/**
+ * Runs one manual refresh from the list: the spinner is on while the sync runs and always off after it,
+ * and a failed sync becomes a warning toast worded from the sync facts of the render that asked.
+ *
+ * Lives outside `useAnimeListScreen` because React Compiler cannot lower a `try` with a `finally`
+ * clause; inside the hook that statement cost the whole hook its automatic memoization.
+ */
+export async function runManualRefresh(deps: AnimeListScreenManualRefreshDeps): Promise<void> {
+  deps.setIsRefreshing(true);
+
+  try {
+    await deps.manualSync();
+  } catch (error) {
+    console.warn('[AnimeListScreen] Manual refresh failed:', error);
+    const feedback = buildRefreshFailureFeedback(deps.syncFacts);
+
+    deps.toast.show({
+      variant: 'warning',
+      label: feedback.label,
+      description: feedback.description,
+      duration: 4000,
+    });
+  } finally {
+    deps.setIsRefreshing(false);
   }
 }

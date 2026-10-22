@@ -12,6 +12,20 @@ export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS = 2;
  * Change it together with the column count.
  */
 export const ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME = 'flex-[0.5] px-2';
+/**
+ * FlatList rendering budget. With `numColumns` FlatList counts ROWS, not cards. A row is one card of
+ * about 150 dp (the cover column follows the text, plus the 12 dp `mb-3`), so a phone shows about 4
+ * rows, a tablet in landscape about 5 (10 cards) and a tablet in portrait about 8: 8 rows fill the
+ * first screen on every layout without mounting the default 10.
+ */
+export const ANIME_LIST_SCREEN_INITIAL_ROWS_TO_RENDER = 8;
+/**
+ * Viewports kept mounted: the visible one plus two above and two below (the default is 21). Cards are
+ * heavy (cover, Reanimated controls), so a smaller window keeps fewer of them alive and re-rendering.
+ */
+export const ANIME_LIST_SCREEN_WINDOW_SIZE = 5;
+/** Rows mounted per batch while scrolling (default 10): small batches keep each frame short. */
+export const ANIME_LIST_SCREEN_MAX_ROWS_PER_BATCH = 4;
 /** Provides the shared anime list screen sync settings action label value. */
 export const ANIME_LIST_SCREEN_SYNC_SETTINGS_ACTION_LABEL = 'Revisar conexión';
 /** Provides the shared anime list screen sync pair action label value. */

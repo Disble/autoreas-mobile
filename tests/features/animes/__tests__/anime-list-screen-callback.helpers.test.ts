@@ -3,8 +3,14 @@ import {
   recordChapterActionSkipped,
 } from "../../../../src/features/animes/chapter-action-diagnostics.helpers";
 import type { ChapterActionContext } from "../../../../src/features/animes/chapter-action-diagnostics.types";
-import { runChapterMutation } from "../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen-callback.helpers";
-import type { AnimeListScreenChapterMutationDeps } from "../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types";
+import {
+  runChapterMutation,
+  runManualRefresh,
+} from "../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen-callback.helpers";
+import type {
+  AnimeListScreenChapterMutationDeps,
+  AnimeListScreenManualRefreshDeps,
+} from "../../../../src/features/animes/ui/AnimeListScreen/anime-list-screen.types";
 
 // The diagnostics recorder is mocked at the seam the runner actually calls: the runner's own
 // contract is the ORDER and the VALUES it forwards (the switch it resolved, the skip reason it
@@ -146,5 +152,56 @@ describe("runChapterMutation", () => {
 
     expect(setIsMutatingAnimeById).toHaveBeenNthCalledWith(1, { "thu-1": true });
     expect(setIsMutatingAnimeById).toHaveBeenLastCalledWith({});
+  });
+});
+
+/** Builds the refresh runner collaborators: a sync spy, a refreshing-state spy and a toast spy. */
+function buildRefreshDeps(manualSync: AnimeListScreenManualRefreshDeps["manualSync"]) {
+  const show = jest.fn();
+  const setIsRefreshing = jest.fn();
+
+  return {
+    deps: {
+      manualSync,
+      setIsRefreshing,
+      syncFacts: {
+        connectionStatus: "idle",
+        isBridgeConfigured: true,
+        isDeviceOnline: false,
+        lastSyncAt: null,
+        pendingOpsCount: 0,
+      },
+      toast: { show },
+    } satisfies AnimeListScreenManualRefreshDeps,
+    setIsRefreshing,
+    show,
+  };
+}
+
+describe("runManualRefresh", () => {
+  it("shows the spinner while the sync runs and hides it after a success, with no toast", async () => {
+    const { deps, setIsRefreshing, show } = buildRefreshDeps(jest.fn().mockResolvedValue(undefined));
+
+    await runManualRefresh(deps);
+
+    expect(deps.manualSync).toHaveBeenCalledTimes(1);
+    expect(setIsRefreshing.mock.calls).toEqual([[true], [false]]);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("stays resolved, warns with the offline copy and hides the spinner when the sync rejects", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { deps, setIsRefreshing, show } = buildRefreshDeps(
+      jest.fn().mockRejectedValue(new Error("boom")),
+    );
+
+    await expect(runManualRefresh(deps)).resolves.toBeUndefined();
+
+    expect(setIsRefreshing.mock.calls).toEqual([[true], [false]]);
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "warning", duration: 4000 }),
+    );
+    expect(warn).toHaveBeenCalledWith("[AnimeListScreen] Manual refresh failed:", expect.any(Error));
+    warn.mockRestore();
   });
 });
