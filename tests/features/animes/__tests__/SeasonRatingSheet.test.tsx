@@ -50,9 +50,9 @@ describe('SeasonRatingSheet', () => {
       />,
     );
 
-    expect(getByText('Nota')).toBeTruthy();
+    expect(getByText('Tu nota')).toBeTruthy();
     expect(queryByText('Kaiju No. 8')).toBeNull();
-    expect(getByTestId('heroui-bottom-sheet-content').props.accessibilityLabel).toBe('Nota');
+    expect(getByTestId('heroui-bottom-sheet-content').props.accessibilityLabel).toBe('Tu nota');
   });
 
   it('never renders a season selector', () => {
