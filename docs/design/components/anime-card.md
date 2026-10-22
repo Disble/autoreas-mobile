@@ -63,7 +63,7 @@ whatever replaces it. It contains no appearance claim: class strings are quoted,
 | Actions row | `flex-row items-center gap-2`: the `AnimeCardShortcuts` group, a `flex-1` spacer, then the stepper or `Reanudar` | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:34`–`:43` |
 | Shortcuts | icon-only `Button size="sm" variant="tertiary"` with `hitSlop={4}`, icons `link-outline` / `folder-outline` at 20 pt, labels `Abrir página del anime` / `Abrir carpeta del anime`, first in the left group | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:19`–`:42` |
 | Note star | icon-only `Button` (`star-outline` at 20 pt, `text-accent-soft-foreground`), `size="sm" variant="tertiary"` with `hitSlop={4}`, label `Abrir la calificación de la nota`, last in the left group and drawn only when `seasonStatus.showRatingCta` | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:43`–`:54` |
-| Locked state | labelled `Reanudar` button with a `play-outline` icon and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:44`–`:54` |
+| Locked state | labelled `Reanudar` button, `variant="tertiary"` like the shortcuts, with an 18 pt `play-outline` icon in `text-foreground` and `hitSlop={4}`, shown instead of the chapter controls | `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:44`–`:54` |
 | Chapter controls | two `isIconOnly size-10` buttons with `hitSlop={4}`, `variant="tertiary"` and `"primary"`, `remove-outline` / `add-outline` at 20 pt, labels `Restar un capítulo visto` / `Sumar un capítulo visto`, 12 pt apart (`gap-3`) with no count between them; the count lives on the meta line | `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:24`–`:49` |
 
 ## The meta line
@@ -171,7 +171,7 @@ decrement needs `nrocapvisto > 0`, increment is blocked once a known total is re
 | Shell | `Card`, `Card.Body` | `src/features/animes/ui/AnimeCard/AnimeCard.tsx:1`, `:42`–`:43` |
 | Chips | `Chip`, `Chip.Label`, only for the long-episode mark | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:38`–`:40` |
 | Buttons | `Button`, `Button.Label` | `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:20`–`:53`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:45`–`:54`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:25`–`:48` |
-| Icons | Every card icon is the Ionicons `-outline` variant, at 20 pt in the actions row; `StyledIonicons` (`withUniwind(Ionicons)`) takes classes, and the plain `Ionicons` play glyph inherits the `Reanudar` button colour | `src/components/theme-toggle.constants.ts:6`, `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:28`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:52`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:35` |
+| Icons | Every card icon is the Ionicons `-outline` variant, at 20 pt in the actions row (the `Reanudar` play glyph is 18 pt, beside its label); `StyledIonicons` (`withUniwind(Ionicons)`) takes classes | `src/components/theme-toggle.constants.ts:6`, `src/features/animes/ui/AnimeCard/AnimeCardShortcuts.tsx:28`, `src/features/animes/ui/AnimeCard/AnimeCardActions.tsx:52`, `src/features/animes/ui/AnimeCard/AnimeCardChapterControls.tsx:35` |
 | Text | `AppText`, which prepends `font-normal` | `src/components/app-text.tsx:9` |
 | Placeholder | `CoverPlaceholderScene` | `src/components/cover-placeholder-scene.tsx:86` |
 | Touches | React Native `View` and `Pressable` only | `src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:22`, `src/features/animes/ui/AnimeCard/AnimeCardStateBadge.tsx:13` |
@@ -239,7 +239,10 @@ and the request opens a HeroUI Native `BottomSheet`
 buttons labelled `Calificar {n} de 6`
 (`src/features/animes/ui/SeasonRatingSheet/season-rating-sheet.constants.ts:2`,
 `src/features/animes/ui/SeasonRatingSheet/SeasonRatingSheet.tsx:28`). The state ellipsis opens the same
-kind of sheet (`src/features/animes/ui/AnimeStateSheet/AnimeStateSheet.tsx:19`).
+kind of sheet (`src/features/animes/ui/AnimeStateSheet/AnimeStateSheet.tsx:19`): the title, the anime's
+name under it in `text-muted`, and one 48 pt row per state with a dot in the state's role (`accent`,
+`success`, `warning`, `danger`) and the label; the current state has a `bg-default` fill and an
+accent check.
 
 ## What this page does not claim
 

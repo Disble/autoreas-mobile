@@ -25,6 +25,7 @@ export function AnimeListScreenSheets(props: Readonly<AnimeListScreenSheetsProps
       <AnimeStateSheet
         visible={stateSheetRequest !== null}
         currentEstado={stateSheetRequest?.currentEstado ?? 0}
+        animeTitle={stateSheetRequest?.animeTitle ?? ''}
         onSelect={handleStateSheetSelect}
         onClose={handleCloseStateSheet}
       />

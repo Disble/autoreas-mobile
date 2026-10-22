@@ -120,6 +120,7 @@ describe("useAnimeListScreen", () => {
     expect(result.current.stateSheetRequest).toEqual({
       animeId: "thu-1",
       currentEstado: 0,
+      animeTitle: "Thursday Anime",
     });
   });
 

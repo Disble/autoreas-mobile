@@ -29,6 +29,8 @@ export interface AnimeListScreenContextualHeader {
 export interface AnimeStateSheetRequest {
   readonly animeId: string;
   readonly currentEstado: number;
+  /** Shown under the sheet title, so the user sees which anime the state applies to. */
+  readonly animeTitle: string;
 }
 
 /**

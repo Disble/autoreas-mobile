@@ -1,17 +1,18 @@
 import { act, renderHook } from '@testing-library/react-native';
+import { useAnimeStateSheet } from '../../../src/features/animes/ui/AnimeStateSheet/use-anime-state-sheet';
+import type { AnimeStateSheetProps } from '../../../src/features/animes/ui/AnimeStateSheet/anime-state-sheet.types';
 
 jest.mock('heroui-native', () => ({
   useThemeColor: (tokens: readonly string[]) =>
     tokens.map((token) => `theme-${token}`),
 }));
 
-import { useAnimeStateSheet } from '../../../src/features/animes/ui/AnimeStateSheet/use-anime-state-sheet';
-import type { AnimeStateSheetProps } from '../../../src/features/animes/ui/AnimeStateSheet/anime-state-sheet.types';
-
+/** Builds closed sheet props for an anime that is being watched, with fresh callbacks. */
 function buildProps(overrides?: Partial<AnimeStateSheetProps>): AnimeStateSheetProps {
   return {
     visible: false,
     currentEstado: 0,
+    animeTitle: 'Frieren',
     onSelect: jest.fn(),
     onClose: jest.fn(),
     ...overrides,
@@ -90,17 +91,22 @@ describe('useAnimeStateSheet', () => {
     expect(result.current).not.toHaveProperty('renderBackdrop');
   });
 
-  it('resolves icon colors from theme tokens instead of hardcoded hex', () => {
+  it('gives each option only its label and the tone of its dot', () => {
     const { result } = renderHook(() => useAnimeStateSheet(buildProps()));
 
-    expect(Object.keys(result.current.toneIconColors).sort()).toEqual([
-      'danger',
-      'default',
-      'success',
-      'warning',
+    expect(result.current.options.map(({ label, tone }) => [label, tone])).toEqual([
+      ['Viendo', 'accent'],
+      ['Finalizado', 'success'],
+      ['En pausa', 'warning'],
+      ['No me gustó', 'danger'],
     ]);
-    expect(result.current.selectedIconColor).toBe('theme-success');
-    expect(result.current.toneIconColors.danger).toBe('theme-danger');
-    expect(result.current.toneIconColors.default).toBe('theme-muted');
+    expect(result.current.options[0]).not.toHaveProperty('description');
+    expect(result.current.options[0]).not.toHaveProperty('icon');
+  });
+
+  it('draws the check of the current option in the accent token', () => {
+    const { result } = renderHook(() => useAnimeStateSheet(buildProps()));
+
+    expect(result.current.checkColor).toBe('theme-accent');
   });
 });

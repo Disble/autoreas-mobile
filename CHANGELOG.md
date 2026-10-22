@@ -16,6 +16,15 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.3.2] — 2026-10-21
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Changed
+
+- The "Cambiar estado" sheet now shows the anime's name under its title, and each state is a simple row with a coloured dot (blue for Viendo, green for Finalizado, amber for En pausa, red for No me gustó). The current state has a soft grey fill and a blue check. The icons and the short descriptions are gone.
+- The "Reanudar" button on a finished or paused anime is now grey with white text, like the page and folder buttons beside it, with a larger play icon.
+
 ## [2.3.1] — 2026-10-21
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
