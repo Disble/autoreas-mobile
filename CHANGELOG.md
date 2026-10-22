@@ -16,6 +16,18 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-10-21
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Fixed
+
+- An empty list no longer says the same thing twice. The line above the list always shows the count, now also at zero ("Ningún anime para ver", or "Ningún anime · Mié 21 oct" on today's filter), and the message in the middle explains why it is empty.
+- The empty "Ver hoy", "Sin ver" and "Visto" lists now explain the premiere stage instead of suggesting another day or a manual sync: "Hoy no hay estrenos para ver.", "No hay estrenos pendientes esta temporada." and "Todavía no viste ningún estreno esta temporada.", each with its own hint.
+- The "Visto" filter counts its animes as watched ("12 animes vistos") instead of "para ver".
+- The weekday empty-state hint now reads in neutral Spanish: "Cuando Bridge sincronice animes para este día, aparecerán aquí."
+- Screen readers no longer announce "Alternar episodios restantes" on a card that has no remaining episodes to show.
+
 ## [2.3.0] — 2026-10-21
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
