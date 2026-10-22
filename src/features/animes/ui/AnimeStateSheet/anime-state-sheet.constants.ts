@@ -4,6 +4,9 @@ import type { AnimeEstadoDefinition, AnimeStateSheetTone } from './anime-state-s
 
 export const ANIME_STATE_SHEET_TITLE = 'Cambiar estado';
 
+/** Labels the confirm action that applies the chosen state, the same word the note sheet saves with. */
+export const ANIME_STATE_SHEET_CONFIRM_LABEL = 'Guardar';
+
 /**
  * Draws each option's 8 pt dot in the role of its state, the same tones the card uses. Each entry is
  * the whole class string: composing `bg-*` through `cn()` drew no colour on device, while the full

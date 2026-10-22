@@ -20,11 +20,10 @@ import {
 import { matchesAnimeDayFilter } from "../../anime.helpers";
 import type { AnimeDayFilter } from "../../anime.types";
 import type { AnimeListItem } from "../../anime-season.types";
-import { AnimeCard } from "../AnimeCard/AnimeCard";
-import type { AnimeCardProps } from "../AnimeCard/anime-card.types";
 import { AnimeListScreenHeaderLeft } from "./AnimeListScreenHeaderLeft";
 import { AnimeListScreenHeaderRight } from "./AnimeListScreenHeaderRight";
 import { AnimeListScreenHeaderTitle } from "./AnimeListScreenHeaderTitle";
+import { AnimeListScreenItem } from "./AnimeListScreenItem";
 import {
   deriveVisibleSyncStatus as deriveSharedVisibleSyncStatus,
   isManualSyncAvailableNow,
@@ -36,6 +35,7 @@ import type {
   AnimeListScreenHeaderLeftProps,
   AnimeListScreenHeaderRightProps,
   AnimeListScreenHeaderTitleProps,
+  AnimeListScreenItemProps,
   AnimeListScreenManualSyncAvailabilityFacts,
   AnimeListScreenRefreshFeedback,
   AnimeListScreenRenderModel,
@@ -83,19 +83,15 @@ export function formatTodayLabel(date: Date): string {
 }
 
 /**
- * Formats the Spanish count subtitle: "Ningún anime para ver", "1 anime para ver" or "3 animes para
- * ver". Zero keeps the same shape so the line above the list always reads as the count. `Visto` holds
- * premieres already watched, so it counts them as "vistos" instead.
+ * Formats the Spanish count subtitle: "Sin animes", "1 anime" or "3 animes". The title above already
+ * names the day or premiere stage, so the count needs no qualifier, and zero keeps the line reading as
+ * the count.
  */
-function buildCountSubtitle(count: number, filter: AnimeDayFilter): string {
-  const [single, plural] = filter === "Visto" ? ["visto", "vistos"] : ["para ver", "para ver"];
+function buildCountSubtitle(count: number): string {
   if (count === 0) {
-    return `Ningún anime ${single}`;
+    return "Sin animes";
   }
-  if (count === 1) {
-    return `1 anime ${single}`;
-  }
-  return `${count} animes ${plural}`;
+  return count === 1 ? "1 anime" : `${count} animes`;
 }
 
 /**
@@ -172,8 +168,8 @@ export function buildContextualHeader(
   // The line always reads as the count, zero included; the empty state in the middle is what explains
   // an empty list, so the two never repeat each other.
   const subtitle = isToday
-    ? `${buildCountSubtitle(count, filter).replace(" para ver", "")} · ${formatTodayLabel(now)}`
-    : buildCountSubtitle(count, filter);
+    ? `${buildCountSubtitle(count)} · ${formatTodayLabel(now)}`
+    : buildCountSubtitle(count);
 
   return {
     title,
@@ -273,19 +269,20 @@ export function getAnimeListItemKey(item: AnimeListItem): string {
 }
 
 /**
- * Builds the stable FlatList renderItem function outside the screen component.
- * This avoids redefining a JSX-producing function (and the inline-FlatList-renderItem
- * perf trap) on every AnimeListScreenContent render.
+ * Builds the FlatList renderItem function outside the screen component: a grid cell wrapping one
+ * `AnimeListScreenItem`. React Compiler memoizes this call in the screen, so the renderer keeps its
+ * identity while `getAnimeListItemProps` does; FlatList's cells then skip every row whose item did
+ * not change, and a row that does re-render keeps its card unless the card's own props changed.
  */
 export function buildAnimeListItemRenderer(
-  getAnimeCardProps: (item: AnimeListItem) => AnimeCardProps,
+  getAnimeListItemProps: (item: AnimeListItem) => AnimeListScreenItemProps,
   cellClassName: string | undefined,
 ): (info: ListRenderItemInfo<AnimeListItem>) => ReactElement {
   return function renderAnimeListItem({ item }: ListRenderItemInfo<AnimeListItem>) {
     return createElement(
       View,
       { className: cellClassName },
-      createElement(AnimeCard, getAnimeCardProps(item)),
+      createElement(AnimeListScreenItem, getAnimeListItemProps(item)),
     );
   };
 }

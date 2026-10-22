@@ -1,5 +1,3 @@
-import type { TextStyle, ViewStyle } from 'react-native';
-import type { AnimatedStyle } from 'react-native-reanimated';
 import type { Anime } from '../../../../infrastructure/validation/anime-schema';
 import type { AnimeSeasonProjection } from '../../anime-season.types';
 
@@ -88,10 +86,6 @@ export interface AnimeCardMetaToggleProps {
   /** The toggle's action, announced only when there are remaining episodes to switch to. */
   readonly hint?: string;
   readonly onPress: () => void;
-  /** Lifts the line during the chapter-change bump. */
-  readonly lineStyle?: AnimatedStyle<ViewStyle>;
-  /** Turns the count accent during the chapter-change bump. */
-  readonly countStyle?: AnimatedStyle<TextStyle>;
 }
 
 /** Defines the data contract for the anime card info block (title, meta line and long-episode mark). */
@@ -106,8 +100,6 @@ export interface AnimeCardInfoProps {
   readonly onToggleMeta: () => void;
   /** "Ep. 7 · 45 min" when the next episode is long; `null` hides the mark. */
   readonly longEpisodeLabel: string | null;
-  readonly lineStyle?: AnimatedStyle<ViewStyle>;
-  readonly countStyle?: AnimatedStyle<TextStyle>;
 }
 
 /** Defines the data contract for the anime card state affordance (the ellipsis). */
@@ -122,7 +114,6 @@ export interface AnimeCardStateBadgeProps {
  * `seasonStatus` is read only for `showRatingCta`.
  */
 export interface AnimeCardActionsProps {
-  readonly plusStyle?: AnimatedStyle<ViewStyle>;
   readonly seasonStatus: AnimeSeasonStatusDescriptor | null;
   readonly isMutationLocked: boolean;
   readonly disableDecrease: boolean;
@@ -156,8 +147,6 @@ export interface AnimeCardShortcutsProps {
 
 /** Defines the data contract for the anime card decrease/increase chapter stepper. */
 export interface AnimeCardChapterControlsProps {
-  /** Pulses the plus button after a chapter is added. */
-  readonly plusStyle?: AnimatedStyle<ViewStyle>;
   readonly disableDecrease: boolean;
   readonly disableIncrease: boolean;
   readonly onCapMinusPress: () => void;
@@ -171,8 +160,6 @@ export interface AnimeCardChapterControlsProps {
  * `seasonStatus` goes only to the actions row, which reads `showRatingCta`.
  */
 export interface AnimeCardContentProps {
-  /** The chapter-change feedback styles, forwarded to the meta line and the plus button. */
-  readonly feedback?: AnimeCardFeedbackStyles;
   readonly title: string;
   /** Forwarded untouched to `AnimeCardInfo`, which draws one span per segment. */
   readonly metaSegments: readonly AnimeCardMetaSegment[];
@@ -197,11 +184,4 @@ export interface AnimeCardContentProps {
   readonly onCapPlusPress: () => void;
   readonly onCapMinusLongPress: () => void;
   readonly onCapPlusLongPress: () => void;
-}
-
-/** Defines the chapter-change feedback styles the card hook draws. */
-export interface AnimeCardFeedbackStyles {
-  readonly countStyle: AnimatedStyle<TextStyle>;
-  readonly lineStyle: AnimatedStyle<ViewStyle>;
-  readonly plusStyle: AnimatedStyle<ViewStyle>;
 }

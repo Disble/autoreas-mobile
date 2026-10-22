@@ -34,7 +34,7 @@ describe('buildSeasonRatingSegments', () => {
 
 describe('season rating sheet copy', () => {
   it('names the sheet Nota and its action Guardar', () => {
-    expect(SEASON_RATING_SHEET_COPY.title).toBe('Nota');
+    expect(SEASON_RATING_SHEET_COPY.title).toBe('Tu nota');
     expect(SEASON_RATING_SHEET_COPY.saveButton).toBe('Guardar');
   });
 

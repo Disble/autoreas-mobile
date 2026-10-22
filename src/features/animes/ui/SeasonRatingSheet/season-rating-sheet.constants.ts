@@ -9,7 +9,7 @@ export const SEASON_RATING_VALUES = [1, 2, 3, 4, 5, 6] as const;
  * and no sync wording because sync health is reported once, by the sync button in the bar.
  */
 export const SEASON_RATING_SHEET_COPY = {
-  title: "Nota",
+  title: "Tu nota",
   overlayLabel: "Cerrar la nota",
   comparisonArrow: "→",
   comparisonSavedLabel: "Nota guardada",

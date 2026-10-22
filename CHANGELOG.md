@@ -16,6 +16,27 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-10-22
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Added
+
+- The "Cambiar estado" sheet now has a "Guardar" button, like the rating sheet. Tapping a state only selects it; the change is applied when you press "Guardar", and closing the sheet without saving changes nothing.
+
+### Changed
+
+- Scrolling a long list of animes is smoother: stutter while scrolling dropped to less than half on a tablet with 14 cards.
+- The watched count on each card is shorter: "3 vistos" (or "1 visto") instead of "3 capítulos vistos".
+- The line above the list shows just the count: "3 animes", "1 anime" or "Sin animes", plus the date on today's filter ("3 animes · Mié 21 oct").
+- The rating sheet is titled "Tu nota".
+- The chapter + and − buttons no longer animate the count or vibrate; they still change the count exactly as before.
+- Syncing with Bridge or tapping + and − no longer redraws every card in the list, only the ones whose data changed.
+
+### Fixed
+
+- A rating picked and not saved in the rating sheet no longer shows up selected on the next anime you open it for. The sheet always opens on that anime's saved rating, or none.
+
 ## [2.3.2] — 2026-10-21
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.

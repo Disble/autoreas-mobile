@@ -262,4 +262,24 @@ describe("useAnimeList", () => {
       failureKind: "conflict",
     });
   });
+
+  it("keeps the item object of an anime whose row a database write left unchanged", () => {
+    const jueves = JSON.stringify([{ dia: "Jueves", orden: 1 }]);
+    mockLiveQueryData([
+      buildRow({ _id: "anime-1", dias: jueves }),
+      buildRow({ _id: "anime-2", dias: jueves }),
+    ]);
+    const { result, rerender } = renderHook(() => useAnimeList("Jueves"));
+    const [firstBefore, secondBefore] = result.current.data;
+
+    mockLiveQueryData([
+      buildRow({ _id: "anime-1", dias: jueves }),
+      buildRow({ _id: "anime-2", dias: jueves, nrocapvisto: 4 }),
+    ]);
+    rerender({});
+
+    expect(result.current.data[0]).toBe(firstBefore);
+    expect(result.current.data[1]).not.toBe(secondBefore);
+    expect(result.current.data[1]?.nrocapvisto).toBe(4);
+  });
 });

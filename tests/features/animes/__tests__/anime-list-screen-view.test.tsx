@@ -13,7 +13,7 @@ type AnimeListItem = AnimeListScreenRenderModel['animes'][number];
 /** Fixture contextual header for the status section test, hoisted so the prop is not a fresh object per render. */
 const STATUS_SECTION_CONTEXTUAL_HEADER = {
   title: 'Martes',
-  subtitle: '1 anime para ver',
+  subtitle: '1 anime',
   isToday: true,
 };
 
@@ -114,7 +114,7 @@ function buildProps(
     },
     contextualHeader: {
       title: 'Martes',
-      subtitle: '1 anime para ver',
+      subtitle: '1 anime',
       isToday: false,
     },
     layoutMode: 'tablet-landscape',
@@ -160,15 +160,16 @@ function buildProps(
       handleSelectedFilterChange: jest.fn(),
       handleSeasonRatingSubmit: jest.fn().mockResolvedValue(undefined),
       handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
-      getAnimeCardProps: jest.fn((anime) => ({
+      getAnimeListItemProps: jest.fn((anime) => ({
         anime,
         isMutating: false,
-        onCapMinus: jest.fn(),
-        onCapMinusHalf: jest.fn(),
-        onCapPlus: jest.fn(),
-        onCapPlusHalf: jest.fn(),
-        onOpenSeasonRatingSheet: jest.fn(),
-        onOpenStateSheet: jest.fn(),
+        folderPath: null,
+        handleCapMinus: jest.fn().mockResolvedValue(undefined),
+        handleCapMinusHalf: jest.fn().mockResolvedValue(undefined),
+        handleCapPlus: jest.fn().mockResolvedValue(undefined),
+        handleCapPlusHalf: jest.fn().mockResolvedValue(undefined),
+        handleOpenSeasonRatingSheet: jest.fn(),
+        handleOpenStateSheet: jest.fn(),
       })),
       seasonRatingSheetRequest: null,
       ...overrides,
@@ -200,7 +201,7 @@ describe('AnimeListScreenView', () => {
     );
 
     expect(getByText('Modo temporada')).toBeTruthy();
-    expect(getByText('1 anime para ver')).toBeTruthy();
+    expect(getByText('1 anime')).toBeTruthy();
     expect(queryByText('Catálogo local listo')).toBeNull();
     expect(queryByTestId('heroui-alert')).toBeNull();
     expect(queryByText('Revisar conexión')).toBeNull();
@@ -279,17 +280,32 @@ describe('AnimeListScreenView', () => {
     expect(list.props.keyExtractor(props.animes[0])).toBe(props.animes[0]._id);
   });
 
-  it('passes mutation state as extraData so visible rows rerender on button lock changes', () => {
+  it('hands each row its own lock through renderItem instead of re-rendering every row via extraData', () => {
     const props = buildProps({
-      isMutatingAnimeById: {
-        'anime-1': true,
-      },
+      getAnimeListItemProps: jest.fn((anime) => ({
+        ...buildProps().getAnimeListItemProps(anime),
+        isMutating: anime._id === 'anime-1',
+      })),
     });
+    mockAnimeCard.mockClear();
     const { UNSAFE_getByType } = render(<AnimeListScreenView model={props} />);
 
     const list = UNSAFE_getByType(FlatList);
 
-    expect(list.props.extraData).toBe(props.isMutatingAnimeById);
+    expect(list.props.extraData).toBeUndefined();
+    expect(mockAnimeCard.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ anime: props.animes[0], isMutating: true }),
+    );
+  });
+
+  it('mounts about one screen of rows and keeps a small window of them alive', () => {
+    const { UNSAFE_getByType } = render(<AnimeListScreenView model={buildProps()} />);
+
+    const list = UNSAFE_getByType(FlatList);
+
+    expect(list.props.initialNumToRender).toBe(8);
+    expect(list.props.windowSize).toBe(5);
+    expect(list.props.maxToRenderPerBatch).toBe(4);
   });
 
   it('shows the sync alert inside the list column when the PC rejected the send', () => {

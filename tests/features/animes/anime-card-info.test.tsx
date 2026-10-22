@@ -3,14 +3,14 @@ import { AnimeCardInfo } from '../../../src/features/animes/ui/AnimeCard/AnimeCa
 import type { AnimeCardInfoProps } from '../../../src/features/animes/ui/AnimeCard/anime-card.types';
 
 /** Accessible label of the composed line, spoken as one string with the text separator. */
-const META_LABEL = '1 capítulo visto · Viendo · Nota 3/6';
+const META_LABEL = '1 visto · Viendo · Nota 3/6';
 
 /** Builds the info column of an anime with a count, a state and a note. */
 function buildProps(overrides: Partial<AnimeCardInfoProps> = {}): AnimeCardInfoProps {
   return {
     title: 'Ao Ashi Season 2nd',
     metaSegments: [
-      { kind: 'count', text: '1 capítulo visto' },
+      { kind: 'count', text: '1 visto' },
       { kind: 'state', text: 'Viendo' },
       { kind: 'note', text: 'Nota 3/6' },
     ],
@@ -25,7 +25,7 @@ describe('AnimeCardInfo meta line', () => {
   it('draws a round dot between segments and keeps the spoken label unchanged', () => {
     const { getByText, getByLabelText } = render(<AnimeCardInfo {...buildProps()} />);
 
-    expect(getByText('1 capítulo visto • Viendo • Nota 3/6')).toBeTruthy();
+    expect(getByText('1 visto • Viendo • Nota 3/6')).toBeTruthy();
     expect(getByLabelText(META_LABEL)).toBeTruthy();
   });
 
@@ -41,7 +41,7 @@ describe('AnimeCardInfo meta line', () => {
 
   it('draws all three spans at 13 pt, the count in the reading role and the state and the note in muted', () => {
     const { getByText } = render(<AnimeCardInfo {...buildProps()} />);
-    const count = getByText('1 capítulo visto').props.className;
+    const count = getByText('1 visto').props.className;
     const state = getByText('• Viendo').props.className;
     const note = getByText('• Nota 3/6').props.className;
 

@@ -123,16 +123,16 @@ describe("getLongEpisodeLabel", () => {
 
 describe("getWatchedCountLabel", () => {
   it("keeps the singular for exactly one watched chapter", () => {
-    expect(getWatchedCountLabel(1)).toBe("1 capítulo visto");
+    expect(getWatchedCountLabel(1)).toBe("1 visto");
   });
 
   it("uses the plural for every other count, including zero", () => {
-    expect(getWatchedCountLabel(0)).toBe("0 capítulos vistos");
-    expect(getWatchedCountLabel(6)).toBe("6 capítulos vistos");
+    expect(getWatchedCountLabel(0)).toBe("0 vistos");
+    expect(getWatchedCountLabel(6)).toBe("6 vistos");
   });
 
   it("keeps a fractional count visible instead of rounding it away", () => {
-    expect(getWatchedCountLabel(6.5)).toBe("6.5 capítulos vistos");
+    expect(getWatchedCountLabel(6.5)).toBe("6.5 vistos");
   });
 });
 
@@ -179,20 +179,20 @@ describe("getNoteSegmentLabel", () => {
 
 describe("composeMetaLine", () => {
   it("joins the segments with the dot separator", () => {
-    expect(composeMetaLine(["1 capítulo visto", "Viendo", "Nota 3/6"])).toBe(
-      "1 capítulo visto · Viendo · Nota 3/6",
+    expect(composeMetaLine(["1 visto", "Viendo", "Nota 3/6"])).toBe(
+      "1 visto · Viendo · Nota 3/6",
     );
   });
 
   it("never leaves a separator alone when a segment is absent", () => {
-    expect(composeMetaLine(["3 capítulos vistos", "Viendo", null])).toBe(
-      "3 capítulos vistos · Viendo",
+    expect(composeMetaLine(["3 vistos", "Viendo", null])).toBe(
+      "3 vistos · Viendo",
     );
-    expect(composeMetaLine(["3 capítulos vistos", "Viendo", undefined])).toBe(
-      "3 capítulos vistos · Viendo",
+    expect(composeMetaLine(["3 vistos", "Viendo", undefined])).toBe(
+      "3 vistos · Viendo",
     );
-    expect(composeMetaLine(["3 capítulos vistos", "Viendo", ""])).toBe(
-      "3 capítulos vistos · Viendo",
+    expect(composeMetaLine(["3 vistos", "Viendo", ""])).toBe(
+      "3 vistos · Viendo",
     );
     expect(composeMetaLine([null, "Viendo"])).toBe("Viendo");
     expect(composeMetaLine(["Viendo", null])).toBe("Viendo");
@@ -214,7 +214,7 @@ describe("getAnimeCardMetaSegments", () => {
         noteLabel: "Nota 3/6",
       }),
     ).toEqual([
-      { kind: "count", text: "1 capítulo visto" },
+      { kind: "count", text: "1 visto" },
       { kind: "state", text: "Viendo" },
       { kind: "note", text: "Nota 3/6" },
     ]);
@@ -228,7 +228,7 @@ describe("getAnimeCardMetaSegments", () => {
         noteLabel: null,
       }),
     ).toEqual([
-      { kind: "count", text: "3 capítulos vistos" },
+      { kind: "count", text: "3 vistos" },
       { kind: "state", text: "Viendo" },
     ]);
   });
@@ -256,7 +256,7 @@ describe("getAnimeCardMetaSegments", () => {
         stateLabel: "   ",
         noteLabel: "",
       }),
-    ).toEqual([{ kind: "count", text: "0 capítulos vistos" }]);
+    ).toEqual([{ kind: "count", text: "0 vistos" }]);
   });
 
   it("composes the accessible label from the same segments the view draws", () => {
@@ -271,7 +271,7 @@ describe("getAnimeCardMetaSegments", () => {
       composeMetaLine(segments.map((segment) => segment.text)),
     );
     expect(getAnimeCardMetaLabel(params)).toBe(
-      "6 capítulos vistos · En pausa · Nota 4/6",
+      "6 vistos · En pausa · Nota 4/6",
     );
   });
 });
@@ -284,7 +284,7 @@ describe("getAnimeCardMetaLabel", () => {
         stateLabel: "Viendo",
         noteLabel: "Nota 3/6",
       }),
-    ).toBe("1 capítulo visto · Viendo · Nota 3/6");
+    ).toBe("1 visto · Viendo · Nota 3/6");
   });
 
   it("renders several watched chapters while the anime is paused", () => {
@@ -294,7 +294,7 @@ describe("getAnimeCardMetaLabel", () => {
         stateLabel: "En pausa",
         noteLabel: "Nota 4/6",
       }),
-    ).toBe("6 capítulos vistos · En pausa · Nota 4/6");
+    ).toBe("6 vistos · En pausa · Nota 4/6");
   });
 
   it("ends at the state when there is no note segment to show", () => {
@@ -304,7 +304,7 @@ describe("getAnimeCardMetaLabel", () => {
         stateLabel: "Viendo",
         noteLabel: null,
       }),
-    ).toBe("3 capítulos vistos · Viendo");
+    ).toBe("3 vistos · Viendo");
   });
 
   it("renders Sin nota when the note segment exists but holds no rating", () => {
@@ -314,7 +314,7 @@ describe("getAnimeCardMetaLabel", () => {
         stateLabel: "Viendo",
         noteLabel: "Sin nota",
       }),
-    ).toBe("1 capítulo visto · Viendo · Sin nota");
+    ).toBe("1 visto · Viendo · Sin nota");
   });
 
   it("swaps only the count segment for the remaining form while the toggle is on", () => {
@@ -338,7 +338,7 @@ describe("getAnimeCardMetaLabel", () => {
         restantesLabel: null,
         restantesShown: true,
       }),
-    ).toBe("6 capítulos vistos · Viendo · Nota 4/6");
+    ).toBe("6 vistos · Viendo · Nota 4/6");
   });
 
   it("carries the state label of every persisted estado, paused included", () => {
@@ -349,9 +349,9 @@ describe("getAnimeCardMetaLabel", () => {
         noteLabel: null,
       });
 
-    expect(lineFor(0)).toBe("2 capítulos vistos · Viendo");
-    expect(lineFor(1)).toBe("2 capítulos vistos · Finalizado");
-    expect(lineFor(2)).toBe("2 capítulos vistos · No me gustó");
-    expect(lineFor(3)).toBe("2 capítulos vistos · En pausa");
+    expect(lineFor(0)).toBe("2 vistos · Viendo");
+    expect(lineFor(1)).toBe("2 vistos · Finalizado");
+    expect(lineFor(2)).toBe("2 vistos · No me gustó");
+    expect(lineFor(3)).toBe("2 vistos · En pausa");
   });
 });

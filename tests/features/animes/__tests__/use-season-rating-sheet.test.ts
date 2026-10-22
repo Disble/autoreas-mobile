@@ -80,6 +80,42 @@ describe('useSeasonRatingSheet', () => {
     expect(result.current.selectedRating).toBe(6);
   });
 
+  it('drops an unsaved choice when the sheet reopens for an anime without a note', () => {
+    const initialProps = buildProps({ animeTitle: 'Anime A' });
+    const { result, rerender } = renderHook(
+      (p) => useSeasonRatingSheet(p as SeasonRatingSheetProps),
+      { initialProps },
+    );
+
+    act(() => {
+      result.current.handleSelectRating(4);
+    });
+
+    rerender({ ...initialProps, isOpen: false, animeTitle: '' });
+    rerender({ ...initialProps, animeTitle: 'Anime B' });
+
+    expect(result.current.selectedRating).toBeNull();
+    expect(result.current.isSaveVisible).toBe(false);
+  });
+
+  it('shows the saved note, not an unsaved choice, when the sheet reopens for another anime', () => {
+    const initialProps = buildProps({ animeTitle: 'Anime A' });
+    const { result, rerender } = renderHook(
+      (p) => useSeasonRatingSheet(p as SeasonRatingSheetProps),
+      { initialProps },
+    );
+
+    act(() => {
+      result.current.handleSelectRating(4);
+    });
+
+    rerender({ ...initialProps, isOpen: false, animeTitle: '' });
+    rerender({ ...initialProps, animeTitle: 'Anime C', bridgeRating: 2 });
+
+    expect(result.current.selectedRating).toBe(2);
+    expect(result.current.comparison).toBeNull();
+  });
+
   it('compares the draft with the saved note only while they differ', () => {
     const { result } = renderHook(() =>
       useSeasonRatingSheet(buildProps({ bridgeRating: 3 })),

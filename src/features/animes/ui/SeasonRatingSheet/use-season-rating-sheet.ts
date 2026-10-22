@@ -29,6 +29,16 @@ export function useSeasonRatingSheet(
 
   // 2. State
   const [userRatingChoice, setUserRatingChoice] = useState<SeasonRatingValue | null>(null);
+  const [wasOpen, setWasOpen] = useState(props.isOpen);
+
+  // One sheet serves every anime, so an unsaved choice is dropped each time it opens: the draft
+  // starts from the opened anime's saved note. Reset during render so the stale choice never paints.
+  if (wasOpen !== props.isOpen) {
+    setWasOpen(props.isOpen);
+    if (props.isOpen) {
+      setUserRatingChoice(null);
+    }
+  }
 
   // 3. Context/3rd Party Hooks
 

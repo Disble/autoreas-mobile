@@ -10,7 +10,6 @@ import type {
 import type { AnimeListItem } from '../../anime-season.types';
 import type { SeasonRatingValue } from '../SeasonRatingSheet';
 import type { AnimeDayFilter, AnimeDayFilterOption } from '../../anime.types';
-import type { AnimeCardProps } from '../AnimeCard';
 
 /** Defines the anime list screen props value shape. */
 export type AnimeListScreenProps = Record<never, never>;
@@ -134,6 +133,14 @@ export interface AnimeListScreenChapterMutationDeps {
   readonly toast: AnimeListScreenFailureToast;
 }
 
+/** Defines the collaborators one manual refresh of the list resolves per call. */
+export interface AnimeListScreenManualRefreshDeps {
+  readonly manualSync: () => Promise<unknown>;
+  readonly setIsRefreshing: (isRefreshing: boolean) => void;
+  readonly syncFacts: AnimeListScreenSyncFacts;
+  readonly toast: AnimeListScreenFailureToast;
+}
+
 /** Defines the data contract produced by the anime list screen behavior hook. */
 export interface AnimeListScreenViewModel {
   readonly animes: AnimeListItem[];
@@ -176,9 +183,26 @@ export interface AnimeListScreenViewModel {
   readonly handleStateSheetSelect: (estado: number) => Promise<void>;
 }
 
+/**
+ * Defines the data contract for one list row: its anime, its own lock and folder, and the screen-level
+ * handlers that take an anime id. Every member keeps its identity unless that row's data changed, so a
+ * write or a tap re-renders only the rows it touched.
+ */
+export interface AnimeListScreenItemProps {
+  readonly anime: AnimeListItem;
+  readonly isMutating: boolean;
+  readonly folderPath: string | null;
+  readonly handleCapMinus: (animeId: string) => Promise<void>;
+  readonly handleCapMinusHalf: (animeId: string) => Promise<void>;
+  readonly handleCapPlus: (animeId: string) => Promise<void>;
+  readonly handleCapPlusHalf: (animeId: string) => Promise<void>;
+  readonly handleOpenSeasonRatingSheet: (animeId: string) => void;
+  readonly handleOpenStateSheet: (animeId: string, currentEstado: number) => void;
+}
+
 /** Defines the complete render model consumed by the dumb anime list screen view. */
 export interface AnimeListScreenRenderModel extends AnimeListScreenViewModel {
-  readonly getAnimeCardProps: (item: AnimeListItem) => AnimeCardProps;
+  readonly getAnimeListItemProps: (item: AnimeListItem) => AnimeListScreenItemProps;
 }
 
 /** Defines the stable prop boundary for the dumb anime list screen view. */
@@ -213,11 +237,10 @@ export type AnimeListScreenContentProps = Pick<
   | 'animes'
   | 'isEmpty'
   | 'isManualSyncEnabled'
-  | 'isMutatingAnimeById'
   | 'isRefreshing'
   | 'layoutMode'
   | 'selectedFilter'
-  | 'getAnimeCardProps'
+  | 'getAnimeListItemProps'
   | 'handleRefresh'
 >;
 

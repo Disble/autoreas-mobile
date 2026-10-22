@@ -1,8 +1,11 @@
 import { FlatList, View } from 'react-native';
 import { AnimeEmptyState } from '../AnimeEmptyState';
 import {
+  ANIME_LIST_SCREEN_INITIAL_ROWS_TO_RENDER,
+  ANIME_LIST_SCREEN_MAX_ROWS_PER_BATCH,
   ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME,
   ANIME_LIST_SCREEN_TABLET_LANDSCAPE_COLUMNS,
+  ANIME_LIST_SCREEN_WINDOW_SIZE,
 } from './anime-list-screen.constants';
 import {
   buildAnimeListItemRenderer,
@@ -15,17 +18,18 @@ import type { AnimeListScreenContentProps } from './anime-list-screen.types';
  * Renders either the empty state or the responsive anime grid. The grid scrolls inside a container
  * with the card radius, so a card leaving the viewport is clipped by a rounded corner instead of a
  * straight cut; the two-column grid's 8 pt cell insets are pulled back with a negative margin.
+ * No `extraData`: a row's lock reaches it through `renderItem`, which changes with the lock, and each
+ * row keeps its card unless that card's own props changed.
  */
 export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentProps>) {
   const {
     animes,
     isEmpty,
     isManualSyncEnabled,
-    isMutatingAnimeById,
     isRefreshing,
     layoutMode,
     selectedFilter,
-    getAnimeCardProps,
+    getAnimeListItemProps,
     handleRefresh,
   } = props;
   const numColumns =
@@ -34,7 +38,7 @@ export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentPro
       : 1;
   const cellClassName =
     numColumns > 1 ? ANIME_LIST_SCREEN_TABLET_LANDSCAPE_CELL_CLASS_NAME : undefined;
-  const renderItem = buildAnimeListItemRenderer(getAnimeCardProps, cellClassName);
+  const renderItem = buildAnimeListItemRenderer(getAnimeListItemProps, cellClassName);
   const refreshControl = buildAnimeListRefreshControl(
     isManualSyncEnabled,
     isRefreshing,
@@ -57,13 +61,15 @@ export function AnimeListScreenContent(props: Readonly<AnimeListScreenContentPro
       <FlatList
         contentContainerClassName="pb-12"
         data={animes}
-        extraData={isMutatingAnimeById}
+        initialNumToRender={ANIME_LIST_SCREEN_INITIAL_ROWS_TO_RENDER}
         key={`anime-list-${numColumns}`}
         keyExtractor={getAnimeListItemKey}
+        maxToRenderPerBatch={ANIME_LIST_SCREEN_MAX_ROWS_PER_BATCH}
         numColumns={numColumns}
         refreshControl={refreshControl}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
+        windowSize={ANIME_LIST_SCREEN_WINDOW_SIZE}
       />
     </View>
   );

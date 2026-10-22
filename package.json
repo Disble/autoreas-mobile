@@ -1,6 +1,6 @@
 {
   "name": "autoreas-mobile",
-  "version": "2.3.2",
+  "version": "2.4.0",
   "license": "Apache-2.0",
   "main": "expo-router/entry",
   "scripts": {
@@ -98,5 +98,10 @@
   "private": true,
   "trustedDependencies": [
     "lefthook"
-  ]
+  ],
+  "reanimated": {
+    "staticFeatureFlags": {
+      "USE_COMMIT_HOOK_ONLY_FOR_REACT_COMMITS": true
+    }
+  }
 }
