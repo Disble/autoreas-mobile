@@ -84,16 +84,18 @@ export function formatTodayLabel(date: Date): string {
 
 /**
  * Formats the Spanish count subtitle: "Ningún anime para ver", "1 anime para ver" or "3 animes para
- * ver". Zero keeps the same shape so the line above the list always reads as the count.
+ * ver". Zero keeps the same shape so the line above the list always reads as the count. `Visto` holds
+ * premieres already watched, so it counts them as "vistos" instead.
  */
-function buildCountSubtitle(count: number): string {
+function buildCountSubtitle(count: number, filter: AnimeDayFilter): string {
+  const [single, plural] = filter === "Visto" ? ["visto", "vistos"] : ["para ver", "para ver"];
   if (count === 0) {
-    return "Ningún anime para ver";
+    return `Ningún anime ${single}`;
   }
   if (count === 1) {
-    return "1 anime para ver";
+    return `1 anime ${single}`;
   }
-  return `${count} animes para ver`;
+  return `${count} animes ${plural}`;
 }
 
 /**
@@ -170,8 +172,8 @@ export function buildContextualHeader(
   // The line always reads as the count, zero included; the empty state in the middle is what explains
   // an empty list, so the two never repeat each other.
   const subtitle = isToday
-    ? `${buildCountSubtitle(count).replace(" para ver", "")} · ${formatTodayLabel(now)}`
-    : buildCountSubtitle(count);
+    ? `${buildCountSubtitle(count, filter).replace(" para ver", "")} · ${formatTodayLabel(now)}`
+    : buildCountSubtitle(count, filter);
 
   return {
     title,

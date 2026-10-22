@@ -129,7 +129,7 @@ describe("anime-list-screen helpers", () => {
     it.each([
       ["Sábado", "Ningún anime para ver"],
       ["Sin ver", "Ningún anime para ver"],
-      ["Visto", "Ningún anime para ver"],
+      ["Visto", "Ningún anime visto"],
       ["Jueves", "Ningún anime · Jue 9 abr"],
       ["Ver hoy", "Ningún anime · Jue 9 abr"],
     ] as const)("keeps the count for an empty %s list: %s", (filter, subtitle) => {
@@ -170,7 +170,13 @@ describe("anime-list-screen helpers", () => {
       );
 
       expect(header.title).toBe("Vistos");
-      expect(header.subtitle).toBe("5 animes para ver");
+      expect(header.subtitle).toBe("5 animes vistos");
+    });
+
+    it("counts one watched anime in the singular for Visto", () => {
+      const header = buildContextualHeader("Visto", 1, new Date("2026-04-09T10:00:00.000Z"));
+
+      expect(header.subtitle).toBe("1 anime visto");
     });
 
     it("uses pseudo-day copy for Sin ver", () => {

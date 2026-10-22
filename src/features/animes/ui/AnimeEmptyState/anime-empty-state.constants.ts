@@ -20,17 +20,22 @@ export const PSEUDO_DAY_ICONS: Readonly<Record<AnimePseudoDayFilter, IoniconName
 /** Provides the shared pseudo day messages value. */
 
 export const PSEUDO_DAY_MESSAGES: Readonly<Record<AnimePseudoDayFilter, string>> = {
-  'Sin ver': 'No hay estrenos sin ver.',
-  'Ver hoy': 'No hay estrenos para ver hoy.',
-  Visto: 'No hay estrenos marcados como vistos.',
+  'Sin ver': 'No hay estrenos pendientes esta temporada.',
+  'Ver hoy': 'Hoy no hay estrenos para ver.',
+  Visto: 'Todavía no viste ningún estreno esta temporada.',
 };
 
 /** Provides the shared weekday empty state hint value. */
 
 export const WEEKDAY_EMPTY_STATE_HINT =
-  'Cuando Bridge sincronice animes para este día van a aparecer acá.';
+  'Cuando Bridge sincronice animes para este día, aparecerán aquí.';
 
-/** Provides the shared pseudo day empty state hint value. */
-
-export const PSEUDO_DAY_EMPTY_STATE_HINT =
-  'Prueba con otro día o actualiza la sincronización manual.';
+/**
+ * Explains each empty premiere stage. The three filters are stages a premiere moves through during
+ * the season, not days, so an empty one is normal and never points the user at another day or a sync.
+ */
+export const PSEUDO_DAY_EMPTY_STATE_HINTS: Readonly<Record<AnimePseudoDayFilter, string>> = {
+  'Sin ver': 'Ya viste todos o todavía no se agregaron estrenos.',
+  'Ver hoy': 'Día libre: nada en la lista de hoy.',
+  Visto: 'Los estrenos que termines aparecerán aquí.',
+};

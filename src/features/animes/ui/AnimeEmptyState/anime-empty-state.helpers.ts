@@ -1,6 +1,6 @@
 import {
   DEFAULT_WEEKDAY_ICON,
-  PSEUDO_DAY_EMPTY_STATE_HINT,
+  PSEUDO_DAY_EMPTY_STATE_HINTS,
   PSEUDO_DAY_ICONS,
   PSEUDO_DAY_MESSAGES,
   WEEKDAY_EMPTY_STATE_HINT,
@@ -19,7 +19,7 @@ export function buildAnimeEmptyState(filter: AnimeDayFilter): AnimeEmptyStateVie
     return {
       icon: PSEUDO_DAY_ICONS[pseudoDayFilter],
       message: PSEUDO_DAY_MESSAGES[pseudoDayFilter],
-      hint: PSEUDO_DAY_EMPTY_STATE_HINT,
+      hint: PSEUDO_DAY_EMPTY_STATE_HINTS[pseudoDayFilter],
     };
   }
 
