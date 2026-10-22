@@ -13,7 +13,7 @@ type AnimeListItem = AnimeListScreenRenderModel['animes'][number];
 /** Fixture contextual header for the status section test, hoisted so the prop is not a fresh object per render. */
 const STATUS_SECTION_CONTEXTUAL_HEADER = {
   title: 'Martes',
-  subtitle: '1 anime para ver',
+  subtitle: '1 anime',
   isToday: true,
 };
 
@@ -114,7 +114,7 @@ function buildProps(
     },
     contextualHeader: {
       title: 'Martes',
-      subtitle: '1 anime para ver',
+      subtitle: '1 anime',
       isToday: false,
     },
     layoutMode: 'tablet-landscape',
@@ -200,7 +200,7 @@ describe('AnimeListScreenView', () => {
     );
 
     expect(getByText('Modo temporada')).toBeTruthy();
-    expect(getByText('1 anime para ver')).toBeTruthy();
+    expect(getByText('1 anime')).toBeTruthy();
     expect(queryByText('Catálogo local listo')).toBeNull();
     expect(queryByTestId('heroui-alert')).toBeNull();
     expect(queryByText('Revisar conexión')).toBeNull();

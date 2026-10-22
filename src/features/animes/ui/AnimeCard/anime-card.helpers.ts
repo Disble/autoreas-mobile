@@ -45,11 +45,12 @@ export function getStateChip(estado: number): AnimeStateChipDescriptor {
 }
 
 /**
- * Builds the watched-episode segment of the meta line. It keeps the singular for exactly one
+ * Builds the watched-episode segment of the meta line as the count and one word: the chapter
+ * buttons beside it already say what is counted. It keeps the singular for exactly one
  * chapter and preserves fractional counts instead of rounding a half-watched chapter away.
  */
 export function getWatchedCountLabel(nrocapvisto: number): string {
-  return nrocapvisto === 1 ? '1 capítulo visto' : `${nrocapvisto} capítulos vistos`;
+  return nrocapvisto === 1 ? '1 visto' : `${nrocapvisto} vistos`;
 }
 
 /**

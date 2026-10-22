@@ -216,7 +216,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    const toggle = getByLabelText('6 capítulos vistos · En pausa · Nota 4/6');
+    const toggle = getByLabelText('6 vistos · En pausa · Nota 4/6');
 
     expect(toggle.props.accessibilityHint).toBe('Alternar episodios restantes');
   });
@@ -230,7 +230,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByLabelText('6 capítulos vistos · En pausa').props.accessibilityHint).toBeUndefined();
+    expect(getByLabelText('6 vistos · En pausa').props.accessibilityHint).toBeUndefined();
   });
 
   it('leaves every meta span free to wrap instead of capping its lines', () => {
@@ -251,7 +251,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('6 capítulos vistos').props.numberOfLines).toBeUndefined();
+    expect(getByText('6 vistos').props.numberOfLines).toBeUndefined();
     expect(getByText(/• Finalizado/).props.numberOfLines).toBeUndefined();
     expect(getByText(/• Nota 4\/6/).props.numberOfLines).toBeUndefined();
   });
@@ -274,7 +274,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('1 capítulo visto • Viendo • Nota 3/6')).toBeTruthy();
+    expect(getByText('1 visto • Viendo • Nota 3/6')).toBeTruthy();
   });
 
   it('keeps the paused state on the same meta line as several watched chapters and the note', () => {
@@ -295,7 +295,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('6 capítulos vistos • En pausa • Nota 4/6')).toBeTruthy();
+    expect(getByText('6 vistos • En pausa • Nota 4/6')).toBeTruthy();
   });
 
   it('stops the meta line at the state when the anime has no season candidacy', () => {
@@ -307,7 +307,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('3 capítulos vistos • Viendo')).toBeTruthy();
+    expect(getByText('3 vistos • Viendo')).toBeTruthy();
   });
 
   it('reads Sin nota on the meta line when the candidate has no rating yet', () => {
@@ -328,7 +328,7 @@ describe('AnimeCard', () => {
       />,
     );
 
-    expect(getByText('1 capítulo visto • Viendo • Sin nota')).toBeTruthy();
+    expect(getByText('1 visto • Viendo • Sin nota')).toBeTruthy();
   });
 
   it('shows the state once, inside the meta line, with no coloured chip beside it', () => {
@@ -384,8 +384,8 @@ describe('AnimeCard', () => {
   it('reaches a 44 pt touch area on the meta toggle through hit slop, not a taller box', () => {
     const { getByLabelText, getByText } = render(<AnimeCard {...buildAnimeCardProps()} />);
 
-    const toggle = getByLabelText('4 capítulos vistos · Viendo');
-    const line = getByText('4 capítulos vistos • Viendo');
+    const toggle = getByLabelText('4 vistos · Viendo');
+    const line = getByText('4 vistos • Viendo');
     const { top, bottom } = toggle.props.hitSlop as { top: number; bottom: number };
 
     // The drawn line is 18 pt tall, so 44 pt needs 26 pt of slop split across the two edges.

@@ -11,7 +11,7 @@ jest.mock('../../../../src/features/anime-folders/ui/AnimeFolderBanner', () => (
 /** Fixture contextual header for the shared status card, hoisted so the prop is not a fresh object per render. */
 const STATUS_SECTION_CONTEXTUAL_HEADER = {
   title: 'Martes',
-  subtitle: '1 anime para ver',
+  subtitle: '1 anime',
   isToday: true,
 };
 
