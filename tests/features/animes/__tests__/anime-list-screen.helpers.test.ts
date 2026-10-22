@@ -126,15 +126,18 @@ describe("anime-list-screen helpers", () => {
       expect(header.subtitle).toBe("1 anime para ver");
     });
 
-    it.each(["Sábado", "Jueves", "Ver hoy", "Sin ver", "Visto"] as const)(
-      "leaves the subtitle empty for an empty %s list, so the empty state speaks alone",
-      (filter) => {
-        // 2026-04-09 is a Thursday, so Jueves and Ver hoy are today and Sábado is not.
-        const header = buildContextualHeader(filter, 0, new Date("2026-04-09T10:00:00.000Z"));
+    it.each([
+      ["Sábado", "Ningún anime para ver"],
+      ["Sin ver", "Ningún anime para ver"],
+      ["Visto", "Ningún anime para ver"],
+      ["Jueves", "Ningún anime · Jue 9 abr"],
+      ["Ver hoy", "Ningún anime · Jue 9 abr"],
+    ] as const)("keeps the count for an empty %s list: %s", (filter, subtitle) => {
+      // 2026-04-09 is a Thursday, so Jueves and Ver hoy are today and the others are not.
+      const header = buildContextualHeader(filter, 0, new Date("2026-04-09T10:00:00.000Z"));
 
-        expect(header.subtitle).toBe("");
-      },
-    );
+      expect(header.subtitle).toBe(subtitle);
+    });
 
     it("appends the formatted current date to the subtitle when the weekday filter matches today", () => {
       // 2026-04-09 is Thursday, April 9.

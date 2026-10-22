@@ -82,8 +82,14 @@ export function formatTodayLabel(date: Date): string {
   return `${weekday} ${day} ${month}`;
 }
 
-/** Formats the Spanish singular/plural count subtitle, e.g. "1 anime para ver" vs "3 animes para ver". */
+/**
+ * Formats the Spanish count subtitle: "Ningún anime para ver", "1 anime para ver" or "3 animes para
+ * ver". Zero keeps the same shape so the line above the list always reads as the count.
+ */
 function buildCountSubtitle(count: number): string {
+  if (count === 0) {
+    return "Ningún anime para ver";
+  }
   if (count === 1) {
     return "1 anime para ver";
   }
@@ -161,14 +167,11 @@ export function buildContextualHeader(
   const isToday = filter === todayWeekday || filter === "Ver hoy";
   const title = PSEUDO_DAY_TITLE[filter] ?? filter;
 
-  // An empty list leaves the subtitle empty: the empty state in the middle already names the filter
-  // and says there is nothing, so a second line here would only repeat it.
-  let subtitle = "";
-  if (count > 0 && isToday) {
-    subtitle = `${buildCountSubtitle(count).replace(" para ver", "")} · ${formatTodayLabel(now)}`;
-  } else if (count > 0) {
-    subtitle = buildCountSubtitle(count);
-  }
+  // The line always reads as the count, zero included; the empty state in the middle is what explains
+  // an empty list, so the two never repeat each other.
+  const subtitle = isToday
+    ? `${buildCountSubtitle(count).replace(" para ver", "")} · ${formatTodayLabel(now)}`
+    : buildCountSubtitle(count);
 
   return {
     title,
