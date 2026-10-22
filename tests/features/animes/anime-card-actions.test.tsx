@@ -8,6 +8,7 @@ interface MockButtonProps {
   readonly children?: ReactNode;
   readonly accessibilityLabel?: string;
   readonly onPress?: () => void;
+  readonly variant?: string;
 }
 
 /** Props the mocked icon records for each render. */
@@ -40,8 +41,8 @@ jest.mock('heroui-native', () => {
   const RN = require('react-native') as typeof import('react-native');
   const actual = jest.requireActual('heroui-native');
   const Button = Object.assign(
-    ({ children, accessibilityLabel, onPress }: MockButtonProps) =>
-      React.createElement(RN.Pressable, { accessibilityLabel, onPress }, children),
+    ({ children, accessibilityLabel, onPress, variant }: MockButtonProps) =>
+      React.createElement(RN.Pressable, { accessibilityLabel, onPress, testID: variant }, children),
     { Label: ({ children }: MockButtonProps) => React.createElement(RN.Text, null, children) },
   );
 
@@ -145,6 +146,13 @@ describe('AnimeCardActions', () => {
 
     expect(groups).toEqual([[PAGE, FOLDER, STAR], [RESUME]]);
     expect(getByText('Reanudar')).toBeTruthy();
+  });
+
+  it('draws Reanudar like the other row buttons: tertiary, with an 18 pt play icon', () => {
+    const { getByLabelText } = render(<AnimeCardActions {...buildProps({ isMutationLocked: true })} />);
+
+    expect(getByLabelText(RESUME).props.testID).toBe('tertiary');
+    expect(mockIconCalls).toContainEqual({ name: 'play-outline', size: 18 });
   });
 
   it('draws every row icon at 20 pt in its outline variant', () => {

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { StyledIonicons } from '../../../../components/theme-toggle.constants';
 import { CARD_TOUCH_SLOP } from './anime-card.constants';
 import { Button } from 'heroui-native';
 import { View } from 'react-native';
@@ -9,7 +9,8 @@ import type { AnimeCardActionsProps } from './anime-card.types';
 /**
  * Renders the page, folder and note shortcuts as one group on the left, and the chapter stepper (or
  * `Reanudar` for a locked anime) on the right.
- * `Reanudar` draws a 40 pt box (`size="sm"`) and reaches a 48 pt touch target through
+ * `Reanudar` is a tertiary button like the shortcuts, with an 18 pt play icon. It draws a 40 pt box
+ * (`size="sm"`) and reaches a 48 pt touch target through
  * `hitSlop={CARD_TOUCH_SLOP}`, like every icon button in the row.
  */
 export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
@@ -45,12 +46,12 @@ export function AnimeCardActions(props: Readonly<AnimeCardActionsProps>) {
       {isMutationLocked ? (
         <Button
           accessibilityLabel="Reanudar anime"
-          variant="secondary"
+          variant="tertiary"
           size="sm"
           hitSlop={CARD_TOUCH_SLOP}
           onPress={onReanudarPress}
         >
-          <Ionicons name="play-outline" size={14} />
+          <StyledIonicons name="play-outline" size={18} className="text-foreground" />
           <Button.Label>Reanudar</Button.Label>
         </Button>
       ) : (

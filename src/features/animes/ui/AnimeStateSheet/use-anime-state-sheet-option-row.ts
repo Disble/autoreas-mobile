@@ -6,7 +6,7 @@ export function useAnimeStateSheetOptionRow(props: AnimeStateSheetOptionRowProps
   const { option, onSelect } = props;
 
   // 5. Derived State
-  const accessibilityState = useMemo(() => ({ selected: option.isSelected }), [option.isSelected]);
+  const accessibilityState = useMemo(() => ({ checked: option.isSelected }), [option.isSelected]);
 
   // 6. Callbacks
   const handlePress = useCallback(() => {

@@ -243,9 +243,10 @@ export function useAnimeListScreen(
 
   const handleOpenStateSheet = useCallback(
     (animeId: string, currentEstado: number) => {
-      setStateSheetRequest({ animeId, currentEstado });
+      const anime = animes.find((currentAnime) => currentAnime._id === animeId);
+      setStateSheetRequest({ animeId, currentEstado, animeTitle: anime?.nombre ?? '' });
     },
-    [],
+    [animes],
   );
 
   const handleCloseStateSheet = useCallback(() => {
