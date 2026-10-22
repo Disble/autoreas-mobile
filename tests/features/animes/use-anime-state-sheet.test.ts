@@ -42,19 +42,99 @@ describe('useAnimeStateSheet', () => {
     expect(viendo?.isSelected).toBe(false);
   });
 
-  it('handleSelect fires onSelect then onClose when an option is picked', () => {
+  /** Reads which option the sheet currently marks as selected. */
+  function selectedValue(options: readonly { value: number; isSelected: boolean }[]) {
+    return options.find((option) => option.isSelected)?.value;
+  }
+
+  it('handleSelect only moves the draft: nothing is applied and the sheet stays open', () => {
     const onSelect = jest.fn();
     const onClose = jest.fn();
     const { result } = renderHook(() =>
-      useAnimeStateSheet(buildProps({ onSelect, onClose })),
+      useAnimeStateSheet(buildProps({ visible: true, onSelect, onClose })),
     );
 
     act(() => {
       result.current.handleSelect(1);
     });
 
-    expect(onSelect).toHaveBeenCalledWith(1);
+    expect(selectedValue(result.current.options)).toBe(1);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('handleConfirm applies the draft then closes', () => {
+    const onSelect = jest.fn();
+    const onClose = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeStateSheet(buildProps({ visible: true, onSelect, onClose })),
+    );
+
+    act(() => {
+      result.current.handleSelect(3);
+    });
+    act(() => {
+      result.current.handleConfirm();
+    });
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(3);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('handleConfirm with the draft on the current estado only closes', () => {
+    const onSelect = jest.fn();
+    const onClose = jest.fn();
+    const { result } = renderHook(() =>
+      useAnimeStateSheet(buildProps({ visible: true, currentEstado: 2, onSelect, onClose })),
+    );
+
+    act(() => {
+      result.current.handleSelect(1);
+    });
+    act(() => {
+      result.current.handleSelect(2);
+    });
+    act(() => {
+      result.current.handleConfirm();
+    });
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closing without confirming discards the draft for the next opening', () => {
+    const onSelect = jest.fn();
+    const { result, rerender } = renderHook(
+      (props: AnimeStateSheetProps) => useAnimeStateSheet(props),
+      { initialProps: buildProps({ visible: true, onSelect }) },
+    );
+
+    act(() => {
+      result.current.handleSelect(2);
+    });
+    act(() => {
+      result.current.handleClose();
+    });
+    rerender(buildProps({ visible: false, onSelect }));
+    rerender(buildProps({ visible: true, onSelect }));
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(selectedValue(result.current.options)).toBe(0);
+  });
+
+  it('never carries an unsaved draft over to another anime', () => {
+    const { result, rerender } = renderHook(
+      (props: AnimeStateSheetProps) => useAnimeStateSheet(props),
+      { initialProps: buildProps({ visible: true, animeTitle: 'Frieren', currentEstado: 0 }) },
+    );
+
+    act(() => {
+      result.current.handleSelect(2);
+    });
+    rerender(buildProps({ visible: true, animeTitle: 'Dandadan', currentEstado: 1 }));
+
+    expect(selectedValue(result.current.options)).toBe(1);
   });
 
   it('handleClose forwards directly to onClose', () => {

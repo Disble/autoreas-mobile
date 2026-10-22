@@ -1,9 +1,13 @@
 /* eslint-disable react-doctor/jsx-max-depth -- HeroUI BottomSheet compound shape (BottomSheet > Portal > Content > ...) sets the depth before any content starts. */
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomSheet, cn } from 'heroui-native';
+import { BottomSheet, Button, cn } from 'heroui-native';
 import { AppText } from '../../../../components/app-text';
-import { ANIME_STATE_SHEET_TITLE, TONE_DOT_CLASS } from './anime-state-sheet.constants';
+import {
+  ANIME_STATE_SHEET_CONFIRM_LABEL,
+  ANIME_STATE_SHEET_TITLE,
+  TONE_DOT_CLASS,
+} from './anime-state-sheet.constants';
 import type { AnimeStateSheetOptionRowProps, AnimeStateSheetProps } from './anime-state-sheet.types';
 import { useAnimeStateSheet } from './use-anime-state-sheet';
 import { useAnimeStateSheetOptionRow } from './use-anime-state-sheet-option-row';
@@ -11,7 +15,7 @@ import { SheetContent } from '../../../../components/sheet-content';
 
 /** Renders the anime state sheet interface. */
 export function AnimeStateSheet(props: Readonly<AnimeStateSheetProps>) {
-  const { isOpen, animeTitle, options, checkColor, handleSelect, handleClose } =
+  const { isOpen, animeTitle, options, checkColor, handleSelect, handleConfirm, handleClose } =
     useAnimeStateSheet(props);
 
   return (
@@ -38,6 +42,10 @@ export function AnimeStateSheet(props: Readonly<AnimeStateSheetProps>) {
               />
             ))}
           </View>
+
+          <Button accessibilityLabel={ANIME_STATE_SHEET_CONFIRM_LABEL} onPress={handleConfirm}>
+            <Button.Label>{ANIME_STATE_SHEET_CONFIRM_LABEL}</Button.Label>
+          </Button>
         </SheetContent>
       </BottomSheet.Portal>
     </BottomSheet>
@@ -46,7 +54,7 @@ export function AnimeStateSheet(props: Readonly<AnimeStateSheetProps>) {
 
 /**
  * Renders one state option as a 48 pt row: a dot in the state's colour and its label, with a soft
- * fill and an accent check on the current one.
+ * fill and an accent check on the drafted one.
  */
 function AnimeStateSheetOptionRow(props: Readonly<AnimeStateSheetOptionRowProps>) {
   const { option, checkColor } = props;
