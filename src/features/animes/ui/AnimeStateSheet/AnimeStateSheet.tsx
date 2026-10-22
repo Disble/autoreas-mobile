@@ -63,7 +63,7 @@ function AnimeStateSheetOptionRow(props: Readonly<AnimeStateSheetOptionRowProps>
         option.isSelected && 'bg-default',
       )}
     >
-      <View className={cn('h-2 w-2 rounded-full', TONE_DOT_CLASS[option.tone])} />
+      <View className={TONE_DOT_CLASS[option.tone]} />
       <AppText className="text-foreground flex-1 text-[15px]">{option.label}</AppText>
       {option.isSelected && <Ionicons name="checkmark" size={20} color={checkColor} />}
     </Pressable>
