@@ -164,6 +164,13 @@ decrement needs `nrocapvisto > 0`, increment is blocked once a known total is re
 (`src/features/animes/ui/AnimeCard/use-anime-card.ts:28`–`:34`,
 `src/features/animes/ui/AnimeCard/anime-card.helpers.ts:10`, `:18`, `:26`).
 
+A long press on the title copies the anime's name, exactly as stored, to the device clipboard so it
+can be pasted in another app. The copy confirms itself with a toast at the bottom, `Título copiado`,
+or `No se pudo copiar el título` (danger) when the clipboard refuses it. The title is a plain
+`AppText` with `onLongPress` and the hint `Mantén presionado para copiar el título`; it takes no press
+styling and no button role, so the meta line stays the card's only text button
+(`src/features/animes/ui/AnimeCard/AnimeCardInfo.tsx:71`, `use-anime-card.ts:96`).
+
 ## Primitives and roles
 
 | Part | Primitive | Citation |

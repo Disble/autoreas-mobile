@@ -16,6 +16,19 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-10-23
+
+Works with any Bridge 2.0.0 or later. The new screen reports need Bridge 2.4.0: with an older Bridge the app works as before, but its diagnostic reports wait on the tablet until the Bridge is updated, so update the Bridge first.
+
+### Added
+
+- Keep the anime's title pressed on its card to copy it. A message at the bottom confirms "Título copiado", and the name can be pasted in any other app.
+
+### Internal
+
+- The app now notices when the screen takes two seconds or more to respond after a touch, after coming back from the background, or after a split-screen resize, and reports it to the Bridge, so the rare "buttons stop reacting" freeze leaves evidence. The report carries no anime data and respects the diagnostics switch in Settings.
+- Adds the system clipboard library, so this version is a full new APK.
+
 ## [2.4.0] — 2026-10-22
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.

@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SQLiteUnavailableScreen } from '../../../../components/sqlite-unavailable-screen';
 import { AppThemeProvider } from '../../../../contexts/app-theme-context/app-theme-context';
 import { BatteryExemptionPrompt } from '../../../battery-exemption/ui/BatteryExemptionPrompt';
+import { ScreenStallProbe } from '../../../screen-health';
 import { SyncRuntimeGate } from '../../../sync/ui/SyncRuntimeGate/SyncRuntimeGate';
 import { StartupBoundaryLoading } from './StartupBoundaryLoading';
 import { StartupBoundaryFallback } from './StartupBoundaryFallback';
@@ -355,9 +356,10 @@ export function resolveStartupBoundaryRootContent(
 
   // The battery-exemption prompt mounts beside the sync gate, inside SQLiteProvider and
   // HeroUINativeProvider, so it can read its stored history and render a HeroUI dialog on any route.
+  // The screen-stall probe wraps both so every touch on any route bubbles through it.
   const bootstrappedContent = params.isBootstrapped
     ? createElement(
-        Fragment,
+        ScreenStallProbe,
         null,
         createElement(
           SyncRuntimeGateComponent,

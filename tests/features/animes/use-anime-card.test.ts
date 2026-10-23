@@ -1,7 +1,11 @@
 import { act, renderHook } from '@testing-library/react-native';
+import * as Clipboard from 'expo-clipboard';
+import { useToast } from 'heroui-native';
 import { useAnimeCard } from '../../../src/features/animes/ui/AnimeCard/use-anime-card';
 import type { AnimeCardProps } from '../../../src/features/animes/ui/AnimeCard/anime-card.types';
 import type { Anime } from '../../../src/infrastructure/validation/anime-schema';
+
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 
 /** Chapter tap callbacks that vary across rerenders in the "latest callback" tests. */
 type MutableAnimeCardCallbackProps = Pick<AnimeCardProps, 'onCapPlus' | 'onCapMinus'>;
@@ -405,4 +409,44 @@ describe('useAnimeCard', () => {
     expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledTimes(1);
     expect(secondOnOpenSeasonRatingSheet).toHaveBeenCalledWith('anime-2');
   });
+
+  describe('copying the title', () => {
+    /** Renders the card hook with a toast spy and returns both. */
+    function renderWithToast() {
+      const show = jest.fn();
+      (useToast as jest.Mock).mockReturnValue({ toast: { show, hide: jest.fn() } });
+      const { result } = renderHook(() =>
+        useAnimeCard({ anime: baseAnime, onCapMinus: jest.fn(), onCapPlus: jest.fn(), isMutating: false }),
+      );
+      return { result, show };
+    }
+
+    it('puts the title on the clipboard and confirms it with a toast at the bottom', async () => {
+      (Clipboard.setStringAsync as jest.Mock).mockResolvedValue(true);
+      const { result, show } = renderWithToast();
+
+      await act(async () => {
+        await result.current.handleCopyTitle();
+      });
+
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith('One Piece');
+      expect(show).toHaveBeenCalledWith({ label: 'Título copiado', placement: 'bottom' });
+    });
+
+    it('tells the user when the title could not be copied', async () => {
+      (Clipboard.setStringAsync as jest.Mock).mockRejectedValue(new Error('denied'));
+      const { result, show } = renderWithToast();
+
+      await act(async () => {
+        await result.current.handleCopyTitle();
+      });
+
+      expect(show).toHaveBeenCalledWith({
+        variant: 'danger',
+        label: 'No se pudo copiar el título',
+        placement: 'bottom',
+      });
+    });
+  });
 });
+

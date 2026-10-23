@@ -4,14 +4,27 @@ Status: current as of convergent-sync T18 (2026-10-17). Contract agreed with `au
 
 ## What reaches the bridge today
 
-Two channels, and nothing else:
+Three live channels, and nothing else:
 
 | Channel | Producer | Endpoint | Content |
 |---|---|---|---|
 | Cycle envelope | the native engine (`ReconcileRequestBody.kt`) | `POST /api/sync/reconcile`, first request of a cycle | `client_telemetry: { cycle_id, trigger_source, counters: { pending_ops_count } }` |
 | Chapter-action observations | `chapter-action-diagnostics.helpers.ts` (`kind: "episode_action"`) | `POST /api/sync/diagnostics`, through the durable diagnostics outbox | one observation per chapter action phase |
+| Screen stalls | `src/features/screen-health` (`kind: "screen_stall"`) | `POST /api/sync/diagnostics`, through the durable diagnostics outbox | one observation per probe that took 2 s or more to paint |
 
 The JS reconcile body never carries a `client_telemetry` key. The bridge requires nothing in that envelope beyond `counters`, so its absence is not a wire failure.
+
+## Screen stalls
+
+`ScreenStallProbe` wraps the whole app, inside `SQLiteProvider`. It times how long the screen takes to paint a change, and it arms only on events: a touch that bubbles through it, an `AppState` change to `active`, an Android window `focus`, or a window resize. When one of those fires, it re-mounts one invisible view and waits for that view's `onLayout`. That round trip crosses the JS commit, the native mount, and the layout event coming back. That is the path that stalled on 2026-10-23, when every button looked dead for two minutes while JS, SQLite, and the push all kept working.
+
+- A probe that settles in under 2 s sends nothing.
+- A slower probe becomes one `screen_stall` body. It carries the trigger, the app state when the probe armed, the window focus, the window size against the screen size (a smaller window means split screen), and the last eight window or app transitions.
+- While a probe is pending, a new event does not re-arm it, so a stall is measured from its first unanswered event.
+- Going to the background discards a pending probe.
+- The body carries nothing about animes.
+
+The bridge accepts `screen_stall` from **v2.4.0**, and the kind is in `SYNC_DIAGNOSTICS_ACCEPTED_KINDS`. An older bridge answers `kind_not_served`: the row is kept and the batch stops, so every queued diagnostic waits until the bridge is upgraded. The bridge lists each stall in the MCP phone history as `screen_stall` and opens a `mobile_failure` incident for a stall of 10 s or more. The kill switch mutes it like every other observation.
 
 ## The privacy boundary
 

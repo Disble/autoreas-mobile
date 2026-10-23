@@ -91,6 +91,8 @@ export interface AnimeCardMetaToggleProps {
 /** Defines the data contract for the anime card info block (title, meta line and long-episode mark). */
 export interface AnimeCardInfoProps {
   readonly title: string;
+  /** Copies the title; fired by a long press on it. */
+  readonly onTitleLongPress: () => void;
   /** The ordered segments the meta line draws, each with its own kind and therefore its own size. */
   readonly metaSegments: readonly AnimeCardMetaSegment[];
   /** The whole composed meta line as one string, used as the pressable's accessible label. */
@@ -161,6 +163,8 @@ export interface AnimeCardChapterControlsProps {
  */
 export interface AnimeCardContentProps {
   readonly title: string;
+  /** Forwarded untouched to `AnimeCardInfo`. */
+  readonly onTitleLongPress: () => void;
   /** Forwarded untouched to `AnimeCardInfo`, which draws one span per segment. */
   readonly metaSegments: readonly AnimeCardMetaSegment[];
   readonly metaLabel: string;
