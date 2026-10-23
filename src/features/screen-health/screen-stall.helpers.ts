@@ -32,9 +32,12 @@ export function appendScreenStallTransition(
   return [...transitions, transition].slice(-SCREEN_STALL_MAX_TRANSITIONS);
 }
 
-/** True for a size the bridge accepts: whole, positive dimensions. */
+/**
+ * True for a size the bridge accepts once rounded to whole dp: at least 1 on both sides. A value
+ * under one dp rounds to 0, which the bridge refuses, and a refused row is deleted unsent.
+ */
 function isReportableSize(size: ScreenStallSize): boolean {
-  return [size.width, size.height].every((value) => Number.isFinite(value) && value > 0);
+  return [size.width, size.height].every((value) => Number.isFinite(value) && Math.round(value) >= 1);
 }
 
 /**

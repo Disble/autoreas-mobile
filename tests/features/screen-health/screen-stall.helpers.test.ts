@@ -66,6 +66,12 @@ describe('buildScreenStallWirePayload', () => {
     expect(buildScreenStallWirePayload(start, 1_005_000, [], 'obs-1')).toBeNull();
   });
 
+  it('drops a probe whose size rounds below one dp', () => {
+    const start = { ...START, screenSize: { width: 0.4, height: 800 } };
+
+    expect(buildScreenStallWirePayload(start, 1_005_000, [], 'obs-1')).toBeNull();
+  });
+
   it('keeps a null window focus when no focus or blur was seen', () => {
     const start = { ...START, windowFocused: null };
 
