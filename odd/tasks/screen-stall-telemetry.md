@@ -17,7 +17,7 @@ Branch: `feat/screen-stall-telemetry` (worktree `autoreas-mobile-worktrees/scree
 |----|-------|-------|--------|--------|
 | T1 | S2, S3, S4, S5 | inline | done: builder + recorder; 11 tests; mutants threshold/accepted-gate killed | this commit |
 | T2 | S1, S5 | inline | done: hook + wrapper at the root; 13 tests; mutants re-arm/background/switch killed; full suite 2372/2372, lefthook green | this commit |
-| T3 | S4 | inline | blocked: add `screen_stall` to SYNC_DIAGNOSTICS_ACCEPTED_KINDS once bridge-reports names the release (first after 2.3.1); 2.3.1 answers 400 `kind_not_served` | |
+| T3 | S4 | inline | done: `screen_stall` in SYNC_DIAGNOSTICS_ACCEPTED_KINDS; RED 2 tests then GREEN; ships in mobile 2.5.0, Bridge floor for the reports 2.4.0 | this commit |
 
 ## Log
 
@@ -26,3 +26,4 @@ Branch: `feat/screen-stall-telemetry` (worktree `autoreas-mobile-worktrees/scree
 - L3: evidence. 00:25:38 tap received, committed, and sync ok within 1 s; no other tap reached JS until 00:27:22; the WS stayed open (AppState stayed active); no ANR. The logcat for the window was already rotated. Analysis in memory `dead-buttons-after-resume-2026-10-22`. The contract was sent to session autoreas-bridge-fc.
 - L4: bridge session autoreas-bridge-fc declined the request (it is scoped to another task). The bridge side needs the owner. Note: tests were written after the code, not before; the five mutation checks stand in for RED.
 - L5 (2026-10-23, bridge-reports): accepted the body unchanged. Validation: every key required, only `window_focused` nullable, dims 1..2147483647, ints only, transitions 0..8, order not validated. Retention 5000; shows in MCP search_history as phone_report `screen_stall`; duration >= 10000 opens incident `mobile_failure|screen_stall|<trigger>`. An undeclared key answers 400 `field_rejected`. The version comes with the first bridge release after 2.3.1. Mobile fix: a size under 1 dp rounded to 0, so it is now dropped before sending.
+- L6 (2026-10-23, bridge-reports): "Bridge 2.4.0 is the minimum version that accepts screen_stall; feat/screen-stall-telemetry is in it." Mobile turned the kind on for 2.5.0; the mobile tag waits until the bridge 2.4.0 release is published.

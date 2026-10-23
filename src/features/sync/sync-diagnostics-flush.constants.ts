@@ -19,11 +19,15 @@
  * the moment the bridge answered that kind (bridge v1.15.0). There is deliberately no feature flag,
  * preference or build-time constant to remember in addition to it.
  *
+ * `screen_stall` is the third, served from bridge v2.4.0 (src/features/screen-health). Against an
+ * older bridge it answers `kind_not_served`, which keeps the row and stops the batch until the
+ * bridge is upgraded.
+ *
  * A body this predicate REFUSES is not thereby destroyed: the flush's classifier parks it as
  * `unclassified` unless its kind is positively declared in `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`.
  * "Not accepted" and "destroyed" are two different judgements and only the second one loses data.
  */
-export const SYNC_DIAGNOSTICS_ACCEPTED_KINDS = [undefined, 'episode_action'] as const;
+export const SYNC_DIAGNOSTICS_ACCEPTED_KINDS = [undefined, 'episode_action', 'screen_stall'] as const;
 
 /**
  * Every diagnostic body `kind` this build KNOWS the bridge does not accept and never will -- the ONE

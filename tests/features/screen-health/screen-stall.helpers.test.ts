@@ -120,10 +120,18 @@ describe('recordScreenStall', () => {
     });
   });
 
-  it('stores nothing while the bridge does not accept the kind', () => {
+  it('stores the body through the accepted-kinds registry by default', () => {
     const store = { enqueue: jest.fn() };
 
     recordScreenStall(payload, { store });
+
+    expect(store.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('stores nothing while the bridge does not accept the kind', () => {
+    const store = { enqueue: jest.fn() };
+
+    recordScreenStall(payload, { store, isAccepted: () => false });
 
     expect(store.enqueue).not.toHaveBeenCalled();
   });
