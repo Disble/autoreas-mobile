@@ -71,6 +71,8 @@ function createNeverInitializingSQLiteProvider() {
 const mockSyncRuntimeGateRender = jest.fn();
 /** Records every render of the global battery-exemption prompt. */
 const mockBatteryExemptionPromptRender = jest.fn();
+/** Records each render of the screen-stall probe wrapper. */
+const mockScreenStallProbeRender = jest.fn();
 
 jest.mock('@expo-google-fonts/inter', () => ({
   Inter_400Regular: {},
@@ -186,6 +188,13 @@ jest.mock('../../../../src/features/battery-exemption/ui/BatteryExemptionPrompt'
   },
 }));
 
+jest.mock('../../../../src/features/screen-health', () => ({
+  ScreenStallProbe: ({ children }: { children: React.ReactNode }) => {
+    mockScreenStallProbeRender();
+    return children;
+  },
+}));
+
 describe('StartupBoundary integration', () => {
   const replace = jest.fn();
   const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -221,6 +230,7 @@ describe('StartupBoundary integration', () => {
     expect(view.queryByText('mocked-slot')).not.toBeOnTheScreen();
     expect(mockSyncRuntimeGateRender).not.toHaveBeenCalled();
     expect(mockBatteryExemptionPromptRender).not.toHaveBeenCalled();
+    expect(mockScreenStallProbeRender).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
     expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
   });
@@ -266,6 +276,7 @@ describe('StartupBoundary integration', () => {
     expect(mockSyncRuntimeGateRender).toHaveBeenCalledTimes(1);
     // The global battery-exemption prompt mounts beside the sync gate, inside the same providers.
     expect(mockBatteryExemptionPromptRender).toHaveBeenCalled();
+    expect(mockScreenStallProbeRender).toHaveBeenCalled();
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/setup');
     expect(SplashScreen.hideAsync).toHaveBeenCalledTimes(1);
