@@ -29,6 +29,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
     hasFolder,
     handleOpenPage,
     handleOpenFolder,
+    handleCopyTitle,
   } = useAnimeCard(props);
 
   const metaParams = {
@@ -47,6 +48,7 @@ export function AnimeCard(props: Readonly<AnimeCardProps>) {
         <AnimeCardCover coverUri={coverUri} />
         <AnimeCardContent
           title={anime.nombre}
+          onTitleLongPress={handleCopyTitle}
           metaSegments={metaSegments}
           metaLabel={metaLabel}
           metaToggleHint={metaToggleHint}

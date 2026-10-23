@@ -32,3 +32,12 @@ export const STATE_CHIP_BY_ESTADO: Readonly<Record<number, AnimeStateChipDescrip
   2: { label: 'No me gustó', tone: 'danger', isDefault: false },
   3: { label: 'En pausa', tone: 'warning', isDefault: false },
 };
+
+/** Spoken hint on the card title: a long press copies it. */
+export const TITLE_COPY_HINT = 'Mantén presionado para copiar el título';
+
+/** Toast shown once the title is on the clipboard. */
+export const TITLE_COPIED_LABEL = 'Título copiado';
+
+/** Toast shown when the clipboard refused the title. */
+export const TITLE_COPY_FAILED_LABEL = 'No se pudo copiar el título';

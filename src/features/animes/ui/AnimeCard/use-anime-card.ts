@@ -1,7 +1,13 @@
+import * as Clipboard from 'expo-clipboard';
+import { useToast } from 'heroui-native';
 import { useState } from 'react';
 import { getOpenablePageUrl } from '../../../anime-folders/anime-folders.helpers';
 import { openDeviceFolder, openPageUrl } from '../../../anime-folders/anime-folders-io.helpers';
-import { META_TOGGLE_HINT } from './anime-card.constants';
+import {
+  META_TOGGLE_HINT,
+  TITLE_COPIED_LABEL,
+  TITLE_COPY_FAILED_LABEL,
+} from './anime-card.constants';
 import type { AnimeCardProps } from './anime-card.types';
 import {
   canDecrease,
@@ -21,6 +27,7 @@ export function useAnimeCard(props: AnimeCardProps) {
   const [restantesShown, setRestantesShown] = useState(false);
 
   // 3. Third-party/Context hooks
+  const { toast } = useToast();
   // 4. Mutations/Queries
 
   // 5. Derived state
@@ -84,6 +91,17 @@ export function useAnimeCard(props: AnimeCardProps) {
     }
   };
 
+  // The title is the anime's name exactly as stored, so what lands on the clipboard is what other
+  // apps (a search, a tracker) need to find it.
+  const handleCopyTitle = async () => {
+    try {
+      await Clipboard.setStringAsync(props.anime.nombre);
+      toast.show({ label: TITLE_COPIED_LABEL, placement: 'bottom' });
+    } catch {
+      toast.show({ variant: 'danger', label: TITLE_COPY_FAILED_LABEL, placement: 'bottom' });
+    }
+  };
+
   // 7. Effects
 
   return {
@@ -107,5 +125,6 @@ export function useAnimeCard(props: AnimeCardProps) {
     hasFolder: folderPath !== null,
     handleOpenPage,
     handleOpenFolder,
+    handleCopyTitle,
   };
 }

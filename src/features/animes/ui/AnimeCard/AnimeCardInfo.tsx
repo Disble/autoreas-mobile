@@ -1,7 +1,7 @@
 import { Chip } from 'heroui-native';
 import { Pressable, View } from 'react-native';
 import { AppText } from '../../../../components/app-text';
-import { META_DOT_SEPARATOR, META_TOGGLE_HIT_SLOP } from './anime-card.constants';
+import { META_DOT_SEPARATOR, META_TOGGLE_HIT_SLOP, TITLE_COPY_HINT } from './anime-card.constants';
 import type { AnimeCardInfoProps, AnimeCardMetaToggleProps } from './anime-card.types';
 
 /**
@@ -48,7 +48,8 @@ function AnimeCardMetaToggle(props: Readonly<AnimeCardMetaToggleProps>) {
  * Renders the anime card title, the meta line that toggles the remaining form, and the long-episode
  * mark.
  * The title is 16 pt at regular weight (`text-base`, and the `font-normal` AppText prepends) in the
- * `foreground` role, capped at two lines with `leading-tight`.
+ * `foreground` role, capped at two lines with `leading-tight`. A long press on it copies it; the
+ * copy confirms itself with a toast, so the text carries no press styling of its own.
  */
 export function AnimeCardInfo(props: Readonly<AnimeCardInfoProps>) {
   const {
@@ -58,11 +59,17 @@ export function AnimeCardInfo(props: Readonly<AnimeCardInfoProps>) {
     metaToggleHint,
     longEpisodeLabel,
     onToggleMeta,
+    onTitleLongPress,
   } = props;
 
   return (
     <View className="flex-1">
-      <AppText className="text-foreground text-base leading-tight" numberOfLines={2}>
+      <AppText
+        className="text-foreground text-base leading-tight"
+        numberOfLines={2}
+        accessibilityHint={TITLE_COPY_HINT}
+        onLongPress={onTitleLongPress}
+      >
         {title}
       </AppText>
       <AnimeCardMetaToggle

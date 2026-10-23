@@ -17,6 +17,7 @@ function buildProps(overrides: Partial<AnimeCardInfoProps> = {}): AnimeCardInfoP
     metaLabel: META_LABEL,
     longEpisodeLabel: null,
     onToggleMeta: jest.fn(),
+    onTitleLongPress: jest.fn(),
     ...overrides,
   };
 }
@@ -77,5 +78,16 @@ describe('AnimeCardInfo meta line', () => {
 
     expect(onToggleMeta).toHaveBeenCalledTimes(1);
     expect(getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('copies the title on a long press and says so to a screen reader', () => {
+    const onTitleLongPress = jest.fn();
+    const { getByText } = render(<AnimeCardInfo {...buildProps({ onTitleLongPress })} />);
+    const title = getByText('Ao Ashi Season 2nd');
+
+    fireEvent(title, 'longPress');
+
+    expect(onTitleLongPress).toHaveBeenCalledTimes(1);
+    expect(title.props.accessibilityHint).toBe('Mantén presionado para copiar el título');
   });
 });
