@@ -16,6 +16,20 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-10-26
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Changed
+
+- Los botones + y − del capítulo responden a cada pulsación sin esperar a que termine de guardarse la anterior: avanzar del capítulo 1 al 10 de seguido ya no pierde pulsaciones.
+- Los botones de capítulo ya no se apagan mientras se guarda un cambio. Siguen bloqueados en los mismos casos de antes: último capítulo, anime finalizado o en pausa, y los topes de capítulos.
+
+### Internal
+
+- El guardado de capítulos usa la API asíncrona de la base de datos local, así que escribir en el dispositivo ya no retiene la pantalla mientras dura la transacción.
+- El capítulo que ves antes de guardarse viene de una proyección en memoria que se retira sola en cuanto la fila durable lo contiene. No cambia el esquema local, ni el formato del outbox, ni la sincronización con Bridge.
+
 ## [2.5.1] — 2026-10-25
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
