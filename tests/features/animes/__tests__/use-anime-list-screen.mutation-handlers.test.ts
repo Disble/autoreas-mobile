@@ -173,7 +173,7 @@ describe("useAnimeListScreen", () => {
     );
   });
 
-  it("ignora taps repetidos mientras la primera mutación sigue en vuelo", async () => {
+  it("acepta un segundo tap mientras la primera mutación sigue en vuelo", async () => {
     let resolveCapPlus: (() => void) | null = null;
     mockCapPlus.mockImplementationOnce(
       () =>
@@ -181,21 +181,23 @@ describe("useAnimeListScreen", () => {
           resolveCapPlus = resolve;
         }),
     );
+    mockCapPlus.mockResolvedValueOnce(undefined);
 
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     let firstCall: Promise<void>;
-    let ignoredSecondCall: Promise<void>;
+    let secondCall: Promise<void>;
     await act(async () => {
       firstCall = result.current.handleCapPlus("thu-1");
-      ignoredSecondCall = result.current.handleCapPlus("thu-1");
+      secondCall = result.current.handleCapPlus("thu-1");
     });
 
-    expect(mockCapPlus).toHaveBeenCalledTimes(1);
+    // Both taps reach the mutation: nothing is dropped because another write is still pending.
+    expect(mockCapPlus).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       resolveCapPlus?.();
-      await Promise.all([firstCall, ignoredSecondCall]);
+      await Promise.all([firstCall, secondCall]);
     });
   });
 
@@ -276,7 +278,7 @@ describe("useAnimeListScreen", () => {
   // Callers invoke this through `void handleCapPlus(id)`, so anything escaping runMutation
   // becomes an unhandled rejection -- the exact failure this whole path exists to remove.
   // A throwing toast must not reintroduce it.
-  it("stays resolved and releases the lock when the toast itself throws", async () => {
+  it("stays resolved when the toast itself throws", async () => {
     mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
     mockToastShow.mockImplementationOnce(() => {
       throw new Error("toast renderer exploded");
@@ -287,11 +289,9 @@ describe("useAnimeListScreen", () => {
     await act(async () => {
       await expect(result.current.handleCapPlus("thu-1")).resolves.toBeUndefined();
     });
-
-    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
   });
 
-  it("releases the mutation lock after a failure so the card is not left dead", async () => {
+  it("acepta un tap nuevo después de una mutación fallida", async () => {
     mockCapPlus.mockRejectedValueOnce(new Error("database is locked"));
 
     const { result } = renderHook(() => useAnimeListScreen({}));
@@ -299,8 +299,6 @@ describe("useAnimeListScreen", () => {
     await act(async () => {
       await result.current.handleCapPlus("thu-1");
     });
-
-    expect(result.current.isMutatingAnimeById["thu-1"]).toBeUndefined();
 
     mockCapPlus.mockResolvedValueOnce(undefined);
     await act(async () => {

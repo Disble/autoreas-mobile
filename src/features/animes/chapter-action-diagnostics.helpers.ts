@@ -419,10 +419,10 @@ export function recordChapterActionFailed(
 /**
  * Records that the action produced no local change, and why.
  *
- * Separated from a failure on purpose: a dropped tap and a rejected write look identical to the
- * user (nothing happens) and have opposite diagnoses. `in_flight` is the list screen's same-anime
- * guard; `anime_missing` is the mutation finding no row to update; `db_unavailable` is the mutation
- * hook finding no SQLite context at all, so the write door never opened.
+ * Separated from a failure on purpose: an action that found nothing to change and a rejected write
+ * look identical to the user (nothing happens) and have opposite diagnoses. `anime_missing` is the
+ * mutation finding no row to update; `db_unavailable` is the mutation hook finding no SQLite
+ * context at all, so the write door never opened.
  */
 export function recordChapterActionSkipped(
   context: ChapterActionContext,

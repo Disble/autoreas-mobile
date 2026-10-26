@@ -11,8 +11,13 @@ import {
   buildCapPlusPatch,
   buildSetEstadoPatch,
   recordAnimeMutationFailure,
+  toLocalAnimeUpdate,
 } from "./anime-mutation.helpers";
 import type { AnimeMutationPatchBuilder } from "./anime-mutation.types";
+import {
+  acceptAnimeMutationProjection,
+  dropAnimeMutationProjection,
+} from "./anime-mutation-projection.helpers";
 import {
   recordChapterActionFailed,
   recordChapterActionSkipped,
@@ -50,6 +55,20 @@ export function useMutateAnime() {
         throw getExpoSQLiteUnavailableError();
       }
 
+      // Published before the write is awaited, which is the point: the card shows the chapter the
+      // user just pressed and the ordered write below persists that same patch afterwards. The
+      // builder is the write's own, so nothing can be shown that the write would refuse to store.
+      // `null` means there is nothing to show (no durable row observed yet, or a patch that would
+      // not change what the card draws), never that the action was skipped.
+      const projectionId = acceptAnimeMutationProjection(animeId, (base) => {
+        const projected = toLocalAnimeUpdate(buildPatch(base, Date.now()));
+
+        return {
+          nrocapvisto: projected.nrocapvisto ?? base.nrocapvisto,
+          estado: projected.estado ?? base.estado,
+        };
+      });
+
       try {
         const didMutate = await applyAnimeMutationPatch(
           rawDb,
@@ -60,11 +79,24 @@ export function useMutateAnime() {
         );
 
         // The helper resolves normally when the row is absent. Reporting that as a skip is what
-        // keeps "nothing was there to change" from being read as a write that landed.
-        if (!didMutate && actionContext) {
-          recordChapterActionSkipped(actionContext, "anime_missing");
+        // keeps "nothing was there to change" from being read as a write that landed. The intent
+        // that was shown for it cannot survive either, because no row will ever carry it.
+        if (!didMutate) {
+          if (projectionId !== null) {
+            dropAnimeMutationProjection(animeId, projectionId);
+          }
+
+          if (actionContext) {
+            recordChapterActionSkipped(actionContext, "anime_missing");
+          }
         }
       } catch (error) {
+        // The optimistic value goes with the failed write: the card returns to what the row still
+        // holds instead of keeping a chapter the transaction rolled back.
+        if (projectionId !== null) {
+          dropAnimeMutationProjection(animeId, projectionId);
+        }
+
         // Recorded at this layer rather than inside the helper because this is the layer that owns
         // the action's promise: every write failure the helper lets escape is observed exactly
         // once here, before the error is rethrown. The missing-SQLite-context case is deliberately

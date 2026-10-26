@@ -11,7 +11,6 @@ function buildItemProps(
 ): AnimeListScreenItemProps {
   return {
     anime: buildAnimeListItemFixture(id, { estado: 2 }),
-    isMutating: false,
     folderPath: null,
     handleCapMinus: jest.fn().mockResolvedValue(undefined),
     handleCapMinusHalf: jest.fn().mockResolvedValue(undefined),
@@ -30,16 +29,14 @@ describe("useAnimeListScreenItem", () => {
     });
   });
 
-  it("builds the AnimeCard props of its row: anime, lock and folder", () => {
+  it("builds the AnimeCard props of its row: anime and folder", () => {
     const props = buildItemProps("anime-1", {
-      isMutating: true,
       folderPath: "/storage/0123-4567/Videos/Anime/Bleach",
     });
 
     const { result } = renderHook(() => useAnimeListScreenItem(props));
 
     expect(result.current.anime).toBe(props.anime);
-    expect(result.current.isMutating).toBe(true);
     expect(result.current.folderPath).toBe("/storage/0123-4567/Videos/Anime/Bleach");
   });
 

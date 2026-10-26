@@ -24,14 +24,10 @@ function buildHandlers() {
   };
 }
 
-/** Renders the renderer hook with the given lock record and handlers. */
-function renderRenderer(
-  isMutatingAnimeById: Record<string, boolean>,
-  handlers = buildHandlers(),
-) {
+/** Renders the renderer hook with the given handlers. */
+function renderRenderer(handlers = buildHandlers()) {
   return renderHook(() =>
     useAnimeListItemRenderer(
-      isMutatingAnimeById,
       handlers.handleCapMinus,
       handlers.handleCapPlus,
       handlers.handleCapPlusHalf,
@@ -44,23 +40,20 @@ function renderRenderer(
 
 describe("useAnimeListItemRenderer", () => {
   it("watches for anime folders that reach the tablet late while the list is mounted", () => {
-    renderRenderer({});
+    renderRenderer();
 
     expect(useAnimeFolderArrival).toHaveBeenCalled();
   });
 
-  it("hands each row its own lock and the screen handlers unchanged", () => {
+  it("hands each row the screen handlers unchanged", () => {
     const handlers = buildHandlers();
     const item = buildAnimeListItemFixture("anime-1");
-    const { result } = renderRenderer({ "anime-1": true }, handlers);
+    const { result } = renderRenderer(handlers);
 
     const itemProps = result.current.getAnimeListItemProps(item);
 
-    expect(itemProps).toEqual({ anime: item, isMutating: true, folderPath: null, ...handlers });
+    expect(itemProps).toEqual({ anime: item, folderPath: null, ...handlers });
     expect(itemProps.handleCapPlus).toBe(handlers.handleCapPlus);
-    expect(
-      result.current.getAnimeListItemProps(buildAnimeListItemFixture("anime-2")).isMutating,
-    ).toBe(false);
   });
 
   it("passes the resolved folder path to the row, and none to an anime without one", () => {
@@ -81,7 +74,7 @@ describe("useAnimeListItemRenderer", () => {
       },
     });
 
-    const { result } = renderRenderer({});
+    const { result } = renderRenderer();
 
     expect(
       result.current.getAnimeListItemProps(buildAnimeListItemFixture("anime-1")).folderPath,

@@ -26,7 +26,6 @@ type AnimeListCellElement = ReactElement<{
 function buildItemProps(anime: AnimeListItem): AnimeListScreenItemProps {
   return {
     anime,
-    isMutating: false,
     folderPath: null,
     handleCapMinus: jest.fn(),
     handleCapMinusHalf: jest.fn(),

@@ -1,15 +1,27 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, renderHook } from '@testing-library/react-native';
-import { animes, operationLog } from '../../../src/infrastructure/db/schema';
+import {
+  observeAnimeMutationDurability,
+  resetAnimeMutationProjection,
+} from '../../../src/features/animes/anime-mutation-projection.helpers';
 import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
+import {
+  animeUpdates,
+  buildAnimeRow,
+  buildDurableAnime,
+  createTransactionConnection,
+  mockAnimeDeferredWrite,
+  mockQueuedDeferredWrite,
+  operationInserts,
+  shownChapters,
+} from './use-mutate-anime-test.helpers';
 
 jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
-  createDrizzleDb: jest.fn(),
   withLocalWrite: jest.fn(),
 }));
 
@@ -32,87 +44,20 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
   useSQLiteContext: jest.Mock;
 };
 
-/** Write-door fakes: the select chain and the `withLocalWrite` callback are driven directly. */
-const {
-  createDrizzleDb: mockCreateDrizzleDb,
-  withLocalWrite: mockWithDeferredWrite,
-} = jest.requireMock('../../../src/infrastructure/db/client/client.helpers') as {
-  createDrizzleDb: jest.Mock;
-  withLocalWrite: jest.Mock;
-};
-
-/** Shape of the fake drizzle transaction handle `withLocalWrite`'s task callback receives. */
-type MockTxDb = {
-  update: jest.Mock;
-  insert: jest.Mock;
-};
+/** Write-door fake: the `withLocalWrite` callback is driven directly. */
+const { withLocalWrite: mockWithDeferredWrite } = jest.requireMock(
+  '../../../src/infrastructure/db/client/client.helpers'
+) as { withLocalWrite: jest.Mock };
 
 /** Fixed clock reading every expected timestamp is computed against. */
 const now = 1710000000000;
 /** A dummy raw DB handle: every dependency that would read it is mocked above. */
 const rawDb = { name: 'raw-db' };
 
-/** One `animes` row fixture the fake select chain resolves with. */
-const baseAnimeRow: Record<string, unknown> = {
-  _id: 'anime-1',
-  nombre: 'One Piece',
-  estado: 0,
-  nrocapvisto: 3,
-  activo: 1,
-  primeravez: 0,
-  generos: '[]',
-  dias: '[]',
-  totalcap: null,
-  fechaUltCapVisto: null,
-  fechaEstreno: null,
-  fechaCreacion: null,
-  fechaEliminacion: null,
-  portada: null,
-  pagina: null,
-  carpeta: null,
-  estudios: null,
-  origen: null,
-  duracion: null,
-  tipo: null,
-};
-
-/** Builds the fake drizzle `select` chain, resolving `row` (or nothing). */
-function buildSelectMock(row: Record<string, unknown> | null) {
-  const limit = jest.fn().mockResolvedValue(row ? [row] : []);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
-  return { select, from, where, limit };
-}
-
-/** Builds the fake `update`/`insert` transaction handle, optionally failing the insert. */
-function createTxDbMocks(options?: { insertError?: Error }) {
-  const where = jest.fn().mockResolvedValue(undefined);
-  const set = jest.fn(() => ({ where }));
-  const update = jest.fn(() => ({ set }));
-  const values = options?.insertError
-    ? jest.fn().mockRejectedValue(options.insertError)
-    : jest.fn().mockResolvedValue(undefined);
-  const insert = jest.fn(() => ({ values }));
-
-  return {
-    txDb: { update, insert } satisfies MockTxDb,
-    where,
-    set,
-    update,
-    values,
-    insert,
-  };
-}
-
-/** Runs every `withLocalWrite` task against `txDb`. */
-function mockAnimeDeferredWrite(txDb: MockTxDb) {
-  mockWithDeferredWrite.mockImplementation(async (_db, task) => task(txDb, rawDb));
-}
-
 describe('useMutateAnime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAnimeMutationProjection();
     jest.spyOn(Date, 'now').mockReturnValue(now);
     mockUseSQLiteContext.mockReturnValue(rawDb);
   });
@@ -121,12 +66,44 @@ describe('useMutateAnime', () => {
     jest.restoreAllMocks();
   });
 
-  it('capPlus lee el estado actual de SQLite, actualiza el anime y crea operation_log pendiente', async () => {
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
+  it('acepta nueve +1 rápidos sin esperar la escritura y los persiste en orden', async () => {
+    const durableRow = buildAnimeRow({ nrocapvisto: 1, totalcap: 12 });
+    const connection = createTransactionConnection({ row: durableRow });
+    const { releaseFirstWrite } = mockQueuedDeferredWrite(mockWithDeferredWrite, connection);
+    const durableAnime = buildDurableAnime(durableRow);
+    observeAnimeMutationDurability([durableAnime]);
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    const { result } = renderHook(() => useMutateAnime());
+
+    const presses = Array.from({ length: 9 }, () => result.current.capPlus('anime-1'));
+
+    // The first write has not even started, and the list already draws chapter 10: no tap waits
+    // for the one before it, and none of the nine is disabled or dropped.
+    expect(connection.getFirstAsync).not.toHaveBeenCalled();
+    expect(shownChapters(durableAnime)).toBe(10);
+
+    await act(async () => {
+      releaseFirstWrite();
+      await Promise.all(presses);
+    });
+
+    // One ordered write per tap, each reading what the previous one committed: nine absolute
+    // patches 2..10, never one coalesced patch and never nine copies of the same value.
+    expect(connection.getFirstAsync).toHaveBeenCalledTimes(9);
+    expect(animeUpdates(connection).map((update) => update.nrocapvisto)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+    expect(operationInserts(connection)).toHaveLength(9);
+    expect(JSON.parse(operationInserts(connection)[8]?.payload as string)).toEqual({
+      episodesWatched: 10,
+      lastWatchedAt: now,
+    });
+  });
+
+  it('capPlus lee el estado actual de SQLite, actualiza el anime y crea operation_log pendiente', async () => {
+    const connection = createTransactionConnection();
+
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -134,24 +111,23 @@ describe('useMutateAnime', () => {
       await result.current.capPlus('anime-1');
     });
 
-    expect(mockCreateDrizzleDb).toHaveBeenCalledWith(rawDb);
-    expect(selectMock.select).toHaveBeenCalled();
+    expect(connection.getFirstAsync).toHaveBeenCalledWith(
+      expect.stringMatching(/^SELECT .* FROM animes WHERE _id = \? LIMIT 1$/),
+      'anime-1',
+    );
     expect(mockWithDeferredWrite).toHaveBeenCalledWith(rawDb, expect.any(Function));
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 4,
-      fechaUltCapVisto: now,
-    });
-    expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 4, fechaUltCapVisto: now, _id: 'anime-1' },
+    ]);
 
-    const insertPayload = txMocks.values.mock.calls[0][0];
+    const [insertPayload] = operationInserts(connection);
     expect(insertPayload).toMatchObject({
       animeId: 'anime-1',
       operation: 'update',
       status: 'pending',
       createdAt: now,
     });
-    expect(JSON.parse(insertPayload.payload)).toEqual({
+    expect(JSON.parse(insertPayload.payload as string)).toEqual({
       episodesWatched: 4,
       lastWatchedAt: now,
     });
@@ -166,9 +142,7 @@ describe('useMutateAnime', () => {
       '../../../src/features/sync/sync-flush.helpers'
     ) as { requestFlush: jest.Mock };
     mockRequestFlush.mockResolvedValue(1);
-    const txMocks = createTxDbMocks();
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, createTransactionConnection());
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -182,26 +156,36 @@ describe('useMutateAnime', () => {
 
   it('propaga el error si falla el insert del operation_log', async () => {
     const insertError = new Error('operation log insert failed');
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks({ insertError });
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    const connection = createTransactionConnection({ insertError });
+    const { releaseFirstWrite } = mockQueuedDeferredWrite(mockWithDeferredWrite, connection);
+    const durableAnime = buildDurableAnime(buildAnimeRow());
+    observeAnimeMutationDurability([durableAnime]);
 
     const { result } = renderHook(() => useMutateAnime());
 
-    await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
-    expect(txMocks.insert).toHaveBeenCalledWith(operationLog);
+    const press = result.current.capPlus('anime-1');
+    expect(shownChapters(durableAnime)).toBe(4);
+
+    await act(async () => {
+      releaseFirstWrite();
+      await expect(press).rejects.toThrow(insertError);
+    });
+
+    // The rejected write takes its optimistic chapter with it: the card shows what the row still
+    // holds, not a value the rolled-back transaction never stored.
+    expect(shownChapters(durableAnime)).toBe(3);
+
+    // The row update was issued first, and the rejected insert is the one that failed: the order
+    // the transaction hands back is what decides whether a rollback has an update to undo.
+    expect(animeUpdates(connection)).toHaveLength(1);
+    expect(operationInserts(connection)).toHaveLength(1);
   });
 
   it('records the write failure as a failed attempt', async () => {
     const insertError = new Error('database is locked');
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks({ insertError });
+    const connection = createTransactionConnection({ insertError });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -217,11 +201,9 @@ describe('useMutateAnime', () => {
   // on a manual resolver discriminates: while it is unresolved, an awaited call cannot settle.
   it('waits for the telemetry write to settle before rethrowing', async () => {
     const insertError = new Error('database is locked');
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks({ insertError });
+    const connection = createTransactionConnection({ insertError });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     let releaseTelemetry!: () => void;
     mockRecordSyncAttemptFailed.mockImplementationOnce(
@@ -248,11 +230,9 @@ describe('useMutateAnime', () => {
 
   it('never masks the original failure when telemetry also fails', async () => {
     const insertError = new Error('database is locked');
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks({ insertError });
+    const connection = createTransactionConnection({ insertError });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
     mockRecordSyncAttemptFailed.mockRejectedValueOnce(new Error('telemetry write failed'));
 
     const { result } = renderHook(() => useMutateAnime());
@@ -261,11 +241,7 @@ describe('useMutateAnime', () => {
   });
 
   it('records no failure telemetry when the mutation succeeds', async () => {
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
-
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, createTransactionConnection());
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -277,11 +253,9 @@ describe('useMutateAnime', () => {
   });
 
   it('capPlus agrega fechaEstreno cuando primeravez es 1', async () => {
-    const selectMock = buildSelectMock({ ...baseAnimeRow, primeravez: 1 });
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection({ row: buildAnimeRow({ primeravez: 1 }) });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -289,20 +263,23 @@ describe('useMutateAnime', () => {
       await result.current.capPlus('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 4,
-      fechaUltCapVisto: now,
-      fechaEstreno: now,
-      primeravez: 0,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      {
+        nrocapvisto: 4,
+        fechaUltCapVisto: now,
+        fechaEstreno: now,
+        primeravez: 0,
+        _id: 'anime-1',
+      },
+    ]);
   });
 
   it('capPlus autofinaliza en un solo patch absoluto cuando nrocapvisto + 1 == totalcap', async () => {
-    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 11, totalcap: 12 });
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection({
+      row: buildAnimeRow({ nrocapvisto: 11, totalcap: 12 }),
+    });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -310,32 +287,28 @@ describe('useMutateAnime', () => {
       await result.current.capPlus('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 12,
-      fechaUltCapVisto: now,
-      estado: 1,
-    });
-
-    expect(txMocks.values).toHaveBeenCalledTimes(1);
-    expect(txMocks.values).toHaveBeenNthCalledWith(1, {
-      animeId: 'anime-1',
-      operation: 'update',
-      payload: JSON.stringify({
-        episodesWatched: 12,
-        lastWatchedAt: now,
-        status: 1,
-      }),
-      status: 'pending',
-      createdAt: now,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 12, fechaUltCapVisto: now, estado: 1, _id: 'anime-1' },
+    ]);
+    expect(operationInserts(connection)).toEqual([
+      {
+        animeId: 'anime-1',
+        operation: 'update',
+        payload: JSON.stringify({
+          episodesWatched: 12,
+          lastWatchedAt: now,
+          status: 1,
+        }),
+        status: 'pending',
+        createdAt: now,
+      },
+    ]);
   });
 
   it('capMinus nunca baja nrocapvisto de cero', async () => {
-    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 0 });
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection({ row: buildAnimeRow({ nrocapvisto: 0 }) });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -343,18 +316,15 @@ describe('useMutateAnime', () => {
       await result.current.capMinus('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 0,
-      fechaUltCapVisto: now,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 0, fechaUltCapVisto: now, _id: 'anime-1' },
+    ]);
   });
 
   it('capMinus actualiza fechaUltCapVisto y registra cap_minus', async () => {
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection();
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -362,33 +332,31 @@ describe('useMutateAnime', () => {
       await result.current.capMinus('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 2,
-      fechaUltCapVisto: now,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 2, fechaUltCapVisto: now, _id: 'anime-1' },
+    ]);
 
-    const insertPayload = txMocks.values.mock.calls[0][0];
+    const [insertPayload] = operationInserts(connection);
     expect(insertPayload.operation).toBe('update');
     expect(insertPayload.status).toBe('pending');
-    expect(JSON.parse(insertPayload.payload)).toEqual({
+    expect(JSON.parse(insertPayload.payload as string)).toEqual({
       episodesWatched: 2,
       lastWatchedAt: now,
     });
   });
 
   it.each([0, 1, 2, 3])('setEstado only writes and queues status %s', async (estado) => {
-    const selectMock = buildSelectMock({
-      ...baseAnimeRow,
-      estado: (estado + 1) % 4,
-      nrocapvisto: 1,
-      totalcap: 12,
-      primeravez: 1,
-      fechaUltCapVisto: now - 86400000,
+    const connection = createTransactionConnection({
+      row: buildAnimeRow({
+        estado: (estado + 1) % 4,
+        nrocapvisto: 1,
+        totalcap: 12,
+        primeravez: 1,
+        fechaUltCapVisto: now - 86400000,
+      }),
     });
-    const txMocks = createTxDbMocks();
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -396,24 +364,22 @@ describe('useMutateAnime', () => {
       await result.current.setEstado('anime-1', estado);
     });
 
-    expect(txMocks.set).toHaveBeenCalledTimes(1);
-    expect(txMocks.set).toHaveBeenCalledWith({ estado });
-    expect(txMocks.values).toHaveBeenCalledTimes(1);
-    expect(txMocks.values).toHaveBeenCalledWith({
-      animeId: 'anime-1',
-      operation: 'update',
-      payload: JSON.stringify({ status: estado }),
-      status: 'pending',
-      createdAt: now,
-    });
+    expect(animeUpdates(connection)).toEqual([{ estado, _id: 'anime-1' }]);
+    expect(operationInserts(connection)).toEqual([
+      {
+        animeId: 'anime-1',
+        operation: 'update',
+        payload: JSON.stringify({ status: estado }),
+        status: 'pending',
+        createdAt: now,
+      },
+    ]);
   });
 
   it('capPlusHalf escribe nrocapvisto fraccionario en el patch', async () => {
-    const selectMock = buildSelectMock(baseAnimeRow);
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection();
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -421,18 +387,15 @@ describe('useMutateAnime', () => {
       await result.current.capPlusHalf('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 3.5,
-      fechaUltCapVisto: now,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 3.5, fechaUltCapVisto: now, _id: 'anime-1' },
+    ]);
   });
 
   it('capMinusHalf nunca baja nrocapvisto de cero', async () => {
-    const selectMock = buildSelectMock({ ...baseAnimeRow, nrocapvisto: 0 });
-    const txMocks = createTxDbMocks();
+    const connection = createTransactionConnection({ row: buildAnimeRow({ nrocapvisto: 0 }) });
 
-    mockCreateDrizzleDb.mockReturnValue(selectMock);
-    mockAnimeDeferredWrite(txMocks.txDb);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -440,10 +403,9 @@ describe('useMutateAnime', () => {
       await result.current.capMinusHalf('anime-1');
     });
 
-    expect(txMocks.set).toHaveBeenCalledWith({
-      nrocapvisto: 0,
-      fechaUltCapVisto: now,
-    });
+    expect(animeUpdates(connection)).toEqual([
+      { nrocapvisto: 0, fechaUltCapVisto: now, _id: 'anime-1' },
+    ]);
   });
 
   it('delega toda la lógica de mutación al helper sin tocar client/schema directamente', () => {

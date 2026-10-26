@@ -1,4 +1,9 @@
-import { renderHook } from "@testing-library/react-native";
+import { act, renderHook } from "@testing-library/react-native";
+import {
+  acceptAnimeMutationProjection,
+  getAnimeMutationProjectionState,
+  resetAnimeMutationProjection,
+} from "../../../../src/features/animes/anime-mutation-projection.helpers";
 import { useAnimeList } from "../../../../src/features/animes/use-anime-list";
 import type { AnimeRow } from "../../../../src/infrastructure/db/schema";
 
@@ -8,11 +13,7 @@ const mockUseOptionalSQLiteContext = jest.fn();
 const mockUseOptionalLiveQuery = jest.fn();
 /** Mocks `createDrizzleDb`, standing in for the real drizzle factory. */
 const mockCreateDrizzleDb = jest.fn();
-/** Spy for the drizzle `select()` call chain, unused directly but kept for chain shape parity. */
-const mockSelect = jest.fn();
-/** Spy for the drizzle `.from()` call chain, unused directly but kept for chain shape parity. */
-const mockFrom = jest.fn();
-/** Spy for the drizzle `.where()` call chain, unused directly but kept for chain shape parity. */
+/** Spy for the query chain's `.where()`: both live queries are built through it, and a case counts them. */
 const mockWhere = jest.fn();
 
 jest.mock("../../../../src/infrastructure/db/native-runtime", () => ({
@@ -74,14 +75,35 @@ function mockLiveQueryData(animeRows: AnimeRow[], seasonQueueRows: readonly unkn
     .mockImplementationOnce(() => ({ data: seasonQueueRows }));
 }
 
+/**
+ * Queues the same live-query pair for every render, for cases that expect one.
+ * The hook asks for the active animes and then for the queued season ratings, once per render, so
+ * a projection change -- which re-renders without any database write -- would otherwise exhaust a
+ * two-entry queue and receive `undefined`.
+ */
+function mockLiveQueryDataUntilChanged(
+  animeRows: AnimeRow[],
+  seasonQueueRows: readonly unknown[] = [],
+) {
+  let callIndex = 0;
+
+  mockUseOptionalLiveQuery.mockImplementation(() => {
+    const isAnimeQuery = callIndex % 2 === 0;
+    callIndex += 1;
+
+    return { data: isAnimeQuery ? animeRows : seasonQueueRows };
+  });
+}
+
 describe("useAnimeList", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAnimeMutationProjection();
     mockUseOptionalSQLiteContext.mockReturnValue({ name: "raw-db" });
     mockWhere.mockReturnValue({ query: "active-animes" });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
-    mockCreateDrizzleDb.mockReturnValue({ select: mockSelect });
+    mockCreateDrizzleDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: mockWhere }) }),
+    });
   });
 
   it("filtra por día y ordena por dias[].orden ascendente", () => {
@@ -261,6 +283,51 @@ describe("useAnimeList", () => {
       status: "failed",
       failureKind: "conflict",
     });
+  });
+
+  it("proyecta un capítulo aceptado y lo retira cuando la fila durable deja de ser la que lo originó", () => {
+    const jueves = JSON.stringify([{ dia: "Jueves", orden: 1 }]);
+    mockLiveQueryDataUntilChanged([
+      buildRow({ _id: "anime-1", nrocapvisto: 1, totalcap: 12, dias: jueves }),
+    ]);
+    const { result, rerender } = renderHook(() => useAnimeList("Jueves"));
+
+    expect(result.current.data[0]?.nrocapvisto).toBe(1);
+
+    // The chapter the user pressed, accepted before any write was acknowledged.
+    act(() => {
+      acceptAnimeMutationProjection("anime-1", () => ({ nrocapvisto: 2, estado: 0 }));
+    });
+
+    expect(result.current.data[0]?.nrocapvisto).toBe(2);
+
+    // A newer durable value (a later write or a correction) is not masked by the stale intent.
+    mockLiveQueryDataUntilChanged([
+      buildRow({ _id: "anime-1", nrocapvisto: 3, totalcap: 12, dias: jueves }),
+    ]);
+    rerender({});
+
+    expect(result.current.data[0]?.nrocapvisto).toBe(3);
+
+    // A +1 followed by a -1: the chain ends on the value the row already carries, so the row has
+    // absorbed it and nothing may be kept. Retaining it would pile one entry pair per tap cycle for
+    // the whole session, which is exactly what an independent review reproduced.
+    act(() => {
+      acceptAnimeMutationProjection("anime-1", () => ({ nrocapvisto: 4, estado: 0 }));
+      acceptAnimeMutationProjection("anime-1", () => ({ nrocapvisto: 3, estado: 0 }));
+    });
+
+    expect(result.current.data[0]?.nrocapvisto).toBe(3);
+    expect(getAnimeMutationProjectionState().byAnimeId["anime-1"]?.entries).toHaveLength(2);
+
+    // The row settles on the value the chain folds to, so every entry of that chain retires.
+    mockLiveQueryDataUntilChanged([
+      buildRow({ _id: "anime-1", nrocapvisto: 3, totalcap: 12, dias: jueves }),
+    ]);
+    rerender({});
+
+    expect(result.current.data[0]?.nrocapvisto).toBe(3);
+    expect(getAnimeMutationProjectionState().byAnimeId["anime-1"]?.entries).toHaveLength(0);
   });
 
   it("keeps the item object of an anime whose row a database write left unchanged", () => {

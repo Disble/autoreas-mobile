@@ -5,12 +5,11 @@ import type { AnimeListScreenItemProps } from "./anime-list-screen.types";
 /**
  * Builds the AnimeCard props of one list row. The row subscribes to its own cover only, so a cover
  * arriving for another anime does not re-render it, and React Compiler keeps the card props (and so
- * the card) unchanged while the row's anime, lock, folder and handlers are unchanged.
+ * the card) unchanged while the row's anime, folder and handlers are unchanged.
  */
 export function useAnimeListScreenItem(props: AnimeListScreenItemProps): AnimeCardProps {
   const {
     anime,
-    isMutating,
     folderPath,
     handleCapMinus,
     handleCapMinusHalf,
@@ -40,7 +39,6 @@ export function useAnimeListScreenItem(props: AnimeListScreenItemProps): AnimeCa
 
   return {
     anime,
-    isMutating,
     coverUri,
     folderPath,
     onCapMinus,

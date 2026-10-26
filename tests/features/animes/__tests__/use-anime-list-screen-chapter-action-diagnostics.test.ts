@@ -196,7 +196,7 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     });
   });
 
-  it("persists the dropped repeat as skipped/in_flight, sharing one correlation per tap", async () => {
+  it("persists both taps of a rapid double tap, each with its own receipt", async () => {
     let releaseFirstTap!: () => void;
     mockCapPlus.mockImplementationOnce(
       () =>
@@ -204,39 +204,33 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
           releaseFirstTap = resolve;
         }),
     );
+    mockCapPlus.mockResolvedValueOnce(undefined);
 
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     let firstTap: Promise<void>;
-    let droppedTap: Promise<void>;
+    let secondTap: Promise<void>;
     await act(async () => {
       firstTap = result.current.handleCapPlus("thu-1");
-      droppedTap = result.current.handleCapPlus("thu-1");
+      secondTap = result.current.handleCapPlus("thu-1");
     });
 
     await act(async () => {
       releaseFirstTap();
-      await Promise.all([firstTap, droppedTap]);
+      await Promise.all([firstTap, secondTap]);
     });
 
-    // Three rows, not two: `received` is per callback that actually ran, and the guard dropped the
-    // SECOND one. Collapsing the two taps into one row set would make a double tap indistinguishable
-    // from a single one, which is the exact question this feed exists to answer.
+    // Both taps reach the mutation and both persist their own receipt: the second tap used to be
+    // dropped as `in_flight`, which made a double tap indistinguishable from a single one.
     const entries = readPersistedEntries();
-    expect(mockCapPlus).toHaveBeenCalledTimes(1);
-    expect(entries).toHaveLength(3);
+    expect(mockCapPlus).toHaveBeenCalledTimes(2);
+    expect(entries).toHaveLength(2);
 
-    const [firstReceived, droppedReceived, droppedSkipped] = entries.map(parsePayload);
+    const [firstReceived, secondReceived] = entries.map(parsePayload);
     expect(firstReceived).toMatchObject({ action: "episode_plus_one", phase: "received" });
-    expect(droppedReceived).toMatchObject({ action: "episode_plus_one", phase: "received" });
-    expect(droppedSkipped).toMatchObject({
-      action: "episode_plus_one",
-      phase: "skipped",
-      reason: "in_flight",
-    });
-    expect(droppedSkipped.correlation_id).toBe(droppedReceived.correlation_id);
-    expect(droppedReceived.correlation_id).not.toBe(firstReceived.correlation_id);
-    expect(new Set(entries.map((entry) => entry.cycleId)).size).toBe(3);
+    expect(secondReceived).toMatchObject({ action: "episode_plus_one", phase: "received" });
+    expect(secondReceived.correlation_id).not.toBe(firstReceived.correlation_id);
+    expect(new Set(entries.map((entry) => entry.cycleId)).size).toBe(2);
   });
 
   it("persists the same phases as before when the switch is explicitly on", async () => {
@@ -286,7 +280,7 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     );
   });
 
-  it("persists nothing for a repeat tap dropped in flight while the switch is off", async () => {
+  it("persists nothing for either tap of a rapid double tap while the switch is off", async () => {
     mockUseBridgeConfig.mockReturnValue(
       mockBuildBridgeConfigResult({ deviceId: "bridge-1", isSyncTelemetryEnabled: false }),
     );
@@ -301,20 +295,20 @@ describe("useAnimeListScreen chapter action diagnostics", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     let firstTap: Promise<void>;
-    let droppedTap: Promise<void>;
+    let secondTap: Promise<void>;
     await act(async () => {
       firstTap = result.current.handleCapPlus("thu-1");
-      droppedTap = result.current.handleCapPlus("thu-1");
+      secondTap = result.current.handleCapPlus("thu-1");
     });
 
     await act(async () => {
       releaseFirstTap();
-      await Promise.all([firstTap, droppedTap]);
+      await Promise.all([firstTap, secondTap]);
     });
 
-    // Both boundary calls are gated: the dropped repeat's `skipped/in_flight` is as muted as the
-    // receipt of the tap it dropped.
-    expect(mockCapPlus).toHaveBeenCalledTimes(1);
+    // The switch gates the telemetry, never the mutation: both taps ran, and neither boundary call
+    // persists anything while it is off.
+    expect(mockCapPlus).toHaveBeenCalledTimes(2);
     expect(readPersistedEntries()).toHaveLength(0);
   });
 
