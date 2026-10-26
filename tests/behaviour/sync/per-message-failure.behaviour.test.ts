@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { listUnresolvedKeys } from '../../../src/features/sync';
 import { syncPendingOperations } from '../../../src/features/sync/reconcile.helpers';
+import { buildPendingOperationsQuery } from '../../../src/features/sync/sync-facade.helpers';
 import { installFakeBridge } from '../../support/fake-bridge.helpers';
 import type { FakeBridge } from '../../support/fake-bridge.types';
 import { applyMigrationFiles, createTestSqliteAdapter } from '../../support/sqlite-adapter.helpers';
@@ -162,18 +163,33 @@ describe('per-message failure in the anime outbox (ADR 009 R-5)', () => {
     expect(result.syncedCount).toBe(2);
   });
 
-  it('dead-letters every held row of the round on a 401, sends no message alone, and fails the cycle', async () => {
+  it('keeps a 401 round pending without isolation and resends it on the next normal attempt', async () => {
     const adapter = await openDatabase(['anime-a', 'anime-b']);
     fakeBridge.queueResponse(rejecting(401));
 
-    await expect(syncPendingOperations(adapter)).rejects.toThrow();
+    await expect(syncPendingOperations(adapter)).rejects.toThrow('Reconcile failed: 401');
 
-    expect(fakeBridge.requests).toHaveLength(1);
+    expect(sentAnimeIds(fakeBridge)).toEqual([['anime-a', 'anime-b']]);
     expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
-      ['dead_letter', null],
-      ['dead_letter', null],
+      ['pending', null],
+      ['pending', null],
     ]);
-    expect((await listUnresolvedKeys(adapter)).map((key) => key.animeId)).toEqual(['anime-a', 'anime-b']);
+    expect(await buildPendingOperationsQuery(adapter)).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(await listUnresolvedKeys(adapter)).toEqual([]);
+
+    fakeBridge.queueResponse(confirming('anime-a', 'anime-b'));
+    const result = await syncPendingOperations(adapter);
+
+    expect(sentAnimeIds(fakeBridge)).toEqual([['anime-a', 'anime-b'], ['anime-a', 'anime-b']]);
+    expect(sentBodies(fakeBridge)[1].pending_operations).toEqual(sentBodies(fakeBridge)[0].pending_operations);
+    expect(sentBodies(fakeBridge).map((body) => body.last_changelog_id)).toEqual([0, 0]);
+    expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
+      ['synced', null],
+      ['synced', null],
+    ]);
+    expect(result.syncedCount).toBe(2);
+    expect(await buildPendingOperationsQuery(adapter)).toEqual([]);
+    expect(await listUnresolvedKeys(adapter)).toEqual([]);
   });
 
   it('releases every unsent message, unclaimed, when an isolated send fails on the network', async () => {
@@ -274,17 +290,22 @@ describe('per-message failure in the anime outbox (ADR 009 R-5)', () => {
     expect(sentBodies(fakeBridge).slice(1).map((body) => body.client_telemetry)).toEqual([undefined, undefined]);
   });
 
-  it('dead-letters the message a 401 lands on during isolation and releases the rest', async () => {
-    const adapter = await openDatabase(['anime-a', 'anime-b']);
+  it('keeps an isolated 401 pending, releases unsent rows and chained successors, and preserves confirmations', async () => {
+    const adapter = await openDatabase(['anime-a', 'anime-b', 'anime-a', 'anime-c']);
     fakeBridge.queueResponse(rejecting(422));
+    fakeBridge.queueResponse(confirmingAt('anime-a', 2));
     fakeBridge.queueResponse(rejecting(401));
 
-    await expect(syncPendingOperations(adapter)).rejects.toThrow();
+    await expect(syncPendingOperations(adapter)).rejects.toThrow('Reconcile failed: 401');
 
-    expect((await readRows(adapter)).map((row) => [row.status, row.claim_owner])).toEqual([
-      ['dead_letter', null],
-      ['pending', null],
+    expect(sentAnimeIds(fakeBridge)).toEqual([['anime-a', 'anime-b', 'anime-c'], ['anime-a'], ['anime-b']]);
+    expect((await readRows(adapter)).map((row) => [row.anime_id, row.status, row.claim_owner])).toEqual([
+      ['anime-a', 'synced', null],
+      ['anime-b', 'pending', null],
+      ['anime-a', 'pending', null],
+      ['anime-c', 'pending', null],
     ]);
+    expect(await listUnresolvedKeys(adapter)).toEqual([]);
   });
 
   it('releases the in-flight message and every unsent one when a local write fails during an isolated send', async () => {

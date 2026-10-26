@@ -1,5 +1,5 @@
 {
-  "name": "unauthorized-401-gives-up-the-whole-round",
+  "name": "unauthorized-401-keeps-the-round-pending",
   "runtimes": [
     "js",
     "kotlin"
@@ -7,7 +7,7 @@
   "covers": [
     "R-5"
   ],
-  "description": "401 rejects the pairing, never a message: every row of the request becomes unresolved (dead_letter), no message is re-sent alone, and the attempt fails.",
+  "description": "A reconcile 401 fails the attempt without rejecting any anime edit: every held row returns to pending, unclaimed, without isolation or changes to tokens, cursor or conflict budget.",
   "given": {
     "cursor": 0,
     "animes": [
@@ -77,14 +77,14 @@
     "outbox": [
       {
         "animeId": "anime-a",
-        "status": "dead_letter",
+        "status": "pending",
         "unresolvedReason": null,
         "claimOwner": null,
         "conflictAttemptCount": 0
       },
       {
         "animeId": "anime-b",
-        "status": "dead_letter",
+        "status": "pending",
         "unresolvedReason": null,
         "claimOwner": null,
         "conflictAttemptCount": 0

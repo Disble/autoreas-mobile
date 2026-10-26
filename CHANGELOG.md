@@ -16,6 +16,14 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-10-25
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Fixed
+
+- Changes waiting to be sent to the Bridge are no longer lost when the Bridge answers that authentication failed. They stay on the tablet and go out on the next sync: opening or resuming the app, tapping the sync control, or reconnecting. Before, those changes were set aside without any notice and never retried.
+
 ## [2.5.0] — 2026-10-23
 
 Works with any Bridge 2.0.0 or later. The new screen reports need Bridge 2.4.0: with an older Bridge the app works as before, but its diagnostic reports wait on the tablet until the Bridge is updated, so update the Bridge first.

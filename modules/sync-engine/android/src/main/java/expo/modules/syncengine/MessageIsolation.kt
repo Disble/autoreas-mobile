@@ -1,6 +1,6 @@
 package expo.modules.syncengine
 
-/** The status that rejects the pairing, never a message (ADR 009 R-5); mirrors `RECONCILE_UNAUTHORIZED_STATUS`. */
+/** Authentication failure: fail without isolation, release edits to pending (ADR 009 R-5 amendment, 2026-10-25). */
 internal const val RECONCILE_UNAUTHORIZED_STATUS = 401
 
 /** What one reconcile exchange did with the rows it sent. */

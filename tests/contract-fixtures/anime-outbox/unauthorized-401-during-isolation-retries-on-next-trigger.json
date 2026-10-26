@@ -1,0 +1,99 @@
+{
+  "name": "unauthorized-401-during-isolation-retries-on-next-trigger",
+  "runtimes": ["js", "kotlin"],
+  "covers": ["R-5", "R-14"],
+  "description": "An isolated 401 fails the attempt, preserving earlier confirmations and releasing the failing row, unsent rows and claimed successors. The next normal trigger delivers them with their unchanged bases.",
+  "given": {
+    "cursor": 0,
+    "animes": [
+      { "id": "anime-a", "token": 7 },
+      { "id": "anime-b", "token": 7 },
+      { "id": "anime-c", "token": 7 }
+    ],
+    "outbox": [
+      { "animeId": "anime-a", "payload": { "episodesWatched": 5 } },
+      { "animeId": "anime-b", "payload": { "episodesWatched": 5 } },
+      { "animeId": "anime-a", "payload": { "episodesWatched": 6 } },
+      { "animeId": "anime-c", "payload": { "episodesWatched": 5 } }
+    ]
+  },
+  "cycles": [
+    {
+      "bridge": [
+        { "status": 422, "body": { "error": "rejected" } },
+        {
+          "status": 202,
+          "body": {
+            "status": "ok",
+            "applied_operations": [
+              { "anime_id": "anime-a", "operation": "update", "applied": true, "modified_at": 14 }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 2
+          }
+        },
+        { "status": 401, "body": { "error": "invalid bearer token" } }
+      ],
+      "attempt": "failed"
+    },
+    {
+      "bridge": [
+        {
+          "status": 202,
+          "body": {
+            "status": "ok",
+            "applied_operations": [
+              { "anime_id": "anime-b", "operation": "update", "applied": true, "modified_at": 21 },
+              { "anime_id": "anime-a", "operation": "update", "applied": true, "modified_at": 21 },
+              { "anime_id": "anime-c", "operation": "update", "applied": true, "modified_at": 21 }
+            ],
+            "bridge_changes": [],
+            "last_changelog_id": 3
+          }
+        }
+      ],
+      "attempt": "succeeded"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "POST", "path": "/api/sync/reconcile", "lastChangelogId": 0,
+        "operations": [
+          { "anime_id": "anime-a", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 },
+          { "anime_id": "anime-b", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 },
+          { "anime_id": "anime-c", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 }
+        ]
+      },
+      {
+        "method": "POST", "path": "/api/sync/reconcile", "lastChangelogId": 0,
+        "operations": [
+          { "anime_id": "anime-a", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 }
+        ]
+      },
+      {
+        "method": "POST", "path": "/api/sync/reconcile", "lastChangelogId": 2,
+        "operations": [
+          { "anime_id": "anime-b", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 }
+        ]
+      },
+      {
+        "method": "POST", "path": "/api/sync/reconcile", "lastChangelogId": 2,
+        "operations": [
+          { "anime_id": "anime-b", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 },
+          { "anime_id": "anime-a", "operation": "update", "payload": { "episodesWatched": 6 }, "base": 14 },
+          { "anime_id": "anime-c", "operation": "update", "payload": { "episodesWatched": 5 }, "base": 7 }
+        ]
+      }
+    ],
+    "outbox": [
+      { "animeId": "anime-a", "status": "synced", "unresolvedReason": null, "claimOwner": null, "conflictAttemptCount": 0 },
+      { "animeId": "anime-b", "status": "synced", "unresolvedReason": null, "claimOwner": null, "conflictAttemptCount": 0 },
+      { "animeId": "anime-a", "status": "synced", "unresolvedReason": null, "claimOwner": null, "conflictAttemptCount": 0 },
+      { "animeId": "anime-c", "status": "synced", "unresolvedReason": null, "claimOwner": null, "conflictAttemptCount": 0 }
+    ],
+    "cursor": 3,
+    "tokens": { "anime-a": 21, "anime-b": 21, "anime-c": 21 },
+    "staged": []
+  }
+}

@@ -11,7 +11,7 @@ import org.robolectric.annotation.SQLiteMode
  * Per-message failure in the `:sync` process (ADR 009 R-5), mirroring
  * `tests/behaviour/sync/per-message-failure.behaviour.test.ts`: a 4xx other than 401 for a round
  * of several messages is re-sent one message per request, so only the message that caused it is
- * dead-lettered; a 401 rejects the pairing and dead-letters the whole round.
+ * dead-lettered; a 401 fails the attempt and releases the whole round to pending.
  */
 @RunWith(RobolectricTestRunner::class)
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
@@ -51,7 +51,7 @@ class SyncEngineMessageIsolationTest {
   }
 
   @Test
-  fun a401DeadLettersEveryRowOfTheRoundSendsNoMessageAloneAndFailsTheCycle() {
+  fun a401KeepsEveryRowPendingSendsNoMessageAloneAndFailsTheCycle() {
     SyncEngineTestDatabase().use { fixture ->
       SyncEngineTestHttpServer.scripted(listOf(rejecting(401))).use { server ->
         seed(fixture, server, listOf("anime-a", "anime-b"))
@@ -62,7 +62,7 @@ class SyncEngineMessageIsolationTest {
         assertEquals("ReconcileHttpError", outcome.errorName)
         assertEquals(1, reconcileRequests(server).size)
         assertEquals(
-          listOf(RowState("anime-a", "dead_letter", null), RowState("anime-b", "dead_letter", null)),
+          listOf(RowState("anime-a", "pending", null), RowState("anime-b", "pending", null)),
           rows(fixture),
         )
       }
@@ -177,7 +177,7 @@ class SyncEngineMessageIsolationTest {
   }
 
   @Test
-  fun a401OnAnIsolatedSendDeadLettersThatMessageAndReleasesTheRest() {
+  fun a401OnAnIsolatedSendKeepsThatMessagePendingAndReleasesTheRest() {
     SyncEngineTestDatabase().use { fixture ->
       SyncEngineTestHttpServer.scripted(listOf(rejecting(422), rejecting(401))).use { server ->
         seed(fixture, server, listOf("anime-a", "anime-b"))
@@ -185,8 +185,10 @@ class SyncEngineMessageIsolationTest {
         val outcome = cycle(fixture).run("foreground", "cycle-isolation-401") {}
 
         assertEquals("failed", outcome.outcome)
+        assertEquals("ReconcileHttpError", outcome.errorName)
+        assertEquals(listOf(listOf("anime-a", "anime-b"), listOf("anime-a")), sentAnimeIds(server))
         assertEquals(
-          listOf(RowState("anime-a", "dead_letter", null), RowState("anime-b", "pending", null)),
+          listOf(RowState("anime-a", "pending", null), RowState("anime-b", "pending", null)),
           rows(fixture),
         )
       }
