@@ -1,6 +1,5 @@
 import { BridgeUnreachableError } from '../../../src/infrastructure/api';
 import {
-  createDrizzleDb,
   withLocalWrite,
 } from '../../../src/infrastructure/db/client/client.helpers';
 import {
@@ -28,7 +27,6 @@ import {
 } from '../../../src/features/sync/sync-connection-store';
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
-  createDrizzleDb: jest.fn(),
   withLocalWrite: jest.fn(),
 }));
 
@@ -52,17 +50,18 @@ jest.mock('../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
   }),
 }));
 
-/** Shape of the fake drizzle transaction handle `withLocalWrite`'s task callback receives. */
-type MockTxDb = {
-  update: jest.Mock;
-  insert: jest.Mock;
+/** The transaction connection the mutation receives: the read resolves one row, writes are recorded. */
+type FakeTransactionConnection = {
+  readonly databasePath: string;
+  readonly getFirstAsync: jest.Mock;
+  readonly runAsync: jest.Mock;
 };
 
 /** Fixed clock reading every case in this file computes its expected timestamps relative to. */
 const now = 1_710_000_000_000;
 /** A dummy raw DB handle: every dependency that would read it is mocked above. */
 const rawDb = { name: 'raw-db' };
-/** One `animes` row fixture `buildSelectMock` resolves with, for `applyAnimeMutationPatch`'s own read. */
+/** One `animes` row fixture the mutation's own read resolves with. */
 const baseAnimeRow: Record<string, unknown> = {
   _id: 'anime-1',
   nombre: 'One Piece',
@@ -86,37 +85,22 @@ const baseAnimeRow: Record<string, unknown> = {
   tipo: null,
 };
 
-/** Builds the fake drizzle `select` chain `createDrizzleDb` returns, resolving `baseAnimeRow`. */
-function buildSelectMock() {
-  const limit = jest.fn().mockResolvedValue([baseAnimeRow]);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
-  return { select };
-}
-
-/** Builds the fake `update`/`insert` transaction handle mocks `configureMutationWrite` wires up. */
-function createTxDbMocks() {
-  const where = jest.fn().mockResolvedValue(undefined);
-  const set = jest.fn(() => ({ where }));
-  const update = jest.fn(() => ({ set }));
-  const values = jest.fn().mockResolvedValue(undefined);
-  const insert = jest.fn(() => ({ values }));
-
+/** Builds the fake transaction connection the mutation's read and both writes run against. */
+function createTransactionConnection(): FakeTransactionConnection {
   return {
-    txDb: { update, insert } satisfies MockTxDb,
-    values,
+    databasePath: 'test-db-transaction',
+    getFirstAsync: jest.fn().mockResolvedValue(baseAnimeRow),
+    runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 1, changes: 1 }),
   };
 }
 
-/** Wires `createDrizzleDb`/`withLocalWrite` so a mutation write runs against the fake tx handle. */
-function configureMutationWrite(): { readonly values: jest.Mock } {
-  const txMocks = createTxDbMocks();
-  (createDrizzleDb as jest.Mock).mockReturnValue(buildSelectMock());
-  (withLocalWrite as jest.Mock).mockImplementation(
-    async (_database, task) => task(txMocks.txDb, rawDb),
+/** Wires `withLocalWrite` so a mutation write runs against the given fake connection. */
+function configureMutationWrite(): FakeTransactionConnection {
+  const connection = createTransactionConnection();
+  (withLocalWrite as jest.Mock).mockImplementation(async (_database, task) =>
+    task(connection as never, connection as never),
   );
-  return txMocks;
+  return connection;
 }
 
 /** Applies one chapter-increment mutation patch to `anime-1`, exercising the real mutation pipeline. */
@@ -188,8 +172,7 @@ describe('anime mutation connection truth', () => {
     (syncPendingOperations as jest.Mock).mockRejectedValueOnce(unreachableError);
     const successAttempt = beginSyncConnectionAttempt();
     markSyncConnectionSucceeded(successAttempt, now - 1_000);
-    const { values } = configureMutationWrite();
-
+    const connection = configureMutationWrite();
     await expect(applyChapterIncrement()).resolves.toBeUndefined();
     await waitForCalls(recordSyncAttemptFailed as jest.Mock, 1);
     await waitForConnectionKind('unreachable');
@@ -200,7 +183,14 @@ describe('anime mutation connection truth', () => {
       message: unreachableError.message,
       bridgeContact: { at: expect.any(Number), reached: false },
     });
-    expect(values).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }));
+    expect(connection.runAsync).toHaveBeenCalledWith(
+      expect.stringMatching(/^INSERT INTO operation_log /),
+      'anime-1',
+      'update',
+      expect.any(String),
+      'pending',
+      now,
+    );
   });
 
   it('prevents an older coordinated success from overwriting a newer chapter failure', async () => {

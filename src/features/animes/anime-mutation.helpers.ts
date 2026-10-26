@@ -1,5 +1,5 @@
-import { createDrizzleDb, withLocalWrite } from '../../infrastructure/db/client/client.helpers';
-import { animes, operationLog, type AnimeRow } from '../../infrastructure/db/schema';
+import { withLocalWrite } from '../../infrastructure/db/client/client.helpers';
+import type { AnimeRow } from '../../infrastructure/db/schema';
 import { parseStoredEpisodeLengths } from '../../infrastructure/validation/anime-schema/anime-episodes.helpers';
 import { parseStoredAnimeSeason } from '../../infrastructure/validation/anime-schema/anime-season.helpers';
 import { AnimeSchema, type Anime } from '../../infrastructure/validation/anime-schema/anime.schema';
@@ -9,7 +9,6 @@ import type {
   AnimeMutationSyncPatch,
   SerializedMutationOperation,
 } from './anime-mutation.types';
-import { eq } from 'drizzle-orm';
 import { invalidateSyncConnectionOnline } from '../sync/sync-connection-store/sync-connection-store.helpers';
 import { requestFlush } from '../sync/sync-flush.helpers';
 import { recordSyncAttemptFailed } from '../sync/sync-runtime-status.helpers';
@@ -19,21 +18,39 @@ import {
   recordChapterActionSync,
 } from './chapter-action-diagnostics.helpers';
 import type { ChapterActionContext } from './chapter-action-diagnostics.types';
+import {
+  ANIME_ROW_SELECT_SQL,
+  INSERT_OPERATION_SQL,
+  UPDATE_COLUMN_BY_FIELD,
+} from './anime-mutation.constants';
+
+/** The local row fields a mutation patch can write (see `toLocalAnimeUpdate`). */
+type AnimeLocalUpdate = ReturnType<typeof toLocalAnimeUpdate>;
+
+/**
+ * Builds the parameterized `UPDATE` for exactly the columns one patch carries. Indexing the closed
+ * column map with the patch's own field keys is what keeps the two in step: a field the patch can
+ * emit but the map does not name cannot compile.
+ */
+function buildAnimeUpdateSql(fields: readonly (keyof AnimeLocalUpdate)[]): string {
+  const assignments = fields.map((field) => `${UPDATE_COLUMN_BY_FIELD[field]} = ?`).join(', ');
+
+  return `UPDATE animes SET ${assignments} WHERE _id = ?`;
+}
 
 /**
  * Reads the current persisted anime snapshot before mutating it.
  * This centralizes SQLite row parsing so mutation hooks only coordinate workflow steps.
+ *
+ * The read goes through the connection's asynchronous `getFirstAsync`, which expo's Android
+ * binding dispatches on `Dispatchers.IO`; the previous drizzle statement prepared and executed
+ * synchronously on the JS thread.
  */
 async function fetchParsedAnime(
-  rawDb: SQLiteDatabase,
+  tx: SQLiteDatabase,
   animeId: string,
 ): Promise<Anime | null> {
-  const db = createDrizzleDb(rawDb);
-  const [row] = await db
-    .select()
-    .from(animes)
-    .where(eq(animes._id, animeId))
-    .limit(1);
+  const row = await tx.getFirstAsync<AnimeRow>(ANIME_ROW_SELECT_SQL, animeId);
 
   if (!row) {
     return null;
@@ -220,6 +237,13 @@ export async function recordAnimeMutationFailure(
  * Centralizing this orchestration keeps `useMutateAnime` focused on wiring React callbacks to
  * the builders, and removes duplication between cap+, cap-, and state-change flows.
  *
+ * Every statement here goes through the transaction connection's asynchronous API
+ * (`getFirstAsync` / `runAsync`), which expo's Android binding runs on `Dispatchers.IO`. The
+ * statements the drizzle expo driver issued here before were prepared and executed synchronously,
+ * so a slow write held the JS thread even though the caller awaited it. The transaction itself is
+ * unchanged: `withLocalWrite` still owns `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` on the same
+ * file-keyed door, and the read, the update and the outbox insert keep their order.
+ *
  * Returns whether a row was actually updated, because the two cases are indistinguishable from the
  * outside otherwise: an absent row resolves normally and leaves the list untouched, which reads
  * exactly like a committed write with no visible effect. `actionContext` is optional and additive --
@@ -235,25 +259,31 @@ export async function applyAnimeMutationPatch(
   const now = Date.now();
   let didMutate = false;
 
-  await withLocalWrite(rawDb, async (txDb, tx) => {
+  // `tx` is the only handle this path touches. The callback's first argument is the drizzle query
+  // builder other consumers of the write door use; nothing here reads through it any more.
+  await withLocalWrite(rawDb, async (_db, tx) => {
     const anime = await fetchParsedAnime(tx, animeId);
     if (!anime) return;
 
     const bridgePatch = buildPatch(anime, now);
     const operation = serializeMutationOperation(bridgePatch);
+    const localUpdate = toLocalAnimeUpdate(bridgePatch);
+    const fields = Object.keys(localUpdate) as (keyof AnimeLocalUpdate)[];
 
-    await txDb
-      .update(animes)
-      .set(toLocalAnimeUpdate(bridgePatch))
-      .where(eq(animes._id, anime._id));
+    await tx.runAsync(
+      buildAnimeUpdateSql(fields),
+      ...fields.map((field) => localUpdate[field] as number),
+      anime._id,
+    );
 
-    await txDb.insert(operationLog).values({
-      animeId: anime._id,
-      operation: operation.operation,
-      payload: operation.payload,
-      status: 'pending',
-      createdAt: now,
-    });
+    await tx.runAsync(
+      INSERT_OPERATION_SQL,
+      anime._id,
+      operation.operation,
+      operation.payload,
+      'pending',
+      now,
+    );
 
     didMutate = true;
   });

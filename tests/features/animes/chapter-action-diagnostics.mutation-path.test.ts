@@ -2,7 +2,6 @@ import { act, renderHook } from '@testing-library/react-native';
 import { beginChapterAction } from '../../../src/features/animes/chapter-action-diagnostics.helpers';
 import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
 import { isSyncDiagnosticsPayloadAccepted } from '../../../src/features/sync/sync-diagnostics-flush.helpers';
-import { animes } from '../../../src/infrastructure/db/schema';
 import { EXPO_SQLITE_UNAVAILABLE_MESSAGE } from '../../../src/infrastructure/db/native-runtime/native-runtime.constants';
 import type { SyncDiagnosticsOutboxEntry } from '../../../src/infrastructure/db/sync-diagnostics-outbox';
 
@@ -11,7 +10,6 @@ jest.mock('expo-sqlite', () => ({
 }));
 
 jest.mock('../../../src/infrastructure/db/client/client.helpers', () => ({
-  createDrizzleDb: jest.fn(),
   withLocalWrite: jest.fn(),
 }));
 
@@ -44,14 +42,10 @@ const { useSQLiteContext: mockUseSQLiteContext } = jest.requireMock('expo-sqlite
   useSQLiteContext: jest.Mock;
 };
 
-/** Write-door fakes: the transaction handle and the `withLocalWrite` callback are driven directly. */
-const {
-  createDrizzleDb: mockCreateDrizzleDb,
-  withLocalWrite: mockWithDeferredWrite,
-} = jest.requireMock('../../../src/infrastructure/db/client/client.helpers') as {
-  createDrizzleDb: jest.Mock;
-  withLocalWrite: jest.Mock;
-};
+/** Write-door fakes: the transaction connection and the `withLocalWrite` callback. */
+const { withLocalWrite: mockWithDeferredWrite } = jest.requireMock(
+  '../../../src/infrastructure/db/client/client.helpers',
+) as { withLocalWrite: jest.Mock };
 
 /** Controls the fire-and-forget push's outcome after a committed write. */
 const { requestFlush: mockRequestFlush } = jest.requireMock(
@@ -63,10 +57,11 @@ const mockDiagnosticsOutbox = jest.requireMock(
   '../../../src/infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants',
 ) as { syncDiagnosticsOutboxStore: { enqueue: jest.Mock } };
 
-/** Shape of the fake drizzle transaction handle `withLocalWrite`'s task callback receives. */
-type MockTxDb = {
-  update: jest.Mock;
-  insert: jest.Mock;
+/** The transaction connection the mutation receives: the read resolves one row, writes are recorded. */
+type FakeTransactionConnection = {
+  readonly databasePath: string;
+  readonly getFirstAsync: jest.Mock;
+  readonly runAsync: jest.Mock;
 };
 
 /** Fixed clock reading this file's duration expectations are computed against. */
@@ -98,32 +93,42 @@ const baseAnimeRow: Record<string, unknown> = {
   tipo: null,
 };
 
-/** Builds the fake drizzle `select` chain `createDrizzleDb` returns for a row that may be absent. */
-function buildSelectMock(row: Record<string, unknown> | null) {
-  const limit = jest.fn().mockResolvedValue(row ? [row] : []);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
+/**
+ * Builds the fake transaction connection: `row` is what the mutation's read resolves (absent by
+ * default means "no such anime"), and `insertError` makes the outbox insert reject.
+ */
+function createTransactionConnection(options?: {
+  readonly row?: Record<string, unknown> | null;
+  readonly insertError?: Error;
+}): FakeTransactionConnection {
+  const insertError = options?.insertError;
+  const runAsync = jest.fn().mockImplementation((sql: string) =>
+    insertError && String(sql).startsWith('INSERT INTO operation_log')
+      ? Promise.reject(insertError)
+      : Promise.resolve({ lastInsertRowId: 1, changes: 1 }),
+  );
 
-  return { select };
+  return {
+    databasePath: 'test-db-transaction',
+    getFirstAsync: jest.fn().mockResolvedValue(options?.row === undefined ? baseAnimeRow : options.row),
+    runAsync,
+  };
 }
 
-/** Builds the fake `update`/`insert` transaction handle, optionally failing the insert. */
-function createTxDbMocks(options?: { readonly insertError?: Error }) {
-  const where = jest.fn().mockResolvedValue(undefined);
-  const set = jest.fn(() => ({ where }));
-  const update = jest.fn(() => ({ set }));
-  const values = options?.insertError
-    ? jest.fn().mockRejectedValue(options.insertError)
-    : jest.fn().mockResolvedValue(undefined);
-  const insert = jest.fn(() => ({ values }));
-
-  return { txDb: { update, insert } satisfies MockTxDb, update, values, insert };
+/** Wires `withLocalWrite` so a mutation write runs against the given fake connection. */
+function configureMutationWrite(connection: FakeTransactionConnection): void {
+  mockWithDeferredWrite.mockImplementation(async (_db, task) =>
+    task(connection as never, connection as never),
+  );
 }
 
-/** Wires `withLocalWrite` so a mutation write runs against the given fake transaction handle. */
-function configureMutationWrite(txDb: MockTxDb): void {
-  mockWithDeferredWrite.mockImplementation(async (_db, task) => task(txDb, rawDb));
+/** Asserts the mutation issued the row update and then the outbox insert, and nothing else. */
+function expectMutationWrites(connection: FakeTransactionConnection): void {
+  const statements = connection.runAsync.mock.calls.map(([sql]) => String(sql));
+
+  expect(statements).toHaveLength(2);
+  expect(statements[0]).toMatch(/^UPDATE animes SET /);
+  expect(statements[1]).toMatch(/^INSERT INTO operation_log /);
 }
 
 /** Reads every observation the mutation path persisted, in write order. */
@@ -173,9 +178,8 @@ describe('chapter action diagnostics on the mutation path', () => {
   });
 
   it('persists skipped/anime_missing when the mutation finds no row to update', async () => {
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(null));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection({ row: null });
+    configureMutationWrite(connection);
 
     const context = beginChapterAction('capPlus');
     const { result } = renderHook(() => useMutateAnime());
@@ -193,13 +197,13 @@ describe('chapter action diagnostics on the mutation path', () => {
       reason: 'anime_missing',
     });
     expect(payloads[1].correlation_id).toBe(payloads[0].correlation_id);
-    expect(txMocks.update).not.toHaveBeenCalled();
+    // No row to mutate means no statement at all: not even a no-op UPDATE.
+    expect(connection.runAsync).not.toHaveBeenCalled();
   });
 
   it('persists finished/committed with the measured duration, then the sync outcome', async () => {
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection();
+    configureMutationWrite(connection);
 
     const context = beginChapterAction('capMinus');
     jest.spyOn(Date, 'now').mockReturnValue(now + 137);
@@ -231,14 +235,13 @@ describe('chapter action diagnostics on the mutation path', () => {
     expect(readPersistedEntries().map((entry) => entry.cycleId)).toEqual(
       payloads.map((payload) => payload.observation_id),
     );
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
+    expectMutationWrites(connection);
   });
 
   it('persists finished/failed with the closed cause when the local write throws', async () => {
     const insertError = new Error('database is locked');
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks({ insertError });
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection({ insertError });
+    configureMutationWrite(connection);
 
     const context = beginChapterAction('capPlusHalf');
     const { result } = renderHook(() => useMutateAnime());
@@ -260,9 +263,8 @@ describe('chapter action diagnostics on the mutation path', () => {
   });
 
   it('persists sync/failed when the post-write push rejects, keeping the commit recorded', async () => {
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection();
+    configureMutationWrite(connection);
     mockRequestFlush.mockRejectedValueOnce(new Error('network request failed'));
 
     const context = beginChapterAction('capMinusHalf');
@@ -311,14 +313,13 @@ describe('chapter action diagnostics on the mutation path', () => {
       reason: 'db_unavailable',
     });
     expect(payloads[1].correlation_id).toBe(payloads[0].correlation_id);
-    expect(mockCreateDrizzleDb).not.toHaveBeenCalled();
+    // A skipped tap opened no write door and ran no statement.
     expect(mockWithDeferredWrite).not.toHaveBeenCalled();
   });
 
   it('leaves the mutation result untouched when the outbox cannot be written', async () => {
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection();
+    configureMutationWrite(connection);
     mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue.mockImplementation(() => {
       throw new Error('sqlite unavailable');
     });
@@ -331,14 +332,12 @@ describe('chapter action diagnostics on the mutation path', () => {
     });
 
     expect(mockDiagnosticsOutbox.syncDiagnosticsOutboxStore.enqueue).toHaveBeenCalled();
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
-    expect(txMocks.insert).toHaveBeenCalled();
+    expectMutationWrites(connection);
   });
 
   it('enqueues nothing for a tap whose switch is off, and still commits the write', async () => {
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection();
+    configureMutationWrite(connection);
 
     const context = beginChapterAction('capPlus', { isTelemetryEnabled: false });
     const { result } = renderHook(() => useMutateAnime());
@@ -352,8 +351,7 @@ describe('chapter action diagnostics on the mutation path', () => {
     // fire-and-forget push would append: powering the switch off must not leave a partial thread.
     expect(readPersistedEntries()).toHaveLength(0);
     // The user's own write is untouched: the switch is a diagnostics flag, never a mutation gate.
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
-    expect(txMocks.insert).toHaveBeenCalled();
+    expectMutationWrites(connection);
     expect(mockRequestFlush).toHaveBeenCalled();
   });
 
@@ -382,9 +380,8 @@ describe('chapter action diagnostics on the mutation path', () => {
     // flush deletes a body its 400 condemns. The registry now names the kind the bridge serves
     // (v1.15.0), so the same tap persists the receipt, the commit and the post-write sync outcome.
     // The mutation itself is still never gated by a diagnostics decision.
-    mockCreateDrizzleDb.mockReturnValue(buildSelectMock(baseAnimeRow));
-    const txMocks = createTxDbMocks();
-    configureMutationWrite(txMocks.txDb);
+    const connection = createTransactionConnection();
+    configureMutationWrite(connection);
 
     const context = beginChapterAction('capPlus');
     const { result } = renderHook(() => useMutateAnime());
@@ -403,8 +400,7 @@ describe('chapter action diagnostics on the mutation path', () => {
       duration_ms: null,
     });
     expect(payloads[2]).toMatchObject({ phase: 'sync', outcome: 'ok', duration_ms: null });
-    expect(txMocks.update).toHaveBeenCalledWith(animes);
-    expect(txMocks.insert).toHaveBeenCalled();
+    expectMutationWrites(connection);
     expect(mockRequestFlush).toHaveBeenCalled();
 
     // The admission is the REGISTRY's, not a blanket yes: the decision as it ships accepts the kind
