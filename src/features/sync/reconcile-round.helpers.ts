@@ -37,23 +37,15 @@ import type { ConfirmedOperation } from './unresolved-key.types';
 import { logAutomaticResolutions, resolveSupersededOperations } from './unresolved-supersede.helpers';
 
 /**
- * Separates the failures that retrying can never fix from the ones it can.
- * Only a 4xx means the bridge rejected THIS batch's content, so those rows go to `dead_letter`;
- * everything else -- 5xx, transport, timeouts -- is the network or the bridge being temporarily
- * unavailable and must go back to `pending`. Widening this predicate silently discards local
- * edits that would have synced on the next attempt.
- */
-function isPermanentReconcileError(error: unknown): error is ReconcileHttpError {
-  return error instanceof ReconcileHttpError && error.status >= 400 && error.status < 500;
-}
-
-/**
- * Whether a whole-request failure is the bridge rejecting a MESSAGE (ADR 009 R-5): any 4xx but
- * 401. Retrying it never succeeds, and in a request carrying several messages nobody can tell
- * which one caused it. A 401 rejects the pairing, never a message, so it is not one.
+ * Whether the bridge rejected a MESSAGE (ADR 009 R-5, 2026-10-25 amendment): any 4xx but
+ * 401. Only a content rejection may dead-letter rows or isolate a batch. Authentication says
+ * nothing about its content: a 401 fails the attempt and releases its rows to `pending`, just
+ * like transport, timeout and 5xx failures, for the next normal sync trigger.
  */
 function isMessageRejection(error: unknown): error is ReconcileHttpError {
-  return isPermanentReconcileError(error) && error.status !== RECONCILE_UNAUTHORIZED_STATUS;
+  return error instanceof ReconcileHttpError
+    && error.status >= 400 && error.status < 500
+    && error.status !== RECONCILE_UNAUTHORIZED_STATUS;
 }
 
 /**
@@ -190,8 +182,8 @@ async function releaseHeldOperations(
 
 /**
  * Reverts a batch claimed `'processing'` back to a retry-eligible state after this cycle failed,
- * or moves it to `dead_letter` when the bridge's own 4xx response says the batch's CONTENT was
- * rejected (see `isPermanentReconcileError`). No-ops for an empty batch. Extracted out of
+ * or moves it to `dead_letter` when the bridge's own non-401 4xx says the batch's CONTENT was
+ * rejected (see `isMessageRejection`). No-ops for an empty batch. Extracted out of
  * `syncPendingOperations`'s `catch` block to keep that function's cognitive complexity
  * under threshold (constraint: "Complexity Budget Note").
  */
@@ -201,7 +193,7 @@ function revertPendingOperationsOnFailure(
   claim: OutboxClaim,
   error: unknown,
 ): Promise<void> {
-  return releaseHeldOperations(rawDb, pendingOps, claim, isPermanentReconcileError(error) ? 'dead_letter' : 'pending');
+  return releaseHeldOperations(rawDb, pendingOps, claim, isMessageRejection(error) ? 'dead_letter' : 'pending');
 }
 
 /** Adds one round's outcome to the outcome of the rounds before it. */

@@ -326,8 +326,8 @@ class SyncEngineCycle(
     if (response.code !in 200..299) {
       val rejected = response.code in 400..499
       if (rejected && response.code != RECONCILE_UNAUTHORIZED_STATUS) return RoundResult.Rejected(response.code, sendable)
-      // A 401 rejects the pairing: terminal for the whole round. Anything else is retryable.
-      return fail(deadLetter = rejected, "bridge responded ${response.code}", "ReconcileHttpError")
+      // A 401 says nothing about content: retain edits for the next normal trigger, as for 5xx.
+      return fail(deadLetter = false, "bridge responded ${response.code}", "ReconcileHttpError")
     }
 
     val parsed = try {

@@ -159,7 +159,7 @@ describe('an unresolved rating is never counted as pending work (B1)', () => {
     fakeBridge.restore();
   });
 
-  // Every 4xx is unresolved since ADR 009 R-5 gave 401 and any other 4xx a terminal fate.
+  // Rating endpoint 4xx remains unresolved; the R-5 reconcile-401 amendment only covers anime edits.
   it.each([404, 409, 401, 422])('drops a rating the bridge answered %i from the pending count', async (status) => {
     const adapter = await openPairedDatabase({ episodes: [] });
     await rateAndSync(adapter, fakeBridge, 'anime-1', status);

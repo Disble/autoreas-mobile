@@ -90,6 +90,12 @@ A response is malformed when the JS `ReconcileResponseSchema` rejects it: for ex
 
 When a rejected request of several messages is re-sent one per request and at least one of them gets through, the attempt does not fail. A season rating's own answer never fails the attempt, in either runtime (I4): a 204 makes it `synced`; a 401, 404, 409 or other 4xx makes it unresolved with that reason; anything else, a transport failure included, leaves it `pending`, and only that keeps the cycle from reporting success. A rating is sent only after its round's reconcile, so a reconcile that fails the attempt releases the round's ratings unsent.
 
+**R-5 amendment — 2026-10-25: reconcile 401 preserves anime edits**
+
+This amendment supersedes the historical 401 row above **only for `POST /api/sync/reconcile`**. A 401 is authentication failure, not evidence that an anime edit is invalid. Both runtimes fail the attempt, return every still-held anime edit to `pending`, and release its claim without changing its payload, token, cursor or conflict budget. They do not isolate a 401 response. If it arrives during message isolation, earlier confirmations remain committed; the failing row, unsent rows and already-claimed successors return to `pending`.
+
+Retry waits for the next existing sync trigger (a user action, WebSocket reconnect or resume); this adds no periodic retry loop. A persistently revoked token therefore leaves work pending rather than silently giving it up. Existing dead letters are not rewritten. Season-rating endpoint 401 responses still become unresolved with `auth_repair`, and pairing behaviour is unchanged. Other 4xx responses still reject content; transport and 5xx failures remain retryable. Shared anime-outbox fixtures pin both a failed 401 round and a later normal retry after an isolated 401.
+
 **R-4, R-10: the shared contract fixtures**
 
 Added 2026-10-16 with task T15.
