@@ -50,7 +50,6 @@ export function useAnimeListScreen(
   _props: AnimeListScreenProps,
 ): AnimeListScreenViewModel {
   // 1. Refs
-  const mutatingAnimeByIdRef = useRef<Record<string, boolean>>({});
   const hasUserSelectedFilterRef = useRef(false);
   // The list as of the last commit, read by the sheet handlers when a card opens a sheet.
   const animesRef = useRef<readonly AnimeListItem[]>([]);
@@ -64,9 +63,6 @@ export function useAnimeListScreen(
   // Today's filter as of mount, for the filter rail's "today" marker.
   const [today] = useState(() => getDefaultAnimeDayFilter(new Date()));
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isMutatingAnimeById, setIsMutatingAnimeById] = useState<
-    Record<string, boolean>
-  >({});
   const [stateSheetRequest, setStateSheetRequest] =
     useState<AnimeStateSheetRequest | null>(null);
   const [seasonRatingSheetRequest, setSeasonRatingSheetRequest] =
@@ -134,7 +130,7 @@ export function useAnimeListScreen(
     await runManualRefresh({ manualSync, setIsRefreshing, syncFacts, toast });
   };
 
-  // The lock, the telemetry boundary and the failure toast all live in the module-level runner.
+  // The telemetry boundary and the failure toast live in the module-level runner.
   // `isTelemetryEnabled` is load-bearing: this callback closes over the resolved switch, so a tap
   // made after the user turned telemetry off is never recorded by a stale closure.
   const runMutation = (
@@ -144,8 +140,6 @@ export function useAnimeListScreen(
   ) =>
     runChapterMutation(animeId, actionLabel, action, {
       isTelemetryEnabled,
-      mutatingAnimeByIdRef,
-      setIsMutatingAnimeById,
       toast,
     });
 
@@ -275,7 +269,6 @@ export function useAnimeListScreen(
     contextualHeader,
     layoutMode,
     headerLayout,
-    isMutatingAnimeById,
     isDark,
     isEmpty,
     isRefreshing,

@@ -38,14 +38,15 @@ export const CHAPTER_ACTION_WIRE_ACTIONS = {
 export const CHAPTER_ACTION_PHASES = ['received', 'skipped', 'finished', 'sync'] as const;
 
 /**
- * Closed reasons an action produced no local change. `in_flight` is the list screen's own
- * same-anime guard; `anime_missing` is the mutation helper finding no row to update;
- * `db_unavailable` is the mutation hook finding no SQLite context at all, where the write door
- * never opened -- reported as a skip rather than a `finished`/`failed` because nothing was
- * attempted, so claiming either outcome would overstate what the device actually knows.
+ * Closed reasons an action produced no local change. `anime_missing` is the mutation helper
+ * finding no row to update; `db_unavailable` is the mutation hook finding no SQLite context at
+ * all, where the write door never opened -- reported as a skip rather than a `finished`/`failed`
+ * because nothing was attempted, so claiming either outcome would overstate what the device knows.
+ *
+ * There is deliberately no "dropped by a pending write" member: a valid tap is never dropped for
+ * that reason any more, so a reason for it could only ever describe an unreachable branch.
  */
 export const CHAPTER_ACTION_SKIPPED_REASONS = [
-  'in_flight',
   'anime_missing',
   'db_unavailable',
 ] as const;

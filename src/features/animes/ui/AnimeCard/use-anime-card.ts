@@ -34,12 +34,10 @@ export function useAnimeCard(props: AnimeCardProps) {
   const isMutationLocked = isAnimeMutationLocked(props.anime.estado);
 
   const disableDecrease =
-    props.isMutating || isMutationLocked || !canDecrease(props.anime.nrocapvisto);
+    isMutationLocked || !canDecrease(props.anime.nrocapvisto);
 
   const disableIncrease =
-    props.isMutating ||
-    isMutationLocked ||
-    !canIncrease(props.anime.nrocapvisto, props.anime.totalcap);
+    isMutationLocked || !canIncrease(props.anime.nrocapvisto, props.anime.totalcap);
 
   const stateChip = getStateChip(props.anime.estado);
 

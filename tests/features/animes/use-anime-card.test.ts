@@ -47,27 +47,12 @@ describe('useAnimeCard', () => {
     duracion: null,
   };
 
-  it('bloquea ambos botones mientras hay mutación en curso', () => {
+  it('habilita los dos capítulos: ninguna escritura pendiente bloquea un tap válido', () => {
     const { result } = renderHook(() =>
       useAnimeCard({
         anime: baseAnime,
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: true,
-      }),
-    );
-
-    expect(result.current.disableDecrease).toBe(true);
-    expect(result.current.disableIncrease).toBe(true);
-  });
-
-  it('mantiene reglas normales cuando no hay mutación en curso', () => {
-    const { result } = renderHook(() =>
-      useAnimeCard({
-        anime: baseAnime,
-        onCapMinus: jest.fn(),
-        onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -86,7 +71,6 @@ describe('useAnimeCard', () => {
         },
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -103,7 +87,6 @@ describe('useAnimeCard', () => {
         },
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -120,7 +103,6 @@ describe('useAnimeCard', () => {
         },
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -134,7 +116,6 @@ describe('useAnimeCard', () => {
         anime: { ...baseAnime, estado: 3 },
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -151,7 +132,6 @@ describe('useAnimeCard', () => {
         anime: baseAnime,
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -174,7 +154,6 @@ describe('useAnimeCard', () => {
         anime: { ...baseAnime, nrocapvisto: 3, totalcap: 12 },
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
-        isMutating: false,
       }),
     );
 
@@ -189,7 +168,6 @@ describe('useAnimeCard', () => {
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
         onOpenStateSheet,
-        isMutating: false,
       }),
     );
 
@@ -208,7 +186,6 @@ describe('useAnimeCard', () => {
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
         onCapPlusHalf,
-        isMutating: false,
       }),
     );
 
@@ -227,7 +204,6 @@ describe('useAnimeCard', () => {
         onCapMinus: jest.fn(),
         onCapPlus: jest.fn(),
         onCapMinusHalf,
-        isMutating: false,
       }),
     );
 
@@ -246,7 +222,6 @@ describe('useAnimeCard', () => {
         anime: baseAnime,
         onCapMinus,
         onCapPlus,
-        isMutating: false,
       }),
     );
 
@@ -277,7 +252,6 @@ describe('useAnimeCard', () => {
           anime: baseAnime,
           onCapMinus,
           onCapPlus,
-          isMutating: false,
         }),
       {
         initialProps: {
@@ -316,7 +290,6 @@ describe('useAnimeCard', () => {
           onCapPlus: jest.fn(),
           onCapPlusHalf,
           onCapMinusHalf,
-          isMutating: false,
         }),
       {
         initialProps: {
@@ -352,7 +325,6 @@ describe('useAnimeCard', () => {
           onCapMinus: jest.fn(),
           onCapPlus: jest.fn(),
           onOpenStateSheet,
-          isMutating: false,
         }),
       {
         initialProps: {
@@ -386,7 +358,6 @@ describe('useAnimeCard', () => {
           onCapMinus: jest.fn(),
           onCapPlus: jest.fn(),
           onOpenSeasonRatingSheet,
-          isMutating: false,
         }),
       {
         initialProps: {
@@ -416,7 +387,7 @@ describe('useAnimeCard', () => {
       const show = jest.fn();
       (useToast as jest.Mock).mockReturnValue({ toast: { show, hide: jest.fn() } });
       const { result } = renderHook(() =>
-        useAnimeCard({ anime: baseAnime, onCapMinus: jest.fn(), onCapPlus: jest.fn(), isMutating: false }),
+        useAnimeCard({ anime: baseAnime, onCapMinus: jest.fn(), onCapPlus: jest.fn() }),
       );
       return { result, show };
     }

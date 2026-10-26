@@ -1,6 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { ViewStyle } from 'react-native';
-import type { Href } from 'expo-router';
+import type { ViewStyle } from 'react-native';import type { Href } from 'expo-router';
 import type { LayoutMode } from '../../../../hooks/responsive-layout.types';
 import type { ChapterActionContext } from '../../chapter-action-diagnostics.types';
 import type {
@@ -119,7 +117,7 @@ export interface AnimeListScreenFailureToast {
   readonly show: (options: AnimeListScreenFailureToastOptions) => unknown;
 }
 
-/** The chapter command the list screen hands to the shared same-anime lock runner. */
+/** The chapter command the list screen hands to the module-level mutation runner. */
 export type AnimeListScreenChapterActionRunner = (
   animeId: string,
   actionContext: ChapterActionContext,
@@ -128,8 +126,6 @@ export type AnimeListScreenChapterActionRunner = (
 /** Defines the collaborators the chapter mutation runner resolves per call. */
 export interface AnimeListScreenChapterMutationDeps {
   readonly isTelemetryEnabled: boolean;
-  readonly mutatingAnimeByIdRef: MutableRefObject<Record<string, boolean>>;
-  readonly setIsMutatingAnimeById: Dispatch<SetStateAction<Record<string, boolean>>>;
   readonly toast: AnimeListScreenFailureToast;
 }
 
@@ -149,7 +145,6 @@ export interface AnimeListScreenViewModel {
   readonly contextualHeader: AnimeListScreenContextualHeader;
   readonly layoutMode: LayoutMode;
   readonly headerLayout: AnimeListScreenHeaderLayout;
-  readonly isMutatingAnimeById: Readonly<Record<string, boolean>>;
   readonly isDark: boolean;
   readonly isEmpty: boolean;
   readonly isRefreshing: boolean;
@@ -184,13 +179,12 @@ export interface AnimeListScreenViewModel {
 }
 
 /**
- * Defines the data contract for one list row: its anime, its own lock and folder, and the screen-level
+ * Defines the data contract for one list row: its anime, its folder, and the screen-level
  * handlers that take an anime id. Every member keeps its identity unless that row's data changed, so a
  * write or a tap re-renders only the rows it touched.
  */
 export interface AnimeListScreenItemProps {
   readonly anime: AnimeListItem;
-  readonly isMutating: boolean;
   readonly folderPath: string | null;
   readonly handleCapMinus: (animeId: string) => Promise<void>;
   readonly handleCapMinusHalf: (animeId: string) => Promise<void>;

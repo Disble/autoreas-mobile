@@ -8,7 +8,6 @@ import { useAnimeListScreen } from './use-anime-list-screen';
 export function AnimeListScreen(props: Readonly<AnimeListScreenProps>) {
   const viewModel = useAnimeListScreen(props);
   const { getAnimeListItemProps } = useAnimeListItemRenderer(
-    viewModel.isMutatingAnimeById,
     viewModel.handleCapMinus,
     viewModel.handleCapPlus,
     viewModel.handleCapPlusHalf,

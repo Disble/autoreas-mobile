@@ -1,7 +1,21 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, renderHook } from '@testing-library/react-native';
+import {
+  observeAnimeMutationDurability,
+  resetAnimeMutationProjection,
+} from '../../../src/features/animes/anime-mutation-projection.helpers';
 import { useMutateAnime } from '../../../src/features/animes/use-mutate-anime';
+import {
+  animeUpdates,
+  buildAnimeRow,
+  buildDurableAnime,
+  createTransactionConnection,
+  mockAnimeDeferredWrite,
+  mockQueuedDeferredWrite,
+  operationInserts,
+  shownChapters,
+} from './use-mutate-anime-test.helpers';
 
 jest.mock('expo-sqlite', () => ({
   useSQLiteContext: jest.fn(),
@@ -35,114 +49,15 @@ const { withLocalWrite: mockWithDeferredWrite } = jest.requireMock(
   '../../../src/infrastructure/db/client/client.helpers'
 ) as { withLocalWrite: jest.Mock };
 
-/**
- * The transaction connection the mutation receives. The read resolves `row`, and every statement
- * the action path issues is recorded here as SQL plus its bound parameters -- which is what these
- * cases assert on, now that the statements are the connection's asynchronous API rather than a
- * drizzle builder chain.
- */
-type FakeTransactionConnection = {
-  readonly databasePath: string;
-  readonly getFirstAsync: jest.Mock;
-  readonly runAsync: jest.Mock;
-};
-
 /** Fixed clock reading every expected timestamp is computed against. */
 const now = 1710000000000;
 /** A dummy raw DB handle: every dependency that would read it is mocked above. */
 const rawDb = { name: 'raw-db' };
 
-/** One `animes` row fixture the mutation's read resolves with. */
-const baseAnimeRow: Record<string, unknown> = {
-  _id: 'anime-1',
-  nombre: 'One Piece',
-  estado: 0,
-  nrocapvisto: 3,
-  activo: 1,
-  primeravez: 0,
-  generos: '[]',
-  dias: '[]',
-  totalcap: null,
-  fechaUltCapVisto: null,
-  fechaEstreno: null,
-  fechaCreacion: null,
-  fechaEliminacion: null,
-  portada: null,
-  pagina: null,
-  carpeta: null,
-  estudios: null,
-  origen: null,
-  duracion: null,
-  tipo: null,
-};
-
-/** Builds the fake connection, resolving `row` and optionally failing the outbox insert. */
-function createTransactionConnection(options?: {
-  readonly row?: Record<string, unknown>;
-  readonly insertError?: Error;
-}): FakeTransactionConnection {
-  const insertError = options?.insertError;
-  const runAsync = jest.fn().mockImplementation((sql: string) =>
-    insertError && String(sql).startsWith('INSERT INTO operation_log')
-      ? Promise.reject(insertError)
-      : Promise.resolve({ lastInsertRowId: 1, changes: 1 }),
-  );
-
-  return {
-    databasePath: 'test-db-transaction',
-    getFirstAsync: jest.fn().mockResolvedValue(options?.row ?? baseAnimeRow),
-    runAsync,
-  };
-}
-
-/** Runs every `withLocalWrite` task against `connection`. */
-function mockAnimeDeferredWrite(connection: FakeTransactionConnection) {
-  mockWithDeferredWrite.mockImplementation(async (_db, task) =>
-    task(connection as never, connection as never),
-  );
-}
-
-/**
- * Reads the `UPDATE animes` statements back as column/value objects, one per call, plus the bound
- * `_id`. The expected values stay independent literals in every case; this only reverses the
- * parameterization so a case does not have to repeat the column order.
- */
-function animeUpdates(connection: FakeTransactionConnection): readonly Record<string, unknown>[] {
-  return connection.runAsync.mock.calls
-    .filter(([sql]) => String(sql).startsWith('UPDATE animes SET '))
-    .map(([sql, ...params]) => {
-      const source = String(sql);
-      const setList = source.slice(
-        'UPDATE animes SET '.length,
-        source.lastIndexOf(' WHERE '),
-      );
-      const columns = [...setList.matchAll(/(\w+) = \?/g)].map((match) => match[1]);
-      const row = Object.fromEntries(
-        columns.map((column, index) => [column, params[index] as unknown]),
-      );
-
-      return { ...row, _id: params[columns.length] };
-    });
-}
-
-/** Reads the appended `operation_log` rows back as value objects, in write order. */
-function operationInserts(
-  connection: FakeTransactionConnection,
-): readonly Record<string, unknown>[] {
-  return connection.runAsync.mock.calls
-    .filter(([sql]) => String(sql).startsWith('INSERT INTO operation_log '))
-    .map(([, animeId, operation, payload, status, createdAt]) => ({
-      animeId,
-      operation,
-      payload,
-      status,
-      createdAt,
-    }));
-}
-
 describe('useMutateAnime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAnimeMutationProjection();
     jest.spyOn(Date, 'now').mockReturnValue(now);
     mockUseSQLiteContext.mockReturnValue(rawDb);
   });
@@ -151,10 +66,44 @@ describe('useMutateAnime', () => {
     jest.restoreAllMocks();
   });
 
+  it('acepta nueve +1 rápidos sin esperar la escritura y los persiste en orden', async () => {
+    const durableRow = buildAnimeRow({ nrocapvisto: 1, totalcap: 12 });
+    const connection = createTransactionConnection({ row: durableRow });
+    const { releaseFirstWrite } = mockQueuedDeferredWrite(mockWithDeferredWrite, connection);
+    const durableAnime = buildDurableAnime(durableRow);
+    observeAnimeMutationDurability([durableAnime]);
+
+    const { result } = renderHook(() => useMutateAnime());
+
+    const presses = Array.from({ length: 9 }, () => result.current.capPlus('anime-1'));
+
+    // The first write has not even started, and the list already draws chapter 10: no tap waits
+    // for the one before it, and none of the nine is disabled or dropped.
+    expect(connection.getFirstAsync).not.toHaveBeenCalled();
+    expect(shownChapters(durableAnime)).toBe(10);
+
+    await act(async () => {
+      releaseFirstWrite();
+      await Promise.all(presses);
+    });
+
+    // One ordered write per tap, each reading what the previous one committed: nine absolute
+    // patches 2..10, never one coalesced patch and never nine copies of the same value.
+    expect(connection.getFirstAsync).toHaveBeenCalledTimes(9);
+    expect(animeUpdates(connection).map((update) => update.nrocapvisto)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+    expect(operationInserts(connection)).toHaveLength(9);
+    expect(JSON.parse(operationInserts(connection)[8]?.payload as string)).toEqual({
+      episodesWatched: 10,
+      lastWatchedAt: now,
+    });
+  });
+
   it('capPlus lee el estado actual de SQLite, actualiza el anime y crea operation_log pendiente', async () => {
     const connection = createTransactionConnection();
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -193,7 +142,7 @@ describe('useMutateAnime', () => {
       '../../../src/features/sync/sync-flush.helpers'
     ) as { requestFlush: jest.Mock };
     mockRequestFlush.mockResolvedValue(1);
-    mockAnimeDeferredWrite(createTransactionConnection());
+    mockAnimeDeferredWrite(mockWithDeferredWrite, createTransactionConnection());
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -208,12 +157,24 @@ describe('useMutateAnime', () => {
   it('propaga el error si falla el insert del operation_log', async () => {
     const insertError = new Error('operation log insert failed');
     const connection = createTransactionConnection({ insertError });
-
-    mockAnimeDeferredWrite(connection);
+    const { releaseFirstWrite } = mockQueuedDeferredWrite(mockWithDeferredWrite, connection);
+    const durableAnime = buildDurableAnime(buildAnimeRow());
+    observeAnimeMutationDurability([durableAnime]);
 
     const { result } = renderHook(() => useMutateAnime());
 
-    await expect(result.current.capPlus('anime-1')).rejects.toThrow(insertError);
+    const press = result.current.capPlus('anime-1');
+    expect(shownChapters(durableAnime)).toBe(4);
+
+    await act(async () => {
+      releaseFirstWrite();
+      await expect(press).rejects.toThrow(insertError);
+    });
+
+    // The rejected write takes its optimistic chapter with it: the card shows what the row still
+    // holds, not a value the rolled-back transaction never stored.
+    expect(shownChapters(durableAnime)).toBe(3);
+
     // The row update was issued first, and the rejected insert is the one that failed: the order
     // the transaction hands back is what decides whether a rollback has an update to undo.
     expect(animeUpdates(connection)).toHaveLength(1);
@@ -224,7 +185,7 @@ describe('useMutateAnime', () => {
     const insertError = new Error('database is locked');
     const connection = createTransactionConnection({ insertError });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -242,7 +203,7 @@ describe('useMutateAnime', () => {
     const insertError = new Error('database is locked');
     const connection = createTransactionConnection({ insertError });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     let releaseTelemetry!: () => void;
     mockRecordSyncAttemptFailed.mockImplementationOnce(
@@ -271,7 +232,7 @@ describe('useMutateAnime', () => {
     const insertError = new Error('database is locked');
     const connection = createTransactionConnection({ insertError });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
     mockRecordSyncAttemptFailed.mockRejectedValueOnce(new Error('telemetry write failed'));
 
     const { result } = renderHook(() => useMutateAnime());
@@ -280,7 +241,7 @@ describe('useMutateAnime', () => {
   });
 
   it('records no failure telemetry when the mutation succeeds', async () => {
-    mockAnimeDeferredWrite(createTransactionConnection());
+    mockAnimeDeferredWrite(mockWithDeferredWrite, createTransactionConnection());
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -292,9 +253,9 @@ describe('useMutateAnime', () => {
   });
 
   it('capPlus agrega fechaEstreno cuando primeravez es 1', async () => {
-    const connection = createTransactionConnection({ row: { ...baseAnimeRow, primeravez: 1 } });
+    const connection = createTransactionConnection({ row: buildAnimeRow({ primeravez: 1 }) });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -315,10 +276,10 @@ describe('useMutateAnime', () => {
 
   it('capPlus autofinaliza en un solo patch absoluto cuando nrocapvisto + 1 == totalcap', async () => {
     const connection = createTransactionConnection({
-      row: { ...baseAnimeRow, nrocapvisto: 11, totalcap: 12 },
+      row: buildAnimeRow({ nrocapvisto: 11, totalcap: 12 }),
     });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -345,9 +306,9 @@ describe('useMutateAnime', () => {
   });
 
   it('capMinus nunca baja nrocapvisto de cero', async () => {
-    const connection = createTransactionConnection({ row: { ...baseAnimeRow, nrocapvisto: 0 } });
+    const connection = createTransactionConnection({ row: buildAnimeRow({ nrocapvisto: 0 }) });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -363,7 +324,7 @@ describe('useMutateAnime', () => {
   it('capMinus actualiza fechaUltCapVisto y registra cap_minus', async () => {
     const connection = createTransactionConnection();
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -386,17 +347,16 @@ describe('useMutateAnime', () => {
 
   it.each([0, 1, 2, 3])('setEstado only writes and queues status %s', async (estado) => {
     const connection = createTransactionConnection({
-      row: {
-        ...baseAnimeRow,
+      row: buildAnimeRow({
         estado: (estado + 1) % 4,
         nrocapvisto: 1,
         totalcap: 12,
         primeravez: 1,
         fechaUltCapVisto: now - 86400000,
-      },
+      }),
     });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -419,7 +379,7 @@ describe('useMutateAnime', () => {
   it('capPlusHalf escribe nrocapvisto fraccionario en el patch', async () => {
     const connection = createTransactionConnection();
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 
@@ -433,9 +393,9 @@ describe('useMutateAnime', () => {
   });
 
   it('capMinusHalf nunca baja nrocapvisto de cero', async () => {
-    const connection = createTransactionConnection({ row: { ...baseAnimeRow, nrocapvisto: 0 } });
+    const connection = createTransactionConnection({ row: buildAnimeRow({ nrocapvisto: 0 }) });
 
-    mockAnimeDeferredWrite(connection);
+    mockAnimeDeferredWrite(mockWithDeferredWrite, connection);
 
     const { result } = renderHook(() => useMutateAnime());
 

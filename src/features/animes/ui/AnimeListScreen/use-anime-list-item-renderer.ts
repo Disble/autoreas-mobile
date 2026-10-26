@@ -8,11 +8,10 @@ import type {
 
 /**
  * Coordinates the list rows: resolves the folders once for the whole list and hands each row only
- * the values that are its own (its lock, its folder path) plus the screen's id-taking handlers. A row
+ * the values that are its own (its anime, its folder path) plus the screen's id-taking handlers. A row
  * reads its own cover itself (`useAnimeListScreenItem`), so the cover map is not a dependency here.
  */
 export function useAnimeListItemRenderer(
-  isMutatingAnimeById: AnimeListScreenViewModel["isMutatingAnimeById"],
   handleCapMinus: AnimeListScreenViewModel["handleCapMinus"],
   handleCapPlus: AnimeListScreenViewModel["handleCapPlus"],
   handleCapPlusHalf: AnimeListScreenViewModel["handleCapPlusHalf"],
@@ -28,7 +27,6 @@ export function useAnimeListItemRenderer(
   // 6. Callbacks (calling pure helpers)
   const getAnimeListItemProps = (item: AnimeListItem): AnimeListScreenItemProps => ({
     anime: item,
-    isMutating: !!isMutatingAnimeById[item._id],
     folderPath: folderResolution?.byAnimeId.get(item._id)?.folder.devicePath ?? null,
     handleCapMinus,
     handleCapMinusHalf,

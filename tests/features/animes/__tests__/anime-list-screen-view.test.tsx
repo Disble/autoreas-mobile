@@ -119,7 +119,6 @@ function buildProps(
     },
     layoutMode: 'tablet-landscape',
     headerLayout: { sideColumnStyle: { width: 240 }, titleStyle: { maxWidth: 800 } },
-    isMutatingAnimeById: {},
     isDark: false,
     isEmpty: false,
     isRefreshing: false,
@@ -162,7 +161,6 @@ function buildProps(
       handleStateSheetSelect: jest.fn().mockResolvedValue(undefined),
       getAnimeListItemProps: jest.fn((anime) => ({
         anime,
-        isMutating: false,
         folderPath: null,
         handleCapMinus: jest.fn().mockResolvedValue(undefined),
         handleCapMinusHalf: jest.fn().mockResolvedValue(undefined),
@@ -280,11 +278,11 @@ describe('AnimeListScreenView', () => {
     expect(list.props.keyExtractor(props.animes[0])).toBe(props.animes[0]._id);
   });
 
-  it('hands each row its own lock through renderItem instead of re-rendering every row via extraData', () => {
+  it('hands each row its own props through renderItem instead of re-rendering every row via extraData', () => {
     const props = buildProps({
       getAnimeListItemProps: jest.fn((anime) => ({
         ...buildProps().getAnimeListItemProps(anime),
-        isMutating: anime._id === 'anime-1',
+        folderPath: anime._id === 'anime-1' ? '/storage/anime-1' : null,
       })),
     });
     mockAnimeCard.mockClear();
@@ -294,7 +292,7 @@ describe('AnimeListScreenView', () => {
 
     expect(list.props.extraData).toBeUndefined();
     expect(mockAnimeCard.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ anime: props.animes[0], isMutating: true }),
+      expect.objectContaining({ anime: props.animes[0], folderPath: '/storage/anime-1' }),
     );
   });
 

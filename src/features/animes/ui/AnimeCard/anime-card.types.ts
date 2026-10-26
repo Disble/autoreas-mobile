@@ -6,7 +6,6 @@ export interface AnimeCardProps {
   readonly anime: Anime & {
     readonly seasonProjection?: AnimeSeasonProjection | null;
   };
-  readonly isMutating: boolean;
   readonly onCapPlus: () => void;
   readonly onCapMinus: () => void;
   readonly onCapPlusHalf?: () => void;

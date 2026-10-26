@@ -39,7 +39,6 @@ export function buildAnimeCardProps(
 ): AnimeCardProps {
   return {
     anime: buildAnimeCardAnime(),
-    isMutating: false,
     onCapMinus: jest.fn(),
     onCapPlus: jest.fn(),
     onCapMinusHalf: jest.fn(),

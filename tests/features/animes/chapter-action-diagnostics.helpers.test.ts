@@ -154,16 +154,16 @@ describe('chapter action diagnostics', () => {
     });
   });
 
-  it('records a closed reason when the action is dropped instead of mutated', () => {
+  it('records a closed reason when the action produced no local change', () => {
     const store = createCapturingStore();
     const context = beginChapterAction('capMinus', { store, now: () => fixedNow, generateId: () => 'a' });
 
-    recordChapterActionSkipped(context, 'in_flight', { store, now: () => fixedNow, generateId: () => 'b' });
+    recordChapterActionSkipped(context, 'anime_missing', { store, now: () => fixedNow, generateId: () => 'b' });
 
     expect(parsePayload(store.entries[1])).toMatchObject({
       action: 'episode_minus_one',
       phase: 'skipped',
-      reason: 'in_flight',
+      reason: 'anime_missing',
     });
   });
 
@@ -343,7 +343,7 @@ describe('chapter action diagnostics', () => {
     /** Every body the contract declares: its name, its observation, the clock, and its payload. */
     const declared: (readonly [string, ChapterActionObservation, number, ChapterActionWirePayload])[] = [
       ['a receipt', { action: 'capPlus', phase: 'received' }, fixedNow, { ...sharedKeys, phase: 'received', duration_ms: null }],
-      ['a skip', { action: 'capPlus', phase: 'skipped', reason: 'in_flight' }, fixedNow, { ...sharedKeys, phase: 'skipped', reason: 'in_flight', duration_ms: null }],
+      ['a skip', { action: 'capPlus', phase: 'skipped', reason: 'anime_missing' }, fixedNow, { ...sharedKeys, phase: 'skipped', reason: 'anime_missing', duration_ms: null }],
       ['a committed write', { action: 'capPlus', phase: 'finished', outcome: 'committed' }, fixedNow + 137, { ...sharedKeys, phase: 'finished', observed_at_ms: fixedNow + 137, outcome: 'committed', duration_ms: 137 }],
       ['a failed write', { action: 'capPlus', phase: 'finished', outcome: 'failed', cause: 'lock_contention' }, fixedNow + 137, { ...sharedKeys, phase: 'finished', observed_at_ms: fixedNow + 137, outcome: 'failed', cause: 'lock_contention', duration_ms: 137 }],
       ['a sync result', { action: 'capPlus', phase: 'sync', outcome: 'ok' }, fixedNow, { ...sharedKeys, phase: 'sync', outcome: 'ok', duration_ms: null }],
@@ -408,18 +408,18 @@ describe('chapter action diagnostics', () => {
       ['committed on a sync', { action: 'capPlus', phase: 'sync', outcome: 'committed' as unknown as ChapterActionOutcome }],
       ['ok on a finished write', { action: 'capPlus', phase: 'finished', outcome: 'ok' as unknown as ChapterActionOutcome }],
       ['an outcome on a receipt', { action: 'capPlus', phase: 'received', outcome: 'committed' as unknown as ChapterActionOutcome }],
-      ['an outcome on a skip', { action: 'capPlus', phase: 'skipped', reason: 'in_flight', outcome: 'ok' as unknown as ChapterActionOutcome }],
+      ['an outcome on a skip', { action: 'capPlus', phase: 'skipped', reason: 'anime_missing', outcome: 'ok' as unknown as ChapterActionOutcome }],
       ['a cause on a committed write', { action: 'capPlus', phase: 'finished', outcome: 'committed', cause: 'lock_contention' }],
       ['a cause on a receipt', { action: 'capPlus', phase: 'received', cause: 'lock_contention' }],
-      ['a cause on a skip', { action: 'capPlus', phase: 'skipped', reason: 'in_flight', cause: 'lock_contention' }],
+      ['a cause on a skip', { action: 'capPlus', phase: 'skipped', reason: 'anime_missing', cause: 'lock_contention' }],
       ['a cause on a sync result', { action: 'capPlus', phase: 'sync', outcome: 'failed', cause: 'lock_contention' }],
-      ['a reason on a receipt', { action: 'capPlus', phase: 'received', reason: 'in_flight' }],
-      ['a reason on a finished write', { action: 'capPlus', phase: 'finished', outcome: 'committed', reason: 'in_flight' }],
-      ['a reason on a sync result', { action: 'capPlus', phase: 'sync', outcome: 'ok', reason: 'in_flight' }],
+      ['a reason on a receipt', { action: 'capPlus', phase: 'received', reason: 'anime_missing' }],
+      ['a reason on a finished write', { action: 'capPlus', phase: 'finished', outcome: 'committed', reason: 'anime_missing' }],
+      ['a reason on a sync result', { action: 'capPlus', phase: 'sync', outcome: 'ok', reason: 'anime_missing' }],
       ['a skip with no reason at all', { action: 'capPlus', phase: 'skipped' }],
       ['an undeclared skip reason', { action: 'capPlus', phase: 'skipped', reason: 'user_confusion' as unknown as ChapterActionSkippedReason }],
       ['a duration on a receipt', { action: 'capPlus', phase: 'received', durationMs: 5 }],
-      ['a duration on a skip', { action: 'capPlus', phase: 'skipped', reason: 'in_flight', durationMs: 5 }],
+      ['a duration on a skip', { action: 'capPlus', phase: 'skipped', reason: 'anime_missing', durationMs: 5 }],
       ['a duration on a sync result', { action: 'capPlus', phase: 'sync', outcome: 'ok', durationMs: 5 }],
       ['a negative finished duration', { action: 'capPlus', phase: 'finished', outcome: 'committed', durationMs: -1 }],
       ['a non-numeric finished duration', { action: 'capPlus', phase: 'finished', outcome: 'committed', durationMs: Number.NaN }],

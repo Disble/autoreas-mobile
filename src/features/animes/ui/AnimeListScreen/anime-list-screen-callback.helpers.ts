@@ -1,8 +1,5 @@
 import { buildAnimeMutationFailureFeedback } from '../../anime-mutation-failure.helpers';
-import {
-  beginChapterAction,
-  recordChapterActionSkipped,
-} from '../../chapter-action-diagnostics.helpers';
+import { beginChapterAction } from '../../chapter-action-diagnostics.helpers';
 import type { ChapterActionLabel } from '../../chapter-action-diagnostics.types';
 import { buildRefreshFailureFeedback } from './anime-list-screen.helpers';
 import type {
@@ -12,23 +9,25 @@ import type {
 } from './anime-list-screen.types';
 
 /**
- * Runs one chapter gesture through the list screen's shared same-anime lock.
+ * Runs one chapter gesture and reports its failure, without holding anything back meanwhile.
+ *
+ * There is no same-anime lock, by design: a write that is still pending may not disable a control
+ * or discard a valid tap. Ordering belongs to the write door the mutation goes through, and the
+ * values the card shows while that write settles belong to the mutation projection -- neither needs
+ * a UI guard, and a guard here would only turn a fast double tap into a single one.
  *
  * Lives outside the hook because React Compiler bailed on this statement inside the hook body:
  * `react-hooks-js/todo` was reported at the chapter mutation's `try`, and a bail-out that deep
- * costs the whole hook its automatic memoization. The release guarantee is exactly a finalizer --
- * the same-anime entry must be cleared after a success, after a rejected write, and after a toast
- * that throws while reporting that rejection -- and a module-level function is not memoized, so it
- * is the compiler-safe home for that statement.
+ * costs the whole hook its automatic memoization. The toast has exactly one home: the rejection
+ * must be narrated after a failed write, and after a toast that throws while narrating it, without
+ * ever escaping to the caller.
  *
  * `handleRefresh` had the same problem later (`runManualRefresh` below): the compiler does not lower a
  * `try` with a `finally` clause at all, so any such statement in a hook body bails out the whole hook.
  *
- * The `received` observation is opened BEFORE the guard, because this is the only point that can
- * answer "did the tap reach JS at all": a disabled button never gets here, and neither does a tap
- * swallowed by a dead JS thread. Everything after this line is attributable to a callback that
- * ran. The switch is resolved once here, by `beginChapterAction`, and restated at the guard so both
- * observations of one tap come from the same render.
+ * The `received` observation is opened first, because this is the only point that can answer "did the
+ * tap reach JS at all": a disabled button never gets here, and neither does a tap swallowed by a dead
+ * JS thread. The switch is resolved once, here, by `beginChapterAction`.
  */
 export async function runChapterMutation(
   animeId: string,
@@ -39,22 +38,6 @@ export async function runChapterMutation(
   const actionContext = beginChapterAction(actionLabel, {
     isTelemetryEnabled: deps.isTelemetryEnabled,
   });
-
-  if (deps.mutatingAnimeByIdRef.current[animeId]) {
-    // The callback ran and the same-anime guard dropped it. Distinct from a failure: nothing was
-    // attempted, so nothing can have been lost.
-    recordChapterActionSkipped(actionContext, 'in_flight', {
-      isTelemetryEnabled: deps.isTelemetryEnabled,
-    });
-    return;
-  }
-
-  const nextMutatingState = {
-    ...deps.mutatingAnimeByIdRef.current,
-    [animeId]: true,
-  };
-  deps.mutatingAnimeByIdRef.current = nextMutatingState;
-  deps.setIsMutatingAnimeById(nextMutatingState);
 
   try {
     await action(animeId, actionContext);
@@ -72,15 +55,10 @@ export async function runChapterMutation(
         duration: 4000,
       });
     } catch (toastError) {
-      // A throwing toast would escape past `finally` into the caller's `void handleCapPlus(id)`
-      // and become an unhandled rejection -- the exact failure this catch block removes.
+      // A throwing toast would escape into the caller's `void handleCapPlus(id)` and become an
+      // unhandled rejection -- the exact failure this catch block removes.
       console.warn('[AnimeListScreen] Failed to show mutation failure toast:', toastError);
     }
-  } finally {
-    const releasedState = { ...deps.mutatingAnimeByIdRef.current };
-    delete releasedState[animeId];
-    deps.mutatingAnimeByIdRef.current = releasedState;
-    deps.setIsMutatingAnimeById(releasedState);
   }
 }
 
