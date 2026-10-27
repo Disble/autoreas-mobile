@@ -69,9 +69,10 @@ const val LEASE_OWNERSHIP_GUARD_SQL =
 
 /**
  * SQLite's own wording for a statement that names a table or column the store does not have yet:
- * `no such table: <name>` and `no such column: <name>`, both `SQLITE_ERROR` at compile time.
+ * `no such table: <name>`, `no such column: <name>`, and `table <name> has no column named <name>`
+ * for an INSERT that names a missing column -- all `SQLITE_ERROR` at compile time.
  */
-private val MISSING_SCHEMA_MESSAGES = listOf("no such table", "no such column")
+private val MISSING_SCHEMA_MESSAGES = listOf("no such table", "no such column", "has no column named")
 
 /**
  * Whether [error] only says the store's schema is not there yet -- a table or column a later

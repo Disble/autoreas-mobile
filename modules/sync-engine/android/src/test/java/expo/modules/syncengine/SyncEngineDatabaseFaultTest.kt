@@ -25,6 +25,10 @@ class SyncEngineDatabaseFaultTest {
   fun aMissingTableOrColumnIsAMissingSchema() {
     assertTrue(isMissingSchemaError(compileError("SELECT * FROM sync_cycle_lock")))
     assertTrue(isMissingSchemaError(compileError("SELECT is_sync_telemetry_enabled FROM probe")))
+    // An INSERT naming a column the store lacks words it differently: "table probe has no column
+    // named fence". A store from before v1.10 has `sync_cycle_lock` without `fence` until the JS
+    // repair step runs, and the lease claim INSERTs that column.
+    assertTrue(isMissingSchemaError(compileError("INSERT INTO probe (id, fence) VALUES (1, 'f')")))
   }
 
   @Test
