@@ -5,6 +5,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -290,6 +291,49 @@ class SyncEngineCyclePullOnlyAndFenceTest {
 
       assertEquals("failed", outcome.outcome)
       assertEquals("SQLiteException", outcome.errorName)
+      assertEquals(listOf("checked", "failed"), states)
+    }
+  }
+
+  @Test
+  fun aDatabaseFaultDuringTheLeaseClaimIsFailedNotHeldElsewhere() {
+    // A store the engine can read but not write: the claim's UPSERT fails with SQLITE_READONLY.
+    // That is a real fault, not "lease held elsewhere": the attempt must end `failed` naming it,
+    // send nothing, and leave no lease row or claimed operation behind.
+    SyncEngineTestDatabase(appDatabaseIsFile = true).use { fixture ->
+      insertCycleInput(fixture, port = 0)
+      SyncEngineTestHttpServer(200, "{}").use { server ->
+        fixture.appDatabase.execSQL("UPDATE bridge_config SET port = ? WHERE id = 1", arrayOf(server.port.toString()))
+        val readOnly = fixture.openReadOnlyAppDatabase()
+        val states = mutableListOf<String>()
+
+        val outcome = SyncEngineCycle(readOnly, fixture.journal)
+          .run("foreground", "cycle-claim-db-fault", states::add)
+
+        assertEquals("failed", outcome.outcome)
+        assertEquals("SQLiteReadOnlyDatabaseException", outcome.errorName)
+        assertEquals(listOf("checked", "failed"), states)
+        assertEquals(0, server.requests.size)
+        assertNull(leaseRow(fixture.appDatabase))
+        assertEquals(listOf(41L to "pending"), fixture.operationStatuses())
+      }
+    }
+  }
+
+  @Test
+  fun aDatabaseFaultReadingTheBridgeConfigIsFailedNotMissingConfig() {
+    // A corrupt store compiles the read (the schema page is intact) but cannot read the table:
+    // that is not "bridge config missing", so the attempt ends `failed` naming the fault.
+    SyncEngineTestDatabase(appDatabaseIsFile = true).use { fixture ->
+      insertCycleInput(fixture, port = 0)
+      val corrupted = fixture.openCorruptedAppDatabase()
+      val states = mutableListOf<String>()
+
+      val outcome = SyncEngineCycle(corrupted, fixture.journal)
+        .run("foreground", "cycle-config-db-fault", states::add)
+
+      assertEquals("failed", outcome.outcome)
+      assertEquals("SQLiteDatabaseCorruptException", outcome.errorName)
       assertEquals(listOf("checked", "failed"), states)
     }
   }

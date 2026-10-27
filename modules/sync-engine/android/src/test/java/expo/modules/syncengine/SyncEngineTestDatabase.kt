@@ -2,8 +2,11 @@ package expo.modules.syncengine
 
 import android.content.ContextWrapper
 import android.database.Cursor
+import android.database.DatabaseErrorHandler
+import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.UUID
 import org.robolectric.RuntimeEnvironment
 
@@ -47,6 +50,44 @@ internal class SyncEngineTestDatabase(private val appDatabaseIsFile: Boolean = f
 
   /** The test's own telemetry handle, opened lazily by [openTelemetryOutbox]. */
   private var telemetryHandle: SQLiteDatabase? = null
+
+  /** Extra handles on the app database file, opened by the fault helpers and closed with us. */
+  private val extraAppHandles = mutableListOf<SQLiteDatabase>()
+
+  /**
+   * A second, READ-ONLY handle on the file-backed app database: reads succeed, every write fails
+   * with `SQLITE_READONLY` -- the shape of a store the engine can read but not write.
+   */
+  fun openReadOnlyAppDatabase(): SQLiteDatabase = openExtraAppHandle()
+
+  /**
+   * Overwrites every page after the first of the file-backed app database with bytes that are not
+   * SQLite and opens a fresh read-only handle on it. Page 1 (the header and the schema) stays
+   * intact, so statements still compile, but reading any table fails with `SQLITE_CORRUPT` -- a
+   * damaged store, not a missing schema. The error handler is a no-op so Android does not delete
+   * the file the fixture cleans up itself.
+   */
+  fun openCorruptedAppDatabase(): SQLiteDatabase {
+    check(appDatabaseIsFile) { "Corruption needs the file-backed app database" }
+    appDatabase.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+    val pageSize = DatabaseUtils.longForQuery(appDatabase, "PRAGMA page_size", null)
+    RandomAccessFile(appDatabaseFile, "rw").use { file ->
+      check(file.length() > pageSize) { "App database has no table pages to corrupt" }
+      file.seek(pageSize)
+      file.write(ByteArray((file.length() - pageSize).toInt()) { 0xFF.toByte() })
+    }
+    return openExtraAppHandle()
+  }
+
+  private fun openExtraAppHandle(): SQLiteDatabase {
+    check(appDatabaseIsFile) { "A second handle needs the file-backed app database" }
+    return SQLiteDatabase.openDatabase(
+      appDatabaseFile.path,
+      null,
+      SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
+      DatabaseErrorHandler { },
+    ).also { extraAppHandles += it }
+  }
 
   init {
     appDatabase.execSQL(
@@ -150,6 +191,7 @@ internal class SyncEngineTestDatabase(private val appDatabaseIsFile: Boolean = f
 
   override fun close() {
     try {
+      extraAppHandles.forEach { it.close() }
       telemetryHandle?.close()
     } finally {
       telemetryHandle = null

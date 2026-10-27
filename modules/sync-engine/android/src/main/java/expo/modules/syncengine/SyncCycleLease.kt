@@ -70,6 +70,10 @@ class SyncCycleLease(private val appDb: SQLiteDatabase) {
    * and the `WHERE` cutoff), then verifies ownership by selecting the row's `owner` and `fence`
    * back inside the same call. A missing `sync_cycle_lock` table (a store that has not had its
    * first foreground open) reports unclaimed rather than throwing, so the attempt is a no-op.
+   *
+   * Any other SQLite failure ([isMissingSchemaError] false) is a real database fault: the row this
+   * fence may already have stamped is deleted (fence-scoped, so it can only remove our own row)
+   * and the error propagates, so the cycle ends `failed` naming it instead of "held elsewhere".
    */
   fun claim(fence: String): Boolean {
     return try {
@@ -85,6 +89,10 @@ class SyncCycleLease(private val appDb: SQLiteDatabase) {
       leaseFence = if (owned) LeaseFence(ENGINE_LOCK_OWNER, fence) else null
       owned
     } catch (error: SQLiteException) {
+      if (!isMissingSchemaError(error)) {
+        deleteOwnRow(fence)
+        throw error
+      }
       Log.w(LEASE_LOG_TAG, "sync_cycle_lock unreadable (schema not ready?)", error)
       false
     }
@@ -99,11 +107,16 @@ class SyncCycleLease(private val appDb: SQLiteDatabase) {
    */
   fun release() {
     val fence = leaseFence ?: return
+    deleteOwnRow(fence.fence)
+  }
+
+  /** Deletes the lease row only while it names this engine and [fence]; failures are warned. */
+  private fun deleteOwnRow(fence: String) {
     try {
       val statement = appDb.compileStatement(RELEASE_LEASE_SQL)
       statement.bindLong(1, ENGINE_LOCK_ROW_ID)
       statement.bindString(2, ENGINE_LOCK_OWNER)
-      statement.bindString(3, fence.fence)
+      statement.bindString(3, fence)
       statement.executeUpdateDelete()
     } catch (error: Throwable) {
       Log.w(LEASE_LOG_TAG, "lease release failed", error)

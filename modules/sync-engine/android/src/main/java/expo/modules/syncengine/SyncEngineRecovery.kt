@@ -60,8 +60,10 @@ class SyncEngineRecovery(
 ) {
 
   /**
-   * Runs both compensations and reports what they reclaimed. Never throws: each step is
-   * individually guarded, so a journal failure cannot block the claim recovery and vice versa.
+   * Runs both compensations and reports what they reclaimed. Each step is individually guarded,
+   * so a journal failure cannot block the claim recovery and vice versa. The opening ownership
+   * check is not: a real database fault there propagates (see [isMissingSchemaError]) and the
+   * cycle ends `failed` naming it.
    * The whole sweep runs under the caller's fence: the orphan compensation is a destructive
    * write, so its statement is guarded by [LEASE_OWNERSHIP_GUARD_SQL] -- after a reclaim it
    * affects zero rows -- and a lease already lost before the sweep reports [RecoveryResult.leaseLost]
