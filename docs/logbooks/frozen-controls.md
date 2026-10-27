@@ -558,3 +558,14 @@ measured header height (the project's `useHeaderHeight` helper, already used by 
 | Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | List screen top padding = measured header height instead of a fixed 64 pt | None expected | Content position on phone and in split screen (the helper keeps its first value on Android) | Device use; a new lab build interrupts and restarts the M1 window |
+
+**2026-10-27 13:04 — header overlap, second half.** The first fix left 8 px under the header: the shared
+`useHeaderHeight` helper froze the first Android value (86 pt) while the header settled at 94 pt. The
+helper now follows the live value. Verified on the tablet with a Metro dev client: panel at y=273, header
+ends at 264; Settings unaffected. A dev-client build was installed for UI work, so the M1 observation
+window is **paused** until a lab or release build with M1 is installed again.
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | Shared `useHeaderHeight` returns the live header height on Android (no longer the first value) | None expected | Content may shift once on mount if the header height changes (Settings, list screen) | Device use |
+| 2026-10-27 | Kotlin unit tests run with `--no-parallel` (owner chose option 1) | None (test infrastructure only) | Slower native test step | `bun run test:kotlin` |
