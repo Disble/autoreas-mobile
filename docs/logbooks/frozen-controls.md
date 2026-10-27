@@ -569,3 +569,17 @@ window is **paused** until a lab or release build with M1 is installed again.
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | Shared `useHeaderHeight` returns the live header height on Android (no longer the first value) | None expected | Content may shift once on mount if the header height changes (Settings, list screen) | Device use |
 | 2026-10-27 | Kotlin unit tests run with `--no-parallel` (owner chose option 1) | None (test infrastructure only) | Slower native test step | `bun run test:kotlin` |
+
+## 2026-10-27 — M2 folded into M1 (owner decision)
+
+Owner, verbatim: "Ah, sí, sí, sí, la de Android 16. Vamos a agregar para la próxima release también eso,
+porque si no, ¿cuándo probamos? ¿En 2 meses? No, pues ahorita."
+
+`targetSdkVersion` 35 → 36 ships in the same build as the library upgrade. **Consequence, accepted:** a
+change in the freeze rate or in background sync during the window can no longer be attributed to the
+libraries or to the target separately. If either regresses, the first split is a build with target 35
+on the same libraries. The single window is still three clean weeks from the install date.
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | `targetSdkVersion` 35 → 36 (Android 16), same build as M1 | Not expected (Judgment Day found no touch-related target-36 behaviour); the owner keeps the possibility open | Background service survival, only ever measured at 35; Robolectric unit tests still run at `sdk=35` | Overnight survival during the window (sync status in Settings and the Bridge's records) |

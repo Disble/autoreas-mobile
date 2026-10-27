@@ -25,7 +25,7 @@ describe('android cleartext bootstrap config', () => {
       {
         android: {
           compileSdkVersion: 37,
-          targetSdkVersion: 35,
+          targetSdkVersion: 36,
           usesCleartextTraffic: true,
         },
       },
