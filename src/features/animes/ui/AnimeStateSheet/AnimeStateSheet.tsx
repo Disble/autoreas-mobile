@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI BottomSheet compound shape (BottomSheet > Portal > Content > ...) sets the depth before any content starts. */
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet, Button, cn } from 'heroui-native';

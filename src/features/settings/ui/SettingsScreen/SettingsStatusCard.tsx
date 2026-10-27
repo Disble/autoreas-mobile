@@ -1,8 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- the HeroUI Native compound shapes this card must use
- * (`Card > Card.Body > View > Card.Title`, `Button > Button.Label`) are already deeper than the
- * rule's limit of 2 before any layout wrapper; the avoidable depth is extracted
- * (`SettingsStatusActionButton`).
- */
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, cn } from 'heroui-native';
 import { View } from 'react-native';

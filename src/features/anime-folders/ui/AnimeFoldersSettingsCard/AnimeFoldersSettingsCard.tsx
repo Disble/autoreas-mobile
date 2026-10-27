@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- `Card > Card.Body > row > Pressable > AppText` is the
- * floor of a tappable detail row inside the mandated HeroUI Native card.
- */
 import { Button, Card } from 'heroui-native';
 import { Pressable, View } from 'react-native';
 import { AppText } from '../../../../components/app-text';

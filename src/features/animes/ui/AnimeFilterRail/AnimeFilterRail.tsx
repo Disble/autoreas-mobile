@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI Chip compound shape (layout View > Chip > Chip.Label) and the pill count badge set the depth. */
 /* eslint-disable react-doctor/rn-no-scrollview-mapped-list -- the rail always holds exactly the ten day filters; a virtualized list buys nothing. */
 import { Chip, cn } from "heroui-native";
 import { Pressable, ScrollView, View } from "react-native";

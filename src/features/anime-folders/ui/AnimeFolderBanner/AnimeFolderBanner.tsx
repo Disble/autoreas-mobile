@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI Alert compound shape (Alert > Alert.Content > actions row > Button > Button.Label) sets the depth; flattening would leave the Alert API. */
 import { Alert, Button } from 'heroui-native';
 import { View } from 'react-native';
 import { AnimeFolderSetupSheet } from '../AnimeFolderSetupSheet';

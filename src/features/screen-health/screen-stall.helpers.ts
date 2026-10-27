@@ -1,4 +1,3 @@
-import type { AppStateStatus } from 'react-native';
 import { syncDiagnosticsOutboxStore } from '../../infrastructure/db/sync-diagnostics-outbox/sync-diagnostics-outbox-instance.constants';
 import { isSyncDiagnosticsPayloadAccepted } from '../sync/sync-diagnostics-flush.helpers';
 import {
@@ -17,8 +16,11 @@ import type {
   ScreenStallWirePayload,
 } from './screen-stall.types';
 
-/** Maps React Native's app state onto the bridge vocabulary; anything unrecognized is `unknown`. */
-export function toScreenStallAppState(state: AppStateStatus | null | undefined): ScreenStallAppState {
+/**
+ * Maps React Native's app state onto the bridge vocabulary; anything unrecognized is `unknown`.
+ * Takes a plain string because React Native types `AppState.currentState` as one.
+ */
+export function toScreenStallAppState(state: string | null | undefined): ScreenStallAppState {
   return (SCREEN_STALL_APP_STATES as readonly string[]).includes(state ?? '')
     ? (state as ScreenStallAppState)
     : 'unknown';
