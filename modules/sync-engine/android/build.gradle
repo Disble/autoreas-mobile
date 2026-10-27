@@ -38,6 +38,13 @@ android {
       // unaffected either way -- Robolectric's bytecode shadowing intercepts the call before it
       // ever reaches the mockable-android.jar stub this flag controls.
       returnDefaultValues = true
+      // Every Robolectric class runs on NATIVE SQLite, annotated or not. Robolectric 4.14.1 keeps
+      // one sandbox per JVM whatever the SQLite mode, so mixing @SQLiteMode(NATIVE) classes with
+      // unannotated (LEGACY-default) ones swapped the mode in place between classes, and that swap
+      // was sometimes stale: NATIVE classes then ran on sqlite4java, whose SQLite has no UPSERT
+      // (`near "ON": syntax error` on the lease claim), and bursts of 15-82 tests failed in about
+      // one run in four. All NATIVE: 0 failing runs in 12 (odd/tasks/expo-sdk-upgrade.md L13).
+      all { systemProperty "robolectric.sqliteMode", "NATIVE" }
     }
   }
 
