@@ -2,8 +2,9 @@ import { useNetworkState } from "expo-network";
 import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
 import { useThemeColor, useToast } from "heroui-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../../contexts/app-theme-context";
+import useHeaderHeight from "../../../../helpers/hooks/use-header-height";
 import { useResponsiveLayout } from "../../../../hooks/use-responsive-layout";
 import { useBridgeConfig } from "../../../settings/use-bridge-config";
 import { isSyncTelemetryEnabled } from "../../../sync/sync-telemetry-preference.helpers";
@@ -75,6 +76,7 @@ export function useAnimeListScreen(
   const { isDark } = useAppTheme();
   const [themeColorForeground] = useThemeColor(["foreground"]);
   const { layout: layoutMode, width: frameWidth } = useResponsiveLayout();
+  const headerHeight = useHeaderHeight();
   const networkState = useNetworkState();
 
   // 4. Queries/Mutations
@@ -114,6 +116,7 @@ export function useAnimeListScreen(
   };
   const syncStatus = deriveVisibleSyncStatus(syncFacts, new Date());
   const headerLayout = deriveHeaderLayout(layoutMode, frameWidth);
+  const bodyStyle = useMemo(() => ({ paddingTop: headerHeight }), [headerHeight]);
   const isManualSyncEnabled = deriveManualSyncEnabled({ ...syncFacts, isRefreshing });
 
   // 6. Callbacks (calling pure helpers)
@@ -269,6 +272,7 @@ export function useAnimeListScreen(
     contextualHeader,
     layoutMode,
     headerLayout,
+    bodyStyle,
     isDark,
     isEmpty,
     isRefreshing,

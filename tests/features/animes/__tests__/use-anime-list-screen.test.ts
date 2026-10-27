@@ -78,6 +78,11 @@ jest.mock("../../../../src/hooks/use-responsive-layout", () => ({
   useResponsiveLayout: (...args: unknown[]) => mockUseResponsiveLayout(...args),
 }));
 
+jest.mock("../../../../src/helpers/hooks/use-header-height", () => ({
+  __esModule: true,
+  default: () => 92,
+}));
+
 describe("useAnimeListScreen", () => {
   let consoleWarnSpy: jest.SpyInstance;
 
@@ -361,5 +366,11 @@ describe("useAnimeListScreen", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     expect(result.current.layoutMode).toBe("tablet-landscape");
+  });
+
+  it("expone la altura real del header para que el contenido empiece debajo de él", () => {
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    expect(result.current.bodyStyle).toEqual({ paddingTop: 92 });
   });
 });

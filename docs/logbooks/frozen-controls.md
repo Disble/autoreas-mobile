@@ -538,3 +538,23 @@ Held back (not part of M1): ESLint 10, @testing-library/react-native 14, Stryker
 Stryker mutation dry run fails under Jest 30, so the staged mutation gate would fail if any of its
 three files (`src/features/sync/native-foreground-sync-ticker.helpers.ts`,
 `native-foreground-sync-adapter.helpers.ts`, `native-battery-optimization.helpers.ts`) is staged.
+
+**2026-10-27 — M1 independent verification:** PASS, no blockers. Open advisory: a native sync-engine test run failed once in six (68 of 450, not reproduced, baseline not checked). It is unrelated to touch handling but must be cleared before M1 is released; logged in `odd/tasks/expo-sdk-upgrade.md` L5.
+
+**2026-10-27 12:13 (tablet local time) — M1 installed, observation window starts.** Lab build
+`autoreas-mobile-2.6.0-lab-arm64-v8a-20261027T1657Z.apk` from `chore/expo-sdk-upgrade` @ `e992ad5`
+(code = `db6f51e`), installed with `adb install -r` over 2.6.0 (data kept). App launched, data and the
+Bridge connection present, no crash in logcat. The window ends **2026-11-17** if no freeze happens.
+Installing any other build before then (for example a 2.6.x release without M1) interrupts the
+window; record it here.
+
+**2026-10-27 12:16 — first M1 regression reported by the owner (layout, not a freeze).** On the tablet in
+landscape the transparent header covered the top of the day panel ("Lunes" cut off, could not be
+scrolled into view). Cause: `AnimeListScreen.tsx` padded the content with a fixed `pt-16` (64 pt),
+while the header is 64 pt **plus** the status bar; after the upgrade the content is drawn under the
+status bar, so the overlap became visible. Fix on `chore/expo-sdk-upgrade`: the screen pads by the
+measured header height (the project's `useHeaderHeight` helper, already used by `ScreenScrollView`).
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | List screen top padding = measured header height instead of a fixed 64 pt | None expected | Content position on phone and in split screen (the helper keeps its first value on Android) | Device use; a new lab build interrupts and restarts the M1 window |

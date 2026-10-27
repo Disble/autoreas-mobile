@@ -26,6 +26,11 @@ jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: () => ({ layout: 'phone', width: 412 }),
 }));
 
+jest.mock('../../../../src/helpers/hooks/use-header-height', () => ({
+  __esModule: true,
+  default: () => 64,
+}));
+
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({
   useBridgeConfig: () => ({ config: mockBridgeConfig, isConfigured: mockBridgeConfig !== null }),
 }));

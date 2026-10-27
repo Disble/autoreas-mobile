@@ -145,6 +145,8 @@ export interface AnimeListScreenViewModel {
   readonly contextualHeader: AnimeListScreenContextualHeader;
   readonly layoutMode: LayoutMode;
   readonly headerLayout: AnimeListScreenHeaderLayout;
+  /** Top padding of the screen body: the measured header height, so the content starts right below the transparent header. */
+  readonly bodyStyle: { readonly paddingTop: number };
   readonly isDark: boolean;
   readonly isEmpty: boolean;
   readonly isRefreshing: boolean;
