@@ -151,7 +151,7 @@ describe('resolveStartupBoundaryContent', () => {
     expect(view.getByText('mocked-slot')).toBeOnTheScreen();
   });
 
-  it('leaves the top safe-area edge to each screen so the app draws under the status bar', () => {
+  it('leaves the safe-area edges to each screen so the app draws under the system bars', () => {
     const root = resolveStartupBoundaryRootContent({
       SQLiteProvider: null,
       databaseName: 'autoreas.db',
@@ -164,7 +164,7 @@ describe('resolveStartupBoundaryContent', () => {
     });
     const safeArea = (root.props as { readonly children: ReactElement }).children;
 
-    // The transparent header already pads for the status bar; a root top edge added it twice.
-    expect(safeArea.props).toMatchObject({ edges: ['bottom'] });
+    // The header and the screens already pad for the system bars; a root edge added them twice.
+    expect(safeArea.props).toMatchObject({ edges: [] });
   });
 });

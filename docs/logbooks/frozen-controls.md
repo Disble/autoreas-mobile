@@ -605,3 +605,12 @@ Fix: the root keeps only the bottom edge.
 | Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | Root safe area no longer pads the top edge; screens pad for the status bar themselves | None expected | Setup and startup screens (centered, no header) sit 30 pt higher | Device use; a new lab build interrupts and restarts the M1 window |
+
+**2026-10-27 22:02 — bottom band, same cause (owner: "si puedes, de una vez").** The root safe area also
+padded the bottom edge, leaving a grey band behind the navigation bar. The root now pads no edge; the list
+screen body pads the bottom inset itself (`ScreenScrollView` already did). Verified on the tablet with a
+Metro dev client (installed 21:55, so the M1 window stays paused): no band at the top or the bottom.
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | Root safe area pads no edge; the list screen pads the navigation bar inset itself | None expected | Setup and startup screens (centered) extend under the navigation bar | Device use |
