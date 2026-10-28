@@ -614,3 +614,10 @@ Metro dev client (installed 21:55, so the M1 window stays paused): no band at th
 | Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | Root safe area pads no edge; the list screen pads the navigation bar inset itself | None expected | Setup and startup screens (centered) extend under the navigation bar | Device use |
+
+**2026-10-27 22:45 (tablet local time) — 2.7.0 release installed, M1 observation window restarts.**
+Release `v2.7.0` (GitHub run `40625195647`, all four jobs green), APK checked against its
+`SHA256SUMS-android.txt`, installed with `adb install -r` over the dev client (data kept, versionName
+2.7.0). It holds M1, target 36, both header fixes, the edge-to-edge padding fixes and the database-fault
+fixes. The window ends **2026-11-17 22:45** if no freeze happens. Still to check on this build: whether
+the touch-to-action delay the owner saw on the dev client persists.
