@@ -595,3 +595,13 @@ the owner saw on the dev client persists.
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | Native sync engine reports real database faults as `failed` instead of "nothing to do" (only a missing table/column stays tolerant) | None expected (background sync, not touch) | More `failed` cycles in telemetry when the store is busy or damaged | Bridge telemetry; device use |
 | 2026-10-27 | Native unit tests run every class on native SQLite (root cause of the intermittent test burst) | None (test infrastructure only) | None | `bun run test:kotlin` |
+
+**2026-10-27 20:39 — top gap reported by the owner (layout, not a freeze).** On the 20:05 build a black
+band sat between the status bar and the header on every screen. Cause: the window now draws under the
+status bar, and the root `SafeAreaView` (`startup-boundary.helpers.ts`) padded the top edge while the
+transparent header padded it again (uiautomator: content starts at y=64 px, header adds its own 30 pt).
+Fix: the root keeps only the bottom edge.
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | Root safe area no longer pads the top edge; screens pad for the status bar themselves | None expected | Setup and startup screens (centered, no header) sit 30 pt higher | Device use; a new lab build interrupts and restarts the M1 window |

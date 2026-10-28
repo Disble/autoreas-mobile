@@ -429,7 +429,9 @@ export function resolveStartupBoundaryRootContent(
       SafeAreaView,
       {
         style: { flex: 1 },
-        edges: ['top', 'bottom'],
+        // No top edge: the app draws under the status bar and each screen pads for it (the
+        // transparent header includes it; setup and startup screens center their content).
+        edges: ['bottom'],
       },
       createElement(
         KeyboardProvider,
