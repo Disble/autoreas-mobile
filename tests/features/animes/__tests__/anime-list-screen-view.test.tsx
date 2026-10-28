@@ -119,6 +119,7 @@ function buildProps(
     },
     layoutMode: 'tablet-landscape',
     headerLayout: { sideColumnStyle: { width: 240 }, titleStyle: { maxWidth: 800 } },
+    bodyStyle: { paddingTop: 64, paddingBottom: 0 },
     isDark: false,
     isEmpty: false,
     isRefreshing: false,
@@ -255,6 +256,17 @@ describe('AnimeListScreenView', () => {
     );
 
     expect(getByTestId('anime-list-container').props.className).toContain('-mx-2');
+  });
+
+  it('keeps the panel and the list between the measured header and the navigation bar', () => {
+    const { getByTestId } = render(
+      <AnimeListScreenView model={buildProps({ layoutMode: 'tablet-landscape', bodyStyle: { paddingTop: 92, paddingBottom: 15 } })} />,
+    );
+
+    const body = getByTestId('anime-list-screen-body');
+
+    expect(body.props.style).toEqual({ paddingTop: 92, paddingBottom: 15 });
+    expect(body.props.className).not.toContain('pt-16');
   });
 
   it('triggers the same handleRefresh from pull-to-refresh as the header refresh button', () => {

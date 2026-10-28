@@ -60,6 +60,13 @@ const { buildGradleTestArgs, decidePrebuildStatus, describeMissingToolchain, has
   loadKotlinTestsModule();
 
 describe('buildGradleTestArgs', () => {
+  it('never runs the two modules’ Robolectric test JVMs at the same time, with or without lint', () => {
+    // Run in parallel, a burst of `not_applicable` cycles failed 2 to 3 runs in 8 on the same
+    // code; with `--no-parallel` it failed 0 in 8 (odd/tasks/expo-sdk-upgrade.md L8).
+    expect(buildGradleTestArgs()).toContain('--no-parallel');
+    expect(buildGradleTestArgs({ withLint: true })).toContain('--no-parallel');
+  });
+
   it('runs both modules\' unit tests THEN both modules\' per-class coverage verify tasks, build cache on, lint tasks omitted by default', () => {
     expect(buildGradleTestArgs()).toEqual([
       ':sync-engine:testDebugUnitTest',
@@ -70,6 +77,7 @@ describe('buildGradleTestArgs', () => {
       ':sync-engine:koverVerifyCoreFloorRunner',
       ':foreground-sync-ticker:koverVerifyDebug',
       '--build-cache',
+      '--no-parallel',
       '--console=plain',
     ]);
   });
@@ -86,6 +94,7 @@ describe('buildGradleTestArgs', () => {
       ':sync-engine:lintDebug',
       ':foreground-sync-ticker:lintDebug',
       '--build-cache',
+      '--no-parallel',
       '--console=plain',
     ]);
   });

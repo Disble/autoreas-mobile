@@ -1,8 +1,10 @@
 import { render } from '@testing-library/react-native';
 import {
   resolveStartupBoundaryContent,
+  resolveStartupBoundaryRootContent,
   resolveStartupBoundaryScreen,
 } from '../../../../src/features/startup/ui/StartupBoundary/startup-boundary.helpers';
+import type { ReactElement } from 'react';
 
 jest.mock('react-native-keyboard-controller', () => ({
   KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => children,
@@ -147,5 +149,22 @@ describe('resolveStartupBoundaryContent', () => {
     const view = render(expectElement(resolvedContent.providerContent));
 
     expect(view.getByText('mocked-slot')).toBeOnTheScreen();
+  });
+
+  it('leaves the safe-area edges to each screen so the app draws under the system bars', () => {
+    const root = resolveStartupBoundaryRootContent({
+      SQLiteProvider: null,
+      databaseName: 'autoreas.db',
+      handleDatabaseInit: jest.fn(),
+      hasExceededSoftDeadline: false,
+      isBootstrapped: true,
+      preProviderContent: null,
+      providerContent: null,
+      sqliteOptions: { enableChangeListener: true },
+    });
+    const safeArea = (root.props as { readonly children: ReactElement }).children;
+
+    // The header and the screens already pad for the system bars; a root edge added them twice.
+    expect(safeArea.props).toMatchObject({ edges: [] });
   });
 });

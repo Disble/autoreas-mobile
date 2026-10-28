@@ -78,6 +78,15 @@ jest.mock("../../../../src/hooks/use-responsive-layout", () => ({
   useResponsiveLayout: (...args: unknown[]) => mockUseResponsiveLayout(...args),
 }));
 
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 30, right: 0, bottom: 15, left: 0 }),
+}));
+
+jest.mock("../../../../src/helpers/hooks/use-header-height", () => ({
+  __esModule: true,
+  default: () => 92,
+}));
+
 describe("useAnimeListScreen", () => {
   let consoleWarnSpy: jest.SpyInstance;
 
@@ -361,5 +370,11 @@ describe("useAnimeListScreen", () => {
     const { result } = renderHook(() => useAnimeListScreen({}));
 
     expect(result.current.layoutMode).toBe("tablet-landscape");
+  });
+
+  it("deja el header arriba y la barra de navegación abajo fuera del contenido", () => {
+    const { result } = renderHook(() => useAnimeListScreen({}));
+
+    expect(result.current.bodyStyle).toEqual({ paddingTop: 92, paddingBottom: 15 });
   });
 });

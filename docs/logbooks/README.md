@@ -7,6 +7,7 @@ answers "what did this cost last time, measured the same way?" — the question 
 | Logbook | Records |
 | --- | --- |
 | [Build performance](build-performance.md) | Wall time, Gradle work, cache reuse and resources of the local Docker build and the CI release |
+| [Frozen controls](frozen-controls.md) | Each time the buttons stopped responding: version, layout, steps before it, recovery and evidence |
 
 ## How a logbook differs from the other records
 

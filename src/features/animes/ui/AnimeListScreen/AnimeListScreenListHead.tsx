@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI Chip compound shape (row > Chip > Chip.Label) inside the head column sets the depth. */
 import { Chip } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';

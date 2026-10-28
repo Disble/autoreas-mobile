@@ -1,8 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- structurally unreachable here, not a style waiver:
- * the rule's limit of 2 is below the minimum nesting of a scroll container holding a centered
- * column of cards. Each card and the error banner are extracted; what remains is the screen's
- * own layout shell.
- */
 import { Alert as HeroAlert, cn } from 'heroui-native';
 import { View } from 'react-native';
 import { ScreenScrollView } from '../../../../components/screen-scroll-view';

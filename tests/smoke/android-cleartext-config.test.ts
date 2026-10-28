@@ -1,3 +1,4 @@
+/** The real `app.json`, read as data so the test pins the Android build properties it declares. */
 const appConfig = jest.requireActual('../../app.json') as {
   expo: {
     plugins: (
@@ -23,8 +24,8 @@ describe('android cleartext bootstrap config', () => {
       'expo-build-properties',
       {
         android: {
-          compileSdkVersion: 36,
-          targetSdkVersion: 35,
+          compileSdkVersion: 37,
+          targetSdkVersion: 36,
           usesCleartextTraffic: true,
         },
       },

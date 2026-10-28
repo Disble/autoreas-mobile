@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI BottomSheet compound shape (Portal > Content > status row > text column) sets the depth; flattening would leave the BottomSheet API. */
 import { BottomSheet, Button } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';

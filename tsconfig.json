@@ -6,7 +6,8 @@
       "jest",
       "node",
       "react",
-      "react-native"
+      "react-native",
+      "expo/types"
     ],
     "paths": {
       "@/*": [

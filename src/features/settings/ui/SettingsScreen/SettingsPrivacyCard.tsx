@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- `Card > Card.Body > View > View > AppText` is the
- * floor of a labelled switch row inside the mandated HeroUI Native card.
- */
 import { Card, Switch } from 'heroui-native';
 import { View } from 'react-native';
 import { AppText } from '../../../../components/app-text';

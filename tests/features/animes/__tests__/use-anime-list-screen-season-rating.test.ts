@@ -5,6 +5,10 @@ import { buildSeasonAwareAnimeListItem } from './use-anime-list-screen-season-ra
 /** The bridge config row the mocked live query answers; each test sets its own season mode. */
 let mockBridgeConfig: { deviceId: string; seasonMode: boolean } | null = null;
 
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 jest.mock('expo-network', () => ({
   useNetworkState: () => ({ isInternetReachable: true, isConnected: true }),
 }));
@@ -24,6 +28,11 @@ jest.mock('../../../../src/contexts/app-theme-context', () => ({
 
 jest.mock('../../../../src/hooks/use-responsive-layout', () => ({
   useResponsiveLayout: () => ({ layout: 'phone', width: 412 }),
+}));
+
+jest.mock('../../../../src/helpers/hooks/use-header-height', () => ({
+  __esModule: true,
+  default: () => 64,
 }));
 
 jest.mock('../../../../src/features/settings/use-bridge-config', () => ({

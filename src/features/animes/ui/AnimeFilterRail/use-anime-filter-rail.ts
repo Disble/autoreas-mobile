@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { LayoutChangeEvent, ScrollView } from 'react-native';
+import type { LayoutChangeEvent, ScrollViewInstance } from 'react-native';
 import type { AnimeDayFilter } from '../../anime.types';
 import { buildAnimeFilterRailItems, computeRailScrollOffset } from './anime-filter-rail.helpers';
 import type { AnimeFilterRailChipLayout, AnimeFilterRailProps } from './anime-filter-rail.types';
@@ -12,7 +12,7 @@ export function useAnimeFilterRail(props: AnimeFilterRailProps) {
   const { onSelect, options, counts, selected, today, orientation } = props;
 
   // 1. Refs
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const chipLayoutsRef = useRef<Partial<Record<AnimeDayFilter, AnimeFilterRailChipLayout>>>({});
   const viewportWidthRef = useRef(0);
   const hasCenteredRef = useRef(false);

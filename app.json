@@ -2,7 +2,7 @@
   "expo": {
     "name": "Autoreas Mobile",
     "slug": "autoreas-mobile",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "autoreas-mobile",
@@ -57,12 +57,13 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 35,
+            "compileSdkVersion": 37,
+            "targetSdkVersion": 36,
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

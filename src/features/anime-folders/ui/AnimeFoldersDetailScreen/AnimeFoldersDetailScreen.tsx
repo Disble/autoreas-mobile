@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- `Card > Card.Body > list > row > AppText` is the floor
- * of a listed folder inside the mandated HeroUI Native card.
- */
 import { Stack } from 'expo-router';
 import { Card, Chip, cn } from 'heroui-native';
 import { View } from 'react-native';

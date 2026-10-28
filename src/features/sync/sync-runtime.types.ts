@@ -1,4 +1,4 @@
-import type { AppStateStatus } from 'react-native';
+import type { AppState } from 'react-native';
 import type { SyncExecutionMode } from './sync-execution-mode.types';
 
 /** Defines the data contract for use sync runtime props. */
@@ -8,7 +8,7 @@ export interface UseSyncRuntimeProps {
 
 /** Defines the data contract for use sync runtime result. */
 export interface UseSyncRuntimeResult {
-  readonly currentAppState: AppStateStatus;
+  readonly currentAppState: (typeof AppState)['currentState'];
   readonly executionMode: SyncExecutionMode;
   readonly isRuntimeEnabled: boolean;
   readonly isWebSocketEnabled: boolean;

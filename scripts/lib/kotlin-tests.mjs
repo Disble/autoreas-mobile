@@ -60,12 +60,17 @@ const GRADLE_LINT_TASKS = [':sync-engine:lintDebug', ':foreground-sync-ticker:li
  * local `native` pre-commit job (lefthook.yml) -- both run the same debug-variant tests/lint that
  * ship in no release artifact, so reusing their cached task outputs carries no release-reproducibility
  * risk, unlike the release build's own Gradle invocation, which never receives this flag.
+ *
+ * `--no-parallel` keeps the two modules' Robolectric test JVMs from running at the same time.
+ * Run together (the repo's `org.gradle.parallel=true`), a burst of `not_applicable` cycles failed
+ * 2 to 3 runs in 8 on unchanged code; one at a time it failed 0 in 8
+ * (odd/tasks/expo-sdk-upgrade.md L8).
  */
 export function buildGradleTestArgs({ withLint = false } = {}) {
   const tasks = withLint
     ? [...GRADLE_TEST_TASKS, ...GRADLE_COVERAGE_VERIFY_TASKS, ...GRADLE_LINT_TASKS]
     : [...GRADLE_TEST_TASKS, ...GRADLE_COVERAGE_VERIFY_TASKS];
-  return [...tasks, '--build-cache', '--console=plain'];
+  return [...tasks, '--build-cache', '--no-parallel', '--console=plain'];
 }
 
 /**

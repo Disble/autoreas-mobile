@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/jsx-max-depth -- HeroUI Alert compound shape (Alert > Alert.Content > chip row > Chip > Chip.Label) sets the depth; flattening would leave the Alert API. */
 import { Alert, Button, Chip } from 'heroui-native';
 import { View } from 'react-native';
 import { shouldShowSyncStatusAlert } from './sync-status-control.helpers';

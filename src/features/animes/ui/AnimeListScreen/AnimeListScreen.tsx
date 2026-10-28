@@ -17,7 +17,9 @@ export function AnimeListScreenView(props: Readonly<AnimeListScreenViewProps>) {
       <Stack.Screen options={screenOptions} />
 
       <View
-        className={model.layoutMode === 'tablet-landscape' ? 'flex-1 flex-row pt-16' : 'flex-1 pt-16'}
+        className={model.layoutMode === 'tablet-landscape' ? 'flex-1 flex-row' : 'flex-1'}
+        style={model.bodyStyle}
+        testID="anime-list-screen-body"
       >
         <AnimeListScreenFilterSection
           filterOptions={model.filterOptions}

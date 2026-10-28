@@ -49,8 +49,10 @@ data class PresenceProbeResult(
  *   resolved at all. Only a transport failure -- a timeout, a refused connection, a DNS failure,
  *   anything [SyncEngineHttp.get] throws -- is absence, exactly like a thrown
  *   `BridgeTimeoutError`/`BridgeUnreachableError` on the JS side;
- * - never throws: every failure path (missing config, unreadable config, transport failure)
- *   degrades to `isPresent = false` with a reason, so a gated caller can always resolve.
+ * - degrades every expected failure (missing or not-yet-provisioned config, transport failure)
+ *   to `isPresent = false` with a reason. A real database fault while reading the config
+ *   ([isMissingSchemaError] false) propagates; `SyncEngineRunner` catches it and ends the
+ *   attempt `failed` with the error named, instead of reporting it as an absent bridge.
  */
 object SyncEngineBridgePresence {
 

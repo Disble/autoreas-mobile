@@ -78,6 +78,15 @@ jest.mock("../../../../src/hooks/use-responsive-layout", () => ({
   useResponsiveLayout: (...args: unknown[]) => mockUseResponsiveLayout(...args),
 }));
 
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
+jest.mock("../../../../src/helpers/hooks/use-header-height", () => ({
+  __esModule: true,
+  default: () => 64,
+}));
+
 describe("useAnimeListScreen", () => {
   let consoleWarnSpy: jest.SpyInstance;
 

@@ -97,6 +97,7 @@ describe('toScreenStallAppState', () => {
 
   it('maps an unrecognized or missing state to unknown', () => {
     expect(toScreenStallAppState('extension')).toBe('unknown');
+    expect(toScreenStallAppState('not-an-app-state')).toBe('unknown');
     expect(toScreenStallAppState(null)).toBe('unknown');
   });
 });

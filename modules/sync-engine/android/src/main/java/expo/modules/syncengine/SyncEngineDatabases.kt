@@ -68,9 +68,29 @@ const val LEASE_OWNERSHIP_GUARD_SQL =
   "EXISTS (SELECT 1 FROM sync_cycle_lock WHERE id = $ENGINE_LOCK_ROW_ID AND owner = ? AND fence = ?)"
 
 /**
+ * SQLite's own wording for a statement that names a table or column the store does not have yet:
+ * `no such table: <name>`, `no such column: <name>`, and `table <name> has no column named <name>`
+ * for an INSERT that names a missing column -- all `SQLITE_ERROR` at compile time.
+ */
+private val MISSING_SCHEMA_MESSAGES = listOf("no such table", "no such column", "has no column named")
+
+/**
+ * Whether [error] only says the store's schema is not there yet -- a table or column a later
+ * migration (or the first foreground open) creates -- rather than that the database itself failed.
+ * The engine's tolerant reads stay tolerant for exactly this case; every other SQLite failure
+ * (busy or locked past the timeout, I/O, corrupt or not a database, full, read-only) is a real
+ * fault and must propagate, so the cycle ends `failed` naming it instead of a benign skip.
+ */
+fun isMissingSchemaError(error: SQLiteException): Boolean {
+  val message = error.message ?: return false
+  return MISSING_SCHEMA_MESSAGES.any { message.contains(it) }
+}
+
+/**
  * Reads the singleton lease row's `owner` and `fence` back and reports whether they name exactly
  * [owner] and [fence]. The stored pair is the single source of truth for who holds the lease.
- * A missing `sync_cycle_lock` table reads as not-owned rather than throwing.
+ * A missing `sync_cycle_lock` table reads as not-owned rather than throwing; any other SQLite
+ * failure propagates (see [isMissingSchemaError]).
  */
 fun isSyncCycleLeaseOwnedBy(appDb: SQLiteDatabase, owner: String, fence: String): Boolean {
   return try {
@@ -81,6 +101,7 @@ fun isSyncCycleLeaseOwnedBy(appDb: SQLiteDatabase, owner: String, fence: String)
         cursor.getString(1) == fence
     }
   } catch (error: SQLiteException) {
+    if (!isMissingSchemaError(error)) throw error
     false
   }
 }
@@ -148,15 +169,20 @@ fun isSyncTelemetryEnabled(storedValue: String?): Boolean {
  *   in which case there is no config to read and the answer is `null` -- the same shape the cycle
  *   already handles as `not_applicable`. A missing schema must never surface as an exception out of a read whose KDoc
  *   promises `null`, which is what the nested tolerance below pins.
+ *
+ * Only a missing table or column is tolerated ([isMissingSchemaError]): any other SQLite failure
+ * on either read propagates, because a damaged or unreachable store is not "no config".
  */
 fun readBridgeConfig(appDb: SQLiteDatabase): BridgeConfigRow? {
   return try {
     readBridgeConfigRow(appDb, withTelemetrySwitch = true)
   } catch (error: SQLiteException) {
+    if (!isMissingSchemaError(error)) throw error
     Log.w(TAG_DATABASE_READS, "bridge_config unreadable with the telemetry switch column", error)
     try {
       readBridgeConfigRow(appDb, withTelemetrySwitch = false)
     } catch (fallbackError: SQLiteException) {
+      if (!isMissingSchemaError(fallbackError)) throw fallbackError
       // Not one column missing but the whole table: a store that has not been provisioned yet.
       Log.w(TAG_DATABASE_READS, "bridge_config unreadable on this store", fallbackError)
       null
