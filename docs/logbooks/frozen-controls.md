@@ -583,3 +583,15 @@ on the same libraries. The single window is still three clean weeks from the ins
 | Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | `targetSdkVersion` 35 → 36 (Android 16), same build as M1 | Not expected (Judgment Day found no touch-related target-36 behaviour); the owner keeps the possibility open | Background service survival, only ever measured at 35; Robolectric unit tests still run at `sdk=35` | Overnight survival during the window (sync status in Settings and the Bridge's records) |
+
+**2026-10-27 20:05 (tablet local time) — M1 reinstalled, observation window restarts.** Lab build
+`autoreas-mobile-2.6.0-lab-arm64-v8a-20261027T1914Z.apk` from `chore/expo-sdk-upgrade` @ `b6b5955`,
+installed with `adb install -r` over the dev client (data kept). It holds M1, both header fixes, target 36
+and the database-fault fixes. The earlier 12:13 window was interrupted by the dev client. The window now
+ends **2026-11-17 20:05** if no freeze happens. Also check on this build whether the touch-to-action delay
+the owner saw on the dev client persists.
+
+| Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
+| --- | --- | --- | --- | --- |
+| 2026-10-27 | Native sync engine reports real database faults as `failed` instead of "nothing to do" (only a missing table/column stays tolerant) | None expected (background sync, not touch) | More `failed` cycles in telemetry when the store is busy or damaged | Bridge telemetry; device use |
+| 2026-10-27 | Native unit tests run every class on native SQLite (root cause of the intermittent test burst) | None (test infrastructure only) | None | `bun run test:kotlin` |
