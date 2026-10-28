@@ -16,6 +16,25 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-10-27
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Changed
+
+- La app se actualiza a Expo SDK 58 y React Native 0.88, que incluye una corrección de Android para la medición de la pantalla en pantalla dividida, el escenario en que los botones dejaban de responder.
+- La app está preparada para Android 16.
+- La app ahora llega hasta los bordes de la pantalla: ya no queda una franja vacía bajo la barra de estado ni detrás de la barra de navegación.
+
+### Fixed
+
+- La lista de animes y la pantalla de Configuración ya no quedan tapadas por el encabezado: el panel de días se ve completo desde arriba.
+
+### Internal
+
+- La sincronización en segundo plano ahora registra como falla un error real de la base de datos del dispositivo (ocupada, de solo lectura o dañada), en lugar de darlo por un ciclo sin nada que hacer. Una base que todavía no tiene una tabla o columna nueva se sigue tratando como antes.
+- Las pruebas nativas usan siempre el mismo simulador de base de datos, lo que elimina una falla intermitente de las pruebas que no afectaba a la app.
+
 ## [2.6.0] — 2026-10-26
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
