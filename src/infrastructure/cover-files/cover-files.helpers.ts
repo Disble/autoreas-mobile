@@ -117,10 +117,17 @@ function getManifestFile(): File {
  * Reads the persisted cover manifest from disk. A missing file, unreadable file, or invalid JSON
  * all resolve to an empty v1 manifest rather than throwing, so a corrupt manifest never blocks
  * the sweep from starting fresh.
+ *
+ * When the manifest is missing but its temp file is there, the temp file is read instead:
+ * `writeCoverManifest` writes the temp file completely BEFORE it deletes the manifest, so a write
+ * cut off between that delete and the move leaves the newest complete copy in the temp file.
  */
 export async function readCoverManifest(): Promise<CoverManifest> {
   try {
-    const file = getManifestFile();
+    const manifestFile = getManifestFile();
+    const file = manifestFile.exists
+      ? manifestFile
+      : new File(getCoversDirectory(), COVER_MANIFEST_TEMP_FILE_NAME);
 
     if (!file.exists) {
       return parseCoverManifest(null);

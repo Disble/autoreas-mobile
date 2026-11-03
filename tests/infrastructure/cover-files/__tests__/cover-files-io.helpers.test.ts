@@ -160,6 +160,37 @@ describe('cover-files I/O', () => {
       expect(manifest.entries.a1?.fileName).toBe('a1-x.jpg');
     });
 
+    it('reads the complete temp file a write left behind when it was cut off before the move', async () => {
+      store.set('file:///document/covers/manifest.json.tmp', {
+        content: JSON.stringify({
+          version: 1,
+          entries: {
+            a1: {
+              status: 'image',
+              fileName: 'a1-x.jpg',
+              etag: '"x"',
+              checkedAt: 1,
+              nextAttemptAt: 2,
+              failureCount: 0,
+            },
+          },
+        }),
+      });
+
+      const manifest = await readCoverManifest();
+
+      expect(manifest.entries.a1?.fileName).toBe('a1-x.jpg');
+    });
+
+    it('prefers the manifest over a leftover temp file', async () => {
+      store.set('file:///document/covers/manifest.json', {
+        content: JSON.stringify({ version: 1, entries: {} }),
+      });
+      store.set('file:///document/covers/manifest.json.tmp', { content: '{half written' });
+
+      await expect(readCoverManifest()).resolves.toEqual({ version: 1, entries: {} });
+    });
+
     it('returns an empty manifest for corrupt JSON without throwing', async () => {
       store.set('file:///document/covers/manifest.json', { content: '{not json' });
 
