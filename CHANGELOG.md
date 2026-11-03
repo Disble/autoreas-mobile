@@ -16,6 +16,15 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.7.1] — 2026-11-02
+
+Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
+
+### Fixed
+
+- Las portadas de los animes ya no se borran cuando la app no puede conectarse con Bridge. Antes, una noche con Bridge apagado podía dejar todas las tarjetas sin portada hasta la siguiente conexión; ahora la app solo borra una portada después de que Bridge confirmó que ya no hace falta.
+- Si Android cierra la app justo mientras guarda la lista de portadas, la app ya no pierde esa lista al volver a abrirse.
+
 ## [2.7.0] — 2026-10-27
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
