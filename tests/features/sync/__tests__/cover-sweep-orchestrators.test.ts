@@ -1,4 +1,3 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { BridgeUnreachableError } from '../../../../src/infrastructure/api';
 import type { BridgeAnimeCoverResult } from '../../../../src/infrastructure/api';
 import { hydrateCoverUris, runCoverSweep } from '../../../../src/features/sync/cover-sweep';
@@ -7,118 +6,14 @@ import {
   COVER_SWEEP_CONCURRENCY,
   COVER_UNKNOWN_RECHECK_MS,
 } from '../../../../src/features/sync/cover-sweep/cover-sweep.constants';
-import type {
-  CoverSweepDependencies,
-} from '../../../../src/features/sync/cover-sweep/cover-sweep.types';
-import type {
-  CoverManifest,
-  CoverManifestEntry,
-} from '../../../../src/infrastructure/cover-files';
-
-/** Fixed clock reading every test builds its manifest timestamps relative to. */
-const NOW = 1_700_000_000_000;
-/** A dummy `SQLiteDatabase` handle: every dependency that would read it is faked below. */
-const FAKE_DB = {} as SQLiteDatabase;
-
-/** A promise plus its external resolve, for tests that need to hold a bridge call open. */
-function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-
-  return { promise, resolve };
-}
-
-/** Builds one manifest entry fixture, overriding only the fields a case cares about. */
-function buildEntry(overrides: Partial<CoverManifestEntry> = {}): CoverManifestEntry {
-  return {
-    status: 'image',
-    fileName: null,
-    etag: null,
-    checkedAt: null,
-    nextAttemptAt: NOW - 1,
-    failureCount: 0,
-    ...overrides,
-  };
-}
-
-/** Builds `readActiveAnimeCoverSources`-shaped fixtures from plain ids, each with its own distinct `sourceKey`. */
-function toSources(animeIds: readonly string[]): readonly { animeId: string; sourceKey: string | null }[] {
-  return animeIds.map((animeId) => ({ animeId, sourceKey: `source-${animeId}` }));
-}
-
-/**
- * Builds a full fake `CoverSweepDependencies`, backed by an in-memory manifest and file set that
- * behave like disk: `writeManifest`/`writeCoverImage`/`deleteCoverFile` mutate the same state
- * `readManifest`/`coverFileExists`/`listCoverFileNames` read back, exactly like the real
- * `expo-file-system` adapter would across two calls in the same process.
- */
-function buildFakeDeps(
-  overrides: Partial<CoverSweepDependencies> = {},
-  initial: { manifest?: CoverManifest; files?: readonly string[] } = {},
-) {
-  let manifest: CoverManifest = initial.manifest ?? { version: 1, entries: {} };
-  const files = new Set<string>(initial.files ?? []);
-  const writeManifestCalls: CoverManifest[] = [];
-  const publishCalls: Readonly<Record<string, string>>[] = [];
-  /** Records `writeManifest`/`deleteCoverFile` calls in order, so a test can assert deletion never precedes persistence. */
-  const callLog: string[] = [];
-  let now = NOW;
-
-  const deps: CoverSweepDependencies = {
-    clock: { now: () => now },
-    bridgeClient: { getAnimeCover: jest.fn(async () => ({ kind: 'absent' }) as BridgeAnimeCoverResult) },
-    readManifest: jest.fn(async () => manifest),
-    writeManifest: jest.fn(async (next: CoverManifest) => {
-      manifest = next;
-      writeManifestCalls.push(next);
-      callLog.push('writeManifest');
-    }),
-    writeCoverImage: jest.fn(async (fileName: string, _bytes: Uint8Array) => {
-      files.add(fileName);
-      return `file:///covers/${fileName}`;
-    }),
-    coverFileExists: jest.fn(async (fileName: string) => files.has(fileName)),
-    deleteCoverFile: jest.fn(async (fileName: string) => {
-      files.delete(fileName);
-      callLog.push(`deleteCoverFile:${fileName}`);
-    }),
-    listCoverFileNames: jest.fn(async () => Array.from(files)),
-    getCoverFileUri: jest.fn((fileName: string) => `file:///covers/${fileName}`),
-    publishCoverUris: jest.fn((map: Readonly<Record<string, string>>) => {
-      publishCalls.push(map);
-    }),
-    readActiveAnimeCoverSources: jest.fn(async () => []),
-    getBridgeConfigSnapshot: jest.fn(async () => ({
-      id: 1,
-      ip: '192.168.0.10',
-      port: 8080,
-      token: 'token-1',
-      deviceId: null,
-      deviceName: null,
-      lastChangelogId: 0,
-      isSyncTelemetryEnabled: true,
-      seasonMode: false,
-    })),
-    listCoverInboxEntries: jest.fn(async () => []),
-    adoptCoverInboxImage: jest.fn(async () => false),
-    discardCoverInboxEntry: jest.fn(async () => undefined),
-    ...overrides,
-  };
-
-  return {
-    deps,
-    getManifest: () => manifest,
-    files,
-    writeManifestCalls,
-    publishCalls,
-    callLog,
-    setNow: (value: number) => {
-      now = value;
-    },
-  };
-}
+import type { CoverManifest } from '../../../../src/infrastructure/cover-files';
+import { FAKE_DB, NOW } from './cover-sweep-test.constants';
+import {
+  buildEntry,
+  buildFakeDeps,
+  createDeferred,
+  toSources,
+} from './cover-sweep-test.helpers';
 
 describe('hydrateCoverUris', () => {
   it('publishes existing covers with zero network calls', async () => {
@@ -187,7 +82,23 @@ describe('runCoverSweep', () => {
     expect(deps.readActiveAnimeCoverSources).not.toHaveBeenCalled();
   });
 
-  it("removes an inactive anime's entry and file", async () => {
+  it("removes an inactive anime's entry and file once the bridge answered the pass", async () => {
+    const manifest: CoverManifest = {
+      version: 1,
+      entries: { inactive: buildEntry({ fileName: 'inactive.jpg' }) },
+    };
+    const { deps, getManifest, files } = buildFakeDeps(
+      { readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])) },
+      { manifest, files: ['inactive.jpg'] },
+    );
+
+    await runCoverSweep(FAKE_DB, deps);
+
+    expect(getManifest().entries.inactive).toBeUndefined();
+    expect(files.has('inactive.jpg')).toBe(false);
+  });
+
+  it("keeps an inactive anime's cover when the pass sent no request to the bridge", async () => {
     const manifest: CoverManifest = {
       version: 1,
       entries: { inactive: buildEntry({ fileName: 'inactive.jpg' }) },
@@ -199,8 +110,60 @@ describe('runCoverSweep', () => {
 
     await runCoverSweep(FAKE_DB, deps);
 
-    expect(getManifest().entries.inactive).toBeUndefined();
-    expect(files.has('inactive.jpg')).toBe(false);
+    expect(deps.deleteCoverFile).not.toHaveBeenCalled();
+    expect(files.has('inactive.jpg')).toBe(true);
+    expect(getManifest().entries.inactive.fileName).toBe('inactive.jpg');
+  });
+
+  it('an unreachable bridge with an unreadable manifest deletes no cover and writes no manifest', async () => {
+    const getAnimeCover = jest.fn(async () => {
+      throw new BridgeUnreachableError('http://bridge/cover', new Error('down'));
+    });
+    const { deps, files } = buildFakeDeps(
+      {
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2'])),
+        bridgeClient: { getAnimeCover },
+      },
+      { files: ['a1-old.jpg', 'a2-old.jpg'] },
+    );
+
+    const summary = await runCoverSweep(FAKE_DB, deps);
+
+    expect(summary.stopped).toBe(true);
+    expect(deps.deleteCoverFile).not.toHaveBeenCalled();
+    expect(deps.writeManifest).not.toHaveBeenCalled();
+    expect(Array.from(files).sort()).toEqual(['a1-old.jpg', 'a2-old.jpg']);
+  });
+
+  it('a pass cut off by an unreachable bridge keeps what it learned but deletes nothing', async () => {
+    const manifest: CoverManifest = {
+      version: 1,
+      entries: {
+        a1: buildEntry({ fileName: 'a1.jpg', sourceKey: 'source-a1-before-edit' }),
+        inactive: buildEntry({ fileName: 'inactive.jpg' }),
+      },
+    };
+    const getAnimeCover = jest.fn(async (_connection: unknown, animeId: string) => {
+      if (animeId === 'a1') {
+        return { kind: 'absent' } as BridgeAnimeCoverResult;
+      }
+      throw new BridgeUnreachableError('http://bridge/cover', new Error('down'));
+    });
+    const { deps, getManifest, files } = buildFakeDeps(
+      {
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2', 'a3'])),
+        bridgeClient: { getAnimeCover },
+      },
+      { manifest, files: ['a1.jpg', 'inactive.jpg', 'unreferenced.jpg'] },
+    );
+
+    const summary = await runCoverSweep(FAKE_DB, deps);
+
+    expect(summary.stopped).toBe(true);
+    expect(getManifest().entries.a1.status).toBe('absent');
+    expect(getManifest().entries.inactive.fileName).toBe('inactive.jpg');
+    expect(deps.deleteCoverFile).not.toHaveBeenCalled();
+    expect(Array.from(files).sort()).toEqual(['a1.jpg', 'inactive.jpg', 'unreferenced.jpg']);
   });
 
   it('a 200 writes a file and sets the revalidation horizon as next attempt', async () => {
@@ -463,18 +426,26 @@ describe('runCoverSweep', () => {
     expect(getAnimeCover).toHaveBeenCalledTimes(1);
   });
 
-  it('writes the manifest even when a worker throws', async () => {
-    const getAnimeCover = jest.fn(async () => {
+  it('writes what the bridge answered even when a later worker throws, and deletes nothing', async () => {
+    const getAnimeCover = jest.fn(async (_connection: unknown, animeId: string) => {
+      if (animeId === 'a1') {
+        return { kind: 'unknown' } as BridgeAnimeCoverResult;
+      }
       throw new Error('boom');
     });
-    const { deps, writeManifestCalls } = buildFakeDeps({
-      readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1'])),
-      bridgeClient: { getAnimeCover },
-    });
+    const { deps, getManifest, files } = buildFakeDeps(
+      {
+        readActiveAnimeCoverSources: jest.fn(async () => toSources(['a1', 'a2'])),
+        bridgeClient: { getAnimeCover },
+      },
+      { files: ['unreferenced.jpg'] },
+    );
 
     await expect(runCoverSweep(FAKE_DB, deps)).rejects.toThrow('boom');
 
-    expect(writeManifestCalls.length).toBeGreaterThan(0);
+    expect(getManifest().entries.a1.status).toBe('unknown');
+    expect(deps.deleteCoverFile).not.toHaveBeenCalled();
+    expect(files.has('unreferenced.jpg')).toBe(true);
   });
 });
 

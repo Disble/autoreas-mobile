@@ -515,6 +515,7 @@ worse) and how it is checked. Append a row per change; never remove one.
 | 2026-10-26 | 2.6.0: chapter busy lock removed, optimistic actions | None expected (the freeze hits every control) | — | Row 7 happened after its publication; version installed at row 7 not reported |
 | 2026-10-27 | M1: Expo 58 / React Native 0.88 and latest libraries, target 35 kept | May fix it if the offset theory holds (RN `9d183675e9`) | Any library regression; Reanimated flag `USE_COMMIT_HOOK_ONLY_FOR_REACT_COMMITS` may change meaning | Full test suites now; M1 observation window on the tablet |
 | (planned) | M2: target 36 | Not expected; the owner keeps the possibility open | Background service survival (only measured at 35) | Overnight survival check + M2 observation window |
+| 2026-11-02 | 2.7.1: the cover sweep never writes or deletes covers without a bridge answer; the cover list read falls back to its temp file | None expected (cover storage only; no UI, render or touch code changed) | Covers of animes no longer followed stay on disk until a pass the bridge answers in full | Cover tests (RED → GREEN, mutation-checked); device use. Installing 2.7.1 replaces the M1 build: record its install date here |
 
 **2026-10-27 — criterion confirmed by the owner:** three weeks of normal use per milestone, split screen
 on several days, zero occurrences. Window start = the day the milestone's build is installed on the
@@ -614,3 +615,10 @@ Metro dev client (installed 21:55, so the M1 window stays paused): no band at th
 | Date | Change | Possible effect on the freeze | Possible side effects | How it is checked |
 | --- | --- | --- | --- | --- |
 | 2026-10-27 | Root safe area pads no edge; the list screen pads the navigation bar inset itself | None expected | Setup and startup screens (centered) extend under the navigation bar | Device use |
+
+**2026-10-27 22:45 (tablet local time) — 2.7.0 release installed, M1 observation window restarts.**
+Release `v2.7.0` (GitHub run `40625195647`, all four jobs green), APK checked against its
+`SHA256SUMS-android.txt`, installed with `adb install -r` over the dev client (data kept, versionName
+2.7.0). It holds M1, target 36, both header fixes, the edge-to-edge padding fixes and the database-fault
+fixes. The window ends **2026-11-17 22:45** if no freeze happens. Still to check on this build: whether
+the touch-to-action delay the owner saw on the dev client persists.

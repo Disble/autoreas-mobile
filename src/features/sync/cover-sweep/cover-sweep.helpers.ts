@@ -254,8 +254,8 @@ async function fetchCoverOrStop(
  * a newly-absent one (204). A card re-rendering mid-sweep would otherwise briefly point at an
  * already-deleted file, and a crash between this write and `writeManifest` could leave the
  * PREVIOUS manifest (still on disk) referencing a file this function already deleted. The only
- * deletion path is the orphan cleanup in `executeCoverSweep`'s `finally`, which runs strictly
- * AFTER `writeManifest` and deletes every on-disk JPEG no longer referenced by the persisted
+ * deletion path is the orphan cleanup in `settleCoverSweep`, which runs only after a pass the
+ * bridge answered to the end, strictly AFTER `writeManifest`, and deletes every on-disk JPEG no longer referenced by the persisted
  * manifest -- which naturally includes a replaced or newly-absent file, since `entries[animeId]`
  * already points at the new name (or `null`) by the time cleanup runs.
  */
@@ -344,19 +344,16 @@ async function executeCoverSweep(
   const connection: BridgeConnection = { ip: config.ip, port: config.port, token: config.token };
   const activeSources = await deps.readActiveAnimeCoverSources(rawDb);
   const activeAnimeIds = activeSources.map((source) => source.animeId);
-  const { manifest: prunedManifest, fileNamesToDelete: prunedFileNames } = pruneInactiveCoverEntries(
-    manifest,
-    activeAnimeIds,
-  );
 
-  const entries: Record<string, CoverManifestEntry> = { ...prunedManifest.entries };
+  const entries: Record<string, CoverManifestEntry> = { ...manifest.entries };
   const summary = { fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0 };
   const sourceByAnimeId = new Map(activeSources.map((source) => [source.animeId, source.sourceKey]));
+  let completed = false;
 
   try {
     const targets = selectCoverSweepTargets(
       activeSources,
-      prunedManifest,
+      manifest,
       deps.clock.now(),
       options.force ?? false,
     );
@@ -364,35 +361,85 @@ async function executeCoverSweep(
 
     const { stopped } = await runWithConcurrency(targets, COVER_SWEEP_CONCURRENCY, worker);
 
+    completed = !stopped;
+
     return { ...summary, stopped };
   } finally {
-    const finalManifest: CoverManifest = { version: 1, entries };
-
-    await deps.writeManifest(finalManifest);
-
-    const onDiskFileNames = await deps.listCoverFileNames();
-    const referencedFileNames = new Set(
-      Object.values(entries)
-        .map((entry) => entry.fileName)
-        .filter((fileName): fileName is string => fileName !== null),
-    );
-    const orphanFileNames = new Set([
-      ...prunedFileNames,
-      ...onDiskFileNames.filter((fileName) => !referencedFileNames.has(fileName)),
-    ]);
-
-    await Promise.all(
-      Array.from(orphanFileNames).map((fileName) => deps.deleteCoverFile(fileName)),
-    );
-
-    deps.publishCoverUris(buildCoverUriMap(finalManifest, deps.getCoverFileUri));
+    await settleCoverSweep(deps, entries, activeAnimeIds, {
+      answered: countBridgeAnswers(summary) > 0,
+      completed,
+    });
   }
+}
+
+/** Counts the covers the bridge actually answered for in this pass, whatever the answer was. */
+function countBridgeAnswers(summary: CoverSweepCounters): number {
+  return summary.fetched + summary.notModified + summary.absent + summary.unknown + summary.transient;
+}
+
+/**
+ * Persists, cleans up and republishes the outcome of one pass, and only as far as the bridge
+ * confirmed it. Disk is never ahead of the bridge: a cover that is on this device stays on it until
+ * a pass the bridge answered to the end says it is no longer needed.
+ *
+ * - The bridge answered nothing (unreachable, 401, or no cover was due): nothing is written and
+ *   nothing is deleted. A manifest that read as empty or partial -- a write cut off by the process
+ *   being killed, an unreadable file -- must not turn into every cover being deleted offline.
+ * - The bridge answered, but the pass was cut off: what it answered is persisted, nothing is deleted.
+ * - The bridge answered the whole pass: inactive animes' entries are dropped, the manifest is
+ *   persisted, and every JPEG it no longer references is deleted -- strictly AFTER `writeManifest`,
+ *   so a crash in between leaves an extra file, never a manifest pointing at a deleted one.
+ */
+async function settleCoverSweep(
+  deps: CoverSweepDependencies,
+  entries: Readonly<Record<string, CoverManifestEntry>>,
+  activeAnimeIds: readonly string[],
+  outcome: { readonly answered: boolean; readonly completed: boolean },
+): Promise<void> {
+  const swept: CoverManifest = { version: 1, entries };
+
+  if (!outcome.answered) {
+    deps.publishCoverUris(buildCoverUriMap(swept, deps.getCoverFileUri));
+    return;
+  }
+
+  if (!outcome.completed) {
+    await deps.writeManifest(swept);
+    deps.publishCoverUris(buildCoverUriMap(swept, deps.getCoverFileUri));
+    return;
+  }
+
+  const { manifest: finalManifest, fileNamesToDelete: prunedFileNames } = pruneInactiveCoverEntries(
+    swept,
+    activeAnimeIds,
+  );
+
+  await deps.writeManifest(finalManifest);
+
+  const onDiskFileNames = await deps.listCoverFileNames();
+  const referencedFileNames = new Set(
+    Object.values(finalManifest.entries)
+      .map((entry) => entry.fileName)
+      .filter((fileName): fileName is string => fileName !== null),
+  );
+  const orphanFileNames = new Set([
+    ...prunedFileNames,
+    ...onDiskFileNames.filter((fileName) => !referencedFileNames.has(fileName)),
+  ]);
+
+  await Promise.all(
+    Array.from(orphanFileNames).map((fileName) => deps.deleteCoverFile(fileName)),
+  );
+
+  deps.publishCoverUris(buildCoverUriMap(finalManifest, deps.getCoverFileUri));
 }
 
 /**
  * Runs one pass of the offline cover pipeline: hydrates/publishes from the manifest, then (bridge
  * config permitting) fetches every due active-anime cover with bounded concurrency, persists the
- * manifest, deletes orphan JPEGs, and republishes the URI map. Also runs inside
+ * manifest, deletes orphan JPEGs, and republishes the URI map. Writes and deletions follow what the
+ * bridge answered (see `settleCoverSweep`): a pass the bridge never answered changes nothing on
+ * disk, and only a pass it answered to the end deletes a file. Also runs inside
  * `runCoverStoreExclusive`, so a `hydrateCoverUris` call made mid-pass queues behind it instead of
  * racing the manifest.
  *
