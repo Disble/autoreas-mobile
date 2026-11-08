@@ -35,7 +35,7 @@ Branch: `feat/mobile-report-kinds`, cut from `main` at 77f0737 (2.7.1). Bridge c
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 | S1 | inline | open | |
+| T1 | S1 | inline | done: RED (expected `sent`, was `failed`), GREEN; 9 tests that pinned the old stage updated (lease loss at apply now reports `applied`); mutant (record line deleted) killed, 10 failures; Kotlin 456/456, lefthook green | d28e0c8 |
 | T2 | S3, S5, S6 | delegated (context backstop) | open: diary store in the ticker module, kind registries, reserve and daily limit, hourly counters and summary emission, JS attempt recording | |
 | T3 | S2, S4 | delegated (context backstop) | open: native attempt counting, transitions, process deaths, boot, network, failed-cycle `cycle_report` | |
 | T6 | S8 | inline | open: logbook and docs | |

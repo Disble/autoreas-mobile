@@ -50,7 +50,7 @@ const val SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS = 5_000L
 /**
  * Diagnostics body `kind`s this build may POST, mirroring `SYNC_DIAGNOSTICS_ACCEPTED_KINDS`.
  *
- * `episode_action` is the registry's only NAMED entry, and it is the whole change that lets episode
+ * `episode_action` was the registry's first NAMED entry, and it is the whole change that lets episode
  * observations flow: the recorder enqueues them and the drain posts them off this same list the
  * moment the bridge answers that kind (bridge v1.15.0, confirmed deployed). The JS registry
  * additionally carries an `undefined` entry, which identifies the ABSENCE of a `kind` key -- the
@@ -58,8 +58,14 @@ const val SYNC_DIAGNOSTICS_UNAVAILABLE_RETRY_AFTER_MS = 5_000L
  * `undefined`, so that entry is structurally unreachable from a NAMED token and is handled where it
  * is read instead ([classifyDiagnosticsPayload] treats an ABSENT `kind` as that legacy envelope, and
  * parks a present JSON `null` as a declaration naming no token this build knows).
+ *
+ * `cycle_report`, `hourly_summary` and `runtime_transition` are the sync diary's kinds
+ * (odd/tasks/mobile-report-kinds.md T2), written natively by `SyncDiary` in
+ * `foreground-sync-ticker` and served by the bridge's `feat/mobile-report-kinds` contract.
+ * `screen_stall` is still JS-only here: a recorded follow-up, not part of that feature.
  */
-val SYNC_DIAGNOSTICS_ACCEPTED_KINDS: Set<String> = setOf("episode_action")
+val SYNC_DIAGNOSTICS_ACCEPTED_KINDS: Set<String> =
+  setOf("episode_action", "cycle_report", "hourly_summary", "runtime_transition")
 
 /**
  * Diagnostics body `kind`s this build KNOWS the bridge does not accept, mirroring

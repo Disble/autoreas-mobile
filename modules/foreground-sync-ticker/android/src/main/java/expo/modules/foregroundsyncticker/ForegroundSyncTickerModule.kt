@@ -82,6 +82,12 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
  * internal class name into this module, whereas the channel id is a constant this repo already
  * owns.
+ *
+ * `recordSyncAttempt` and `recordRuntimeTransition` are the main process's door into [SyncDiary]
+ * (odd/tasks/mobile-report-kinds.md T2): JS counts its own sync attempts through the same native
+ * writer both engines use, so the hourly counters have one implementation. Both are async (the
+ * diary writes SQLite off the JS thread) and best effort: the diary validates, logs and swallows,
+ * and never throws back into a sync attempt.
  */
 class ForegroundSyncTickerModule : Module() {
   private var intervalMs: Long = 15_000L
@@ -206,6 +212,19 @@ class ForegroundSyncTickerModule : Module() {
     }
   }
 
+  /** Counts one JS sync attempt in the diary's current hour; see [SyncDiary.recordAttempt]. */
+  private fun recordSyncAttempt(triggerSource: String, outcome: String, durationMs: Double) {
+    val context = appContext.reactContext ?: return
+    syncDiaryFor(context).recordAttempt(triggerSource, outcome, durationMs.toLong(), System.currentTimeMillis())
+  }
+
+  /** Reports one main-process state change; see [SyncDiary.recordTransition]. */
+  private fun recordRuntimeTransition(subject: String, transition: String, reason: String?) {
+    val context = appContext.reactContext ?: return
+    val now = System.currentTimeMillis()
+    syncDiaryFor(context).recordTransition("main", subject, transition, reason, now, now)
+  }
+
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
@@ -231,6 +250,14 @@ class ForegroundSyncTickerModule : Module() {
 
     Function("isForegroundServiceRunning") { channelId: String ->
       isForegroundServiceRunning(channelId)
+    }
+
+    AsyncFunction("recordSyncAttempt") { triggerSource: String, outcome: String, durationMs: Double ->
+      recordSyncAttempt(triggerSource, outcome, durationMs)
+    }
+
+    AsyncFunction("recordRuntimeTransition") { subject: String, transition: String, reason: String? ->
+      recordRuntimeTransition(subject, transition, reason)
     }
 
     OnCreate {
