@@ -16,6 +16,9 @@ private const val BRIDGE_REQUEST_TIMEOUT_MS = 10_000
 /** Cursor sanity bound, mirroring `MAX_REASONABLE_CHANGELOG_ID`. */
 private const val MAX_REASONABLE_CHANGELOG_ID = 1_000_000_000_000L
 
+/** Journal states that end an attempt without closing it; reaching one records the prior stage. */
+private val TERMINAL_FAILURE_STATES = setOf("failed", "abandoned")
+
 /** One terminal attempt result, handed to the caller of [SyncEngineRunner.runOnce]. */
 data class CycleOutcome(
   val outcome: String,
@@ -77,6 +80,8 @@ class SyncEngineCycle(
   )
   private var cycleId: String = ""
   private var lastState: String = "idle"
+  /** The state an attempt was in when it turned `failed` or `abandoned`; `null` until then. */
+  private var stageAtFailure: String? = null
   private var claimedRows: List<BacklogRow> = emptyList()
 
   /**
@@ -117,6 +122,7 @@ class SyncEngineCycle(
    */
   fun run(triggerSource: String, cycleId: String, onState: (String) -> Unit): CycleOutcome {
     this.cycleId = cycleId
+    stageAtFailure = null
     this.onState = onState
 
     return try {
@@ -128,14 +134,14 @@ class SyncEngineCycle(
       // instance silently pass its requireOwned() gate.
       leaseFence = null
       transition("abandoned", "cycle lease lost: ${error.message}")
-      outcome("abandoned", lastState, 0, 0, "LeaseLost")
+      outcome("abandoned", failedStage(), 0, 0, "LeaseLost")
     } catch (error: Throwable) {
       // Unexpected failure after the claim: release every row this attempt still holds to
       // `pending` (never dead-letter — only the bridge's own 4xx classifies content as rejected),
       // name the failure, terminal.
       revertClaimedRows(deadLetter = false, ids = attemptClaimedIds.toList())
       transition("failed", error.message ?: error.javaClass.simpleName)
-      outcome("failed", lastState, 0, 0, error.javaClass.simpleName)
+      outcome("failed", failedStage(), 0, 0, error.javaClass.simpleName)
     } finally {
       lease.release()
     }
@@ -151,9 +157,13 @@ class SyncEngineCycle(
   /** The id for this attempt's next bridge request, or `null` when it carries none. */
   private fun nextRequestId(): String? = requestIds?.next()
 
+  /** The stage a failed or abandoned attempt reports: where it was, not the terminal state. */
+  private fun failedStage(): String = stageAtFailure ?: lastState
+
   /** Appends one intent-before-effect journal transition and advances the tracked state. */
   private fun transition(toState: String, reason: String?) {
     journal.append(cycleId, lastState, toState, reason, System.currentTimeMillis())
+    if (toState in TERMINAL_FAILURE_STATES) stageAtFailure = lastState
     lastState = toState
     onState(toState)
   }
@@ -194,7 +204,7 @@ class SyncEngineCycle(
     recovery = SyncEngineRecovery(appDb, journal).sweep(cycleId, fence)
     if (recovery.leaseLost) {
       transition("abandoned", "cycle lease lost before the backlog read")
-      return outcome("abandoned", lastState, 0, 0, "LeaseLost")
+      return outcome("abandoned", failedStage(), 0, 0, "LeaseLost")
     }
 
     // Diagnostics drain (C2): once the fence is held and before the backlog read, so BOTH the
@@ -248,7 +258,7 @@ class SyncEngineCycle(
       if (result is RoundResult.Failed) {
         // The reconcile failed first: this round's ratings are released unsent.
         releaseRows(seasonRatings)
-        return outcome("failed", lastState, syncedCount + result.confirmedCount, backlogReadCount, result.errorName)
+        return outcome("failed", failedStage(), syncedCount + result.confirmedCount, backlogReadCount, result.errorName)
       }
       // A settled round is applied: `settleRejection` never answers a rejection.
       val applied = result as RoundResult.Applied

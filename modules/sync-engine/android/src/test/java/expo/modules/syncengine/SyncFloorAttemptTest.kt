@@ -15,6 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /** The success fixture: a closed cycle that synced three operations and read five backlog rows. */
 private val OUTCOME_CLOSED = CycleOutcome("closed", "closed", 3, 5, null)
 
+/** A runner script that never calls its callback. */
+private val NEVER_SETTLES: ((CycleOutcome) -> Unit) -> Unit = { }
+
 /** The failure fixture: a non-terminal outcome whose error class must reach the status row. */
 private val OUTCOME_FAILED = CycleOutcome("failed", "sending", 0, 0, "SocketTimeoutException")
 
@@ -64,8 +67,11 @@ class SyncFloorAttemptTest {
    */
   private class RecordingRunner(
     private val failure: Throwable? = null,
-    private val settle: ((CycleOutcome) -> Unit) -> Unit = { },
+    private val settle: ((CycleOutcome) -> Unit) -> Unit = NEVER_SETTLES,
   ) : SyncAttemptRunner {
+    /** True for the runner whose callback never fires. */
+    val settlesNever: Boolean get() = failure == null && settle === NEVER_SETTLES
+
     val invocationCount = AtomicInteger(0)
 
     @Volatile
@@ -151,6 +157,65 @@ class SyncFloorAttemptTest {
     )
     assertEquals("no competing attempt may start while the ticker owns the background", 0, runner.invocationCount.get())
     assertTrue("a skipped tick must not touch sync_runtime_status", writes.isEmpty())
+  }
+
+  @Test
+  fun `every tick is handed to the diary once and keeps its result`() = runBlocking {
+    val records = mutableListOf<NativeAttemptRecord>()
+    val recorder: NativeAttemptDiaryRecorder = { _, record -> records += record }
+    val cases = listOf(
+      Triple(RecordingRunner { it(OUTCOME_FAILED) }, false, SyncFloorAttemptResult.AttemptCompleted),
+      Triple(RecordingRunner { it(OUTCOME_CLOSED) }, true, SyncFloorAttemptResult.SkippedOwnedByTicker),
+      Triple(RecordingRunner(failure = IllegalStateException("boom")), false, SyncFloorAttemptResult.AttemptCrashed),
+      Triple(RecordingRunner(), false, SyncFloorAttemptResult.AttemptUnsettled),
+    )
+
+    val results = cases.map { (runner, ownsBackground, _) ->
+      // Only the runner that never settles is bounded short; the others settle at once.
+      val timeoutMs = if (runner.settlesNever) 20L else null
+      SyncFloorAttempt(context, runner, { _, _, _, _ -> }, { _ -> ownsBackground }, timeoutMs, recorder).run()
+    }
+
+    assertEquals(cases.map { it.third }, results)
+    assertEquals(
+      listOf(
+        NativeAttemptEnd.Settled(OUTCOME_FAILED),
+        NativeAttemptEnd.SkippedOwnedByTicker,
+        NativeAttemptEnd.Crashed,
+        NativeAttemptEnd.Unsettled,
+      ),
+      records.map { it.end },
+    )
+    assertTrue(records.all { it.triggerSource == SYNC_FLOOR_TRIGGER_SOURCE })
+    assertEquals("a skipped tick never minted an id", null, records[1].cycleId)
+    assertTrue(listOf(0, 2, 3).all { !records[it].cycleId.isNullOrBlank() })
+  }
+
+  @Test
+  fun `a throwing diary never changes the tick's result`() = runBlocking {
+    val attempt = SyncFloorAttempt(
+      context, RecordingRunner { it(OUTCOME_CLOSED) }, { _, _, _, _ -> }, { _ -> false }, null,
+    ) { _, _ -> throw IllegalStateException("diary boom") }
+
+    assertEquals(SyncFloorAttemptResult.AttemptCompleted, attempt.run())
+  }
+
+  @Test
+  fun `the floor reports skipped and started only when it changes, and its process start once`() = runBlocking {
+    SyncDiaryTestOutbox(context).use { outbox ->
+      context.getSharedPreferences("expo.modules.syncengine.floor_diary", Context.MODE_PRIVATE).edit().clear().commit()
+      val ticks = listOf(false, true, true, false, false)
+
+      ticks.forEach { ownsBackground ->
+        SyncFloorAttempt(context, RecordingRunner { it(OUTCOME_CLOSED) }, { _, _, _, _ -> }, { _ -> ownsBackground }, null) { _, _ -> }
+          .run()
+      }
+
+      assertEquals(
+        listOf("sync/process/started", "sync/floor/skipped", "sync/floor/started"),
+        outbox.transitions(),
+      )
+    }
   }
 
   @Test

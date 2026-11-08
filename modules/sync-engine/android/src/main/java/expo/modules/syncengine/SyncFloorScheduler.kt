@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.multiprocess.RemoteListenableWorker
 import androidx.work.multiprocess.RemoteWorkerService
 import androidx.work.workDataOf
+import expo.modules.foregroundsyncticker.SyncDiaryRuntime
 import expo.modules.foregroundsyncticker.SyncTickerOwnership
 import java.util.concurrent.TimeUnit
 
@@ -129,13 +130,12 @@ object SyncFloorScheduler {
     },
   ): SyncFloorStatus {
     val workManager = WorkManager.getInstance(context)
+    val wasRegistered = readIsRegistered(context)
 
-    if (!enqueue(workManager)) {
-      return status(context)
+    if (enqueue(workManager)) {
+      cancelLegacyExpoFloor(workManager)
     }
-
-    cancelLegacyExpoFloor(workManager)
-    return status(context)
+    return status(context).also { result -> reportRegistrationChange(context, wasRegistered, result) }
   }
 
   /**
@@ -148,13 +148,33 @@ object SyncFloorScheduler {
    */
   fun unregister(context: Context): SyncFloorStatus {
     val workManager = WorkManager.getInstance(context)
+    val wasRegistered = readIsRegistered(context)
 
     confirmOperation(
       workManager.cancelUniqueWork(SYNC_FLOOR_UNIQUE_WORK_NAME),
       "native floor cancellation",
     )
     cancelLegacyExpoFloor(workManager)
-    return status(context)
+    return status(context).also { result -> reportRegistrationChange(context, wasRegistered, result) }
+  }
+
+  /** Whether the native floor is scheduled before a change, or `null` when it cannot be read. */
+  private fun readIsRegistered(context: Context): Boolean? =
+    try {
+      scheduledWorkInfos(context).any { it.state in SCHEDULED_STATES }
+    } catch (error: Throwable) {
+      Log.w(LOG_TAG, "floor registration unreadable before the change", error)
+      null
+    }
+
+  /**
+   * Reports `floor` + `armed` or `cancelled` to the sync diary only when the registration really
+   * changed (odd/tasks/mobile-report-kinds.md S4): a refresh of a scheduled floor, or a cancel of
+   * one that never existed, reports nothing, and neither does an unreadable starting state.
+   */
+  private fun reportRegistrationChange(context: Context, wasRegistered: Boolean?, result: SyncFloorStatus) {
+    if (wasRegistered == null || wasRegistered == result.isBackgroundTaskRegistered) return
+    SyncDiaryRuntime.recordTransition(context, "floor", if (result.isBackgroundTaskRegistered) "armed" else "cancelled")
   }
 
   /**

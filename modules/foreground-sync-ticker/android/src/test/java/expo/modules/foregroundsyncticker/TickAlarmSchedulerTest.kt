@@ -133,6 +133,38 @@ class TickAlarmSchedulerTest {
   }
 
   @Test
+  fun `the tick alarm reports armed and cancelled only when it really changes`() {
+    SyncDiaryTestOutbox(context).use { outbox ->
+      startSyncTicking(context, intervalMs = 60_000L)
+      assertEquals(listOf("main/tick_alarm/armed"), outbox.transitions())
+
+      // The module's restart: a cancellation kept out of the diary, then a start that knows an
+      // alarm existed. The alarm stays armed, so nothing is reported.
+      val wasArmed = isTickAlarmArmed(context)
+      stopSyncTicking(context, intervalMs = 60_000L, recordTransition = false)
+      startSyncTicking(context, intervalMs = 30_000L, wasArmed = wasArmed)
+      assertTrue("the restart keeps the alarm armed", isTickAlarmArmed(context))
+      assertEquals(listOf("main/tick_alarm/armed"), outbox.transitions())
+
+      // A live alarm re-armed from persisted state is only updated.
+      armTickAlarm(context, 30_000L)
+      assertEquals(listOf("main/tick_alarm/armed"), outbox.transitions())
+
+      stopSyncTicking(context, intervalMs = 30_000L)
+      assertEquals(listOf("main/tick_alarm/armed", "main/tick_alarm/cancelled"), outbox.transitions())
+
+      // Nothing armed: stopping again cancels nothing and reports nothing.
+      stopSyncTicking(context, intervalMs = 30_000L)
+      assertEquals(2, outbox.transitions().size)
+
+      // A lost alarm re-armed from persisted state is a real arm.
+      armTickAlarm(context, 30_000L)
+      assertEquals("main/tick_alarm/armed", outbox.transitions().last())
+      assertEquals(3, outbox.transitions().size)
+    }
+  }
+
+  @Test
   fun `stopSyncTicking is safe to call when nothing was ever started`() {
     // Must not throw: stop() can be called from JS without a matching prior start() (e.g. a
     // double-stop, or a stop after a process restart with no persisted ticking state).

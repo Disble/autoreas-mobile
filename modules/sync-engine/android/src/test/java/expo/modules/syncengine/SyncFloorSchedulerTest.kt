@@ -134,6 +134,19 @@ class SyncFloorSchedulerTest {
   }
 
   @Test
+  fun `the floor reports armed and cancelled only when its registration changes`() {
+    SyncDiaryTestOutbox(context, processName = "com.example.app").use { outbox ->
+      SyncFloorScheduler.register(context)
+      SyncFloorScheduler.register(context)
+      SyncFloorScheduler.register(context) { false }
+      SyncFloorScheduler.unregister(context)
+      SyncFloorScheduler.unregister(context)
+
+      assertEquals(listOf("main/floor/armed", "main/floor/cancelled"), outbox.transitions())
+    }
+  }
+
+  @Test
   fun `registering twice keeps exactly one periodic request`() {
     SyncFloorScheduler.register(context)
     SyncFloorScheduler.register(context)

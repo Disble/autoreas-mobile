@@ -30,7 +30,7 @@ internal class SyncEngineTestDatabase(private val appDatabaseIsFile: Boolean = f
   }
 
   /** The app database's file for the file-backed mode; its parent is the telemetry sibling's. */
-  private val appDatabaseFile = File(journalDirectory, APP_DATABASE_NAME)
+  val appDatabaseFile: File = File(journalDirectory, APP_DATABASE_NAME)
 
   val appDatabase: SQLiteDatabase = if (appDatabaseIsFile) {
     SQLiteDatabase.openOrCreateDatabase(appDatabaseFile, null).apply {

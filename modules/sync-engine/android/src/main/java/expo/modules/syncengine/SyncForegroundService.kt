@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import expo.modules.foregroundsyncticker.SyncDiaryRuntime
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -101,6 +102,13 @@ class SyncForegroundService : Service() {
       SyncEngineRuntimeStatus.record(context, cycleId, attemptedAtMs, outcome)
     }
 
+  /**
+   * Swappable in tests, same shape as [runtimeStatusWriter]: counts each attempt in the sync diary
+   * (odd/tasks/mobile-report-kinds.md S2, S3) through the real [recordNativeSyncAttempt] by
+   * default. A throwing recorder never keeps the wake lock or the in-flight guard held.
+   */
+  internal var attemptDiary: NativeAttemptDiaryRecorder = ::recordNativeSyncAttempt
+
   /** True while one attempt is in flight; see the class doc's coalescing paragraph. */
   private val attemptInFlight = AtomicBoolean(false)
 
@@ -111,6 +119,10 @@ class SyncForegroundService : Service() {
   override fun onCreate() {
     super.onCreate()
     ensureNotificationChannel()
+    // Real state changes for the sync diary (S4): the `:sync` process's start, once per process,
+    // then this service's own start. Both run off this thread and never throw.
+    SyncDiaryRuntime.noteProcessStart(applicationContext)
+    SyncDiaryRuntime.recordTransition(applicationContext, "service", "started")
   }
 
   /** Never bound: this service is only ever started, by [start] or by an explicit intent naming
@@ -137,6 +149,7 @@ class SyncForegroundService : Service() {
     // so this only matters if the service is destroyed with one somehow still held -- a wake
     // lock must never outlive its service.
     releaseWakeLock()
+    SyncDiaryRuntime.recordTransition(applicationContext, "service", "stopped")
     super.onDestroy()
   }
 
@@ -172,6 +185,7 @@ class SyncForegroundService : Service() {
         } catch (error: Throwable) {
           Log.w(LOG_TAG, "status projection crashed (cycleId=$cycleId)", error)
         }
+        recordAttemptSafely(NativeAttemptRecord(TRIGGER_SOURCE, cycleId, startMs, NativeAttemptEnd.Settled(outcome)))
         releaseWakeLock()
         attemptInFlight.set(false)
       }
@@ -180,8 +194,18 @@ class SyncForegroundService : Service() {
       // seam and this service must survive a caller/fake that does not honor that contract --
       // see the class doc's "never crashes the process" paragraph.
       Log.w(LOG_TAG, "attempt crashed before completion (cycleId=$cycleId)", error)
+      recordAttemptSafely(NativeAttemptRecord(TRIGGER_SOURCE, cycleId, startMs, NativeAttemptEnd.Crashed))
       releaseWakeLock()
       attemptInFlight.set(false)
+    }
+  }
+
+  /** Hands [record] to [attemptDiary] while the wake lock is still held; never throws. */
+  private fun recordAttemptSafely(record: NativeAttemptRecord) {
+    try {
+      attemptDiary(applicationContext, record)
+    } catch (error: Throwable) {
+      Log.w(LOG_TAG, "attempt diary crashed (cycleId=${record.cycleId})", error)
     }
   }
 

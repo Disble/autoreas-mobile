@@ -26,6 +26,10 @@ android {
       // true (AGP's traditional default): a call to an Android API with no real implementation
       // returns 0/null/false instead of throwing "not mocked".
       returnDefaultValues = true
+      // NATIVE SQLite for every Robolectric class, as in modules/sync-engine/android/build.gradle:
+      // SyncDiaryTest writes the telemetry database with UPSERTs, which the LEGACY sqlite4java
+      // engine cannot parse.
+      all { systemProperty "robolectric.sqliteMode", "NATIVE" }
     }
   }
 }
@@ -57,6 +61,16 @@ def IMPORTANT_CLASSES = [
   // SyncForegroundServiceBridge.kt -- "SyncForegroundServiceBridge (sync-engine)" in the tier
   // list: conceptually part of the sync-engine service boundary, physically in this module.
   'SyncForegroundServiceBridgeKt', 'SyncForegroundServiceBridgeKt$*',
+  // SyncDiary.kt, SyncDiaryPayloads.kt, SyncDiaryVocabulary.kt (odd/tasks/mobile-report-kinds.md
+  // T2): the native sync diary both engines and JS write their hourly counts through.
+  'SyncDiary', 'SyncDiary$*', 'SyncDiaryKt', 'SyncDiaryKt$*', 'SyncDiaryEnqueueResult',
+  'SyncDiaryPayloadsKt', 'SyncDiaryPayloadsKt$*', 'SyncDiaryVocabularyKt', 'SyncDiaryVocabularyKt$*',
+  // SyncDiaryRuntime.kt (T3): the transition entry point every process records through.
+  'SyncDiaryRuntime', 'SyncDiaryRuntime$*', 'SyncDiaryRuntimeKt', 'SyncDiaryRuntimeKt$*',
+  // SyncDiaryStore.kt, SyncDiaryInbox.kt, SyncDiaryInboxCall.kt (verifier blocker B2): the
+  // telemetry tables only `:sync` writes, and the inbox the main process queues its calls in.
+  'SyncDiaryStoreKt', 'SyncDiaryStoreKt$*', 'SyncDiaryInbox', 'SyncDiaryInbox$*', 'SyncDiaryInboxKt',
+  'SyncDiaryInboxKt$*', 'SyncDiaryInboxEntry', 'SyncDiaryInboxCall', 'SyncDiaryInboxCall$*',
 ].collect { "expo.modules.foregroundsyncticker.$it" }
 
 kover {

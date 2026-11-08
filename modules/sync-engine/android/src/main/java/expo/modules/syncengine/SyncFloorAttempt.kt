@@ -2,6 +2,7 @@ package expo.modules.syncengine
 
 import android.content.Context
 import android.util.Log
+import expo.modules.foregroundsyncticker.SyncDiaryRuntime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -15,6 +16,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * matching the same lines.
  */
 private const val LOG_TAG = "SyncFloorWorker"
+
+/** Preferences of the floor's diary state; only the `:sync` process runs the floor and writes them. */
+private const val FLOOR_DIARY_PREFS = "expo.modules.syncengine.floor_diary"
+
+/** True while the floor's last tick was skipped because the ticker owns the background. */
+private const val PREF_IS_SKIPPING = "isSkipping"
 
 /**
  * Every distinguishable end state of one floor tick -- the complete set of outcomes [SyncFloorAttempt]
@@ -121,6 +128,11 @@ internal class SyncFloorAttempt(
    * (the production value) leaves [FLOOR_ATTEMPT_BUDGET_MS] in force.
    */
   private val attemptTimeoutMsForTest: Long? = null,
+  /**
+   * Counts each tick in the sync diary (odd/tasks/mobile-report-kinds.md S2, S3); the real
+   * [recordNativeSyncAttempt] by default. Its failure never changes the tick's result.
+   */
+  private val attemptDiary: NativeAttemptDiaryRecorder = ::recordNativeSyncAttempt,
 ) {
 
   /**
@@ -131,10 +143,15 @@ internal class SyncFloorAttempt(
    * fabricated outcome and never writes a status row nobody waited for.
    */
   suspend fun run(): SyncFloorAttemptResult {
+    // The `:sync` process's start, once per process (S4); off this thread, never throwing.
+    SyncDiaryRuntime.noteProcessStart(context)
     if (ownsBackgroundCheck(context)) {
       Log.i(LOG_TAG, "floor tick skipped: the native ticker owns the background")
+      noteSkipping(isSkipping = true)
+      recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, null, System.currentTimeMillis(), NativeAttemptEnd.SkippedOwnedByTicker))
       return SyncFloorAttemptResult.SkippedOwnedByTicker
     }
+    noteSkipping(isSkipping = false)
 
     val cycleId = UUID.randomUUID().toString()
     val startMs = System.currentTimeMillis()
@@ -148,6 +165,7 @@ internal class SyncFloorAttempt(
       throw cancellation
     } catch (error: Throwable) {
       Log.w(LOG_TAG, "floor attempt crashed before an outcome (cycleId=$cycleId)", error)
+      recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, cycleId, startMs, NativeAttemptEnd.Crashed))
       return SyncFloorAttemptResult.AttemptCrashed
     }
 
@@ -156,6 +174,7 @@ internal class SyncFloorAttempt(
         LOG_TAG,
         "floor attempt delivered no outcome within ${attemptBudgetMs()}ms (cycleId=$cycleId)",
       )
+      recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, cycleId, startMs, NativeAttemptEnd.Unsettled))
       return SyncFloorAttemptResult.AttemptUnsettled
     }
 
@@ -167,6 +186,7 @@ internal class SyncFloorAttempt(
       // failure must never turn a completed attempt into a retried one.
       Log.w(LOG_TAG, "status projection crashed (cycleId=$cycleId)", error)
     }
+    recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, cycleId, startMs, NativeAttemptEnd.Settled(outcome)))
 
     Log.i(
       LOG_TAG,
@@ -198,4 +218,29 @@ internal class SyncFloorAttempt(
   }
 
   private fun attemptBudgetMs(): Long = attemptTimeoutMsForTest ?: FLOOR_ATTEMPT_BUDGET_MS
+
+  /** Hands [record] to [attemptDiary]; never throws. */
+  private fun recordAttempt(record: NativeAttemptRecord) {
+    try {
+      attemptDiary(context, record)
+    } catch (error: Throwable) {
+      Log.w(LOG_TAG, "attempt diary crashed (cycleId=${record.cycleId})", error)
+    }
+  }
+
+  /**
+   * Persists whether the floor is skipping and reports only a change (S4): `floor` + `skipped`
+   * when a running floor starts skipping, `floor` + `started` when a skipping floor runs again. A
+   * floor never seen before counts as running. Never throws.
+   */
+  private fun noteSkipping(isSkipping: Boolean) {
+    try {
+      val prefs = context.getSharedPreferences(FLOOR_DIARY_PREFS, Context.MODE_PRIVATE)
+      if (prefs.getBoolean(PREF_IS_SKIPPING, false) == isSkipping) return
+      prefs.edit().putBoolean(PREF_IS_SKIPPING, isSkipping).commit()
+      SyncDiaryRuntime.recordTransition(context, "floor", if (isSkipping) "skipped" else "started")
+    } catch (error: Throwable) {
+      Log.w(LOG_TAG, "floor diary state unavailable", error)
+    }
+  }
 }

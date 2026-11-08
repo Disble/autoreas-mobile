@@ -183,8 +183,28 @@ internal fun scheduleNextTick(context: Context, delayMs: Long) {
 }
 
 /**
+ * True when the tick alarm's token exists -- the same fact [SyncTickerOwnership.ownsBackground]
+ * reads. Checked BEFORE arming, so `tick_alarm` + `armed` is reported only when no alarm existed.
+ */
+internal fun isTickAlarmArmed(context: Context): Boolean = findTickPendingIntent(context) != null
+
+/**
+ * Arms the next tick through [scheduleNextTick] and reports `tick_alarm` + `armed`
+ * (odd/tasks/mobile-report-kinds.md S4) only when no alarm existed before ([wasArmed], read before
+ * any change by default). [TickAlarmReceiver]'s per-tick re-arm calls [scheduleNextTick] directly,
+ * so a tick never reports anything.
+ */
+internal fun armTickAlarm(context: Context, delayMs: Long, wasArmed: Boolean = isTickAlarmArmed(context)) {
+  scheduleNextTick(context, delayMs)
+  if (!wasArmed && isTickAlarmArmed(context)) {
+    SyncDiaryRuntime.recordTransition(context, "tick_alarm", "armed")
+  }
+}
+
+/**
  * Cancels the pending tick alarm, if any, and the [PendingIntent] token it was armed with. Safe to
- * call even when none is currently armed.
+ * call even when none is currently armed. A real cancellation reports `tick_alarm` + `cancelled`
+ * unless [recordTransition] is false (a restart that arms it again at once).
  *
  * Both halves are required for [SyncTickerOwnership.ownsBackground] to answer correctly from every
  * process: the token is what the ownership query looks up, so an armed alarm whose token outlived
@@ -193,11 +213,12 @@ internal fun scheduleNextTick(context: Context, delayMs: Long) {
  * remove the already-scheduled alarm. The lookup is [PendingIntent.FLAG_NO_CREATE] so cancelling
  * never creates the token it is cancelling.
  */
-internal fun cancelTickAlarm(context: Context) {
+internal fun cancelTickAlarm(context: Context, recordTransition: Boolean = true) {
   val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
   val pendingIntent = findTickPendingIntent(context) ?: return
   alarmManager.cancel(pendingIntent)
   pendingIntent.cancel()
+  if (recordTransition) SyncDiaryRuntime.recordTransition(context, "tick_alarm", "cancelled")
 }
 
 /**
@@ -208,20 +229,22 @@ internal fun cancelTickAlarm(context: Context) {
  * costs the alarm either. Free of any [ForegroundSyncTickerModule] / `AppContext` dependency on
  * purpose, so it is testable with a plain Robolectric [Context], the same way every other
  * function in this file already is; the module's own `start()` is a thin wrapper around this.
+ * [wasArmed] is whether an alarm existed before the caller changed anything (see [armTickAlarm]).
  */
-internal fun startSyncTicking(context: Context, intervalMs: Long) {
+internal fun startSyncTicking(context: Context, intervalMs: Long, wasArmed: Boolean = isTickAlarmArmed(context)) {
   persistTickingState(context, isTicking = true, intervalMs = intervalMs)
-  scheduleNextTick(context, intervalMs)
+  armTickAlarm(context, intervalMs, wasArmed)
   startSyncForegroundServiceSafely(context)
 }
 
 /**
  * Stops native ticking end-to-end: persists [TickingState] as not ticking, stops the sync-engine's
  * foreground service, then cancels the pending tick alarm. Safe to call with nothing currently
- * started or armed. The module's own `stop()` is a thin wrapper around this.
+ * started or armed. The module's own `stop()` is a thin wrapper around this. [recordTransition]
+ * false keeps a restart's cancellation out of the diary (see [cancelTickAlarm]).
  */
-internal fun stopSyncTicking(context: Context, intervalMs: Long) {
+internal fun stopSyncTicking(context: Context, intervalMs: Long, recordTransition: Boolean = true) {
   persistTickingState(context, isTicking = false, intervalMs = intervalMs)
   stopSyncForegroundService(context)
-  cancelTickAlarm(context)
+  cancelTickAlarm(context, recordTransition)
 }

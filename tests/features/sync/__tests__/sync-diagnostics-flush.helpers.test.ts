@@ -138,9 +138,10 @@ async function runFlush(
 }
 
 describe('isSyncDiagnosticsPayloadAccepted', () => {
-  it('accepts the kindless legacy cycle envelope AND the chapter kind the registry now serves', () => {
+  it('accepts the kindless legacy cycle envelope AND every kind the registry now serves', () => {
     expect(isSyncDiagnosticsPayloadAccepted(WIRE)).toBe(true);
-    expect(isSyncDiagnosticsPayloadAccepted({ kind: 'episode_action' })).toBe(true);
+    const kinds = ['episode_action', 'screen_stall', 'cycle_report', 'hourly_summary', 'runtime_transition'];
+    expect(kinds.filter((kind) => !isSyncDiagnosticsPayloadAccepted({ kind }))).toEqual([]);
   });
 
   it('refuses a body that declares a kind the bridge does not accept', () => {
