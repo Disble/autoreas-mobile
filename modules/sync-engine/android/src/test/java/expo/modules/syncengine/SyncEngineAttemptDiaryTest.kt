@@ -40,7 +40,7 @@ class SyncEngineAttemptDiaryTest {
   }
 
   private fun newDiary(): SyncEngineAttemptDiary =
-    SyncEngineAttemptDiary(SyncDiary(outbox.file, "2.7.1") { "id" }, { includeCounters ->
+    SyncEngineAttemptDiary(SyncDiary(outbox.file, "2.7.1", isSyncProcess = true) { "id" }, { includeCounters ->
       stateReads += includeCounters
       appState
     }) { now }
@@ -145,6 +145,25 @@ class SyncEngineAttemptDiaryTest {
     newDiary().record(fgs(NativeAttemptEnd.Crashed))
 
     assertEquals(emptyList<Pair<String, JSONObject>>(), outbox.rows())
+  }
+
+  @Test
+  fun `every native attempt moves what the main process queued, even with the switch off`() {
+    var minted = 0
+    val mainProcess = SyncDiary(outbox.file, "2.7.1", isSyncProcess = false) { "m-${++minted}" }
+    val undrainedTransitions = {
+      outbox.undrainedRows().map { it.second }.filter { it.getString("kind") == "runtime_transition" }
+        .map { "${it.getString("subject")}/${it.getString("transition")}" }
+    }
+    appState = NativeDiaryAppState(false, 0L, 0L)
+
+    mainProcess.recordTransition("main", "tick_alarm", "armed", null, now, now)
+    newDiary().record(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, null, now, NativeAttemptEnd.SkippedOwnedByTicker))
+    assertEquals("a floor run the ticker owns", listOf("tick_alarm/armed"), undrainedTransitions())
+
+    mainProcess.recordTransition("main", "tick_alarm", "cancelled", null, now, now)
+    newDiary().record(fgs(settled("closed")))
+    assertEquals("an FGS tick", listOf("tick_alarm/armed", "tick_alarm/cancelled"), undrainedTransitions())
   }
 
   @Test

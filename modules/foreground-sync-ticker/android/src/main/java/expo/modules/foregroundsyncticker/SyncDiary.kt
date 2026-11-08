@@ -15,7 +15,7 @@ enum class SyncDiaryEnqueueResult {
   /** The outbox already holds this observation id: the first write wins. */
   DUPLICATE,
 
-  /** Skipped by the 60-row reserve or the daily limit, and counted in the next `dropped_count`. */
+  /** Skipped by the 60-row reserve, the daily limit or the inbox cap, and counted in `dropped_count`. */
   DROPPED,
 
   /** Off the agreed vocabulary; nothing stored. */
@@ -27,40 +27,15 @@ enum class SyncDiaryEnqueueResult {
   /** The hour's quota for this report's limit key is spent; nothing stored and nothing dropped. */
   LIMITED,
 
-  /** Nothing changed since the last record (the same boot), so there was nothing to report. */
+  /** Nothing changed since the last record (the same boot, a service still refused): nothing to report. */
   UNCHANGED,
+
+  /** Queued in the main process's inbox; the `:sync` process moves it into the outbox. */
+  QUEUED,
 }
 
 /** Log tag for every diary failure; a failure is logged and swallowed, never thrown. */
 private const val TAG = "SyncDiary"
-
-private const val STATE_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_state (" +
-    "id INTEGER PRIMARY KEY CHECK (id = 1), install_id TEXT NOT NULL, " +
-    "day_start_ms INTEGER NOT NULL, day_count INTEGER NOT NULL)"
-
-private const val COUNTS_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_counts (" +
-    "hour_start_ms INTEGER NOT NULL, trigger_source TEXT NOT NULL, outcome TEXT NOT NULL, " +
-    "count INTEGER NOT NULL, max_duration_ms INTEGER, " +
-    "PRIMARY KEY (hour_start_ms, trigger_source, outcome))"
-
-private const val DEATHS_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_deaths (" +
-    "hour_start_ms INTEGER NOT NULL, process_name TEXT NOT NULL, reason TEXT NOT NULL, " +
-    "count INTEGER NOT NULL, PRIMARY KEY (hour_start_ms, process_name, reason))"
-
-private const val DROPS_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_drops (" +
-    "hour_start_ms INTEGER PRIMARY KEY, dropped_count INTEGER NOT NULL)"
-
-private const val MARKS_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_marks (mark_key TEXT PRIMARY KEY, mark_value INTEGER NOT NULL)"
-
-private const val LIMITS_TABLE_SQL =
-  "CREATE TABLE IF NOT EXISTS sync_diary_limits (" +
-    "hour_start_ms INTEGER NOT NULL, limit_key TEXT NOT NULL, count INTEGER NOT NULL, " +
-    "PRIMARY KEY (hour_start_ms, limit_key))"
 
 /** Mark holding the boot time last seen by either process. */
 private const val BOOT_MARK = "boot_time_ms"
@@ -68,55 +43,36 @@ private const val BOOT_MARK = "boot_time_ms"
 /** Prefix of the mark holding the newest exit timestamp already read for one process. */
 private const val EXIT_MARK_PREFIX = "exit_seen_ms:"
 
-private const val UPSERT_COUNT_SQL =
-  "INSERT INTO sync_diary_counts (hour_start_ms, trigger_source, outcome, count, max_duration_ms) " +
-    "VALUES (?, ?, ?, 1, ?) ON CONFLICT(hour_start_ms, trigger_source, outcome) DO UPDATE SET " +
-    "count = count + 1, max_duration_ms = MAX(max_duration_ms, excluded.max_duration_ms)"
-
-private const val UPSERT_DEATH_SQL =
-  "INSERT INTO sync_diary_deaths (hour_start_ms, process_name, reason, count) VALUES (?, ?, ?, 1) " +
-    "ON CONFLICT(hour_start_ms, process_name, reason) DO UPDATE SET count = count + 1"
-
-private const val UPSERT_DROP_SQL =
-  "INSERT INTO sync_diary_drops (hour_start_ms, dropped_count) VALUES (?, 1) " +
-    "ON CONFLICT(hour_start_ms) DO UPDATE SET dropped_count = dropped_count + 1"
-
-/** The JS-owned outbox insert, byte-identical to `SYNC_DIAGNOSTICS_OUTBOX_INSERT_SQL`. */
-private const val OUTBOX_INSERT_SQL =
-  "INSERT INTO sync_diagnostics_outbox (cycle_id, payload, created_at) " +
-    "VALUES (?, ?, ?) ON CONFLICT(cycle_id) DO NOTHING"
-
-private const val CLOSED_HOURS_SQL =
-  "SELECT hour_start_ms FROM sync_diary_counts WHERE hour_start_ms < CAST(?1 AS INTEGER) " +
-    "UNION SELECT hour_start_ms FROM sync_diary_deaths WHERE hour_start_ms < CAST(?1 AS INTEGER) " +
-    "UNION SELECT hour_start_ms FROM sync_diary_drops " +
-    "WHERE hour_start_ms < CAST(?1 AS INTEGER) AND dropped_count > 0 " +
-    "ORDER BY 1"
-
 /**
  * The tablet's durable sync diary (odd/tasks/mobile-report-kinds.md S3-S6): hourly counts of sync
  * attempts and process deaths, and `runtime_transition` reports, written into the diagnostics
  * outbox of `autoreas-telemetry.db` so the existing drains deliver them.
  *
- * It lives in this module because `sync-engine` depends on it and never the reverse, so both
- * engines and the JS side reach one writer only here. It owns the DDL of its own `sync_diary_*`
- * tables and never the outbox's: the JS store creates `sync_diagnostics_outbox` and its 100-row
- * trigger. It never creates the database file either -- a missing file makes every call a no-op,
- * exactly as `SyncEngineDiagnosticsOutbox` behaves.
+ * It lives in this module because `sync-engine` depends on it and never the reverse. It owns the
+ * DDL of its own `sync_diary_*` tables and never the outbox's: the JS store creates
+ * `sync_diagnostics_outbox`. It never creates the telemetry file either -- a missing file makes
+ * every call a no-op.
  *
- * The main and `:sync` processes write concurrently, so every call runs in ONE transaction on its
- * own short-lived connection (busy timeout [SYNC_DIARY_BUSY_TIMEOUT_MS]). No call ever throws: a
- * diary failure is logged and answered with a neutral result, because it must never hurt sync.
+ * Only the `:sync` process ([isSyncProcess]) opens the telemetry file. In the main process JS
+ * holds an expo-sqlite connection to it, so a call made there is queued in [SyncDiaryInbox]
+ * instead, and every `:sync` call first replays that queue in order with each call's own time, so
+ * hours, limits and summaries come out as if the main process had written them itself.
  *
- * There is no timer (S6): every record call first closes the hours that ended before it, emitting
- * one `hourly_summary` for each and deleting its rows.
+ * Every call runs in ONE transaction on its own short-lived connection (busy timeout
+ * [SYNC_DIARY_BUSY_TIMEOUT_MS]) and never throws: a diary failure is logged and answered with a
+ * neutral result, because it must never hurt sync. There is no timer (S6): every record call first
+ * closes the hours that ended before it, emitting one `hourly_summary` for each.
  */
 class SyncDiary(
   private val telemetryFile: File,
   appVersion: String?,
+  private val isSyncProcess: Boolean,
+  inboxFile: File = File(telemetryFile.absoluteFile.parentFile, SYNC_DIARY_INBOX_DATABASE_NAME),
+  inboxMaxRows: Int = SYNC_DIARY_INBOX_MAX_ROWS,
   private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
   private val appVersion = sanitizeSyncDiaryAppVersion(appVersion)
+  private val inbox = SyncDiaryInbox(inboxFile, inboxMaxRows)
 
   /**
    * Stores one new-kind report under [observationId] (its outbox `cycle_id`), unless the outbox
@@ -124,50 +80,49 @@ class SyncDiary(
    * rows were stored this UTC day; a skipped report is counted in the hour of [nowMs] and named by
    * that hour's summary. A repeated id keeps its first payload and costs no daily slot.
    */
-  fun enqueueReport(observationId: String, payloadJson: String, nowMs: Long): SyncDiaryEnqueueResult =
-    inTransaction("enqueueReport", SyncDiaryEnqueueResult.UNAVAILABLE) { database ->
-      enqueue(database, observationId, payloadJson, nowMs)
+  fun enqueueReport(observationId: String, payloadJson: String, nowMs: Long): SyncDiaryEnqueueResult {
+    if (!isSyncProcess) {
+      return queue(SyncDiaryInboxCall.Report(observationId, payloadJson), nowMs)
     }
+    return inTransaction("enqueueReport", SyncDiaryEnqueueResult.UNAVAILABLE) { session ->
+      session.database.enqueueSyncDiaryReport(observationId, payloadJson, nowMs)
+    }
+  }
 
   /**
    * Counts one sync attempt in the hour of [nowMs] and keeps the pair's longest duration. Answers
-   * `false` when the attempt was not counted: an off-list [triggerSource] or [outcome], or no
-   * database to write.
+   * `false` when the attempt was not counted or queued: an off-list [triggerSource] or [outcome],
+   * no database to write, or a full inbox.
    */
   fun recordAttempt(triggerSource: String, outcome: String, durationMs: Long, nowMs: Long): Boolean {
     if (triggerSource !in SYNC_DIARY_TRIGGER_SOURCES || outcome !in SYNC_DIARY_OUTCOMES) {
       Log.w(TAG, "Rejected attempt $triggerSource/$outcome")
       return false
     }
-    return inTransaction("recordAttempt", false) { database ->
-      closeHours(database, nowMs)
-      database.execSQL(
-        UPSERT_COUNT_SQL,
-        arrayOf<Any>(
-          syncDiaryHourStart(nowMs),
-          triggerSource,
-          outcome,
-          // Stored as measured; the summary clamps it to the Bridge's bounds.
-          durationMs,
-        ),
-      )
+    if (!isSyncProcess) {
+      return queue(SyncDiaryInboxCall.Attempt(triggerSource, outcome, durationMs), nowMs) == SyncDiaryEnqueueResult.QUEUED
+    }
+    return inTransaction("recordAttempt", false) { session ->
+      applyAttempt(session.database, triggerSource, outcome, durationMs, nowMs)
       true
     }
   }
 
   /**
    * Counts one process death in the hour it is read ([nowMs]), not the hour it happened (S3).
-   * Answers `false` for an unknown [processName], a [reason] off `^[a-z0-9_]{1,40}$`, or no
-   * database to write.
+   * Answers `false` for an unknown [processName], a [reason] off `^[a-z0-9_]{1,40}$`, no database
+   * to write, or a full inbox.
    */
   fun recordProcessDeath(processName: String, reason: String, nowMs: Long): Boolean {
     if (processName !in SYNC_DIARY_PROCESS_NAMES || !isSyncDiaryReason(reason)) {
       Log.w(TAG, "Rejected process death $processName/$reason")
       return false
     }
-    return inTransaction("recordProcessDeath", false) { database ->
-      closeHours(database, nowMs)
-      database.execSQL(UPSERT_DEATH_SQL, arrayOf<Any>(syncDiaryHourStart(nowMs), processName, reason))
+    if (!isSyncProcess) {
+      return queue(SyncDiaryInboxCall.Death(processName, reason), nowMs) == SyncDiaryEnqueueResult.QUEUED
+    }
+    return inTransaction("recordProcessDeath", false) { session ->
+      applyDeath(session.database, processName, reason, nowMs)
       true
     }
   }
@@ -175,7 +130,9 @@ class SyncDiary(
   /**
    * Reports one real state change as a `runtime_transition` (S4), under a fresh observation id.
    * Only the 14 agreed pairs are accepted, `process` + `died` only from `sync`; a bad [reason] or a
-   * negative [observedAtMs] is [SyncDiaryEnqueueResult.REJECTED] too.
+   * negative [observedAtMs] is [SyncDiaryEnqueueResult.REJECTED] too. `service` + `refused` is a
+   * change only while the service is not already refused: a refusal repeated by every tick is
+   * [SyncDiaryEnqueueResult.UNCHANGED] until `service` + `started` is recorded again.
    */
   fun recordTransition(
     processName: String,
@@ -192,9 +149,16 @@ class SyncDiary(
       Log.w(TAG, "Rejected transition $processName/$subject/$transition")
       return SyncDiaryEnqueueResult.REJECTED
     }
-    return inTransaction("recordTransition", SyncDiaryEnqueueResult.UNAVAILABLE) { database ->
-      closeHours(database, nowMs)
-      enqueueTransition(database, processName, subject, transition, reason, observedAtMs, nowMs)
+    val onceMark = SYNC_DIARY_SERVICE_REFUSED_MARK.takeIf { subject == "service" && transition == "refused" }
+    if (!isSyncProcess) {
+      val call = SyncDiaryInboxCall.Transition(processName, subject, transition, reason, observedAtMs, newId(), appVersion)
+      return queue(call, nowMs, onceMark)
+    }
+    return inTransaction("recordTransition", SyncDiaryEnqueueResult.UNAVAILABLE) { session ->
+      if (onceMark != null && !inbox.claimMark(session.inboxDatabase, onceMark)) {
+        return@inTransaction SyncDiaryEnqueueResult.UNCHANGED
+      }
+      applyTransition(session, processName, subject, transition, reason, observedAtMs, nowMs, newId(), appVersion)
     }
   }
 
@@ -210,26 +174,14 @@ class SyncDiary(
     observationId: String,
     payloadJson: String,
     nowMs: Long,
-  ): SyncDiaryEnqueueResult =
-    inTransaction("enqueueLimitedReport", SyncDiaryEnqueueResult.UNAVAILABLE) { database ->
-      val hour = syncDiaryHourStart(nowMs)
-      database.execSQL("DELETE FROM sync_diary_limits WHERE hour_start_ms < ?", arrayOf<Any>(hour))
-      val used = database.rawQuery(
-        "SELECT count FROM sync_diary_limits WHERE hour_start_ms = CAST(? AS INTEGER) AND limit_key = ?",
-        arrayOf(hour.toString(), limitKey),
-      ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
-      if (used >= limitPerHour) return@inTransaction SyncDiaryEnqueueResult.LIMITED
-
-      val result = enqueue(database, observationId, payloadJson, nowMs)
-      if (result == SyncDiaryEnqueueResult.INSERTED) {
-        database.execSQL(
-          "INSERT INTO sync_diary_limits (hour_start_ms, limit_key, count) VALUES (?, ?, 1) " +
-            "ON CONFLICT(hour_start_ms, limit_key) DO UPDATE SET count = count + 1",
-          arrayOf<Any>(hour, limitKey),
-        )
-      }
-      result
+  ): SyncDiaryEnqueueResult {
+    if (!isSyncProcess) {
+      return queue(SyncDiaryInboxCall.LimitedReport(limitKey, limitPerHour, observationId, payloadJson), nowMs)
     }
+    return inTransaction("enqueueLimitedReport", SyncDiaryEnqueueResult.UNAVAILABLE) { session ->
+      applyLimitedReport(session.database, limitKey, limitPerHour, observationId, payloadJson, nowMs)
+    }
+  }
 
   /**
    * Reports `boot` + `started` when [bootTimeMs] (now minus `elapsedRealtime`) moved more than
@@ -242,15 +194,11 @@ class SyncDiary(
     if (!isSyncDiaryTransition(processName, "boot", "started") || bootTimeMs < 0L) {
       return SyncDiaryEnqueueResult.REJECTED
     }
-    return inTransaction("recordBoot", SyncDiaryEnqueueResult.UNAVAILABLE) { database ->
-      val stored = readMark(database, BOOT_MARK)
-      if (stored != null && Math.abs(stored - bootTimeMs) <= SYNC_DIARY_BOOT_TOLERANCE_MS) {
-        return@inTransaction SyncDiaryEnqueueResult.UNCHANGED
-      }
-      writeMark(database, BOOT_MARK, bootTimeMs)
-      if (stored == null) return@inTransaction SyncDiaryEnqueueResult.UNCHANGED
-      closeHours(database, nowMs)
-      enqueueTransition(database, processName, "boot", "started", null, bootTimeMs, nowMs)
+    if (!isSyncProcess) {
+      return queue(SyncDiaryInboxCall.Boot(processName, bootTimeMs, appVersion), nowMs)
+    }
+    return inTransaction("recordBoot", SyncDiaryEnqueueResult.UNAVAILABLE) { session ->
+      applyBoot(session.database, processName, bootTimeMs, nowMs, appVersion)
     }
   }
 
@@ -259,33 +207,116 @@ class SyncDiary(
    * exit as one `process` + `died` transition observed at Android's exit timestamp, a `main` exit
    * as one death counted in the hour of [nowMs] (S3, S4). The first read for a process only
    * stores its newest timestamp, so the history that predates the diary is never reported.
-   * Answers how many exits were recorded; an exit off the vocabulary is skipped.
+   * Answers how many exits were recorded -- `0` in the main process, whose exits are recorded when
+   * `:sync` moves them -- and skips an exit off the vocabulary.
    */
-  fun recordProcessExits(exits: List<SyncDiaryProcessExit>, nowMs: Long): Int =
-    inTransaction("recordProcessExits", 0) { database ->
-      closeHours(database, nowMs)
-      var recorded = 0
-      SYNC_DIARY_PROCESS_NAMES.forEach { processName ->
-        val own = exits.filter { exit ->
-          exit.processName == processName && exit.timestampMs >= 0L && isSyncDiaryReason(exit.reason)
-        }
-        val lastSeen = readMark(database, "$EXIT_MARK_PREFIX$processName")
-        val newest = own.maxOfOrNull { it.timestampMs } ?: 0L
-        writeMark(database, "$EXIT_MARK_PREFIX$processName", maxOf(newest, lastSeen ?: 0L))
-        if (lastSeen == null) return@forEach
-        own.filter { it.timestampMs > lastSeen }.sortedBy { it.timestampMs }.forEach { exit ->
-          if (processName == "sync") {
-            enqueueTransition(database, processName, "process", "died", exit.reason, exit.timestampMs, nowMs)
-          } else {
-            database.execSQL(UPSERT_DEATH_SQL, arrayOf<Any>(syncDiaryHourStart(nowMs), processName, exit.reason))
-          }
-          recorded += 1
-        }
-      }
-      recorded
+  fun recordProcessExits(exits: List<SyncDiaryProcessExit>, nowMs: Long): Int {
+    if (!isSyncProcess) {
+      queue(SyncDiaryInboxCall.Exits(exits, appVersion), nowMs)
+      return 0
     }
+    return inTransaction("recordProcessExits", 0) { session -> applyExits(session, exits, nowMs, appVersion) }
+  }
 
-  /** One validated transition, enqueued inside the caller's transaction under a fresh id. */
+  /**
+   * Moves what the main process queued into the outbox, as every `:sync` call does before its own
+   * work, and answers how many calls were moved. A no-op answering `0` in the main process or when
+   * nothing was ever queued.
+   */
+  fun drainInbox(): Int {
+    if (!isSyncProcess || !inbox.file.exists()) return 0
+    return inTransaction("drainInbox", 0) { session -> session.moved }
+  }
+
+  private fun applyAttempt(database: SQLiteDatabase, triggerSource: String, outcome: String, durationMs: Long, nowMs: Long) {
+    database.closeSyncDiaryHours(nowMs, newId)
+    // Stored as measured; the summary clamps it to the Bridge's bounds.
+    database.countSyncDiaryAttempt(triggerSource, outcome, durationMs, nowMs)
+  }
+
+  private fun applyDeath(database: SQLiteDatabase, processName: String, reason: String, nowMs: Long) {
+    database.closeSyncDiaryHours(nowMs, newId)
+    database.countSyncDiaryDeath(processName, reason, nowMs)
+  }
+
+  private fun applyTransition(
+    session: Session,
+    processName: String,
+    subject: String,
+    transition: String,
+    reason: String?,
+    observedAtMs: Long,
+    nowMs: Long,
+    observationId: String,
+    version: String,
+  ): SyncDiaryEnqueueResult {
+    session.database.closeSyncDiaryHours(nowMs, newId)
+    // The service runs again, so its next refusal is a change worth reporting.
+    if (subject == "service" && transition == "started") {
+      inbox.clearMark(session.inboxDatabase, SYNC_DIARY_SERVICE_REFUSED_MARK)
+    }
+    return enqueueTransition(session.database, processName, subject, transition, reason, observedAtMs, nowMs, observationId, version)
+  }
+
+  private fun applyLimitedReport(
+    database: SQLiteDatabase,
+    limitKey: String,
+    limitPerHour: Int,
+    observationId: String,
+    payloadJson: String,
+    nowMs: Long,
+  ): SyncDiaryEnqueueResult {
+    if (database.readSyncDiaryLimitUse(limitKey, nowMs) >= limitPerHour) return SyncDiaryEnqueueResult.LIMITED
+    val result = database.enqueueSyncDiaryReport(observationId, payloadJson, nowMs)
+    if (result == SyncDiaryEnqueueResult.INSERTED) database.spendSyncDiaryLimit(limitKey, nowMs)
+    return result
+  }
+
+  private fun applyBoot(
+    database: SQLiteDatabase,
+    processName: String,
+    bootTimeMs: Long,
+    nowMs: Long,
+    version: String,
+  ): SyncDiaryEnqueueResult {
+    val stored = database.readSyncDiaryMark(BOOT_MARK)
+    if (stored != null && Math.abs(stored - bootTimeMs) <= SYNC_DIARY_BOOT_TOLERANCE_MS) {
+      return SyncDiaryEnqueueResult.UNCHANGED
+    }
+    database.writeSyncDiaryMark(BOOT_MARK, bootTimeMs)
+    if (stored == null) return SyncDiaryEnqueueResult.UNCHANGED
+    database.closeSyncDiaryHours(nowMs, newId)
+    return enqueueTransition(database, processName, "boot", "started", null, bootTimeMs, nowMs, newId(), version)
+  }
+
+  private fun applyExits(session: Session, exits: List<SyncDiaryProcessExit>, nowMs: Long, version: String): Int {
+    val database = session.database
+    database.closeSyncDiaryHours(nowMs, newId)
+    var recorded = 0
+    SYNC_DIARY_PROCESS_NAMES.forEach { processName ->
+      val own = exits.filter { exit ->
+        exit.processName == processName && exit.timestampMs >= 0L && isSyncDiaryReason(exit.reason)
+      }
+      val lastSeen = database.readSyncDiaryMark("$EXIT_MARK_PREFIX$processName")
+      val newest = own.maxOfOrNull { it.timestampMs } ?: 0L
+      database.writeSyncDiaryMark("$EXIT_MARK_PREFIX$processName", maxOf(newest, lastSeen ?: 0L))
+      if (lastSeen == null) return@forEach
+      own.filter { it.timestampMs > lastSeen }.sortedBy { it.timestampMs }.forEach { exit ->
+        if (processName == "sync") {
+          enqueueTransition(database, processName, "process", "died", exit.reason, exit.timestampMs, nowMs, newId(), version)
+        } else {
+          database.countSyncDiaryDeath(processName, exit.reason, nowMs)
+        }
+        recorded += 1
+      }
+    }
+    return recorded
+  }
+
+  /**
+   * One validated transition, enqueued inside the caller's transaction under [observationId] and
+   * naming [version], the build of the process that made the call.
+   */
   private fun enqueueTransition(
     database: SQLiteDatabase,
     processName: String,
@@ -294,171 +325,109 @@ class SyncDiary(
     reason: String?,
     observedAtMs: Long,
     nowMs: Long,
-  ): SyncDiaryEnqueueResult {
-    val observationId = newId()
-    val body = buildSyncDiaryRuntimeTransition(
-      SyncDiaryTransition(observationId, observedAtMs, processName, subject, transition, reason, appVersion),
-    )
-    return enqueue(database, observationId, body, nowMs)
-  }
-
-  private fun readMark(database: SQLiteDatabase, key: String): Long? =
-    database.rawQuery("SELECT mark_value FROM sync_diary_marks WHERE mark_key = ?", arrayOf(key))
-      .use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
-
-  private fun writeMark(database: SQLiteDatabase, key: String, value: Long) {
-    database.execSQL(
-      "INSERT INTO sync_diary_marks (mark_key, mark_value) VALUES (?, ?) " +
-        "ON CONFLICT(mark_key) DO UPDATE SET mark_value = excluded.mark_value",
-      arrayOf<Any>(key, value),
-    )
-  }
-
-  /**
-   * Emits one `hourly_summary` for every hour before the hour of [nowMs] that holds counts, deaths
-   * or skipped reports, then deletes that hour's rows; the deletion is what resets its
-   * `dropped_count`. Runs inside the caller's transaction, so a summary and its deletion land
-   * together or not at all.
-   */
-  private fun closeHours(database: SQLiteDatabase, nowMs: Long) {
-    val currentHour = syncDiaryHourStart(nowMs)
-    val hours = database.rawQuery(CLOSED_HOURS_SQL, arrayOf(currentHour.toString())).use { cursor ->
-      buildList { while (cursor.moveToNext()) add(cursor.getLong(0)) }
-    }
-    if (hours.isEmpty()) return
-    val installId = readInstallId(database)
-    hours.forEach { hour ->
-      val summary = buildSyncDiaryHourlySummary(
-        observationId = "$installId:$hour",
-        hourStartMs = hour,
-        counts = readCounts(database, hour),
-        droppedCount = readDropped(database, hour),
-        processDeaths = readDeaths(database, hour),
-      )
-      val hourArgument = arrayOf<Any>(hour)
-      database.execSQL("DELETE FROM sync_diary_counts WHERE hour_start_ms = ?", hourArgument)
-      database.execSQL("DELETE FROM sync_diary_deaths WHERE hour_start_ms = ?", hourArgument)
-      database.execSQL("DELETE FROM sync_diary_drops WHERE hour_start_ms = ?", hourArgument)
-      enqueue(database, "$installId:$hour", summary, nowMs)
-    }
-  }
-
-  /** The insert behind [enqueueReport], inside the caller's transaction. */
-  private fun enqueue(
-    database: SQLiteDatabase,
     observationId: String,
-    payloadJson: String,
-    nowMs: Long,
+    version: String,
   ): SyncDiaryEnqueueResult {
-    val today = syncDiaryDayStart(nowMs)
-    val storedToday = database.rawQuery(
-      "SELECT CASE WHEN day_start_ms = CAST(? AS INTEGER) THEN day_count ELSE 0 END " +
-        "FROM sync_diary_state WHERE id = 1",
-      arrayOf(today.toString()),
-    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
-    val outboxRows = database.compileStatement("SELECT COUNT(*) FROM sync_diagnostics_outbox")
-      .use { statement -> statement.simpleQueryForLong() }
-
-    if (outboxRows >= SYNC_DIARY_OUTBOX_RESERVE_ROWS || storedToday >= SYNC_DIARY_DAILY_REPORT_LIMIT) {
-      database.execSQL(UPSERT_DROP_SQL, arrayOf<Any>(syncDiaryHourStart(nowMs)))
-      return SyncDiaryEnqueueResult.DROPPED
-    }
-
-    val inserted = database.compileStatement(OUTBOX_INSERT_SQL).use { statement ->
-      statement.bindString(1, observationId)
-      statement.bindString(2, payloadJson)
-      statement.bindLong(3, nowMs)
-      statement.executeUpdateDelete()
-    }
-    if (inserted == 0) return SyncDiaryEnqueueResult.DUPLICATE
-
-    database.execSQL(
-      "UPDATE sync_diary_state SET day_start_ms = ?, day_count = ? WHERE id = 1",
-      arrayOf<Any>(today, storedToday + 1L),
+    val body = buildSyncDiaryRuntimeTransition(
+      SyncDiaryTransition(observationId, observedAtMs, processName, subject, transition, reason, version),
     )
-    return SyncDiaryEnqueueResult.INSERTED
+    return database.enqueueSyncDiaryReport(observationId, body, nowMs)
   }
 
   /**
-   * The install id, minted once (a random UUID) by the first diary transaction of whichever
-   * process writes first, and read by every later one.
+   * Replays every queued main-process call in order, each at its own time, then deletes what it
+   * moved; the inbox cap's drop counts join the outbox's. A call that cannot be read is counted as
+   * dropped in its hour instead of blocking every later drain.
    */
-  private fun readInstallId(database: SQLiteDatabase): String {
-    database.rawQuery("SELECT install_id FROM sync_diary_state WHERE id = 1", null).use { cursor ->
-      if (cursor.moveToFirst()) return cursor.getString(0)
+  private fun replayInbox(session: Session): Int {
+    val inboxDatabase = session.inboxDatabase
+    inbox.drops(inboxDatabase).forEach { (hour, count) -> session.database.countSyncDiaryDrops(hour, count) }
+    val entries = inbox.entries(inboxDatabase)
+    entries.forEach { entry ->
+      try {
+        replay(session, SyncDiaryInboxCall.decode(entry.kind, entry.args), entry.nowMs)
+      } catch (error: Exception) {
+        Log.w(TAG, "Unreadable inbox ${entry.kind}; counted as dropped", error)
+        session.database.countSyncDiaryDrops(syncDiaryHourStart(entry.nowMs), 1L)
+      }
     }
-    val minted = newId()
-    database.execSQL(
-      "INSERT INTO sync_diary_state (id, install_id, day_start_ms, day_count) VALUES (1, ?, 0, 0)",
-      arrayOf<Any>(minted),
-    )
-    return minted
+    inbox.clear(inboxDatabase, entries.lastOrNull()?.seq ?: 0L)
+    return entries.size
   }
 
-  private fun readCounts(database: SQLiteDatabase, hour: Long): List<SyncDiaryCount> =
-    database.rawQuery(
-      "SELECT trigger_source, outcome, count, max_duration_ms FROM sync_diary_counts " +
-        "WHERE hour_start_ms = CAST(? AS INTEGER) ORDER BY trigger_source, outcome LIMIT $SYNC_DIARY_MAX_COUNT_ITEMS",
-      arrayOf(hour.toString()),
-    ).use { cursor ->
-      buildList {
-        while (cursor.moveToNext()) {
-          add(
-            SyncDiaryCount(
-              triggerSource = cursor.getString(0),
-              outcome = cursor.getString(1),
-              count = cursor.getLong(2),
-              maxDurationMs = if (cursor.isNull(3)) null else cursor.getLong(3),
-            ),
-          )
-        }
-      }
+  private fun replay(session: Session, call: SyncDiaryInboxCall, nowMs: Long) {
+    val database = session.database
+    when (call) {
+      is SyncDiaryInboxCall.Report -> database.enqueueSyncDiaryReport(call.observationId, call.payloadJson, nowMs)
+      is SyncDiaryInboxCall.Attempt -> applyAttempt(database, call.triggerSource, call.outcome, call.durationMs, nowMs)
+      is SyncDiaryInboxCall.Death -> applyDeath(database, call.processName, call.reason, nowMs)
+      is SyncDiaryInboxCall.Transition -> applyTransition(
+        session,
+        call.processName,
+        call.subject,
+        call.transition,
+        call.reason,
+        call.observedAtMs,
+        nowMs,
+        call.observationId,
+        sanitizeSyncDiaryAppVersion(call.appVersion),
+      )
+      is SyncDiaryInboxCall.LimitedReport ->
+        applyLimitedReport(database, call.limitKey, call.limitPerHour, call.observationId, call.payloadJson, nowMs)
+      is SyncDiaryInboxCall.Boot ->
+        applyBoot(database, call.processName, call.bootTimeMs, nowMs, sanitizeSyncDiaryAppVersion(call.appVersion))
+      is SyncDiaryInboxCall.Exits -> applyExits(session, call.exits, nowMs, sanitizeSyncDiaryAppVersion(call.appVersion))
     }
-
-  private fun readDeaths(database: SQLiteDatabase, hour: Long): List<SyncDiaryProcessDeath> =
-    database.rawQuery(
-      "SELECT process_name, reason, count FROM sync_diary_deaths WHERE hour_start_ms = CAST(? AS INTEGER) " +
-        "ORDER BY count DESC, process_name, reason LIMIT $SYNC_DIARY_MAX_DEATH_ITEMS",
-      arrayOf(hour.toString()),
-    ).use { cursor ->
-      buildList {
-        while (cursor.moveToNext()) {
-          add(SyncDiaryProcessDeath(cursor.getString(0), cursor.getString(1), cursor.getLong(2)))
-        }
-      }
-    }
-
-  private fun readDropped(database: SQLiteDatabase, hour: Long): Long =
-    database.rawQuery(
-      "SELECT dropped_count FROM sync_diary_drops WHERE hour_start_ms = CAST(? AS INTEGER)",
-      arrayOf(hour.toString()),
-    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+  }
 
   /**
-   * Runs [block] in one transaction on a fresh connection, answering [fallback] when the file is
-   * missing or anything fails. The connection is opened `OPEN_READWRITE` only after an existence
-   * check, because `openDatabase` would otherwise create a file this module does not own.
+   * Queues one main-process call in the inbox, never touching the telemetry file beyond checking
+   * that it exists: without it there is nothing to deliver to. With [onceMark], the call is
+   * queued only when the mark was not already set ([SyncDiaryEnqueueResult.UNCHANGED]).
    */
-  private fun <T> inTransaction(operation: String, fallback: T, block: (SQLiteDatabase) -> T): T =
+  private fun queue(call: SyncDiaryInboxCall, nowMs: Long, onceMark: String? = null): SyncDiaryEnqueueResult =
+    synchronized(PROCESS_LOCK) {
+      if (!telemetryFile.exists()) return@synchronized SyncDiaryEnqueueResult.UNAVAILABLE
+      try {
+        inbox.inTransaction { database ->
+          when {
+            onceMark != null && !inbox.claimMark(database, onceMark) -> SyncDiaryEnqueueResult.UNCHANGED
+            inbox.queue(database, call.kind, nowMs, call.args()) -> SyncDiaryEnqueueResult.QUEUED
+            else -> SyncDiaryEnqueueResult.DROPPED
+          }
+        }
+      } catch (error: Exception) {
+        Log.w(TAG, "Queueing ${call.kind} failed; nothing recorded", error)
+        SyncDiaryEnqueueResult.UNAVAILABLE
+      }
+    }
+
+  /**
+   * Runs [block] in one telemetry transaction on a fresh connection, after replaying the inbox
+   * into it, answering [fallback] when the file is missing or anything fails. The connection is
+   * opened `OPEN_READWRITE` only after an existence check, because `openDatabase` would otherwise
+   * create a file this module does not own. The inbox commits only after the telemetry file did,
+   * so a failed drain leaves every queued call in place.
+   */
+  private fun <T> inTransaction(operation: String, fallback: T, block: (Session) -> T): T =
     synchronized(PROCESS_LOCK) {
       if (!telemetryFile.exists()) return@synchronized fallback
       try {
-        SQLiteDatabase.openDatabase(telemetryFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
-          database.compileStatement("PRAGMA busy_timeout = $SYNC_DIARY_BUSY_TIMEOUT_MS").use { it.execute() }
-          database.execSQL(STATE_TABLE_SQL)
-          database.execSQL(COUNTS_TABLE_SQL)
-          database.execSQL(DEATHS_TABLE_SQL)
-          database.execSQL(DROPS_TABLE_SQL)
-          database.execSQL(MARKS_TABLE_SQL)
-          database.execSQL(LIMITS_TABLE_SQL)
-          database.beginTransaction()
-          try {
-            readInstallId(database)
-            val result = block(database)
-            database.setTransactionSuccessful()
-            result
-          } finally {
-            database.endTransaction()
+        inbox.inTransaction { inboxDatabase ->
+          SQLiteDatabase.openDatabase(telemetryFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
+            database.compileStatement("PRAGMA busy_timeout = $SYNC_DIARY_BUSY_TIMEOUT_MS").use { it.execute() }
+            database.createSyncDiaryTables()
+            database.beginTransaction()
+            try {
+              database.readSyncDiaryInstallId(newId)
+              val session = Session(database, inboxDatabase)
+              session.moved = replayInbox(session)
+              val result = block(session)
+              database.setTransactionSuccessful()
+              result
+            } finally {
+              database.endTransaction()
+            }
           }
         }
       } catch (error: Exception) {
@@ -467,6 +436,11 @@ class SyncDiary(
       }
     }
 
+  /** The two connections of one `:sync` call, and how many inbox calls its drain moved. */
+  private class Session(val database: SQLiteDatabase, val inboxDatabase: SQLiteDatabase) {
+    var moved = 0
+  }
+
   private companion object {
     /** One diary write at a time per process; across processes SQLite's own lock serializes them. */
     val PROCESS_LOCK = Any()
@@ -474,11 +448,16 @@ class SyncDiary(
 }
 
 /**
- * The diary of this app install, writing the telemetry database next to the app database and
- * naming the installed build's version on every transition.
+ * The diary of this app install, writing the telemetry database next to the app database from the
+ * `:sync` process and the inbox beside it from any other, and naming the installed build's version
+ * on every transition.
  */
 fun syncDiaryFor(context: Context): SyncDiary =
-  SyncDiary(resolveSyncDiaryTelemetryFile(context.filesDir), readAppVersionName(context))
+  SyncDiary(
+    resolveSyncDiaryTelemetryFile(context.filesDir),
+    readAppVersionName(context),
+    isSyncProcess = SyncDiaryRuntime.processName(context) == "sync",
+  )
 
 /** The installed build's version name, or `null` when the platform cannot answer. */
 private fun readAppVersionName(context: Context): String? =

@@ -67,6 +67,10 @@ def IMPORTANT_CLASSES = [
   'SyncDiaryPayloadsKt', 'SyncDiaryPayloadsKt$*', 'SyncDiaryVocabularyKt', 'SyncDiaryVocabularyKt$*',
   // SyncDiaryRuntime.kt (T3): the transition entry point every process records through.
   'SyncDiaryRuntime', 'SyncDiaryRuntime$*', 'SyncDiaryRuntimeKt', 'SyncDiaryRuntimeKt$*',
+  // SyncDiaryStore.kt, SyncDiaryInbox.kt, SyncDiaryInboxCall.kt (verifier blocker B2): the
+  // telemetry tables only `:sync` writes, and the inbox the main process queues its calls in.
+  'SyncDiaryStoreKt', 'SyncDiaryStoreKt$*', 'SyncDiaryInbox', 'SyncDiaryInbox$*', 'SyncDiaryInboxKt',
+  'SyncDiaryInboxKt$*', 'SyncDiaryInboxEntry', 'SyncDiaryInboxCall', 'SyncDiaryInboxCall$*',
 ].collect { "expo.modules.foregroundsyncticker.$it" }
 
 kover {

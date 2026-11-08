@@ -27,7 +27,7 @@ class SyncDiaryTest {
   @Test
   fun `a missing telemetry file is never created and nothing is recorded`() {
     val file = File(folder.root, "autoreas-telemetry.db")
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertFalse(diary.recordAttempt("manual", "closed", 10L, HOUR_1))
     assertFalse(diary.recordProcessDeath("sync", "low_memory", HOUR_1))
@@ -42,7 +42,7 @@ class SyncDiaryTest {
   @Test
   fun `attempts are counted per pair and reported once their hour closes`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertTrue(diary.recordAttempt("manual", "closed", 900L, HOUR_1 + 1_000L))
     assertTrue(diary.recordAttempt("manual", "closed", 300L, HOUR_1 + 2_000L))
@@ -73,7 +73,7 @@ class SyncDiaryTest {
   @Test
   fun `an off-list trigger source or outcome is rejected and never counted`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertFalse(diary.recordAttempt("local_mutation_write", "closed", 1L, HOUR_1))
     assertFalse(diary.recordAttempt("manual", "abandoned", 1L, HOUR_1))
@@ -94,7 +94,7 @@ class SyncDiaryTest {
   @Test
   fun `process deaths are counted in the hour they are read and reported with the summary`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertTrue(diary.recordProcessDeath("sync", "low_memory", HOUR_1))
     assertTrue(diary.recordProcessDeath("sync", "low_memory", HOUR_1 + 5L))
@@ -126,7 +126,7 @@ class SyncDiaryTest {
   @Test
   fun `a real state change becomes one runtime transition row`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertEquals(
       SyncDiaryEnqueueResult.INSERTED,
@@ -155,7 +155,7 @@ class SyncDiaryTest {
   @Test
   fun `only the fourteen agreed pairs are accepted`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
     val accepted = listOf(
       "service" to "started", "service" to "stopped", "service" to "refused",
       "tick_alarm" to "armed", "tick_alarm" to "cancelled",
@@ -198,7 +198,7 @@ class SyncDiaryTest {
   @Test
   fun `new kinds stop at sixty outbox rows and the skipped report is counted in the next summary`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
     repeat(60) { index -> seedEpisodeAction(file, "episode-$index") }
 
     assertEquals(
@@ -235,7 +235,7 @@ class SyncDiaryTest {
   @Test
   fun `at most fifty new reports a day, counted again the next UTC day`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     repeat(50) { index ->
       assertEquals(
@@ -263,7 +263,7 @@ class SyncDiaryTest {
   @Test
   fun `the first write of an observation id wins and costs no daily slot`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertEquals(SyncDiaryEnqueueResult.INSERTED, diary.enqueueReport("same", """{"n":1}""", DAY_1))
     assertEquals(SyncDiaryEnqueueResult.DUPLICATE, diary.enqueueReport("same", """{"n":2}""", DAY_1))
@@ -279,10 +279,10 @@ class SyncDiaryTest {
   }
 
   @Test
-  fun `the install id is minted once and shared by every process`() {
+  fun `the install id is minted once and shared by every writer`() {
     val file = provisionedTelemetryFile()
-    val mainProcess = SyncDiary(file, APP_VERSION, sequentialIds("main"))
-    val syncProcess = SyncDiary(file, APP_VERSION, sequentialIds("sync"))
+    val mainProcess = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds("main"))
+    val syncProcess = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds("sync"))
 
     mainProcess.recordAttempt("manual", "closed", 1L, HOUR_1)
     syncProcess.recordAttempt("foreground_service", "closed", 1L, HOUR_2)
@@ -319,6 +319,9 @@ class SyncDiaryTest {
     val installed = context.packageManager.getPackageInfo(context.packageName, 0).versionName
 
     syncDiaryFor(context).recordTransition("main", "boot", "started", null, HOUR_1, HOUR_1)
+    // Robolectric runs as the main process, so the call waits in the inbox until `:sync` moves it;
+    // the body still names the build that made it, not the one that moved it.
+    assertEquals(1, SyncDiary(file, null, isSyncProcess = true).drainInbox())
 
     val body = outboxRows(file).single().second
     assertTrue(body, body.endsWith(""""app_version":"${sanitizeSyncDiaryAppVersion(installed)}"}"""))
@@ -328,7 +331,7 @@ class SyncDiaryTest {
   fun `a telemetry file without the outbox table records nothing and never throws`() {
     val file = File(folder.root, "autoreas-telemetry.db")
     SQLiteDatabase.openOrCreateDatabase(file, null).close()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
 
     assertEquals(
       SyncDiaryEnqueueResult.UNAVAILABLE,
@@ -342,8 +345,8 @@ class SyncDiaryTest {
   @Test
   fun `a limited report stops at its hourly quota per key, shared by every writer`() {
     val file = provisionedTelemetryFile()
-    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
-    val other = SyncDiary(file, APP_VERSION, sequentialIds("other"))
+    val diary = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds())
+    val other = SyncDiary(file, APP_VERSION, isSyncProcess = true, newId = sequentialIds("other"))
 
     assertEquals(SyncDiaryEnqueueResult.INSERTED, diary.enqueueLimitedReport("a", 2, "r-1", "{}", HOUR_1))
     assertEquals(SyncDiaryEnqueueResult.DUPLICATE, diary.enqueueLimitedReport("a", 2, "r-1", "{}", HOUR_1))

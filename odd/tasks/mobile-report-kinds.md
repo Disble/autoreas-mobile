@@ -62,3 +62,12 @@ Branch: `feat/mobile-report-kinds`, cut from `main` at 77f0737 (2.7.1). Bridge c
   - SDK < 28/30 branches in `SyncDiaryRuntime.kt` are not reachable under Robolectric sdk 35.
   - Nothing has run on a device.
   Risk: item 4 (two processes write the diary tables; transitions written on a background thread).
+- L9: independent verifier (Risk item 4) over the whole feature. The wire bodies (360 bodies run through Bridge's own decoders on its `feat/mobile-report-kinds`), S1-S3 and S5-S8 passed. Two blockers, fixed in one correction batch and then rechecked as fixed:
+  - B1: a refused service start was reported on every tick. Now it is reported once until `service` `started`.
+  - B2: the main process opened `autoreas-telemetry.db` with the framework SQLite beside expo-sqlite (the hazard in `docs/mobile-database-recovery.md:42-47`). Now main-process calls queue in `sync-diary-inbox.db`, which only the framework opens. `:sync` replays the queue, is the only native writer of the telemetry file, and caps the queue at 500 rows.
+  Advisories, not fixed:
+  - Release order: Bridge must ship its kinds before this app version. Bridge main 2.7.4 answers `kind_not_served`, which keeps rows and stalls `episode_action` delivery behind them.
+  - A crash between the two commits can count one attempt twice.
+  - A missing telemetry file when `service` `started` is recorded leaves the refused mark set.
+  - Below API 28, a failed process-name lookup makes `:sync` queue only.
+  Verification: Kotlin sync-engine 477 and ticker 50 forced fresh, then 563/61 in the verifier's run; Jest sync 648/648. Not run on a device.

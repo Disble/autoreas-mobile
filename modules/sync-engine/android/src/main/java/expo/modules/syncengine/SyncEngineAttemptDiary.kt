@@ -83,7 +83,9 @@ internal fun nativeDiaryOutcome(end: NativeAttemptEnd): String? = when (end) {
  * Counts native attempts in the sync diary and reports native FAILED cycles as `cycle_report`
  * (odd/tasks/mobile-report-kinds.md S2, S3). Gated like the courier
  * ([SyncEngineDiagnosticsCourier.drain]): while the user's diagnostics switch is off, or when it
- * cannot be read, nothing is recorded. Never throws.
+ * cannot be read, nothing is recorded. Before that gate every attempt moves the main process's
+ * inbox ([SyncDiary.drainInbox]): those records were gated, or not, where they were made, exactly
+ * as when the main process wrote the outbox itself. Never throws.
  *
  * [readAppState] answers the switch and, when asked, the `counters` a report carries.
  */
@@ -95,6 +97,10 @@ internal class SyncEngineAttemptDiary(
   /** Counts [record] once and, for a failed cycle, enqueues its `cycle_report` within the limit. */
   fun record(record: NativeAttemptRecord) {
     try {
+      // Every native attempt -- an FGS tick, a floor run, a floor skipped for the ticker -- moves
+      // what the main process queued, whatever this attempt records: a floor run every 15 minutes
+      // then bounds how late a main-process record reaches the outbox.
+      diary.drainInbox()
       val triggerSource = nativeDiaryTriggerSource(record.triggerSource) ?: return
       val outcome = nativeDiaryOutcome(record.end) ?: return
       val failed = (record.end as? NativeAttemptEnd.Settled)?.outcome?.takeIf { it.outcome == "failed" }

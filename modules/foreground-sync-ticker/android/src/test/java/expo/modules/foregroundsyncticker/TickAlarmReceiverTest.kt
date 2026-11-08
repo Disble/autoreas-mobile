@@ -105,6 +105,18 @@ class TickAlarmReceiverTest {
   }
 
   @Test
+  fun `a refused start is reported once however many ticks are refused`() {
+    persistTickingState(context, isTicking = true, intervalMs = 60_000L)
+    syncForegroundServiceStarter = { _ -> throw IllegalStateException("service start refused") }
+    SyncDiaryTestOutbox(context).use { outbox ->
+      TickAlarmReceiver().onReceive(context, tickIntent())
+      TickAlarmReceiver().onReceive(context, tickIntent())
+
+      assertEquals(listOf("main/service/refused/illegal_state"), outbox.transitions())
+    }
+  }
+
+  @Test
   fun `onReceive ignores an intent with the wrong action`() {
     persistTickingState(context, isTicking = true, intervalMs = 60_000L)
 
