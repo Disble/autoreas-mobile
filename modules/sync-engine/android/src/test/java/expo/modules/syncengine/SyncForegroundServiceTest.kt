@@ -223,6 +223,57 @@ class SyncForegroundServiceTest {
   }
 
   @Test
+  fun `each attempt is handed to the diary once, settled or crashed, with the native trigger`() {
+    val service = newService()
+    val runner = RecordingAttemptRunner()
+    service.attemptRunner = runner
+    val records = mutableListOf<NativeAttemptRecord>()
+    service.attemptDiary = { _, record -> records += record }
+
+    startCommand(service, startId = 1)
+    val failed = CycleOutcome("failed", "sent", 0, 0, "SocketTimeoutException")
+    runner.resolve(failed)
+    service.attemptRunner = { _, _, _, _, _, _ -> throw IllegalStateException("runner exploded") }
+    startCommand(service, startId = 2)
+
+    assertEquals(listOf(NativeAttemptEnd.Settled(failed), NativeAttemptEnd.Crashed), records.map { it.end })
+    assertTrue(records.all { it.triggerSource == SyncForegroundService.TRIGGER_SOURCE })
+    assertTrue("each attempt names its own cycle id", records.map { it.cycleId }.toSet().size == 2)
+    assertTrue(records.all { !it.cycleId.isNullOrBlank() && it.startMs > 0 })
+  }
+
+  @Test
+  fun `a diary failure still releases the wake lock and resets the in-flight guard`() {
+    val service = newService()
+    val runner = RecordingAttemptRunner()
+    service.attemptRunner = runner
+    service.attemptDiary = { _, _ -> throw RuntimeException("diary boom") }
+
+    startCommand(service, startId = 1)
+    val lock = ShadowPowerManager.getLatestWakeLock()
+    runner.resolve(CycleOutcome("closed", "closed", 1, 1, null))
+
+    assertFalse("the wake lock must be released even when the diary throws", isWakeLockHeld(lock))
+    startCommand(service, startId = 2)
+    assertEquals(2, runner.invocationCount.get())
+  }
+
+  @Test
+  fun `the service reports its own start and stop, and the sync process start once`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    SyncDiaryTestOutbox(context).use { outbox ->
+      val service = newService()
+      service.onDestroy()
+      newService()
+
+      assertEquals(
+        listOf("sync/process/started", "sync/service/started", "sync/service/stopped", "sync/service/started"),
+        outbox.transitions(),
+      )
+    }
+  }
+
+  @Test
   fun `onDestroy releases a still-held wake lock defensively`() {
     val service = newService()
     val runner = RecordingAttemptRunner()

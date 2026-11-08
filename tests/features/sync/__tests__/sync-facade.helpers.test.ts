@@ -9,6 +9,7 @@ import {
 } from '../../../../src/features/sync/sync-runtime-status.helpers';
 import { runCoverSweep } from '../../../../src/features/sync/cover-sweep/cover-sweep.helpers';
 import type { SyncRuntimeTriggerSource } from '../../../../src/features/sync/sync-runtime-status.types';
+import { recordForegroundSyncAttempt } from '../../../../src/features/sync/sync-attempt-diary.helpers';
 
 jest.mock('../../../../src/features/sync/reconcile.helpers', () => ({
   syncPendingOperations: jest.fn(),
@@ -22,6 +23,10 @@ jest.mock('../../../../src/features/sync/sync-runtime-status.helpers', () => ({
 
 jest.mock('../../../../src/features/sync/cover-sweep/cover-sweep.helpers', () => ({
   runCoverSweep: jest.fn(),
+}));
+
+jest.mock('../../../../src/features/sync/sync-attempt-diary.helpers', () => ({
+  recordForegroundSyncAttempt: jest.fn().mockResolvedValue(undefined),
 }));
 
 /** A dummy `SQLiteDatabase` handle: every dependency that would read it is faked above. */
@@ -296,5 +301,73 @@ describe('runCoordinatedForegroundSyncCycle request ids (S4)', () => {
 
     const [first, second] = (syncPendingOperations as jest.Mock).mock.calls.map((call) => call[1].cycleId);
     expect(second).not.toBe(first);
+  });
+});
+
+describe('runCoordinatedForegroundSyncCycle sync diary (mobile-report-kinds T2)', () => {
+  let dateNowSpy: jest.SpyInstance | undefined;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSyncConnectionStore();
+    (recordSyncAttemptStarted as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptSucceeded as jest.Mock).mockResolvedValue(undefined);
+    (recordSyncAttemptFailed as jest.Mock).mockResolvedValue(undefined);
+    (runCoverSweep as jest.Mock).mockResolvedValue({
+      fetched: 0, notModified: 0, absent: 0, unknown: 0, transient: 0, stopped: false,
+    });
+    (recordForegroundSyncAttempt as jest.Mock).mockResolvedValue(undefined);
+    // The first clock read starts the attempt; every later one ends it 450 ms after.
+    dateNowSpy = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(1_450);
+  });
+
+  afterEach(() => {
+    dateNowSpy?.mockRestore();
+  });
+
+  it('counts a settled attempt once as closed, with its source and measured duration', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({ syncedCount: 2, hasMorePending: false });
+
+    await expect(runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'app_active' })).resolves.toBe(2);
+
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledTimes(1);
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledWith({
+      rawDb: RAW_DB,
+      source: 'app_active',
+      outcome: 'closed',
+      durationMs: 450,
+    });
+  });
+
+  it('counts an attempt that left work pending as closed too', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({ syncedCount: 1, hasMorePending: true });
+
+    await expect(runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'manual' })).resolves.toBe(1);
+
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledTimes(1);
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'manual', outcome: 'closed', durationMs: 450 }),
+    );
+  });
+
+  it('counts a failed attempt once as failed and still rethrows its own error', async () => {
+    const failure = new Error('reconcile failed');
+    (syncPendingOperations as jest.Mock).mockRejectedValue(failure);
+
+    await expect(
+      runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'ws_sync_required' }),
+    ).rejects.toBe(failure);
+
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledTimes(1);
+    expect(recordForegroundSyncAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'ws_sync_required', outcome: 'failed', durationMs: 450 }),
+    );
+  });
+
+  it('never waits on the diary: a record that never settles leaves the result unchanged', async () => {
+    (syncPendingOperations as jest.Mock).mockResolvedValue({ syncedCount: 3, hasMorePending: false });
+    (recordForegroundSyncAttempt as jest.Mock).mockReturnValue(new Promise<never>(() => undefined));
+
+    await expect(runCoordinatedForegroundSyncCycle({ rawDb: RAW_DB, source: 'manual' })).resolves.toBe(3);
   });
 });

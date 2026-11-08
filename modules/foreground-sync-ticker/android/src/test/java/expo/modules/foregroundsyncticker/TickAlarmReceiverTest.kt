@@ -64,6 +64,22 @@ class TickAlarmReceiverTest {
   }
 
   @Test
+  fun `a tick re-arms the alarm and starts the service without reporting a transition`() {
+    persistTickingState(context, isTicking = true, intervalMs = 60_000L)
+    SyncDiaryTestOutbox(context).use { outbox ->
+      armTickAlarm(context, 60_000L)
+      outbox.clear()
+
+      TickAlarmReceiver().onReceive(context, tickIntent())
+      TickAlarmReceiver().onReceive(context, tickIntent())
+
+      assertNotNull("the tick alarm must be re-armed", shadowOf(alarmManager).nextScheduledAlarm)
+      assertNotNull("the sync foreground service must be started", shadowOf(application).nextStartedService)
+      assertEquals("a per-tick re-arm is not a state change", emptyList<String>(), outbox.transitions())
+    }
+  }
+
+  @Test
   fun `onReceive while not ticking starts nothing`() {
     persistTickingState(context, isTicking = false, intervalMs = 60_000L)
 
@@ -86,6 +102,18 @@ class TickAlarmReceiverTest {
       "the alarm must stay armed even when the service start throws",
       shadowOf(alarmManager).nextScheduledAlarm,
     )
+  }
+
+  @Test
+  fun `a refused start is reported once however many ticks are refused`() {
+    persistTickingState(context, isTicking = true, intervalMs = 60_000L)
+    syncForegroundServiceStarter = { _ -> throw IllegalStateException("service start refused") }
+    SyncDiaryTestOutbox(context).use { outbox ->
+      TickAlarmReceiver().onReceive(context, tickIntent())
+      TickAlarmReceiver().onReceive(context, tickIntent())
+
+      assertEquals(listOf("main/service/refused/illegal_state"), outbox.transitions())
+    }
   }
 
   @Test

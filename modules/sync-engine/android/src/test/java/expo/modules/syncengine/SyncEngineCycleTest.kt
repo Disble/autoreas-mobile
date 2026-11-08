@@ -109,7 +109,8 @@ class SyncEngineCycleTest {
         .run("foreground", "cycle-k6-transport-failure", states::add)
 
       assertEquals("failed", outcome.outcome)
-      assertEquals("failed", outcome.stage)
+      // The stage names where the attempt failed (the request was sent), not the terminal state.
+      assertEquals("sent", outcome.stage)
       assertEquals(0, outcome.syncedCount)
       assertEquals(1, outcome.backlogReadCount)
       assertEquals("ConnectException", outcome.errorName)
@@ -169,7 +170,8 @@ class SyncEngineCycleTest {
             states.add(state)
           }
 
-        assertEquals(CycleOutcome("abandoned", "abandoned", 0, 0, "LeaseLost"), outcome)
+        // The lease loss surfaces at the guarded apply write, so the attempt reports `applied`.
+        assertEquals(CycleOutcome("abandoned", "applied", 0, 0, "LeaseLost"), outcome)
         assertTrue("Journal absent before cycle callback observations: $journalFile", journalExistsAtCallback.all { it })
         assertEquals("/api/sync/reconcile", server.request.path)
         assertEquals(listOf(41L to "processing"), fixture.operationStatuses())
@@ -207,7 +209,7 @@ class SyncEngineCycleTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", cycleId, states::add)
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 1, expectedErrorName), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 1, expectedErrorName), outcome)
         assertEquals("POST", server.request.method)
         assertEquals("/api/sync/reconcile", server.request.path)
         assertEquals(expectedStatus, fixture.operationStatuses().single().second)

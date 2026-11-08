@@ -66,13 +66,16 @@ internal var syncForegroundServiceStarter: (Context) -> Unit = ::defaultSyncFore
  * exemption is later revoked); per the ODD native-foreground-sync-service Decisions, catching
  * that refusal and continuing degraded is this seam's job, shared by both of its callers
  * ([TickAlarmReceiver] and [startSyncTicking] in `TickAlarmScheduler.kt`) so neither repeats the
- * same swallow-and-log logic.
+ * same swallow-and-log logic. A refusal also reports `service` + `refused` to the sync diary.
  */
 internal fun startSyncForegroundServiceSafely(context: Context) {
   try {
     syncForegroundServiceStarter(context)
   } catch (error: Throwable) {
     Log.w(BRIDGE_LOG_TAG, "failed to start the sync foreground service", error)
+    // The refusal is a real state change (odd/tasks/mobile-report-kinds.md S4), named by the
+    // error's class only; the record runs off this thread and never throws.
+    SyncDiaryRuntime.recordTransition(context, "service", "refused", syncDiaryReasonFromError(error))
   }
 }
 

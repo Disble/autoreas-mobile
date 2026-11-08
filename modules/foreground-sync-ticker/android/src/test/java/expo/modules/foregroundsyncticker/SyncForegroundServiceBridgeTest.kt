@@ -44,6 +44,29 @@ class SyncForegroundServiceBridgeTest {
   }
 
   @Test
+  fun `a refused start is reported as a service refusal named by the error class`() {
+    SyncDiaryTestOutbox(application).use { outbox ->
+      syncForegroundServiceStarter = { _ -> throw SecurityException("detail that must not be sent") }
+
+      startSyncForegroundServiceSafely(application)
+
+      assertEquals(listOf("main/service/refused/security"), outbox.transitions())
+      assertEquals(false, outbox.payloads().single().toString().contains("detail"))
+    }
+  }
+
+  @Test
+  fun `an accepted start reports nothing`() {
+    SyncDiaryTestOutbox(application).use { outbox ->
+      syncForegroundServiceStarter = { _ -> }
+
+      startSyncForegroundServiceSafely(application)
+
+      assertEquals(emptyList<String>(), outbox.transitions())
+    }
+  }
+
+  @Test
   fun `startSyncForegroundServiceSafely delegates to the injected starter with the given context`() {
     var receivedContext: Context? = null
     syncForegroundServiceStarter = { context -> receivedContext = context }

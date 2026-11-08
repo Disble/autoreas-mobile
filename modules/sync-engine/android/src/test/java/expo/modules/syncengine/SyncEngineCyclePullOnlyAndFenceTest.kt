@@ -82,7 +82,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", "cycle-pull-only-5xx") {}
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 0, "ReconcileHttpError"), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 0, "ReconcileHttpError"), outcome)
       }
     }
   }
@@ -97,7 +97,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", "cycle-pull-only-invalid-json") {}
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 0, "ReconcileParseException"), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 0, "ReconcileParseException"), outcome)
       }
     }
   }
@@ -189,7 +189,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", "cycle-informational-code") {}
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 1, "ReconcileHttpError"), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 1, "ReconcileHttpError"), outcome)
         assertEquals("pending", fixture.operationStatuses().single().second)
       }
     }
@@ -205,7 +205,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", "cycle-pull-only-informational-code") {}
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 0, "ReconcileHttpError"), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 0, "ReconcileHttpError"), outcome)
       }
     }
   }
@@ -266,7 +266,7 @@ class SyncEngineCyclePullOnlyAndFenceTest {
         val outcome = SyncEngineCycle(fixture.appDatabase, fixture.journal)
           .run("foreground", cycleId) {}
 
-        assertEquals(CycleOutcome("failed", "failed", 0, 1, "ReconcileHttpError"), outcome)
+        assertEquals(CycleOutcome("failed", "sent", 0, 1, "ReconcileHttpError"), outcome)
         // The revert never landed (fenced out by the reclaim): the row stays "processing",
         // owned by the successor now, not reverted to "pending" by the original attempt.
         assertEquals("processing", fixture.operationStatuses().single().second)

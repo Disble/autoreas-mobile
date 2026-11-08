@@ -26,12 +26,16 @@ import org.robolectric.annotation.SQLiteMode
 class SyncEngineDiagnosticsAcceptedKindsTest {
 
   @Test
-  fun `the default registry names exactly the kind the bridge serves and destroys nothing`() {
+  fun `the default registry names exactly the kinds the bridge serves and destroys nothing`() {
     // The JS mirror is `[undefined, 'episode_action']`. The `undefined` entry identifies the
     // ABSENCE of the `kind` key, which JSON cannot represent and which `classifyDiagnosticsPayload`
     // handles where it reads instead -- see the kindless delivery case below. Destruction stays
     // EMPTY: no kind is positively declared unsatisfiable, because registry absence is not one.
-    assertEquals(setOf("episode_action"), SYNC_DIAGNOSTICS_ACCEPTED_KINDS)
+    // `screen_stall` is deliberately absent here (a recorded follow-up of mobile-report-kinds).
+    assertEquals(
+      setOf("episode_action", "cycle_report", "hourly_summary", "runtime_transition"),
+      SYNC_DIAGNOSTICS_ACCEPTED_KINDS,
+    )
     assertEquals(emptySet<String>(), SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS)
   }
 
@@ -52,6 +56,30 @@ class SyncEngineDiagnosticsAcceptedKindsTest {
       // reaches the wire byte-for-byte, so the registry flip changes routing and nothing else.
       assertEquals(SyncDiagnosticsFlushResult(attempted = 1, delivered = 1), result)
       assertEquals(listOf(payload), transport.posts.map { it.body })
+      assertEquals(emptyList<Pair<String, String>>(), fixture.telemetryEntries())
+    }
+  }
+
+  @Test
+  fun `the production courier posts every diary kind instead of parking it`() {
+    SyncEngineTestDatabase().use { fixture ->
+      val payloads = listOf("cycle_report", "hourly_summary", "runtime_transition").mapIndexed { index, kind ->
+        val payload = """{"kind":"$kind","observation_id":"diary-$index"}"""
+        fixture.seedTelemetryEntry("diary-$index", payload, 10L + index)
+        payload
+      }
+      val transport = RecordingDiagnosticsTransport()
+
+      val result = SyncEngineDiagnosticsCourier(
+        telemetryFile = fixture.telemetryDatabaseFile,
+        transport = transport,
+        now = { NOW_MS },
+      ).drain(isSyncTelemetryEnabled = true, connection = CONNECTION)
+
+      // odd/tasks/mobile-report-kinds.md T2: the diary's rows leave through the background drain
+      // too, byte-for-byte and oldest first, and leave the outbox only once delivered.
+      assertEquals(SyncDiagnosticsFlushResult(attempted = 3, delivered = 3), result)
+      assertEquals(payloads, transport.posts.map { it.body })
       assertEquals(emptyList<Pair<String, String>>(), fixture.telemetryEntries())
     }
   }

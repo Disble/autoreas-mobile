@@ -10,6 +10,8 @@ import { createRequestIdSequence } from './request-id.helpers';
 import type { RequestIdSequence } from './request-id.types';
 import { healSnapshotOnDemand } from './snapshot-heal.helpers';
 import type { SnapshotHealDemand } from './snapshot-heal.types';
+import { recordForegroundSyncAttempt } from './sync-attempt-diary.helpers';
+import type { SyncAttemptDiaryOutcome } from './sync-attempt-diary.types';
 import {
   recordSyncAttemptFailed,
   recordSyncAttemptStarted,
@@ -117,12 +119,18 @@ async function persistSyncFailureTelemetrySafely(
  *
  * One cycle is one request id: every bridge request of the sends and the pull after a delivered
  * rating carries `<cycleId>:<n>`, numbered in send order, so each joins the bridge's record of it.
+ *
+ * Every attempt is counted once in the native sync diary at its single end (mobile-report-kinds
+ * T2): `closed` when it settled, the has-more-pending return included, `failed` when it threw,
+ * with its measured duration. Fired and forgotten, so the diary never changes the outcome.
  */
 export async function runCoordinatedForegroundSyncCycle({
   rawDb,
   source,
   healSnapshot = 'never',
 }: RunCoordinatedForegroundSyncCycleInput): Promise<number> {
+  const startedAt = Date.now();
+  let outcome: SyncAttemptDiaryOutcome = 'failed';
   const attempt = beginSyncConnectionAttempt();
   const requestIds = createRequestIdSequence();
 
@@ -147,6 +155,7 @@ export async function runCoordinatedForegroundSyncCycle({
       // The reconcile above was answered, so this cycle reached the bridge (ADR 009 R-9).
       markSyncConnectionPending(attempt, Date.now());
       triggerCoverSweep(rawDb, source, healSnapshot);
+      outcome = 'closed';
       return result.syncedCount;
     }
 
@@ -159,6 +168,7 @@ export async function runCoordinatedForegroundSyncCycle({
     });
 
     triggerCoverSweep(rawDb, source, healSnapshot);
+    outcome = 'closed';
     return result.syncedCount;
   } catch (error) {
     const failure = error instanceof Error ? error : new Error('Sync failed');
@@ -176,6 +186,8 @@ export async function runCoordinatedForegroundSyncCycle({
       publishConnection: () => markSyncConnectionFailed(attempt, failure),
     });
     throw failure;
+  } finally {
+    void recordForegroundSyncAttempt({ rawDb, source, outcome, durationMs: Date.now() - startedAt });
   }
 }
 

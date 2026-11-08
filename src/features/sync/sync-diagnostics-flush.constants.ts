@@ -23,11 +23,22 @@
  * older bridge it answers `kind_not_served`, which keeps the row and stops the batch until the
  * bridge is upgraded.
  *
+ * `cycle_report`, `hourly_summary` and `runtime_transition` are the sync diary's kinds
+ * (odd/tasks/mobile-report-kinds.md T2), written by the native `SyncDiary` and drained by both
+ * this flush and the native courier, whose registry names the same three.
+ *
  * A body this predicate REFUSES is not thereby destroyed: the flush's classifier parks it as
  * `unclassified` unless its kind is positively declared in `SYNC_DIAGNOSTICS_UNDELIVERABLE_KINDS`.
  * "Not accepted" and "destroyed" are two different judgements and only the second one loses data.
  */
-export const SYNC_DIAGNOSTICS_ACCEPTED_KINDS = [undefined, 'episode_action', 'screen_stall'] as const;
+export const SYNC_DIAGNOSTICS_ACCEPTED_KINDS = [
+  undefined,
+  'episode_action',
+  'screen_stall',
+  'cycle_report',
+  'hourly_summary',
+  'runtime_transition',
+] as const;
 
 /**
  * Every diagnostic body `kind` this build KNOWS the bridge does not accept and never will -- the ONE

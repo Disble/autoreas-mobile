@@ -198,6 +198,9 @@ def CORE_FLOOR_CYCLE_CLASSES = ['SyncEngineCycle', 'SyncEngineCycle$*'].collect 
 def CORE_FLOOR_RUNNER_CLASSES = ['SyncEngineRunner', 'SyncEngineRunner$*'].collect { "expo.modules.syncengine.$it" }
 
 def IMPORTANT_CLASSES = [
+  // SyncEngineAttemptDiary.kt, SyncEngineCycleReport.kt (odd/tasks/mobile-report-kinds.md T3)
+  'SyncEngineAttemptDiary', 'SyncEngineAttemptDiary$*', 'SyncEngineAttemptDiaryKt', 'SyncEngineAttemptDiaryKt$*',
+  'SyncEngineCycleReport', 'SyncEngineCycleReport$*', 'SyncEngineCycleReportKt', 'SyncEngineCycleReportKt$*',
   // SyncEngineJournal.kt
   'SyncEngineJournal', 'SyncEngineJournal$*', 'JournalTransition', 'JournalTransition$*',
   // SyncEngineBridgePresence.kt

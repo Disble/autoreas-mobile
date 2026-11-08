@@ -9,6 +9,10 @@ import { createSyncExecutionFacade } from "./sync-execution-facade";
 import { buildSyncExecutionStatusPatch } from "./sync-execution-strategy.helpers";
 import { dispatchForegroundSyncFlush } from "./sync-facade.helpers";
 import { registerSyncFlushDispatcher } from "./sync-flush.helpers";
+import {
+  recordNetworkTransition,
+  resolveNetworkTransition,
+} from "./sync-runtime-network.helpers";
 import { updateSyncRuntimeStatusSnapshot } from "./sync-runtime-status.helpers";
 import { useForegroundResync } from "./use-foreground-resync";
 import { useRemoteChangeDrain } from "./use-remote-change-drain";
@@ -317,6 +321,16 @@ export function useSyncRuntime(
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
       const isConnected = state.isConnected === true;
+      const transition = resolveNetworkTransition(
+        lastConnectivityRef.current,
+        isConnected,
+      );
+
+      // A real connectivity change goes to the sync diary (mobile-report-kinds S4), never
+      // awaited: the recorder never rejects and must not delay the regained-network sync.
+      if (transition !== null && isRuntimeEnabled) {
+        void recordNetworkTransition({ rawDb, transition });
+      }
 
       if (
         lastConnectivityRef.current === false &&
@@ -332,7 +346,7 @@ export function useSyncRuntime(
     return () => {
       subscription.remove();
     };
-  }, [isRuntimeEnabled, requestAutomaticSync]);
+  }, [isRuntimeEnabled, rawDb, requestAutomaticSync]);
 
   return {
     currentAppState,

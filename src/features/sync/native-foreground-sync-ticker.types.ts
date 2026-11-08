@@ -12,10 +12,31 @@ export interface ForegroundSyncTicker {
 
 /**
  * Defines the raw native module surface exposed by the `ForegroundSyncTicker` local Expo module.
+ * The two diary methods are optional because a binary built before them does not declare them.
  */
 export interface NativeForegroundSyncTickerModule {
   readonly start: (intervalMs: number) => void;
   readonly stop: () => void;
+  readonly recordSyncAttempt?: (
+    triggerSource: string,
+    outcome: string,
+    durationMs: number,
+  ) => Promise<void>;
+  readonly recordRuntimeTransition?: (
+    subject: string,
+    transition: string,
+    reason: string | null,
+  ) => Promise<void>;
+}
+
+/**
+ * Defines the JS-facing seam over the native sync diary (odd/tasks/mobile-report-kinds.md T2):
+ * best-effort records the native `SyncDiary` validates and counts. Neither method throws nor
+ * returns anything to wait on.
+ */
+export interface NativeSyncDiary {
+  readonly recordSyncAttempt: (triggerSource: string, outcome: string, durationMs: number) => void;
+  readonly recordRuntimeTransition: (subject: string, transition: string, reason?: string) => void;
 }
 
 /** Defines the loader function signature for the optional native ticker module lookup. */

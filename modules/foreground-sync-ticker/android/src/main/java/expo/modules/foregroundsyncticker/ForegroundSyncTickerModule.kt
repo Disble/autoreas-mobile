@@ -82,26 +82,37 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
  * internal class name into this module, whereas the channel id is a constant this repo already
  * owns.
+ *
+ * `recordSyncAttempt` and `recordRuntimeTransition` are the main process's door into [SyncDiary]
+ * (odd/tasks/mobile-report-kinds.md T2): JS counts its own sync attempts through the same native
+ * writer both engines use, so the hourly counters have one implementation. Both are async (the
+ * diary writes SQLite off the JS thread) and best effort: the diary validates, logs and swallows,
+ * and never throws back into a sync attempt.
  */
 class ForegroundSyncTickerModule : Module() {
   private var intervalMs: Long = 15_000L
   private var isTicking = false
 
+  /**
+   * Restarts ticking at [nextIntervalMs]. The restart cancels and re-arms the alarm at once, so the
+   * diary hears of it only when no alarm existed before: an armed alarm stays armed.
+   */
   private fun startTicking(nextIntervalMs: Long) {
-    stopTicking()
+    val wasArmed = appContext.reactContext?.let(::isTickAlarmArmed) ?: false
+    stopTicking(isRestart = true)
 
     intervalMs = nextIntervalMs
     isTicking = true
 
     val context = appContext.reactContext ?: return
-    startSyncTicking(context, intervalMs)
+    startSyncTicking(context, intervalMs, wasArmed)
   }
 
-  private fun stopTicking() {
+  private fun stopTicking(isRestart: Boolean = false) {
     isTicking = false
 
     val context = appContext.reactContext ?: return
-    stopSyncTicking(context, intervalMs)
+    stopSyncTicking(context, intervalMs, recordTransition = !isRestart)
   }
 
   /**
@@ -124,7 +135,8 @@ class ForegroundSyncTickerModule : Module() {
 
     intervalMs = persisted.intervalMs
     isTicking = true
-    scheduleNextTick(context, intervalMs)
+    // Reports `tick_alarm` + `armed` only when the alarm was lost; a live one is just updated.
+    armTickAlarm(context, intervalMs)
   }
 
   /**
@@ -206,6 +218,19 @@ class ForegroundSyncTickerModule : Module() {
     }
   }
 
+  /** Counts one JS sync attempt in the diary's current hour; see [SyncDiary.recordAttempt]. */
+  private fun recordSyncAttempt(triggerSource: String, outcome: String, durationMs: Double) {
+    val context = appContext.reactContext ?: return
+    syncDiaryFor(context).recordAttempt(triggerSource, outcome, durationMs.toLong(), System.currentTimeMillis())
+  }
+
+  /** Reports one main-process state change; see [SyncDiary.recordTransition]. */
+  private fun recordRuntimeTransition(subject: String, transition: String, reason: String?) {
+    val context = appContext.reactContext ?: return
+    val now = System.currentTimeMillis()
+    syncDiaryFor(context).recordTransition("main", subject, transition, reason, now, now)
+  }
+
   override fun definition() = ModuleDefinition {
     Name("ForegroundSyncTicker")
 
@@ -233,7 +258,18 @@ class ForegroundSyncTickerModule : Module() {
       isForegroundServiceRunning(channelId)
     }
 
+    AsyncFunction("recordSyncAttempt") { triggerSource: String, outcome: String, durationMs: Double ->
+      recordSyncAttempt(triggerSource, outcome, durationMs)
+    }
+
+    AsyncFunction("recordRuntimeTransition") { subject: String, transition: String, reason: String? ->
+      recordRuntimeTransition(subject, transition, reason)
+    }
+
     OnCreate {
+      // The main process's start (odd/tasks/mobile-report-kinds.md S4), once per process however
+      // often the module is recreated.
+      appContext.reactContext?.let(SyncDiaryRuntime::noteProcessStart)
       reArmFromPersistedState()
     }
 
