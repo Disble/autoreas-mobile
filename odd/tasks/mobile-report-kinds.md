@@ -37,8 +37,8 @@ Branch: `feat/mobile-report-kinds`, cut from `main` at 77f0737 (2.7.1). Bridge c
 |----|-------|-------|--------|--------|
 | T1 | S1 | inline | done: RED (expected `sent`, was `failed`), GREEN; 9 tests that pinned the old stage updated (lease loss at apply now reports `applied`); mutant (record line deleted) killed, 10 failures; Kotlin 456/456, lefthook green | d28e0c8 |
 | T2 | S3, S5, S6 | delegated (context backstop) | done: diary store `SyncDiary*.kt` in the ticker module, kind registries, reserve and daily limit, hourly summary on the next record, JS attempt recording through `native-sync-diary.helpers.ts`; Kotlin sync-engine 457 + ticker 27, Jest sync 637, typecheck, lint on changed files clean, lefthook green | 1010ee9 |
-| T3 | S2, S4 | delegated (context backstop) | done: native attempt counts, failed-cycle `cycle_report` (3 per error name per hour), 14 transitions, process deaths, boot, JS network; Kotlin sync-engine 476 + ticker 42 with Kover gates, Jest sync 648, typecheck, eslint on changed files, react-doctor 100 | (this commit) |
-| T6 | S8 | inline | done: row added to `docs/logbooks/frozen-controls.md` "Changes under observation" | (this commit) |
+| T3 | S2, S4 | delegated (context backstop) | done: native attempt counts, failed-cycle `cycle_report` (3 per error name per hour), 14 transitions, process deaths, boot, JS network; Kotlin sync-engine 476 + ticker 42 with Kover gates, Jest sync 648, typecheck, eslint on changed files, react-doctor 100; verifier blockers B1/B2 fixed in 0d63042 (L9) | dab08c1, 0d63042 |
+| T6 | S8 | inline | done: row added to `docs/logbooks/frozen-controls.md` "Changes under observation" | dab08c1 |
 
 ## Log
 
