@@ -16,6 +16,15 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-11-08
+
+**Requires Bridge 2.8.0 or newer for the new sync reports.** With Bridge 2.7.4 or older, catalogue sync keeps working, but the new reports wait on the tablet and episode changes stop reaching Bridge's history until Bridge is updated.
+
+### Added
+
+- La app ahora lleva un diario de su sincronización en segundo plano: cuántos intentos hubo en cada hora y cómo terminó cada uno, cuándo Android detuvo o rechazó el servicio, y cuándo la tablet se reinició. Bridge recibe ese diario, así que cuando la tablet se queda en silencio se puede saber después qué pasó. Se envían como máximo 50 reportes nuevos al día.
+- Cuando una sincronización falla en segundo plano, Bridge recibe en qué paso falló.
+
 ## [2.7.1] — 2026-11-02
 
 Works with any Bridge 2.0.0 or later; nothing in the Bridge contract changed.
