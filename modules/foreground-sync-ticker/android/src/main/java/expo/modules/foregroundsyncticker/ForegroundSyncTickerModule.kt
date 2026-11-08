@@ -93,21 +93,26 @@ class ForegroundSyncTickerModule : Module() {
   private var intervalMs: Long = 15_000L
   private var isTicking = false
 
+  /**
+   * Restarts ticking at [nextIntervalMs]. The restart cancels and re-arms the alarm at once, so the
+   * diary hears of it only when no alarm existed before: an armed alarm stays armed.
+   */
   private fun startTicking(nextIntervalMs: Long) {
-    stopTicking()
+    val wasArmed = appContext.reactContext?.let(::isTickAlarmArmed) ?: false
+    stopTicking(isRestart = true)
 
     intervalMs = nextIntervalMs
     isTicking = true
 
     val context = appContext.reactContext ?: return
-    startSyncTicking(context, intervalMs)
+    startSyncTicking(context, intervalMs, wasArmed)
   }
 
-  private fun stopTicking() {
+  private fun stopTicking(isRestart: Boolean = false) {
     isTicking = false
 
     val context = appContext.reactContext ?: return
-    stopSyncTicking(context, intervalMs)
+    stopSyncTicking(context, intervalMs, recordTransition = !isRestart)
   }
 
   /**
@@ -130,7 +135,8 @@ class ForegroundSyncTickerModule : Module() {
 
     intervalMs = persisted.intervalMs
     isTicking = true
-    scheduleNextTick(context, intervalMs)
+    // Reports `tick_alarm` + `armed` only when the alarm was lost; a live one is just updated.
+    armTickAlarm(context, intervalMs)
   }
 
   /**
@@ -261,6 +267,9 @@ class ForegroundSyncTickerModule : Module() {
     }
 
     OnCreate {
+      // The main process's start (odd/tasks/mobile-report-kinds.md S4), once per process however
+      // often the module is recreated.
+      appContext.reactContext?.let(SyncDiaryRuntime::noteProcessStart)
       reArmFromPersistedState()
     }
 

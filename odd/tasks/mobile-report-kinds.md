@@ -36,9 +36,9 @@ Branch: `feat/mobile-report-kinds`, cut from `main` at 77f0737 (2.7.1). Bridge c
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
 | T1 | S1 | inline | done: RED (expected `sent`, was `failed`), GREEN; 9 tests that pinned the old stage updated (lease loss at apply now reports `applied`); mutant (record line deleted) killed, 10 failures; Kotlin 456/456, lefthook green | d28e0c8 |
-| T2 | S3, S5, S6 | delegated (context backstop) | open: diary store in the ticker module, kind registries, reserve and daily limit, hourly counters and summary emission, JS attempt recording | |
-| T3 | S2, S4 | delegated (context backstop) | open: native attempt counting, transitions, process deaths, boot, network, failed-cycle `cycle_report` | |
-| T6 | S8 | inline | open: logbook and docs | |
+| T2 | S3, S5, S6 | delegated (context backstop) | done: diary store `SyncDiary*.kt` in the ticker module, kind registries, reserve and daily limit, hourly summary on the next record, JS attempt recording through `native-sync-diary.helpers.ts`; Kotlin sync-engine 457 + ticker 27, Jest sync 637, typecheck, lint on changed files clean, lefthook green | 1010ee9 |
+| T3 | S2, S4 | delegated (context backstop) | done: native attempt counts, failed-cycle `cycle_report` (3 per error name per hour), 14 transitions, process deaths, boot, JS network; Kotlin sync-engine 476 + ticker 42 with Kover gates, Jest sync 648, typecheck, eslint on changed files, react-doctor 100 | (this commit) |
+| T6 | S8 | inline | done: row added to `docs/logbooks/frozen-controls.md` "Changes under observation" | (this commit) |
 
 ## Log
 
@@ -54,3 +54,11 @@ Branch: `feat/mobile-report-kinds`, cut from `main` at 77f0737 (2.7.1). Bridge c
   - Outcome mapping for counts: native `abandoned` counts as `unsettled`; `not_applicable` with no config or a lease held elsewhere is not counted.
   - Bridge contract source: autoreas-bridge `git show feat/mobile-report-kinds:docs/openapi.yaml` (schemas `SyncDiagnosticsCycleReport`, `SyncDiagnosticsHourlySummary`, `SyncDiagnosticsRuntimeTransition`); every new body names its `kind`.
   - Found, out of scope: the Kotlin accepted kinds lack `screen_stall` (`SyncEngineDiagnosticsCourier.kt:62`), so screen stalls drained natively are parked and reaped after 7 days. Follow-up, not in this feature.
+- L6: T2 delivered by a bounded writer, parent spot check re-ran its focused Jest suites (36/36). Its decisions: `enqueueReport` takes `nowMs`; dropped rows are counted per hour; an hour whose summary is itself dropped loses its counts and only the drop shows later; an off-pattern version name is sent as `unknown`. Risk: item 4 (two processes write `autoreas-telemetry.db`; one transaction per call, 250 ms busy timeout, no cross-process test).
+- L7: found, pre-existing: the staged mutation gate (`test:mutation:staged`) fails its dry run for ANY staged change to its three surfaces (`native-foreground-sync-ticker.helpers.ts`, `native-foreground-sync-adapter.helpers.ts`, `native-battery-optimization.helpers.ts`) with "You are trying to `require` a file outside of the scope of the test code" from Expo's lazy winter globals. Reproduced on d28e0c8 with a comment-only change in a scratch worktree. Reading the globals eagerly in `jest.setup.ts` fixed the probe only with `fetch` included, and reading `fetch` early broke 10 `anime-folders` tests, so no fix was committed. The diary seam moved to its own file, `native-sync-diary.helpers.ts`, so this feature changes none of the three surfaces. Follow-up outside this feature.
+- L8: T3 delivered by a bounded writer. Evidence is mutation-based, not test-first: the writer wrote code before tests, then removed each guarded behaviour and saw its test fail (30 mutants killed). The parent added the new classes to both Kover gates; the ticker gate first failed at 75% branches and passed after more tests (ticker whole report 87.8% branches). Open limitations, recorded, not fixed:
+  - Native runtime transitions are not gated on the user's diagnostics switch (the main process must not open `autoreas.db` with framework SQLite). Rows written while the switch is off wait in the outbox and would be sent if it is turned back on. A switch mirror in `autoreas-telemetry.db` would close it.
+  - Exits and boots from before the first diary read are never reported (the first read only sets a baseline).
+  - SDK < 28/30 branches in `SyncDiaryRuntime.kt` are not reachable under Robolectric sdk 35.
+  - Nothing has run on a device.
+  Risk: item 4 (two processes write the diary tables; transitions written on a background thread).

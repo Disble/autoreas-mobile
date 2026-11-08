@@ -11,6 +11,7 @@ import { dispatchForegroundSyncFlush } from "../../../src/features/sync/sync-fac
 import { registerSyncFlushDispatcher } from "../../../src/features/sync/sync-flush.helpers";
 import { useRemoteChangeDrain } from "../../../src/features/sync/use-remote-change-drain";
 import { useWebSocket } from "../../../src/features/ws/use-websocket";
+import { recordNetworkTransition } from "../../../src/features/sync/sync-runtime-network.helpers";
 import type { SyncExecutionStatus } from "../../../src/features/sync/sync-execution-strategy.types";
 
 /** Captured `AppState` listeners the mocked `addEventListener` registers, driven via `emitAppState`. */
@@ -53,6 +54,11 @@ jest.mock("expo-network", () => ({
       };
     },
   ),
+}));
+
+jest.mock("../../../src/features/sync/sync-runtime-network.helpers", () => ({
+  ...jest.requireActual("../../../src/features/sync/sync-runtime-network.helpers"),
+  recordNetworkTransition: jest.fn(),
 }));
 
 jest.mock("../../../src/features/settings/use-bridge-config", () => ({
@@ -305,6 +311,29 @@ describe("useSyncRuntime", () => {
 
     expect(mockRequestSync).toHaveBeenCalledTimes(1);
     expect(mockRequestSync).toHaveBeenCalledWith("network_regained");
+    // The first reading is not a change; each real change is recorded once, a repeat never.
+    expect((recordNetworkTransition as jest.Mock).mock.calls).toEqual([
+      [{ rawDb: { id: "raw-db" }, transition: "started" }],
+    ]);
+  });
+
+  it("records connectivity changes only while the runtime is enabled", async () => {
+    (bridgeConfigModule.useBridgeConfig as jest.Mock).mockReturnValue({
+      config: null,
+      isConfigured: false,
+      isUnpairing: false,
+      error: null,
+      unpair: jest.fn(),
+    });
+    renderHook(() => useSyncRuntime({ isBootstrapped: true }));
+
+    await act(async () => {
+      emitNetworkState(true);
+      emitNetworkState(false);
+      await Promise.resolve();
+    });
+
+    expect(recordNetworkTransition).not.toHaveBeenCalled();
   });
 
   // A reconnect is the R-7 catch-up (ADR 009): it goes through the flush entry point too.

@@ -339,6 +339,22 @@ class SyncDiaryTest {
     assertFalse(diary.recordAttempt("manual", "closed", 1L, HOUR_2))
   }
 
+  @Test
+  fun `a limited report stops at its hourly quota per key, shared by every writer`() {
+    val file = provisionedTelemetryFile()
+    val diary = SyncDiary(file, APP_VERSION, sequentialIds())
+    val other = SyncDiary(file, APP_VERSION, sequentialIds("other"))
+
+    assertEquals(SyncDiaryEnqueueResult.INSERTED, diary.enqueueLimitedReport("a", 2, "r-1", "{}", HOUR_1))
+    assertEquals(SyncDiaryEnqueueResult.DUPLICATE, diary.enqueueLimitedReport("a", 2, "r-1", "{}", HOUR_1))
+    assertEquals(SyncDiaryEnqueueResult.INSERTED, other.enqueueLimitedReport("a", 2, "r-2", "{}", HOUR_1 + 1L))
+    assertEquals(SyncDiaryEnqueueResult.LIMITED, diary.enqueueLimitedReport("a", 2, "r-3", "{}", HOUR_1 + 2L))
+    assertEquals(SyncDiaryEnqueueResult.INSERTED, diary.enqueueLimitedReport("b", 2, "r-4", "{}", HOUR_1 + 3L))
+    assertEquals(SyncDiaryEnqueueResult.INSERTED, diary.enqueueLimitedReport("a", 2, "r-5", "{}", HOUR_2))
+
+    assertEquals(listOf("r-1", "r-2", "r-4", "r-5"), outboxRows(file).map { it.first })
+  }
+
   private fun provisionedTelemetryFile(): File =
     File(folder.root, "autoreas-telemetry.db").also(::provisionOutbox)
 

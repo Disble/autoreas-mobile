@@ -65,6 +65,8 @@ def IMPORTANT_CLASSES = [
   // T2): the native sync diary both engines and JS write their hourly counts through.
   'SyncDiary', 'SyncDiary$*', 'SyncDiaryKt', 'SyncDiaryKt$*', 'SyncDiaryEnqueueResult',
   'SyncDiaryPayloadsKt', 'SyncDiaryPayloadsKt$*', 'SyncDiaryVocabularyKt', 'SyncDiaryVocabularyKt$*',
+  // SyncDiaryRuntime.kt (T3): the transition entry point every process records through.
+  'SyncDiaryRuntime', 'SyncDiaryRuntime$*', 'SyncDiaryRuntimeKt', 'SyncDiaryRuntimeKt$*',
 ].collect { "expo.modules.foregroundsyncticker.$it" }
 
 kover {
