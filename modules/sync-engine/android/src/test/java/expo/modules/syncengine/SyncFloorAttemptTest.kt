@@ -23,7 +23,7 @@ private val OUTCOME_FAILED = CycleOutcome("failed", "sending", 0, 0, "SocketTime
 
 /**
  * Robolectric tests for [SyncFloorAttempt] (ODD native-background-sync-cutover M2): the native
- * floor attempt that runs one native attempt when the ticker does NOT own the background.
+ * floor attempt that runs one native attempt when the sync service is not alive.
  *
  * Every behavior asserted by the original `SyncFloorWorkerTest` (pre-extraction) lives here with
  * the SAME assertion, driven directly on the collaborator's own seam -- [SyncFloorAttempt.run] --
@@ -42,10 +42,9 @@ private val OUTCOME_FAILED = CycleOutcome("failed", "sending", 0, 0, "SocketTime
  * mapping from [SyncFloorAttemptResult] to `ListenableWorker.Result`, and the wiring of its
  * injectable seams into this class -- is covered by `SyncFloorWorkerTest`.
  *
- * The ownership gate is injected rather than armed through the ticker: arming it (`startSyncTicking`)
- * is `internal` to `foreground-sync-ticker` and therefore not reachable from this module. The real
- * check is covered where it lives -- [expo.modules.foregroundsyncticker.TickAlarmSchedulerTest] --
- * and this file covers what the attempt does with its answer.
+ * The service-alive gate is injected here; its real default ([SyncForegroundService.isAlive]) is
+ * covered by `SyncFloorWorkerTest` and `SyncForegroundServiceTest`, and this file covers what the
+ * attempt does with its answer.
  */
 @RunWith(RobolectricTestRunner::class)
 class SyncFloorAttemptTest {
@@ -99,7 +98,7 @@ class SyncFloorAttemptTest {
   /** Builds an attempt with the given runner and an optional status-projection recorder. */
   private fun newAttempt(
     runner: SyncAttemptRunner,
-    ownsBackground: Boolean = false,
+    serviceAlive: Boolean = false,
     attemptTimeoutMsForTest: Long? = null,
     writes: MutableList<StatusWrite> = mutableListOf(),
   ): Pair<SyncFloorAttempt, MutableList<StatusWrite>> {
@@ -109,7 +108,7 @@ class SyncFloorAttemptTest {
       runtimeStatusWriter = { _, _, _, outcome ->
         writes += StatusWrite(outcome)
       },
-      ownsBackgroundCheck = { _ -> ownsBackground },
+      serviceAliveCheck = { _ -> serviceAlive },
       attemptTimeoutMsForTest = attemptTimeoutMsForTest,
     )
     return attempt to writes
@@ -121,7 +120,7 @@ class SyncFloorAttemptTest {
       context = context,
       attemptRunner = runner,
       runtimeStatusWriter = SyncEngineRuntimeStatus::record,
-      ownsBackgroundCheck = { _ -> false },
+      serviceAliveCheck = { _ -> false },
       attemptTimeoutMsForTest = null,
     )
 
@@ -144,9 +143,9 @@ class SyncFloorAttemptTest {
   }
 
   @Test
-  fun `the floor skips the attempt entirely while the ticker owns the background`() = runBlocking {
+  fun `the floor skips the attempt entirely while the sync service is alive`() = runBlocking {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
-    val (attempt, writes) = newAttempt(runner, ownsBackground = true)
+    val (attempt, writes) = newAttempt(runner, serviceAlive = true)
 
     val result = attempt.run()
 
@@ -155,7 +154,7 @@ class SyncFloorAttemptTest {
       SyncFloorAttemptResult.SkippedOwnedByTicker,
       result,
     )
-    assertEquals("no competing attempt may start while the ticker owns the background", 0, runner.invocationCount.get())
+    assertEquals("no competing attempt may start while the sync service is alive", 0, runner.invocationCount.get())
     assertTrue("a skipped tick must not touch sync_runtime_status", writes.isEmpty())
   }
 
@@ -170,10 +169,10 @@ class SyncFloorAttemptTest {
       Triple(RecordingRunner(), false, SyncFloorAttemptResult.AttemptUnsettled),
     )
 
-    val results = cases.map { (runner, ownsBackground, _) ->
+    val results = cases.map { (runner, serviceAlive, _) ->
       // Only the runner that never settles is bounded short; the others settle at once.
       val timeoutMs = if (runner.settlesNever) 20L else null
-      SyncFloorAttempt(context, runner, { _, _, _, _ -> }, { _ -> ownsBackground }, timeoutMs, recorder).run()
+      SyncFloorAttempt(context, runner, { _, _, _, _ -> }, { _ -> serviceAlive }, timeoutMs, recorder).run()
     }
 
     assertEquals(cases.map { it.third }, results)
@@ -206,8 +205,8 @@ class SyncFloorAttemptTest {
       context.getSharedPreferences("expo.modules.syncengine.floor_diary", Context.MODE_PRIVATE).edit().clear().commit()
       val ticks = listOf(false, true, true, false, false)
 
-      ticks.forEach { ownsBackground ->
-        SyncFloorAttempt(context, RecordingRunner { it(OUTCOME_CLOSED) }, { _, _, _, _ -> }, { _ -> ownsBackground }, null) { _, _ -> }
+      ticks.forEach { serviceAlive ->
+        SyncFloorAttempt(context, RecordingRunner { it(OUTCOME_CLOSED) }, { _, _, _, _ -> }, { _ -> serviceAlive }, null) { _, _ -> }
           .run()
       }
 
@@ -280,7 +279,7 @@ class SyncFloorAttemptTest {
       context = context,
       attemptRunner = runner,
       runtimeStatusWriter = { _, _, _, _ -> error("status write exploded") },
-      ownsBackgroundCheck = { _ -> false },
+      serviceAliveCheck = { _ -> false },
       attemptTimeoutMsForTest = null,
     )
 

@@ -118,6 +118,7 @@ class SyncForegroundService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    isAlive = true
     ensureNotificationChannel()
     // Real state changes for the sync diary (S4): the `:sync` process's start, once per process,
     // then this service's own start. Both run off this thread and never throw.
@@ -149,6 +150,7 @@ class SyncForegroundService : Service() {
     // so this only matters if the service is destroyed with one somehow still held -- a wake
     // lock must never outlive its service.
     releaseWakeLock()
+    isAlive = false
     SyncDiaryRuntime.recordTransition(applicationContext, "service", "stopped")
     super.onDestroy()
   }
@@ -277,6 +279,15 @@ class SyncForegroundService : Service() {
   }
 
   companion object {
+    /**
+     * True from [onCreate] to [onDestroy] of this service in this process. The floor
+     * ([SyncFloorWorker]) runs in the same `:sync` process and skips only while this is true, so
+     * a service that died -- with its tick alarm still armed or not -- no longer silences the
+     * floor. A new process starts with `false`, which is right: a dead process has no service.
+     */
+    @Volatile
+    internal var isAlive: Boolean = false
+
     /** [SyncEngineRunner.runOnce]'s `triggerSource` for every attempt this service starts. */
     internal const val TRIGGER_SOURCE = "native_fgs_tick"
 

@@ -153,7 +153,7 @@ class SyncFloorWorkerTest {
   fun `the worker adapter maps a skipped tick to success without running the attempt`() = runBlocking {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     val (worker, writes) = newWorker(runner)
-    worker.ownsBackgroundCheck = { true }
+    worker.serviceAliveCheck = { true }
 
     val result = worker.doRemoteWork()
 
@@ -162,8 +162,26 @@ class SyncFloorWorkerTest {
       ListenableWorker.Result.success(),
       result,
     )
-    assertEquals("no competing attempt may start while the ticker owns the background", 0, runner.invocationCount.get())
+    assertEquals("no competing attempt may start while the sync service is alive", 0, runner.invocationCount.get())
     assertTrue("a skipped tick must not touch sync_runtime_status", writes.isEmpty())
+  }
+
+  @Test
+  fun `by default the floor skips while the sync service is alive and runs once it is gone`() = runBlocking {
+    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
+    val (worker, _) = newWorker(runner)
+
+    try {
+      SyncForegroundService.isAlive = true
+      worker.doRemoteWork()
+      assertEquals("a live service owns the background, so the floor must not sync", 0, runner.invocationCount.get())
+
+      SyncForegroundService.isAlive = false
+      worker.doRemoteWork()
+      assertEquals("with the service gone the floor must sync, whatever the tick alarm says", 1, runner.invocationCount.get())
+    } finally {
+      SyncForegroundService.isAlive = false
+    }
   }
 
   @Test

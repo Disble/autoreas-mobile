@@ -274,6 +274,16 @@ class SyncForegroundServiceTest {
   }
 
   @Test
+  fun `the service reports itself alive from create until destroy`() {
+    val service = newService()
+    assertTrue("a created service must report itself alive to the floor gate", SyncForegroundService.isAlive)
+
+    service.onDestroy()
+
+    assertFalse("a destroyed service must stop reporting itself alive", SyncForegroundService.isAlive)
+  }
+
+  @Test
   fun `onDestroy releases a still-held wake lock defensively`() {
     val service = newService()
     val runner = RecordingAttemptRunner()

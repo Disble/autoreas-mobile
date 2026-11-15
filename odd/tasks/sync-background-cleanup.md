@@ -20,8 +20,8 @@ Branch: `feat/sync-background-cleanup` from `main` at 290616d (2.8.0). Delivery:
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S2 | inline | done: RED (5 Kotlin tests did not compile, 3 plugin tests failed), GREEN; ticker module 55/55 + Kover; plugin 14/14 | (this commit) |
-| T2 | S3 | inline | pending | |
+| T1 | S2 | inline | done: RED (5 Kotlin tests did not compile, 3 plugin tests failed), GREEN; ticker module 55/55 + Kover; plugin 14/14; native review approved (2 lenses), its WARNING fixed in 12274b5 | 0c2a0bb, 12274b5 |
+| T2 | S3 | inline | done: RED (isAlive and serviceAliveCheck did not compile), GREEN; sync-engine 479/479 | (this commit) |
 | T3 | S4 | inline | pending | |
 | T4 | S5 | inline | pending | |
 | T5 | S6 | inline | pending | |
@@ -37,3 +37,5 @@ Route evidence: units are small (about 100 changed lines or less each) and T1/T6
 - L2: Reboot test 2026-11-14 on 2.8.0: boot 20:26:59; BOOT_COMPLETED reached the app only through Notifee's and WorkManager's receivers; no service; floor synced 20:36:49 (cycle `5cc4a41d…`, same id on the Bridge) and 20:51:50 (delivered a Bridge change made at 20:48). The floor never shows in Samsung's active-apps list (no foreground info).
 - L3: Map by a read-only explorer (path:line evidence in the session); the inventory in S4-S7 comes from it.
 - L4: T1. `SyncRestartReceiver` (ticker module, main process) handles `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED` through `restoreBackgroundSync`, now shared with `TickAlarmReceiver`. Plugin declares it plus `RECEIVE_BOOT_COMPLETED`; release guard checks both. Risk: item 5 (release CI guard and manifest). Not yet on a device (T8).
+- L5: Native review of T1 (resilience, reliability) approved with advisories; two WARNINGs were real: the Python edit lost a `\` line continuation in `release.yml` (two needles on one line) and the permission was never added. Fixed with the Edit tool in 12274b5; guard checked with `bash -n`.
+- L6: T2. `SyncForegroundService.isAlive` (companion, `@Volatile`) is set in `onCreate`/`onDestroy`; `SyncFloorWorker.serviceAliveCheck` defaults to it (same `:sync` process). The wire outcome `skipped_owned_by_ticker` and `SyncFloorAttemptResult.SkippedOwnedByTicker` keep their names (Bridge vocabulary). `SyncTickerOwnership` is now read only by `SyncFloorScheduler.status`, removed in T3. Risk: item 4 (cross-component state; floor and service share `:sync`; if the floor ever ran elsewhere it would sync more, never less).
