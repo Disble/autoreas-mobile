@@ -350,7 +350,7 @@ flowchart TD
 | Boundary | Responsibility |
 | --- | --- |
 | `scripts/dlinter-mutation-staged.mjs` | Checks staged state, rejects partial staging, extracts added ranges, and invokes Stryker. |
-| `stryker.dlinter.json` | Selects the Jest runner, limits mutation to `native-foreground-sync-ticker.helpers.ts`, enforces the 80% breaking threshold, and caps the sandbox copy via `ignorePatterns`. |
+| `stryker.dlinter.json` | Selects the Jest runner, limits mutation to its three `mutate` surfaces (ticker, foreground adapter, battery optimization), enforces the 80% breaking threshold, and caps the sandbox copy via `ignorePatterns`. It runs with `coverageAnalysis: "off"` (so `ignoreStatic` is `false`): since Expo 58, `perTest` coverage made every dry run fail with "You are trying to `require` a file outside of the scope of the test code" (Expo's lazy globals read after the test scope closed). Off runs the related tests for every mutant, slower but complete. |
 | `jest.config.js` | The single suite definition, used unchanged by both `bun run test` and Stryker. |
 | `mutation-tdd` skill (installed globally) | Defines the required manual guard-deletion check for code outside the automated mutation surface. |
 
