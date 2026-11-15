@@ -45,9 +45,6 @@ export function useSyncRuntime(
 
   // 2. State
   const [currentAppState, setCurrentAppState] = useState(AppState.currentState);
-  const [executionMode, setExecutionMode] = useState<
-    "best_effort_background_task" | "android_foreground_service"
-  >("best_effort_background_task");
 
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -70,11 +67,7 @@ export function useSyncRuntime(
       createSyncExecutionFacade({
         strategies: [
           createNativeForegroundSyncAdapter(),
-          // Registration is native WorkManager now. The retired Expo task that used to sit here is
-          // no longer registered from JS; the pre-native `EXPO_BACKGROUND_WORKER` request is
-          // retired only once the native enqueue is CONFIRMED, and an unconfirmed enqueue leaves it
-          // pending while reporting the NATIVE floor as unregistered (see `native-background-floor`).
-          // That seam answers `unsupported`, never a JS cycle, when the native module is absent.
+          // The native WorkManager floor; it answers `unsupported` when the native module is absent.
           createNativeBackgroundFloorStrategy(),
         ],
       }),
@@ -120,8 +113,6 @@ export function useSyncRuntime(
       return;
     }
 
-    setExecutionMode(status.executionMode);
-
     const patch = buildSyncExecutionStatusPatch(status);
 
     await updateSyncRuntimeStatusSnapshot(
@@ -165,8 +156,7 @@ export function useSyncRuntime(
         | "app_active"
         | "network_regained"
         | "ws_sync_required"
-        | "ws_reconnected"
-        | "ws_disconnected",
+        | "ws_reconnected",
     ) => {
       void requestSync(source).catch(() => undefined);
     },
@@ -188,7 +178,7 @@ export function useSyncRuntime(
   // about HTTP, so the cycle's own outcome decides whether the status still claims it reachable.
   // Single-flight: a flapping socket runs at most one cycle plus one follow-up.
   const handleWebSocketDisconnected = useCallback(() => {
-    requestAutomaticSync("ws_disconnected");
+    requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
   // 7. Effects
@@ -226,9 +216,7 @@ export function useSyncRuntime(
 
     if (!isRuntimeEnabled) {
       hasBootstrappedRef.current = false;
-      // The native floor's own cancel is the ONLY floor cancel left: it retires the native
-      // request AND the pre-native `EXPO_BACKGROUND_WORKER` unique work, so an upgraded install
-      // cannot keep waking up through a request whose JS task no longer exists.
+      // The native floor's own cancel is the only floor cancel.
       // No settle pass runs while disabled: the settle effect is gated on `isRuntimeEnabled`, so
       // this clears itself when the runtime is switched off.
       void syncExecutionFacade
@@ -350,7 +338,6 @@ export function useSyncRuntime(
 
   return {
     currentAppState,
-    executionMode,
     isRuntimeEnabled,
     isWebSocketEnabled,
   };

@@ -4,8 +4,8 @@ import type { SyncFlushDispatcher, SyncFlushReason, SyncFlushState } from './syn
 
 /**
  * The trigger source each flush reason is persisted as. A socket reconnect or drop is a sync the
- * bridge asked for, and a season rating is a local mutation, so the persisted vocabulary (shared
- * with Kotlin through `sync_runtime_status`) does not grow.
+ * bridge asked for, so the persisted vocabulary (shared with Kotlin through `sync_runtime_status`)
+ * does not grow.
  */
 export const SYNC_FLUSH_REASON_SOURCES: Readonly<Record<SyncFlushReason, SyncRuntimeTriggerSource>> = {
   bootstrap: 'bootstrap',
@@ -14,16 +14,14 @@ export const SYNC_FLUSH_REASON_SOURCES: Readonly<Record<SyncFlushReason, SyncRun
   network_regained: 'network_regained',
   ws_sync_required: 'ws_sync_required',
   ws_reconnected: 'ws_sync_required',
-  ws_disconnected: 'ws_sync_required',
   local_mutation: 'local_mutation',
-  season_rating: 'local_mutation',
 };
 
 /**
  * The full-snapshot heal each flush reason demands (ADR 009 R-7): mount (`bootstrap`) and resume
  * (`app_active`) always heal; a WebSocket reconnect heals only when the last successful heal is
- * stale. Every other reason pulls since the cursor without the snapshot; a socket drop
- * (`ws_disconnected`) only re-checks the bridge (ADR 009 R-9).
+ * stale. Every other reason pulls since the cursor without the snapshot; a socket drop asks with
+ * `ws_sync_required` and only re-checks the bridge (ADR 009 R-9).
  */
 export const SNAPSHOT_HEAL_FLUSH_DEMANDS: Readonly<Record<SyncFlushReason, SnapshotHealDemand>> = {
   bootstrap: 'always',
@@ -32,9 +30,7 @@ export const SNAPSHOT_HEAL_FLUSH_DEMANDS: Readonly<Record<SyncFlushReason, Snaps
   network_regained: 'never',
   ws_sync_required: 'never',
   ws_reconnected: 'if_stale',
-  ws_disconnected: 'never',
   local_mutation: 'never',
-  season_rating: 'never',
 };
 
 /** Holds the registered JS dispatcher; `null` while the foreground runtime is not mounted. */

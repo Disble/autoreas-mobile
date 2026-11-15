@@ -34,7 +34,7 @@ export async function enqueueSeasonRatingIntent(
   });
 
   invalidateSyncConnectionOnline();
-  void requestFlush(rawDb, 'season_rating').catch(() => undefined);
+  void requestFlush(rawDb, 'local_mutation').catch(() => undefined);
 }
 
 /**

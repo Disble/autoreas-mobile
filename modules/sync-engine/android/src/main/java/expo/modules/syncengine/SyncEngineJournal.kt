@@ -4,8 +4,6 @@ import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import android.content.Context
 import java.io.File
-import java.util.concurrent.Executors
-import java.util.concurrent.ExecutorService
 
 private const val JOURNAL_FILE_NAME = "sync-journal.db"
 private const val JOURNAL_LOG_TAG = "SyncEngineJournal"
@@ -43,12 +41,9 @@ data class JournalTransition(
 )
 
 /**
- * The engine's own writer for `sync-journal.db`, on its OWN connection — the same out-of-door
- * file the `SyncJournal` module (T2) created. Two writers share one file today:
- * `modules/sync-journal` (the JS seam) and this engine. **The schema is owned by
- * `modules/sync-journal`; both writers must keep it byte-identical — file name, table shape,
- * 250 ms busy budget and the 500-row cap — and ODD task T5 unifies them behind a single
- * writer.** Until then, every change to the journal shape must land in both modules at once.
+ * The only writer of `sync-journal.db`, on its OWN connection: the journal must not live behind the
+ * app database's write door it reports on (docs/mobile-sync-architecture.md 6.3). It owns the file
+ * name, the table shape, the 250 ms busy budget and the 500-row cap.
  *
  * Writes are intent-before-effect by contract: the caller appends the row naming a transition
  * BEFORE performing the effect it names, so an attempt parked inside a native call reports the
@@ -56,23 +51,19 @@ data class JournalTransition(
  * busy budget and never throw: the journal is an instrument, not a participant, and a failed
  * append degrades to `false` — the attempt continues.
  *
- * The append path is synchronized because TWO threads use this object: the work executor and
- * the watchdog thread (which writes the `abandoned` row itself, since the worker may be parked
+ * The append path is synchronized because TWO threads use this object: the attempt's work thread
+ * and the watchdog thread (which writes the `abandoned` row itself, since the worker may be parked
  * inside a native call and unable to report).
  */
 class SyncEngineJournal(context: Context) {
   private val file: File = File(context.filesDir, JOURNAL_FILE_NAME)
 
-  // A dedicated single-thread executor keeps the WORKER's appends off both the work thread and
-  // the watchdog thread's own budget; the watchdog's abandon append runs through the same
-  // synchronized append below, so the two writers of this file serialize on the monitor.
-  private val executor: ExecutorService = Executors.newSingleThreadExecutor()
   private var db: SQLiteDatabase? = null
 
   /**
    * Appends one transition row and prunes beyond capacity, reporting success as a plain
    * boolean. Never throws; both outcomes are logged because a non-debuggable build cannot pull
-   * the journal file for inspection (same observability rule as the `SyncJournal` module).
+   * the journal file for inspection.
    */
   @Synchronized
   fun append(
@@ -133,9 +124,8 @@ class SyncEngineJournal(context: Context) {
     }
   }
 
-  /** Closes the journal connection and stops its executor (called from `OnDestroy`). */
+  /** Closes the journal connection (called from `OnDestroy`). */
   fun close() {
-    executor.shutdown()
     try {
       db?.close()
     } catch (error: Throwable) {

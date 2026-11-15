@@ -56,7 +56,7 @@ describe('enqueueSeasonRatingIntent (ADR 009 R-1, I1; L28)', () => {
         created_at: 1_700_000_000_000,
       },
     ]);
-    expect(requestFlush).toHaveBeenCalledWith(adapter, 'season_rating');
+    expect(requestFlush).toHaveBeenCalledWith(adapter, 'local_mutation');
   });
 
   it('stamps the row with the real clock when the caller omits one', async () => {

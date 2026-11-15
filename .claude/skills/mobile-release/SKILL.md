@@ -225,7 +225,7 @@ that ships something broken. Do not remove one to make a run pass.
 | Kotlin unit tests + Android lint (`sync-engine`, `foreground-sync-ticker`) | `native` (skippable by C2 — see above) | the native module tests or lint regressing silently |
 | no `BundleConfig.pb` in the artifact | `build` | `android.buildType` lost ⇒ an AAB nobody can sideload |
 | `aapt2 dump badging` versionName == tag | `build` | a stale prebuild shipping the previous version name |
-| manifest still declares `app.notifee.core.ForegroundService` + `foregroundServiceType`, and all six permissions | `build` | `withAndroidForegroundSync` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
+| manifest still declares `foregroundServiceType`, both receivers (`TickAlarmReceiver`, `SyncRestartReceiver`), `SyncForegroundService`, and all six permissions | `build` | `withAndroidForegroundSync` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
 | APK reports itself non-debuggable | `build` | a lab-profile debuggable build leaking into a release |
 
 `publish` runs only when `build` succeeded and `native` either succeeded or was

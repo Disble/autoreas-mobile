@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -65,6 +66,12 @@ class SyncForegroundServiceTest {
       pendingOnResult = null
       onResult(outcome)
     }
+  }
+
+  /** Services built here are never destroyed by most tests; the process-static flag must not leak. */
+  @After
+  fun resetServiceAliveFlag() {
+    SyncForegroundService.isAlive = false
   }
 
   private fun newService(): SyncForegroundService =
@@ -271,6 +278,16 @@ class SyncForegroundServiceTest {
         outbox.transitions(),
       )
     }
+  }
+
+  @Test
+  fun `the service reports itself alive from create until destroy`() {
+    val service = newService()
+    assertTrue("a created service must report itself alive to the floor gate", SyncForegroundService.isAlive)
+
+    service.onDestroy()
+
+    assertFalse("a destroyed service must stop reporting itself alive", SyncForegroundService.isAlive)
   }
 
   @Test

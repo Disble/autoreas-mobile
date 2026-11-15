@@ -48,12 +48,12 @@ internal fun SyncFloorAttemptResult.toListenableWorkerResult(): ListenableWorker
 }
 
 /**
- * The native periodic floor's worker (ODD native-background-sync-cutover M2): when the native
- * foreground-service ticker does NOT own the background, run ONE native sync attempt, project its
+ * The native periodic floor's worker: when [SyncForegroundService] is not alive in `:sync`, run
+ * ONE native sync attempt, project its
  * outcome into `sync_runtime_status` honestly, and complete exactly once.
  *
  * **This class is an adapter, on purpose, and that is its whole job.** The attempt itself --
- * ownership gate, one attempt through [SyncEngineRunner] with `requirePresence = true`, the
+ * service-alive gate, one attempt through [SyncEngineRunner] with `requirePresence = true`, the
  * exactly-once settlement race, the bounded wait, the `CancellationException` propagation, the
  * status projection, and the crash-safety around both injectable
  * seams -- lives in [SyncFloorAttempt], which documents every one of those behaviors and their
@@ -74,10 +74,10 @@ internal fun SyncFloorAttemptResult.toListenableWorkerResult(): ListenableWorker
  * recreating the exact two-cores-in-one-process hazard this split removes. `doRemoteWork()` only
  * ever builds [SyncFloorAttempt] and runs it in whichever process the base class bound to.
  *
- * The seams below (`attemptRunner`, `runtimeStatusWriter`, `ownsBackgroundCheck`,
+ * The seams below (`attemptRunner`, `runtimeStatusWriter`, `serviceAliveCheck`, `tickAlarmArmedCheck`,
  * `attemptTimeoutMsForTest`) are `internal` and default to the real collaborators, exactly as
  * before the extraction and exactly like [SyncForegroundService]'s, so this module's own test
- * source set can drive the floor without a live ticker, a live database or the wire.
+ * source set can drive the floor without a live service, a live database or the wire.
  */
 class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCoroutineWorker(context, params) {
 
@@ -92,8 +92,14 @@ class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCorout
       SyncEngineRuntimeStatus.record(context, cycleId, attemptedAtMs, outcome)
     }
 
-  /** Swappable in tests; defaults to the real, ticker-owned [SyncTickerOwnership.ownsBackground]. */
-  internal var ownsBackgroundCheck: (Context) -> Boolean = SyncTickerOwnership::ownsBackground
+  /** Swappable in tests; defaults to whether [SyncForegroundService] is alive in this process. */
+  internal var serviceAliveCheck: (Context) -> Boolean = { SyncForegroundService.isAlive }
+
+  /**
+   * Swappable in tests; defaults to whether the service's tick alarm is armed. A live service
+   * whose alarm chain died syncs nothing, so the floor skips only when BOTH checks hold.
+   */
+  internal var tickAlarmArmedCheck: (Context) -> Boolean = SyncTickerOwnership::ownsBackground
 
   /**
    * Test-only override for the wait bound (the shape [SyncEngineRunner.budgetMsOverrideForTest]
@@ -107,7 +113,7 @@ class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCorout
       context = applicationContext,
       attemptRunner = attemptRunner,
       runtimeStatusWriter = runtimeStatusWriter,
-      ownsBackgroundCheck = ownsBackgroundCheck,
+      serviceAliveCheck = { context -> serviceAliveCheck(context) && tickAlarmArmedCheck(context) },
       attemptTimeoutMsForTest = attemptTimeoutMsForTest,
     ).run().toListenableWorkerResult()
 }

@@ -20,16 +20,15 @@ private const val LOG_TAG = "SyncFloorWorker"
 /** Preferences of the floor's diary state; only the `:sync` process runs the floor and writes them. */
 private const val FLOOR_DIARY_PREFS = "expo.modules.syncengine.floor_diary"
 
-/** True while the floor's last tick was skipped because the ticker owns the background. */
+/** True while the floor's last tick was skipped because the sync service was alive. */
 private const val PREF_IS_SKIPPING = "isSkipping"
 
 /**
  * Every distinguishable end state of one floor tick -- the complete set of outcomes [SyncFloorAttempt]
  * can report, so its caller only has to MAP this value, never re-decide it.
  *
- * The states mirror the branches the floor has reported since M2:
- *
- * - [SkippedOwnedByTicker]: the ticker owns the background, so no attempt ran and nothing was written.
+ * - [SkippedOwnedByTicker]: [SyncForegroundService] is alive and owns the background, so no attempt
+ *   ran and nothing was written. The name maps to the diary outcome `skipped_owned_by_ticker`.
  * - [AttemptCompleted]: exactly one attempt settled and its outcome was projected (a status-write
  *   failure is folded in here on purpose -- see [SyncFloorAttempt], which logs it and does not let
  *   it change the tick's reported outcome).
@@ -38,12 +37,11 @@ private const val PREF_IS_SKIPPING = "isSkipping"
  *
  * Only [SkippedOwnedByTicker] and [AttemptCompleted] are completed ticks; the other two are the
  * retryable ones. `SyncFloorWorker` owns that mapping (`toListenableWorkerResult`), so this type
- * stays free of every `androidx.work` type and therefore survives the planned swap of the worker's
- * base class to `androidx.work.multiprocess.RemoteCoroutineWorker`.
+ * stays free of every `androidx.work` type.
  */
 internal sealed interface SyncFloorAttemptResult {
 
-  /** The tick did nothing: the native foreground-service ticker owns the background. */
+  /** The tick did nothing: the sync foreground service is alive and owns the background. */
   data object SkippedOwnedByTicker : SyncFloorAttemptResult
 
   /** One attempt settled and its outcome was projected into `sync_runtime_status`. */
@@ -57,35 +55,26 @@ internal sealed interface SyncFloorAttemptResult {
 }
 
 /**
- * The native periodic floor's ATTEMPT (ODD native-background-sync-cutover M2): when the native
- * foreground-service ticker does NOT own the background, run ONE native sync attempt through
- * [SyncEngineRunner], project its outcome into `sync_runtime_status` honestly, complete exactly
- * once, and report which of those end states was reached.
+ * The native periodic floor's ATTEMPT: when [SyncForegroundService] is not alive, run ONE native
+ * sync attempt through [SyncEngineRunner], project its outcome into `sync_runtime_status`
+ * honestly, complete exactly once, and report which of those end states was reached.
  *
- * **Why this class exists, separate from [SyncFloorWorker].** The worker is being moved into a
- * dedicated `:sync` Android process as an `androidx.work.multiprocess.RemoteCoroutineWorker`, and
- * `RemoteCoroutineWorker.startWork()` is `final` with no local `doWork()` to drive, so
- * `TestListenableWorkerBuilder` can no longer execute this behavior. Keeping the attempt here --
- * a plain Kotlin collaborator with no `androidx.work` type in its surface -- keeps every behavior
- * below unit-testable through its own public seam, [run], and leaves the worker with the single
- * job of mapping [SyncFloorAttemptResult] to a `ListenableWorker.Result`.
+ * **Why it is separate from [SyncFloorWorker].** The worker is an
+ * `androidx.work.multiprocess.RemoteCoroutineWorker` running in `:sync`; its `startWork()` is
+ * `final`, so `TestListenableWorkerBuilder` cannot drive this behavior through it. Keeping the
+ * attempt here -- a plain Kotlin collaborator with no `androidx.work` type in its surface -- keeps
+ * it unit-testable through [run], and leaves the worker only the mapping to a
+ * `ListenableWorker.Result`.
  *
- * **Why a Worker and not the service.** ADR 008 gives Kotlin ownership of the background cycle;
- * [SyncForegroundService] only exists while the user's foreground sync mode is armed. Without a
- * second, non-resident trigger the app would deliver nothing in the FGS-off configuration the
- * delivery policy accepts, which is exactly the gap the JS `expo-background-task` floor covers
- * today. This attempt is that floor, natively: no JS callback runs, so there is no
- * `runJsBackgroundSyncCycle()` fallback to fall back to, and a headless wake needs no React
- * runtime at all.
+ * **Why a Worker and not only the service.** The service can die, and nothing else restarts it
+ * until the next tick, reboot or app open; this periodic work is the safety net for that gap.
  *
- * **The ownership gate is the ticker's own answer, not a guess.** [SyncTickerOwnership] reports
- * whether the ticker's own armed alarm exists -- across processes, which is what makes the gate
- * correct once this code runs in `:sync` -- the same fact the JS floor reads through
- * `createNativeForegroundSyncTicker().isRunning()` before it decides to no-op, so the two floors
- * share ONE definition of "the ticker owns the background". A skipped tick is a COMPLETED tick
- * ([SyncFloorAttemptResult.SkippedOwnedByTicker]) and writes nothing: it is not a failure, the
- * period owns the next attempt, and a dismissed/refused tick must stay as cheap as it was on the
- * JS path.
+ * **The gate asks whether the service is alive AND ticking.** The floor and the service share the
+ * `:sync` process, so [SyncForegroundService.isAlive] is a direct answer; the worker also requires
+ * the tick alarm to be armed, because a live service whose alarm chain died syncs nothing. The
+ * previous gate read only the alarm's token, which survives the service's death, so a dead service
+ * silenced the floor too (`odd/tasks/sync-background-cleanup.md` S3). A skipped tick is a
+ * COMPLETED tick ([SyncFloorAttemptResult.SkippedOwnedByTicker]) and writes nothing.
  *
  * **The presence gate and the status projection are the service caller's, reused.** The attempt
  * runs with `requirePresence = true` ([SyncEngineRunner] probes `/api/status` inside its own
@@ -105,12 +94,12 @@ internal sealed interface SyncFloorAttemptResult {
  *
  * **Coexistence with the service is belt-and-braces.** [SyncEngineRunner] serializes every
  * attempt process-wide and [SyncCycleLease] refuses a second claimant, so even a tick that
- * overlaps the service (the ticker being armed and the service not actually running yet, say)
- * cannot produce two concurrent cycles; the ownership gate exists to avoid paying for the
- * attempt at all, not to make the engine safe.
+ * overlaps the service (one starting while the floor's attempt runs, say) cannot produce two
+ * concurrent cycles; the service-alive gate exists to avoid paying for the attempt at all, not to
+ * make the engine safe.
  *
  * The seams are constructor parameters (defaulted by the caller, `SyncFloorWorker`, to the real
- * collaborators) so this class's own test suite can drive [run] without a live ticker, a live
+ * collaborators) so this class's own test suite can drive [run] without a live service, a live
  * database or the wire.
  */
 internal class SyncFloorAttempt(
@@ -120,8 +109,8 @@ internal class SyncFloorAttempt(
   private val attemptRunner: SyncAttemptRunner,
   /** Swappable in tests; the worker defaults it to the real [SyncEngineRuntimeStatus.record]. */
   private val runtimeStatusWriter: (Context, String, Long, CycleOutcome) -> Unit,
-  /** Swappable in tests; the worker defaults it to the real, ticker-owned [SyncTickerOwnership.ownsBackground]. */
-  private val ownsBackgroundCheck: (Context) -> Boolean,
+  /** Swappable in tests; the worker passes "service alive and its tick alarm armed". */
+  private val serviceAliveCheck: (Context) -> Boolean,
   /**
    * Override for the wait bound (the shape [SyncEngineRunner.budgetMsOverrideForTest] already
    * uses), so a test can prove the no-settlement path without waiting out the real margin. `null`
@@ -145,8 +134,8 @@ internal class SyncFloorAttempt(
   suspend fun run(): SyncFloorAttemptResult {
     // The `:sync` process's start, once per process (S4); off this thread, never throwing.
     SyncDiaryRuntime.noteProcessStart(context)
-    if (ownsBackgroundCheck(context)) {
-      Log.i(LOG_TAG, "floor tick skipped: the native ticker owns the background")
+    if (serviceAliveCheck(context)) {
+      Log.i(LOG_TAG, "floor tick skipped: the sync service is alive and ticking")
       noteSkipping(isSkipping = true)
       recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, null, System.currentTimeMillis(), NativeAttemptEnd.SkippedOwnedByTicker))
       return SyncFloorAttemptResult.SkippedOwnedByTicker

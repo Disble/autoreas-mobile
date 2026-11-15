@@ -151,8 +151,8 @@ Then it interrogates the artifact with `aapt2` before publishing it:
 | --- | --- |
 | No `BundleConfig.pb` in the archive | `eas.json` losing `android.buildType` ⇒ an **AAB** nobody can sideload, on a fully green build |
 | `versionName` equals the tag | a stale prebuild shipping the previous version name |
-| Manifest declares `app.notifee.core.ForegroundService` and `foregroundServiceType` | `plugins/withAndroidForegroundSync.js` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, `WAKE_LOCK` present | a permission dropped from the shipped manifest |
+| Manifest declares `foregroundServiceType`, `SyncForegroundService`, `TickAlarmReceiver` and `SyncRestartReceiver` | `plugins/withAndroidForegroundSync.js` silently no longer applying ⇒ Android 14+ refuses to start the service and background sync dies on device while every test stays green |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `WAKE_LOCK` present | a permission dropped from the shipped manifest |
 
 Every one of those exists because its failure mode is **silent**. Do not remove one to make a run
 pass.

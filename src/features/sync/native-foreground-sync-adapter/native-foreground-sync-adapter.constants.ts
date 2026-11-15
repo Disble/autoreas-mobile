@@ -5,12 +5,15 @@
  * `modules/sync-engine/android/src/main/java/expo/modules/syncengine/SyncForegroundService.kt` --
  * the same cross-module-contract shape `SYNC_FOREGROUND_SERVICE_CLASS_NAME` in
  * `SyncForegroundServiceBridge.kt` already documents. Used with `NativeForegroundServicePresence`
- * to read the live "is the service actually running right now" state for `getStatus()`. Before
- * T5 this seam checked Notifee's own channel id (`autoreas-sync-foreground`), which never matched
- * the native service's real channel; T5 fixes that mismatch by pointing this seam at the channel
- * the native service actually posts on.
+ * to read the live "is the service actually running right now" state for `getStatus()`.
  */
 export const SYNC_FOREGROUND_SERVICE_CHANNEL_ID = 'autoreas-sync-foreground-native';
+
+/**
+ * First Android API level (13) where posting a notification needs the runtime `POST_NOTIFICATIONS`
+ * permission. Below it the permission is granted at install, so nothing is asked.
+ */
+export const NOTIFICATION_PERMISSION_API_LEVEL = 33;
 
 /**
  * Defines the interval between foreground sync attempts. T6 owns this value.
