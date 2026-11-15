@@ -216,7 +216,7 @@ describe('sync-execution-facade', () => {
     it('reports unregistered for the Android pairing, because the FGS strategy answers a real lifecycle state', async () => {
       // The production Android pairing: the real native floor seam (no native module on this host)
       // plus the FGS strategy. The FGS adapter is stood in for by an equivalent `unregistered`
-      // stub -- it has its own adapter tests, and importing notifee here would add noise to the
+      // stub -- it has its own adapter tests, and importing it here would add noise to the
       // merge assertion. Its `unregistered` is a genuine lifecycle answer, so it wins over the
       // floor's `unsupported`: on Android the missing-module reason is NOT surfaced while the FGS
       // path exists. That is honest -- something IS off, just not "unsupportable" -- and it is the

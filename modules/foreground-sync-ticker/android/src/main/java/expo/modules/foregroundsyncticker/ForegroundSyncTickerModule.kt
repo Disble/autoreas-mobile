@@ -73,15 +73,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * `NotificationManager.getActiveNotifications()` for a match on that channel id -- an Android
  * foreground-service notification cannot outlive its service, the platform removes it the moment
  * the service stops, so this is a faithful proxy rather than a guess. It does not hardcode which
- * channel to check: the caller passes it. As of T5 the one caller
+ * channel to check: the caller passes it. The one caller
  * (`native-foreground-sync-adapter.helpers.ts`'s `getStatus()`) passes
  * `SyncForegroundService.CHANNEL_ID` (`autoreas-sync-foreground-native`), the native service's own
- * channel -- T4's JS-side mismatch (the retired watchdog passed Notifee's channel id instead) is
- * resolved by T5 retiring that caller along with it; this function itself is unchanged.
- * `ActivityManager.getRunningServices()` filtered to `app.notifee.core.ForegroundService` was
- * considered and rejected: it has been deprecated since API 26, and it would hardcode Notifee's
- * internal class name into this module, whereas the channel id is a constant this repo already
- * owns.
+ * channel. `ActivityManager.getRunningServices()` was considered and rejected: it has been
+ * deprecated since API 26, whereas the channel id is a constant this repo already owns.
  *
  * `recordSyncAttempt` and `recordRuntimeTransition` are the main process's door into [SyncDiary]
  * (odd/tasks/mobile-report-kinds.md T2): JS counts its own sync attempts through the same native

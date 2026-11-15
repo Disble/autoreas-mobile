@@ -1,5 +1,5 @@
-import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
+import type { PermissionStatus } from 'react-native';
 import { createNativeForegroundSyncAdapter } from '../../../src/features/sync/native-foreground-sync-adapter';
 import {
   FOREGROUND_SYNC_INTERVAL_MS,
@@ -29,11 +29,19 @@ jest.mock('../../../src/features/sync/native-foreground-service-presence.helpers
 
 describe('native-foreground-sync-adapter', () => {
   const platformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
+  const versionDescriptor = Object.getOwnPropertyDescriptor(Platform, 'Version');
+  const requestPermission = jest.spyOn(PermissionsAndroid, 'request');
 
-  /** Puts the adapter on Android with notification permission resolved to the given status. */
-  function authorizeAndroid(authorizationStatus = AuthorizationStatus.AUTHORIZED) {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
-    (notifee.requestPermission as jest.Mock).mockResolvedValue({ authorizationStatus });
+  /** Puts the adapter on the given Android API level, 33 (Android 13) by default. */
+  function onAndroid(apiLevel = 33) {
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    Object.defineProperty(Platform, 'Version', { value: apiLevel, configurable: true });
+  }
+
+  /** Puts the adapter on Android 13 with the notification permission answered as [result]. */
+  function authorizeAndroid(result: PermissionStatus = PermissionsAndroid.RESULTS.GRANTED) {
+    onAndroid();
+    requestPermission.mockResolvedValue(result);
   }
 
   beforeEach(() => {
@@ -44,6 +52,9 @@ describe('native-foreground-sync-adapter', () => {
   afterEach(() => {
     if (platformDescriptor) {
       Object.defineProperty(Platform, 'OS', platformDescriptor);
+    }
+    if (versionDescriptor) {
+      Object.defineProperty(Platform, 'Version', versionDescriptor);
     }
   });
 
@@ -153,7 +164,7 @@ describe('native-foreground-sync-adapter', () => {
   });
 
   it('getStatus() reports no persistent notification before register() ever ran', async () => {
-    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    onAndroid();
 
     const adapter = createNativeForegroundSyncAdapter();
 
@@ -162,15 +173,51 @@ describe('native-foreground-sync-adapter', () => {
     );
   });
 
-  it('getStatus() reports no persistent notification when permission is denied', async () => {
-    authorizeAndroid(AuthorizationStatus.DENIED);
+  it('register() asks Android 13+ for POST_NOTIFICATIONS', async () => {
+    authorizeAndroid();
+
+    await createNativeForegroundSyncAdapter().register();
+
+    expect(requestPermission).toHaveBeenCalledWith(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  });
+
+  it.each([PermissionsAndroid.RESULTS.DENIED, PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN])(
+    'getStatus() reports no persistent notification when the permission answer is %s, and ticking still starts',
+    async (result) => {
+      authorizeAndroid(result);
+
+      const adapter = createNativeForegroundSyncAdapter();
+      await adapter.register();
+
+      await expect(adapter.getStatus()).resolves.toEqual(
+        expect.objectContaining({ canShowPersistentNotification: false }),
+      );
+      expect(mockTickerStart).toHaveBeenCalledWith(FOREGROUND_SYNC_INTERVAL_MS);
+    },
+  );
+
+  it('a failed permission request reports no persistent notification and still starts ticking', async () => {
+    onAndroid();
+    requestPermission.mockRejectedValue(new Error('no activity'));
 
     const adapter = createNativeForegroundSyncAdapter();
-
     await adapter.register();
 
     await expect(adapter.getStatus()).resolves.toEqual(
       expect.objectContaining({ canShowPersistentNotification: false }),
+    );
+    expect(mockTickerStart).toHaveBeenCalledWith(FOREGROUND_SYNC_INTERVAL_MS);
+  });
+
+  it('below Android 13 the permission is granted at install, so nothing is asked', async () => {
+    onAndroid(32);
+
+    const adapter = createNativeForegroundSyncAdapter();
+    await adapter.register();
+
+    expect(requestPermission).not.toHaveBeenCalled();
+    await expect(adapter.getStatus()).resolves.toEqual(
+      expect.objectContaining({ canShowPersistentNotification: true }),
     );
   });
 });

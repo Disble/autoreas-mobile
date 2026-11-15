@@ -6,11 +6,8 @@ const {
   withMainApplication,
 } = require('expo/config-plugins');
 
-// react-native-notify-kit keeps the original Notifee service class name but, unlike Notifee 9.x,
-// no longer hardcodes android:foregroundServiceType in its own manifest. This plugin is therefore
-// the only source of that attribute, and Android 14+ refuses to start a foreground service without
-// it. `tools:replace` is retained deliberately: it is a no-op while nothing else declares the
-// attribute, and it keeps the app manifest authoritative if a future dependency does.
+// Android 14+ refuses to start a foreground service without `android:foregroundServiceType`, and
+// this plugin is the only place our sync service declares it.
 //
 // The type is `specialUse` instead of `dataSync` because Android 15 caps `dataSync` and
 // `mediaProcessing` foreground services at 6 hours per 24 for apps targeting SDK 35+, after which
@@ -20,9 +17,6 @@ const {
 // `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` property child on the service element. The Play
 // Console declaration for `specialUse` applies only when submitting to Google Play; this app ships
 // sideloaded APKs.
-/** Android component name of the Notifee foreground service this plugin owns. */
-const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
-
 /** The declared foreground-service type: `specialUse`, outside Android 15's capped `dataSync` list. */
 const FOREGROUND_SERVICE_TYPE = 'specialUse';
 
@@ -103,8 +97,6 @@ const SPECIAL_USE_FGS_SUBTYPE_PROPERTY = {
 /** Permissions the service needs, merged into the manifest when it does not declare them yet. */
 const REQUIRED_PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE',
-  // Kept until the merged manifest proves no other component still needs it.
-  'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.POST_NOTIFICATIONS',
   // Delivers BOOT_COMPLETED to `SyncRestartReceiver`; declared here, not inherited from a library.
@@ -143,44 +135,10 @@ function ensureSpecialUseSubtypeProperty(service) {
   service.property = properties;
 }
 
-/** Points the Notifee service at the declared type, creating the service element when absent. */
-function ensureForegroundService(mainApplication) {
-  const services = mainApplication.service ?? [];
-  const existingService = services.find(
-    (service) => service.$?.['android:name'] === FOREGROUND_SERVICE_NAME,
-  );
-
-  if (existingService) {
-    existingService.$ = {
-      ...existingService.$,
-      'android:foregroundServiceType': FOREGROUND_SERVICE_TYPE,
-      'tools:replace': 'android:foregroundServiceType',
-    };
-  } else {
-    services.push({
-      $: {
-        'android:name': FOREGROUND_SERVICE_NAME,
-        'android:foregroundServiceType': FOREGROUND_SERVICE_TYPE,
-        'tools:replace': 'android:foregroundServiceType',
-      },
-    });
-  }
-
-  services.forEach((service) => {
-    if (service.$?.['android:name'] === FOREGROUND_SERVICE_NAME) {
-      ensureSpecialUseSubtypeProperty(service);
-    }
-  });
-
-  mainApplication.service = services;
-}
-
 /**
- * Declares our own native foreground service (ODD native-foreground-sync-service T3),
- * idempotently -- same shape as {@link ensureForegroundService} above, but `exported` stays
- * `false` (this component is only ever started by this app's own receiver or module, through an
- * explicit intent naming {@link SYNC_FOREGROUND_SERVICE_NAME}) and no `tools:replace` is needed,
- * since nothing else in the merged manifest declares this component.
+ * Declares our own native foreground service, idempotently. `exported` stays `false`: this
+ * component is only ever started by this app's own receivers or module, through an explicit intent
+ * naming {@link SYNC_FOREGROUND_SERVICE_NAME}.
  *
  * `android:process` is the whole point of the declaration in ODD mobile-database-recovery T3: this
  * service opens `autoreas.db` through the framework's SQLite, so it must not run in the process
@@ -414,7 +372,6 @@ module.exports = function withAndroidForegroundSync(config) {
       ensureUsesPermission(androidManifest, permissionName);
     });
 
-    ensureForegroundService(mainApplication);
     ensureSyncForegroundService(mainApplication);
     ensureRemoteWorkerService(mainApplication);
     ensureReceiver(mainApplication, TICK_ALARM_RECEIVER_NAME, [TICK_ALARM_ACTION]);

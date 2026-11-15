@@ -27,9 +27,8 @@ private const val RECEIVER_LOG_TAG = "TickAlarmReceiver"
  * armed for the next interval, or the whole chain dies with it.
  *
  * **Then starts the sync-engine's foreground service (ODD native-foreground-sync-service T4).**
- * This reverses this class's own earlier design -- see "History" below: the receiver now owns
- * restoring the service, because Kotlin, not Notifee, owns it outright (T3's
- * `SyncForegroundService`). It is started by explicit intent naming the service by its
+ * The receiver owns restoring the service, because Kotlin owns it outright
+ * (`SyncForegroundService`). It is started by explicit intent naming the service by its
  * fully-qualified class name only, never by importing it -- see
  * [SYNC_FOREGROUND_SERVICE_CLASS_NAME]'s doc in `SyncForegroundServiceBridge.kt`:
  * `foreground-sync-ticker` and `sync-engine` are deliberately separate Gradle modules, and this
@@ -47,16 +46,6 @@ private const val RECEIVER_LOG_TAG = "TickAlarmReceiver"
  * [ForegroundSyncTickerModule] clears that flag specifically so this receiver has a way to stop
  * re-arming itself, and stops the service through the same `stopSyncForegroundService` this
  * receiver uses (via [startSyncForegroundServiceSafely]) to start it.
- *
- * **History.** This class used to dispatch `onTick` to a live [ForegroundSyncTickerModule]
- * instance (through its `activeInstance` companion property) so JS could run a cycle and hold a
- * per-tick wake lock, and deliberately did NOT try to restore the foreground service itself --
- * Notifee owned it then, through a JS API a bare `BroadcastReceiver` could not call, and reaching
- * into `app.notifee.core.ForegroundService` directly would have forked ownership of the service
- * between two layers. T4 retires both halves of that: Kotlin now owns the service outright (T3),
- * so there is no second owner to fork against, and the whole `onTick` dispatch / wake-lock path
- * is gone from this receiver and from [ForegroundSyncTickerModule] alike -- see that module's own
- * class doc for what stays on the JS-facing surface only for compatibility until T5.
  */
 class TickAlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context?, intent: Intent?) {

@@ -158,7 +158,7 @@ published is documented in [Deployment](docs/deployment.md).
 | Server state | [TanStack Query](https://tanstack.com/query) | Bridge fetch and cache lifecycle. |
 | Client state | [Zustand](https://zustand.docs.pmnd.rs/) | Small in-memory global state with no boot cost. |
 | Validation | [Zod 4](https://zod.dev/) | Coerces the legacy `animes.dat` wire format at the boundary. |
-| Native | Kotlin Expo module · [react-native-notify-kit](https://www.npmjs.com/package/react-native-notify-kit) | Foreground service and persistent notification for continuous sync. |
+| Native | Kotlin Expo modules · Android WorkManager | Foreground service, tick alarm and 15-minute floor for background sync. |
 | Testing | Jest · jest-expo · Testing Library · [Stryker](https://stryker-mutator.io/) | TDD is mandatory here; mutation testing guards the tests themselves. |
 | Quality | ESLint 9 · `dharness` · `dlinter-ts-react` · [fallow](https://www.npmjs.com/package/fallow) · Lefthook | Architecture rules enforced at commit time, not by review etiquette. |
 | Package manager | [Bun](https://bun.sh/) | The **only** supported package manager for this repo. |

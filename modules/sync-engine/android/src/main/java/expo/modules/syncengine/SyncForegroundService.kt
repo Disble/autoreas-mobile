@@ -242,9 +242,7 @@ class SyncForegroundService : Service() {
    * Builds and posts the ongoing notification and promotes this service to the foreground with
    * [ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE] -- required on API 34+, and handled as a
    * safe no-op-of-the-type-argument on older platforms by [ServiceCompat.startForeground] itself,
-   * so no manual `Build.VERSION.SDK_INT` branch is needed here. Title/body copy matches the
-   * Notifee adapter's own foreground notification (`notifee-foreground-service-adapter.helpers.ts`)
-   * so the user sees continuity even though a different owner is now posting it.
+   * so no manual `Build.VERSION.SDK_INT` branch is needed here.
    */
   private fun postForegroundNotification() {
     val notification = NotificationCompat.Builder(this, CHANNEL_ID)
