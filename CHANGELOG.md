@@ -16,6 +16,25 @@ minimum Bridge version says so explicitly under its heading.
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-11-14
+
+Same Bridge requirement as 2.8.0: the sync reports need Bridge 2.8.0 or newer; catalogue sync works with any Bridge 2.0.0 or later.
+
+### Fixed
+
+- La sincronización en segundo plano vuelve sola después de reiniciar la tablet o de actualizar la app, sin tener que abrirla. Antes quedaba detenida hasta la siguiente revisión de respaldo, que puede tardar hasta 15 minutos o más.
+- La revisión de respaldo de cada 15 minutos ya no se queda quieta cuando el servicio de sincronización sigue abierto pero dejó de sincronizar.
+- Si se niega el permiso de notificaciones, la sincronización en segundo plano arranca igual; solo deja de verse el aviso fijo.
+
+### Removed
+
+- La app ya no declara el permiso de servicio de «sincronización de datos», que no usaba; la sincronización en segundo plano sigue funcionando igual.
+
+### Internal
+
+- Se quitó la librería de notificaciones Notifee: el permiso de notificaciones se pide con la herramienta propia de Android.
+- Se borró código de sincronización en segundo plano que ya no se usaba, y se arregló la revisión automática de pruebas por mutación que fallaba desde la actualización a Expo 58.
+
 ## [2.8.0] — 2026-11-08
 
 **Requires Bridge 2.8.0 or newer for the new sync reports.** With Bridge 2.7.4 or older, catalogue sync keeps working, but the new reports wait on the tablet and episode changes stop reaching Bridge's history until Bridge is updated.
