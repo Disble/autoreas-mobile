@@ -347,7 +347,8 @@ jobs:
           for needle in \
             app.notifee.core.ForegroundService \
             foregroundServiceType \
-            expo.modules.foregroundsyncticker.TickAlarmReceiver             expo.modules.foregroundsyncticker.SyncRestartReceiver \
+            expo.modules.foregroundsyncticker.TickAlarmReceiver \
+            expo.modules.foregroundsyncticker.SyncRestartReceiver \
             expo.modules.syncengine.SyncForegroundService; do
             if ! grep -q "$needle" manifest.txt; then
               echo "::error::the shipped manifest is missing $needle; plugins/withAndroidForegroundSync.js did not apply"
@@ -359,6 +360,7 @@ jobs:
             android.permission.FOREGROUND_SERVICE_DATA_SYNC \
             android.permission.FOREGROUND_SERVICE_SPECIAL_USE \
             android.permission.POST_NOTIFICATIONS \
+            android.permission.RECEIVE_BOOT_COMPLETED \
             android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS \
             android.permission.WAKE_LOCK; do
             if ! grep -q "$permission" badging.txt; then
