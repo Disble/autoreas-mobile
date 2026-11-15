@@ -8,6 +8,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +51,13 @@ class SyncFloorWorkerTest {
   @Before
   fun setUp() {
     context = ApplicationProvider.getApplicationContext()
+    // The flag is process-static; another suite's live service must not leak into the gate here.
+    SyncForegroundService.isAlive = false
+  }
+
+  @After
+  fun tearDown() {
+    SyncForegroundService.isAlive = false
   }
 
   /**
@@ -154,6 +162,7 @@ class SyncFloorWorkerTest {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     val (worker, writes) = newWorker(runner)
     worker.serviceAliveCheck = { true }
+    worker.tickAlarmArmedCheck = { true }
 
     val result = worker.doRemoteWork()
 
@@ -167,21 +176,30 @@ class SyncFloorWorkerTest {
   }
 
   @Test
-  fun `by default the floor skips while the sync service is alive and runs once it is gone`() = runBlocking {
+  fun `by default the floor skips while the sync service is alive and ticking and runs once the service is gone`() = runBlocking {
     val runner = RecordingRunner { it(OUTCOME_CLOSED) }
     val (worker, _) = newWorker(runner)
+    worker.tickAlarmArmedCheck = { true }
 
-    try {
-      SyncForegroundService.isAlive = true
-      worker.doRemoteWork()
-      assertEquals("a live service owns the background, so the floor must not sync", 0, runner.invocationCount.get())
+    SyncForegroundService.isAlive = true
+    worker.doRemoteWork()
+    assertEquals("a live, ticking service owns the background, so the floor must not sync", 0, runner.invocationCount.get())
 
-      SyncForegroundService.isAlive = false
-      worker.doRemoteWork()
-      assertEquals("with the service gone the floor must sync, whatever the tick alarm says", 1, runner.invocationCount.get())
-    } finally {
-      SyncForegroundService.isAlive = false
-    }
+    SyncForegroundService.isAlive = false
+    worker.doRemoteWork()
+    assertEquals("with the service gone the floor must sync, whatever the tick alarm says", 1, runner.invocationCount.get())
+  }
+
+  @Test
+  fun `a live service whose tick alarm is gone does not silence the floor`() = runBlocking {
+    val runner = RecordingRunner { it(OUTCOME_CLOSED) }
+    val (worker, _) = newWorker(runner)
+    worker.tickAlarmArmedCheck = { false }
+
+    SyncForegroundService.isAlive = true
+    worker.doRemoteWork()
+
+    assertEquals("a service that no longer ticks syncs nothing, so the floor must", 1, runner.invocationCount.get())
   }
 
   @Test

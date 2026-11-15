@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import androidx.work.multiprocess.RemoteCoroutineWorker
+import expo.modules.foregroundsyncticker.SyncTickerOwnership
 
 /**
  * `triggerSource` every floor attempt journals and sends.
@@ -73,7 +74,7 @@ internal fun SyncFloorAttemptResult.toListenableWorkerResult(): ListenableWorker
  * recreating the exact two-cores-in-one-process hazard this split removes. `doRemoteWork()` only
  * ever builds [SyncFloorAttempt] and runs it in whichever process the base class bound to.
  *
- * The seams below (`attemptRunner`, `runtimeStatusWriter`, `serviceAliveCheck`,
+ * The seams below (`attemptRunner`, `runtimeStatusWriter`, `serviceAliveCheck`, `tickAlarmArmedCheck`,
  * `attemptTimeoutMsForTest`) are `internal` and default to the real collaborators, exactly as
  * before the extraction and exactly like [SyncForegroundService]'s, so this module's own test
  * source set can drive the floor without a live service, a live database or the wire.
@@ -95,6 +96,12 @@ class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCorout
   internal var serviceAliveCheck: (Context) -> Boolean = { SyncForegroundService.isAlive }
 
   /**
+   * Swappable in tests; defaults to whether the service's tick alarm is armed. A live service
+   * whose alarm chain died syncs nothing, so the floor skips only when BOTH checks hold.
+   */
+  internal var tickAlarmArmedCheck: (Context) -> Boolean = SyncTickerOwnership::ownsBackground
+
+  /**
    * Test-only override for the wait bound (the shape [SyncEngineRunner.budgetMsOverrideForTest]
    * already uses), so a test can prove the no-settlement path without waiting out the real
    * margin. `null` (the default) leaves production behavior untouched.
@@ -106,7 +113,7 @@ class SyncFloorWorker(context: Context, params: WorkerParameters) : RemoteCorout
       context = applicationContext,
       attemptRunner = attemptRunner,
       runtimeStatusWriter = runtimeStatusWriter,
-      serviceAliveCheck = serviceAliveCheck,
+      serviceAliveCheck = { context -> serviceAliveCheck(context) && tickAlarmArmedCheck(context) },
       attemptTimeoutMsForTest = attemptTimeoutMsForTest,
     ).run().toListenableWorkerResult()
 }

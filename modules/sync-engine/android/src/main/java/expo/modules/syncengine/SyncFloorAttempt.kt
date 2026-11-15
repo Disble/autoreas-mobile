@@ -69,10 +69,11 @@ internal sealed interface SyncFloorAttemptResult {
  * **Why a Worker and not only the service.** The service can die, and nothing else restarts it
  * until the next tick, reboot or app open; this periodic work is the safety net for that gap.
  *
- * **The gate asks whether the service is alive, not whether its alarm is armed.** The floor and
- * the service share the `:sync` process, so [SyncForegroundService.isAlive] is a direct answer.
- * The previous gate read the tick alarm's token, which survives the service's death, so a dead
- * service silenced the floor too (`odd/tasks/sync-background-cleanup.md` S3). A skipped tick is a
+ * **The gate asks whether the service is alive AND ticking.** The floor and the service share the
+ * `:sync` process, so [SyncForegroundService.isAlive] is a direct answer; the worker also requires
+ * the tick alarm to be armed, because a live service whose alarm chain died syncs nothing. The
+ * previous gate read only the alarm's token, which survives the service's death, so a dead service
+ * silenced the floor too (`odd/tasks/sync-background-cleanup.md` S3). A skipped tick is a
  * COMPLETED tick ([SyncFloorAttemptResult.SkippedOwnedByTicker]) and writes nothing.
  *
  * **The presence gate and the status projection are the service caller's, reused.** The attempt
@@ -108,7 +109,7 @@ internal class SyncFloorAttempt(
   private val attemptRunner: SyncAttemptRunner,
   /** Swappable in tests; the worker defaults it to the real [SyncEngineRuntimeStatus.record]. */
   private val runtimeStatusWriter: (Context, String, Long, CycleOutcome) -> Unit,
-  /** Swappable in tests; the worker defaults it to [SyncForegroundService.isAlive]. */
+  /** Swappable in tests; the worker passes "service alive and its tick alarm armed". */
   private val serviceAliveCheck: (Context) -> Boolean,
   /**
    * Override for the wait bound (the shape [SyncEngineRunner.budgetMsOverrideForTest] already
@@ -134,7 +135,7 @@ internal class SyncFloorAttempt(
     // The `:sync` process's start, once per process (S4); off this thread, never throwing.
     SyncDiaryRuntime.noteProcessStart(context)
     if (serviceAliveCheck(context)) {
-      Log.i(LOG_TAG, "floor tick skipped: the sync service is alive")
+      Log.i(LOG_TAG, "floor tick skipped: the sync service is alive and ticking")
       noteSkipping(isSkipping = true)
       recordAttempt(NativeAttemptRecord(SYNC_FLOOR_TRIGGER_SOURCE, null, System.currentTimeMillis(), NativeAttemptEnd.SkippedOwnedByTicker))
       return SyncFloorAttemptResult.SkippedOwnedByTicker
