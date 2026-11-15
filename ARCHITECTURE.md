@@ -161,9 +161,8 @@ flowchart TD
   Startup --> Config["getBridgeConfigSnapshot"]
   BoundaryHook --> ReadyUI["Route Slot + SyncRuntimeGate\nready only"]
 
-  Background["Expo background task /\nNotifee foreground service"] --> HeadlessDB["prepareHeadlessDatabase\nreadiness verification"]
-  HeadlessDB --> Readiness
-  HeadlessDB --> NoOp["SchemaNotReadyError\nsafe no-op"]
+  Background["Native sync engine (:sync process)\nSyncForegroundService / SyncFloorWorker"] --> NativeProbe["probeAppDatabaseReadiness\nread-only PRAGMA user_version"]
+  NativeProbe --> NoOp["schema_not_ready\nattempt ends, no write"]
 ```
 
 ### Foreground success sequence
@@ -192,22 +191,22 @@ sequenceDiagram
   B-->>B: mount Slot and SyncRuntimeGate
 ```
 
-### Failure and headless sequence
+### Failure and background sequence
 
 ```mermaid
 sequenceDiagram
-  participant H as Headless sync actor
+  participant H as Native sync attempt
   participant D as SQLite database
   participant S as useStartup
   participant B as StartupBoundary
   participant N as Native splash
 
-  H->>D: apply busy timeout and read user_version
+  H->>D: read user_version through a read-only connection
   alt version is exactly ready
     D-->>H: allow application-table access
-  else missing or stale readiness
-    D-->>H: SchemaNotReadyError
-    H-->>H: close connection and return safe no-op
+  else file missing, version missing or stale
+    D-->>H: NotProvisioned / SchemaNotReady
+    H-->>H: end the attempt as schema_not_ready, write nothing
   end
 
   S->>D: foreground preparation or local config read
@@ -242,8 +241,8 @@ Three properties of this defect are worth keeping in mind, because they are what
 - **The tests were complicit.** They asserted the literal `'PRAGMA user_version = 1;'`, so the hardcoded value stayed consistent with itself and the gate looked correct. Those assertions now derive from the constant, and the `newer than expected` case derives as `EXPECTED + 1` — a literal `2` there would have silently become the *stale* case once the version passed 2, and stopped testing what it claims to test.
 
 **Adding a migration therefore requires no manual bump.** Generating one raises the journal length, an installed device reads a lower version, and the migrator runs. Drizzle tracks what it has already applied, so only the new entries execute.
-- Headless actors apply connection-local busy policy, verify exact durable readiness, then access application tables.
-- Headless actors close their dedicated connection and return a safe no-op while readiness is missing or stale.
+- Background sync runs only in the native engine (`modules/sync-engine`, `:sync` process): the foreground service and the 15-minute WorkManager floor. No JS runs in the background.
+- The native engine never creates the app database and never migrates it. It reads `user_version` read-only (`SyncEngineDatabases.kt`, whose `EXPECTED_SCHEMA_READINESS_VERSION` twin is pinned by `tests/infrastructure/db/native-schema-readiness-twin.test.ts`) and ends the attempt as `schema_not_ready` while readiness is missing or stale.
 - The startup boundary exposes only allowlisted diagnostic fields. It never places raw SQLite errors, SQL, credentials, or bridge details in UI state.
 - Route replacement, splash hiding, `Slot`, and `SyncRuntimeGate` are terminal-ready behaviors. A fatal startup state renders its controlled fallback without mounting runtime consumers.
 
@@ -298,14 +297,32 @@ The `WHERE` case is the dangerous one: it does not filter wrongly, it stops filt
 
 **Unfixed remediation, recorded as a known gap:** this is a CNG project with no `android/` directory, so the build flag cannot be edited directly. `plugins/withAndroidGradleMemory.js` is the existing precedent for writing Gradle properties from a config plugin (`withGradleProperties` + `AndroidConfig.BuildProperties.updateAndroidBuildProperty`), so `expo.sqlite.customBuildFlags=-DSQLITE_DQS=0` is reachable the same way — but it needs a native rebuild and changes SQLite's parsing behavior app-wide, so it must be measured on a build before being taken, not applied reflexively.
 
-### Repair vs. refuse: why foreground and headless diverge on the same check
+### Repair vs. refuse: why foreground and background diverge
 
-Both startup paths run the identical column probe, `validateRequiredColumns`, and reach opposite conclusions on the same failure, deliberately:
+- **`prepareForegroundDatabase` (`startup.helpers.ts`) repairs.** When `user_version` already equals `EXPECTED_SCHEMA_READINESS_VERSION` but a required column is missing (`validateRequiredColumns`), it falls through to `runMigrations` instead of throwing. Refusing here would turn a silent no-op sync into a hard startup crash on precisely the device the repair exists to rescue. The validation that runs *after* the repair is deliberately left uncaught — one chance, not a retry loop; genuine corruption still fails.
+- **The native engine refuses.** It never migrates, because migrations are foreground-owned — two writers racing the schema is exactly the contention the write-door boundary (§11) exists to prevent. It trusts only the exact `user_version` stamp, which the foreground writes after full validation, so a column the stamp promises but the file lacks is caught on the next foreground start, not by the engine.
 
-- **`prepareForegroundDatabase` (`startup.helpers.ts:77-116`) repairs.** When `user_version` already equals `EXPECTED_SCHEMA_READINESS_VERSION` but a required column is missing, it falls through to `runMigrations` instead of throwing (`startup.helpers.ts:83-102`). Refusing here would turn a silent no-op sync into a hard startup crash on precisely the device the repair exists to rescue. The validation that runs *after* the repair is deliberately left uncaught (`startup.helpers.ts:113`) — one chance, not a retry loop; genuine corruption still fails.
-- **`prepareHeadlessDatabase` (`startup.helpers.ts:118-163`) refuses.** It runs the same probe and raises `SchemaNotReadyError('stale')` on a miss (`startup.helpers.ts:137-145`) rather than repairing, because migrations are foreground-owned — two writers racing the schema is exactly the contention the write-door boundary (§11) exists to prevent. `runBackgroundSyncCycle` already absorbs `SchemaNotReadyError` as a clean no-op, and the next foreground start performs the repair.
+This asymmetry closed a real device failure (before the native cutover): a silently skipped migration left `sync_runtime_status` without `last_cycle_id` while `user_version` still read the expected number, so the background check returned clean and the cycle died several layers later writing to a column that did not exist.
 
-This asymmetry closed a real device failure: a silently skipped migration left `sync_runtime_status` without `last_cycle_id` while `user_version` still read the expected number, so the headless check returned clean and the cycle died several layers later writing to a column that did not exist (`startup.helpers.ts:128-131`).
+### Background sync: who runs it and what brings it back
+
+```mermaid
+flowchart TD
+  JS["useSyncRuntime (foreground)"] -->|"start/stop"| Ticker["ForegroundSyncTicker module\npersists ticking state"]
+  JS -->|"register floor"| Floor["SyncFloorScheduler\nWorkManager, every 15 min"]
+  Ticker --> Alarm["Tick alarm\nTickAlarmReceiver"]
+  Alarm --> Service["SyncForegroundService\n(:sync, specialUse)"]
+  Restart["SyncRestartReceiver\nBOOT_COMPLETED / MY_PACKAGE_REPLACED"] -->|"ticking state on"| Alarm
+  Restart --> Service
+  Floor --> Worker["SyncFloorWorker (:sync)"]
+  Worker -->|"service alive AND alarm armed"| Skip["skipped_owned_by_ticker"]
+  Worker -->|"otherwise"| Runner["SyncEngineRunner\none attempt"]
+  Service --> Runner
+```
+
+- The service is the primary path. The tick alarm restarts it while background sync is on; after a reboot or an app update `SyncRestartReceiver` re-arms the alarm and starts it without opening the app (Android allows a `specialUse` service from `BOOT_COMPLETED`).
+- The floor is the safety net. It skips only while the service is alive in `:sync` (`SyncForegroundService.isAlive`) and its tick alarm is armed (`SyncTickerOwnership`); a dead service, or a live one whose alarm chain died, gets a floor attempt. The skip is still reported as `skipped_owned_by_ticker` (Bridge vocabulary).
+- `sync-journal.db` has one writer, `SyncEngineJournal`, on its own connection.
 
 ## 13. Incremental Mutation-Test Boundary
 

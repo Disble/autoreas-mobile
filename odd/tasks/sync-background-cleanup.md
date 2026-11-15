@@ -24,9 +24,9 @@ Branch: `feat/sync-background-cleanup` from `main` at 290616d (2.8.0). Delivery:
 | T2 | S3 | inline | done: RED (isAlive and serviceAliveCheck did not compile), GREEN; sync-engine 479/479; native review approved (2 lenses), its WARNING fixed in e96b9df | c5193ff, e96b9df |
 | T3 | S4 | inline | done: Kotlin 477/477 + Kover; Jest sync 647/647; tsc clean | fae85df |
 | T4 | S5 | inline | done: sync-engine 477/477, ticker 55/55, Kover | be7a375 |
-| T5 | S6 | inline | done: Jest sync + behaviour + app 896/896; tsc clean | (this commit) |
-| T6 | S7 | inline | pending | |
-| T7 | S8 | inline | pending | |
+| T5 | S6 | inline | done: Jest sync + behaviour + app 896/896; tsc clean | 1e3bcd3 |
+| T6 | S7 | inline | blocked: needs the owner's decision (L13) | |
+| T7 | S8 | inline | done: structural readback (diagrams, names checked against code) | (this commit) |
 | T8 | S9 | inline | pending | |
 
 Route evidence: units are small (about 100 changed lines or less each) and T1/T6 share `plugins/withAndroidForegroundSync.js`, so no writer trigger holds; the parent writes inline.
@@ -44,3 +44,5 @@ Route evidence: units are small (about 100 changed lines or less each) and T1/T6
 - L9: T3 assessed after fae85df: medium, `under_budget` (slice c5193ff..fae85df pending review).
 - L10: T4. Deleted `modules/sync-journal` (no JS caller since the M3 cutover; `SyncEngineJournal` is now the only writer of `sync-journal.db` and owns its schema), the ticker's `isTicking` field and `isRunning()` (JS never called it), `SyncForegroundService.start/stop` (no caller), `SyncEngineJournal.executor` (never used). Comments naming the deleted module or the retired JS floor rewritten; historical docs (`docs/`, older `odd/tasks/`) left as evidence. Two loader comments in `native-foreground-sync-ticker.helpers.ts` and `native-battery-optimization.helpers.ts` still name `sync-journal`: any staged change to those files fails the staged-mutation gate's dry run (known Expo 58 defect), so they wait for that fix. Risk: item 3 (the ticker module loses its JS `isRunning` function; no JS caller).
 - L11: T5. Flush reasons `ws_disconnected` and `season_rating` removed: they mapped to the same trigger source and heal demand as `ws_sync_required` and `local_mutation`, and reasons are never logged, so callers now name the surviving reason (socket drop → `ws_sync_required`, season rating → `local_mutation`; the operation name `season_rating` stays). `useSyncRuntime` no longer keeps an `executionMode` state nobody read (the persisted column Settings reads is untouched). No other stale JS comments found. Risk: none (same source and heal demand for every caller; covered by the flush and runtime tests).
+- L12: T7. `ARCHITECTURE.md` §12: the background diagram and sequence now show the native engine (read-only `user_version` probe, `schema_not_ready`), the headless-JS bullets and the repair-vs-refuse section are rewritten, and a new subsection maps who runs background sync and what brings it back (service, tick alarm, restart receiver, floor gate). Frozen-controls logbook row added under "Changes under observation" (Notifee removal marked as planned until T6 lands).
+- L13: T6 blocked. The staged-mutation gate mutates only ADDED lines of its three surfaces (`scripts/dlinter-mutation-staged.mjs`), and since Expo 58 its dry run fails whenever it runs (memory `staged-mutation-gate-broken`). T3 passed because it only deleted lines in `native-foreground-sync-adapter.helpers.ts`; T6 must replace the Notifee permission call there, which adds lines, so the gate cannot pass without either fixing the gate or changing its scope. Bypassing it is forbidden. Waiting for the owner.
