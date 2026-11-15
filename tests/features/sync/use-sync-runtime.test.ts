@@ -340,7 +340,7 @@ describe("useSyncRuntime", () => {
     ["sync_required messages", "onSyncRequired", "ws_sync_required"],
     ["a reconnect", "onReconnected", "ws_reconnected"],
     // A drop of an open socket re-checks the bridge through a cycle (ADR 009 R-9).
-    ["a disconnect", "onDisconnected", "ws_disconnected"],
+    ["a disconnect", "onDisconnected", "ws_sync_required"],
   ])("routes websocket %s through the root runtime", async (_event, callback, reason) => {
     renderHook(() => useSyncRuntime({ isBootstrapped: true }));
 

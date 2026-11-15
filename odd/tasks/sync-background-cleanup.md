@@ -23,8 +23,8 @@ Branch: `feat/sync-background-cleanup` from `main` at 290616d (2.8.0). Delivery:
 | T1 | S2 | inline | done: RED (5 Kotlin tests did not compile, 3 plugin tests failed), GREEN; ticker module 55/55 + Kover; plugin 14/14; native review approved (2 lenses), its WARNING fixed in 12274b5 | 0c2a0bb, 12274b5 |
 | T2 | S3 | inline | done: RED (isAlive and serviceAliveCheck did not compile), GREEN; sync-engine 479/479; native review approved (2 lenses), its WARNING fixed in e96b9df | c5193ff, e96b9df |
 | T3 | S4 | inline | done: Kotlin 477/477 + Kover; Jest sync 647/647; tsc clean | fae85df |
-| T4 | S5 | inline | done: sync-engine 477/477, ticker 55/55, Kover | (this commit) |
-| T5 | S6 | inline | pending | |
+| T4 | S5 | inline | done: sync-engine 477/477, ticker 55/55, Kover | be7a375 |
+| T5 | S6 | inline | done: Jest sync + behaviour + app 896/896; tsc clean | (this commit) |
 | T6 | S7 | inline | pending | |
 | T7 | S8 | inline | pending | |
 | T8 | S9 | inline | pending | |
@@ -43,3 +43,4 @@ Route evidence: units are small (about 100 changed lines or less each) and T1/T6
 - L8: T3. Removed `LEGACY_EXPO_UNIQUE_WORK_NAME` and `cancelLegacyExpoFloor` (register no longer cancels anything; unregister cancels only the native floor), `ownsBackground` from `SyncFloorStatus`, the module payload and the JS map type, `SyncExecutionStrategy.mode` and the adapter's `mode`, and the M2/M3 cutover comments. Legacy-cancellation tests replaced by an unconfirmed-enqueue and a throwing-enqueue test. Risk: item 3 (the floor status payload loses `ownsBackground`; JS never read it).
 - L9: T3 assessed after fae85df: medium, `under_budget` (slice c5193ff..fae85df pending review).
 - L10: T4. Deleted `modules/sync-journal` (no JS caller since the M3 cutover; `SyncEngineJournal` is now the only writer of `sync-journal.db` and owns its schema), the ticker's `isTicking` field and `isRunning()` (JS never called it), `SyncForegroundService.start/stop` (no caller), `SyncEngineJournal.executor` (never used). Comments naming the deleted module or the retired JS floor rewritten; historical docs (`docs/`, older `odd/tasks/`) left as evidence. Two loader comments in `native-foreground-sync-ticker.helpers.ts` and `native-battery-optimization.helpers.ts` still name `sync-journal`: any staged change to those files fails the staged-mutation gate's dry run (known Expo 58 defect), so they wait for that fix. Risk: item 3 (the ticker module loses its JS `isRunning` function; no JS caller).
+- L11: T5. Flush reasons `ws_disconnected` and `season_rating` removed: they mapped to the same trigger source and heal demand as `ws_sync_required` and `local_mutation`, and reasons are never logged, so callers now name the surviving reason (socket drop → `ws_sync_required`, season rating → `local_mutation`; the operation name `season_rating` stays). `useSyncRuntime` no longer keeps an `executionMode` state nobody read (the persisted column Settings reads is untouched). No other stale JS comments found. Risk: none (same source and heal demand for every caller; covered by the flush and runtime tests).

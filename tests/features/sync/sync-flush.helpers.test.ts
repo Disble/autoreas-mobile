@@ -59,7 +59,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     const dispatcher = registerHeldDispatcher();
 
     const first = requestFlush(database, 'local_mutation');
-    const second = requestFlush(database, 'season_rating');
+    const second = requestFlush(database, 'local_mutation');
     const third = requestFlush(database, 'ws_sync_required');
     const fourth = requestFlush(database, 'manual');
 
@@ -138,10 +138,10 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
 
   it('persists a WebSocket drop as a bridge-asked sync with no heal, and a flapping socket queues one follow-up (ADR 009 R-9)', async () => {
     const dispatcher = registerHeldDispatcher();
-    void requestFlush(database, 'ws_disconnected');
-    void requestFlush(database, 'ws_disconnected');
-    void requestFlush(database, 'ws_disconnected');
-    void requestFlush(database, 'ws_disconnected');
+    void requestFlush(database, 'ws_sync_required');
+    void requestFlush(database, 'ws_sync_required');
+    void requestFlush(database, 'ws_sync_required');
+    void requestFlush(database, 'ws_sync_required');
 
     expect(dispatcher.runs).toHaveLength(1);
     expect(dispatcher.runs[0].request).toEqual({ database, source: 'ws_sync_required', healSnapshot: 'never' });
@@ -160,7 +160,7 @@ describe('requestFlush: one entry point, single-flight per database (ADR 009 R-2
     void requestFlush(database, 'manual');
     const before = getSyncConnectionSnapshot();
 
-    void requestFlush(database, 'season_rating');
+    void requestFlush(database, 'local_mutation');
 
     // Queuing the follow-up starts a newer attempt: the running cycle's terminal write is stale.
     expect(getSyncConnectionSnapshot()).toEqual({ ...before, kind: 'syncing' });

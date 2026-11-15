@@ -45,9 +45,6 @@ export function useSyncRuntime(
 
   // 2. State
   const [currentAppState, setCurrentAppState] = useState(AppState.currentState);
-  const [executionMode, setExecutionMode] = useState<
-    "best_effort_background_task" | "android_foreground_service"
-  >("best_effort_background_task");
 
   // 3. Context/3rd Party Hooks
   const rawDb = useOptionalSQLiteContext();
@@ -116,8 +113,6 @@ export function useSyncRuntime(
       return;
     }
 
-    setExecutionMode(status.executionMode);
-
     const patch = buildSyncExecutionStatusPatch(status);
 
     await updateSyncRuntimeStatusSnapshot(
@@ -161,8 +156,7 @@ export function useSyncRuntime(
         | "app_active"
         | "network_regained"
         | "ws_sync_required"
-        | "ws_reconnected"
-        | "ws_disconnected",
+        | "ws_reconnected",
     ) => {
       void requestSync(source).catch(() => undefined);
     },
@@ -184,7 +178,7 @@ export function useSyncRuntime(
   // about HTTP, so the cycle's own outcome decides whether the status still claims it reachable.
   // Single-flight: a flapping socket runs at most one cycle plus one follow-up.
   const handleWebSocketDisconnected = useCallback(() => {
-    requestAutomaticSync("ws_disconnected");
+    requestAutomaticSync("ws_sync_required");
   }, [requestAutomaticSync]);
 
   // 7. Effects
@@ -344,7 +338,6 @@ export function useSyncRuntime(
 
   return {
     currentAppState,
-    executionMode,
     isRuntimeEnabled,
     isWebSocketEnabled,
   };
