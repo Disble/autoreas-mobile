@@ -173,10 +173,4 @@ describe('native-foreground-sync-adapter', () => {
       expect.objectContaining({ canShowPersistentNotification: false }),
     );
   });
-
-  it('exposes the android_foreground_service mode literal', () => {
-    const adapter = createNativeForegroundSyncAdapter();
-
-    expect(adapter.mode).toBe('android_foreground_service');
-  });
 });

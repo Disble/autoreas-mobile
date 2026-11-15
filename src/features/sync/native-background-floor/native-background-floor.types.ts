@@ -4,15 +4,10 @@ import type { OptionalNativeModuleLoader } from "../native-module-loader/native-
  * Defines the raw, untyped map the native floor operations resolve with. Expo delivers plain
  * dictionaries whose fields cannot be trusted to exist or to have the expected type, so every
  * field is optional and unknown; the normalizer owns the coercion.
- *
- * `ownsBackground` is the Kotlin ticker gate the floor worker itself applies
- * (`SyncTickerOwnership`). It is part of the wire shape for documentation, but this JS seam
- * deliberately does not read it: JS never decides whether the native ticker owns the background.
  */
 export type NativeBackgroundFloorStatusMap = {
   readonly registrationStatus?: unknown;
   readonly isBackgroundTaskRegistered?: unknown;
-  readonly ownsBackground?: unknown;
 };
 
 /**

@@ -70,11 +70,7 @@ export function useSyncRuntime(
       createSyncExecutionFacade({
         strategies: [
           createNativeForegroundSyncAdapter(),
-          // Registration is native WorkManager now. The retired Expo task that used to sit here is
-          // no longer registered from JS; the pre-native `EXPO_BACKGROUND_WORKER` request is
-          // retired only once the native enqueue is CONFIRMED, and an unconfirmed enqueue leaves it
-          // pending while reporting the NATIVE floor as unregistered (see `native-background-floor`).
-          // That seam answers `unsupported`, never a JS cycle, when the native module is absent.
+          // The native WorkManager floor; it answers `unsupported` when the native module is absent.
           createNativeBackgroundFloorStrategy(),
         ],
       }),
@@ -226,9 +222,7 @@ export function useSyncRuntime(
 
     if (!isRuntimeEnabled) {
       hasBootstrappedRef.current = false;
-      // The native floor's own cancel is the ONLY floor cancel left: it retires the native
-      // request AND the pre-native `EXPO_BACKGROUND_WORKER` unique work, so an upgraded install
-      // cannot keep waking up through a request whose JS task no longer exists.
+      // The native floor's own cancel is the only floor cancel.
       // No settle pass runs while disabled: the settle effect is gated on `isRuntimeEnabled`, so
       // this clears itself when the runtime is switched off.
       void syncExecutionFacade

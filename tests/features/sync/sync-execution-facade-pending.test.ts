@@ -1,5 +1,6 @@
 import { createSyncExecutionFacade } from '../../../src/features/sync/sync-execution-facade';
 import type { SyncExecutionStrategy } from '../../../src/features/sync/sync-execution-strategy.types';
+import type { SyncExecutionMode } from '../../../src/features/sync/sync-execution-mode.types';
 
 /** Creates a controllable asynchronous registration boundary. */
 function deferred() {
@@ -9,9 +10,8 @@ function deferred() {
 }
 
 /** Models a native status probe that stays readable while registration is pending. */
-function strategy(mode: SyncExecutionStrategy['mode'], running: boolean, pending: Promise<void>): SyncExecutionStrategy {
+function strategy(mode: SyncExecutionMode, running: boolean, pending: Promise<void>): SyncExecutionStrategy {
   return {
-    mode,
     register: jest.fn(() => pending),
     unregister: jest.fn(async () => undefined),
     getStatus: jest.fn(async () => ({

@@ -21,8 +21,8 @@ Branch: `feat/sync-background-cleanup` from `main` at 290616d (2.8.0). Delivery:
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
 | T1 | S2 | inline | done: RED (5 Kotlin tests did not compile, 3 plugin tests failed), GREEN; ticker module 55/55 + Kover; plugin 14/14; native review approved (2 lenses), its WARNING fixed in 12274b5 | 0c2a0bb, 12274b5 |
-| T2 | S3 | inline | done: RED (isAlive and serviceAliveCheck did not compile), GREEN; sync-engine 479/479 | (this commit) |
-| T3 | S4 | inline | pending | |
+| T2 | S3 | inline | done: RED (isAlive and serviceAliveCheck did not compile), GREEN; sync-engine 479/479; native review approved (2 lenses), its WARNING fixed in e96b9df | c5193ff, e96b9df |
+| T3 | S4 | inline | done: Kotlin 477/477 + Kover; Jest sync 647/647; tsc clean | (this commit) |
 | T4 | S5 | inline | pending | |
 | T5 | S6 | inline | pending | |
 | T6 | S7 | inline | pending | |
@@ -39,3 +39,5 @@ Route evidence: units are small (about 100 changed lines or less each) and T1/T6
 - L4: T1. `SyncRestartReceiver` (ticker module, main process) handles `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED` through `restoreBackgroundSync`, now shared with `TickAlarmReceiver`. Plugin declares it plus `RECEIVE_BOOT_COMPLETED`; release guard checks both. Risk: item 5 (release CI guard and manifest). Not yet on a device (T8).
 - L5: Native review of T1 (resilience, reliability) approved with advisories; two WARNINGs were real: the Python edit lost a `\` line continuation in `release.yml` (two needles on one line) and the permission was never added. Fixed with the Edit tool in 12274b5; guard checked with `bash -n`.
 - L6: T2. `SyncForegroundService.isAlive` (companion, `@Volatile`) is set in `onCreate`/`onDestroy`; `SyncFloorWorker.serviceAliveCheck` defaults to it (same `:sync` process). The wire outcome `skipped_owned_by_ticker` and `SyncFloorAttemptResult.SkippedOwnedByTicker` keep their names (Bridge vocabulary). `SyncTickerOwnership` is now read only by `SyncFloorScheduler.status`, removed in T3. Risk: item 4 (cross-component state; floor and service share `:sync`; if the floor ever ran elsewhere it would sync more, never less).
+- L7: Native review of T2 (resilience, reliability) approved with advisories. Real WARNING: a live service whose tick alarm chain died syncs nothing, yet the floor skipped for it. Fixed in e96b9df: the floor skips only while the service is alive AND its tick alarm is armed (`SyncFloorWorker.tickAlarmArmedCheck`, default `SyncTickerOwnership::ownsBackground`); RED was the new test, GREEN after. The static `isAlive` flag is reset around the tests (SUGGESTION). So `SyncTickerOwnership` stays: it is the alarm half of the gate.
+- L8: T3. Removed `LEGACY_EXPO_UNIQUE_WORK_NAME` and `cancelLegacyExpoFloor` (register no longer cancels anything; unregister cancels only the native floor), `ownsBackground` from `SyncFloorStatus`, the module payload and the JS map type, `SyncExecutionStrategy.mode` and the adapter's `mode`, and the M2/M3 cutover comments. Legacy-cancellation tests replaced by an unconfirmed-enqueue and a throwing-enqueue test. Risk: item 3 (the floor status payload loses `ownsBackground`; JS never read it).

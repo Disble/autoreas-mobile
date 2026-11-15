@@ -210,12 +210,11 @@ describe("useSyncRuntime", () => {
 
     expect(mockRegisterConcurrentStrategies).toHaveBeenCalledTimes(1);
 
-    // The registration source is the native floor strategy -- the retired Expo task no longer exists to be registered or queried here.
+    // The registration source is the native floor strategy.
     const floorStrategy = (
       syncExecutionFacadeModule.createSyncExecutionFacade as jest.Mock
     ).mock.calls.at(-1)?.[0].strategies.at(-1);
 
-    expect(floorStrategy.mode).toBe("best_effort_background_task");
     expect(floorStrategy.register).toBe(mockNativeFloorRegister);
     expect(floorStrategy.unregister).toBe(mockNativeFloorUnregister);
     expect(floorStrategy.getStatus).toBe(mockNativeFloorGetStatus);
@@ -258,7 +257,7 @@ describe("useSyncRuntime", () => {
     });
 
     expect(mockUnregisterCurrentStrategy).toHaveBeenCalledTimes(1);
-    // The native floor's own cancel is the only floor cancel on the disable path: it retires both the native periodic request and the pre-native `EXPO_BACKGROUND_WORKER` unique work, so no separate JS unregister is needed (there is no JS floor left).
+    // The native floor's own cancel is the only floor cancel on the disable path.
     expect(
       runtimeStatusModule.updateSyncRuntimeStatusSnapshot,
     ).toHaveBeenCalledWith(

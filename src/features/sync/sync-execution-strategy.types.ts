@@ -12,7 +12,6 @@ export interface SyncExecutionStatus {
 
 /** Defines the data contract for sync execution strategy. */
 export interface SyncExecutionStrategy {
-  readonly mode: SyncExecutionMode;
   readonly register: () => Promise<void>;
   readonly unregister: () => Promise<void>;
   readonly getStatus: () => Promise<SyncExecutionStatus>;

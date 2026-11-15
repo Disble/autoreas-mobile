@@ -179,7 +179,6 @@ async function flushRuntime() {
  */
 function buildForegroundStrategy(): SyncExecutionStrategy {
   return {
-    mode: "android_foreground_service",
     register: jest.fn(async () => {
       if (registrationGate) {
         await registrationGate;
@@ -211,7 +210,6 @@ function buildForegroundStrategy(): SyncExecutionStrategy {
  */
 function buildFloorStrategy(): SyncExecutionStrategy {
   return {
-    mode: "best_effort_background_task",
     register: jest.fn(async () => undefined),
     unregister: jest.fn(async () => undefined),
     getStatus: jest.fn(

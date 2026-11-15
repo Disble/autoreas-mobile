@@ -45,8 +45,6 @@ export function createNativeForegroundSyncAdapter(): NativeForegroundSyncAdapter
   let canShowPersistentNotification = false;
 
   return {
-    mode: 'android_foreground_service',
-
     async register() {
       if (Platform.OS !== 'android') {
         return;
