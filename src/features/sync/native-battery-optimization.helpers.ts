@@ -10,7 +10,7 @@ import type {
 } from './native-battery-optimization.types';
 
 // The lazily-required `expo-modules-core` loader and the guarded null lookup live in
-// `native-module-loader/`, shared by the ticker, sync-engine, sync-journal, and this seam.
+// `native-module-loader/`, shared by the ticker, sync-engine, and this seam.
 
 /**
  * Creates the JS-side seam over the native battery-optimization exemption surface. The surface

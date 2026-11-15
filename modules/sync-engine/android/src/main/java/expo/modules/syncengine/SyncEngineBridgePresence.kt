@@ -29,10 +29,9 @@ data class PresenceProbeResult(
 )
 
 /**
- * Native mirror of the JS presence gate: `probeBridgePresence()` in
- * `src/features/sync/notifee-foreground-service-adapter/notifee-foreground-service-adapter.helpers.ts`
- * (~lines 94-116), which asks the bridge's side-effect-free `GET /api/status`
- * (`bridgeClient.getStatus`, `src/infrastructure/api/bridge-client/bridge-client.helpers.ts`)
+ * The engine's presence gate, ported from the retired JS foreground runner's
+ * `probeBridgePresence()`: it asks the bridge's side-effect-free `GET /api/status` (the same route
+ * as `bridgeClient.getStatus`, `src/infrastructure/api/bridge-client/bridge-client.helpers.ts`)
  * with the `ATTEMPT_PROBE_DEADLINE_MS` budget. [SyncEngineRunner] calls this BEFORE arming the
  * watchdog or touching the cycle lease when its own `requirePresence` gate is on, so a probe
  * refusal never claims operations, never takes the lease, and -- by never calling
@@ -42,7 +41,7 @@ data class PresenceProbeResult(
  * - a `bridge_config` row missing `ip`, `port`, or `token` is absence. `deviceId` is
  *   deliberately NOT required here even though [hasCompleteBridgeConnection] requires it for a
  *   real sync attempt -- the JS probe checks only `config?.ip`, `config.port`, `config.token`
- *   (see the source above), and this probe exists to answer the exact same question the JS one
+ *   and this probe exists to answer the exact same question the JS one
  *   does, not the engine's own "can I run a full cycle" question;
  * - ANY completed HTTP exchange is presence, whatever its status code (including 401/403/404):
  *   the JS probe never inspects `response.ok`, it only asks whether `bridgeClient.getStatus`

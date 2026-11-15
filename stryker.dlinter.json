@@ -5,7 +5,8 @@
   ],
   "concurrency": 1,
   "disableTypeChecks": false,
-  "ignoreStatic": true,
+  "coverageAnalysis": "off",
+  "ignoreStatic": false,
   "cleanTempDir": "always",
   "tempDirName": ".dlinter-mutation-tmp",
   "reporters": [

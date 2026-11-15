@@ -5,10 +5,11 @@ import type {
   SyncExecutionStatus,
   SyncExecutionStrategy,
 } from '../../../src/features/sync/sync-execution-strategy.types';
+import type { SyncExecutionMode } from '../../../src/features/sync/sync-execution-mode.types';
 
 /** Builds a stub `SyncExecutionStrategy` reporting the given mode/status. */
 function createStrategy(
-  mode: SyncExecutionStrategy['mode'],
+  mode: SyncExecutionMode,
   registrationStatus: 'registered' | 'unregistered' | 'unsupported',
 ): SyncExecutionStrategy {
   const isForegroundServiceRunning =
@@ -17,7 +18,6 @@ function createStrategy(
     mode === 'best_effort_background_task' && registrationStatus === 'registered';
 
   return {
-    mode,
     register: jest.fn(async () => undefined),
     unregister: jest.fn(async () => undefined),
     getStatus: jest.fn(async () => ({
@@ -216,7 +216,7 @@ describe('sync-execution-facade', () => {
     it('reports unregistered for the Android pairing, because the FGS strategy answers a real lifecycle state', async () => {
       // The production Android pairing: the real native floor seam (no native module on this host)
       // plus the FGS strategy. The FGS adapter is stood in for by an equivalent `unregistered`
-      // stub -- it has its own adapter tests, and importing notifee here would add noise to the
+      // stub -- it has its own adapter tests, and importing it here would add noise to the
       // merge assertion. Its `unregistered` is a genuine lifecycle answer, so it wins over the
       // floor's `unsupported`: on Android the missing-module reason is NOT surfaced while the FGS
       // path exists. That is honest -- something IS off, just not "unsupportable" -- and it is the
@@ -260,17 +260,14 @@ describe('sync-execution-facade', () => {
         registerBackgroundSyncFloor: jest.fn(async () => ({
           registrationStatus: 'registered',
           isBackgroundTaskRegistered: true,
-          ownsBackground: false,
         })),
         unregisterBackgroundSyncFloor: jest.fn(async () => ({
           registrationStatus: 'unregistered',
           isBackgroundTaskRegistered: false,
-          ownsBackground: false,
         })),
         getBackgroundSyncFloorStatus: jest.fn(async () => ({
           registrationStatus: isFloorRegistered ? 'registered' : 'unregistered',
           isBackgroundTaskRegistered: isFloorRegistered,
-          ownsBackground: false,
         })),
       };
       const nativeFloor = createNativeBackgroundFloorStrategy({
@@ -280,7 +277,6 @@ describe('sync-execution-facade', () => {
       // real adapter derives them from its single presence probe, and the granted permission
       // stays true while the service is still starting -- the pair the device row carried.
       const foreground: SyncExecutionStrategy = {
-        mode: 'android_foreground_service',
         register: jest.fn(async () => undefined),
         unregister: jest.fn(async () => undefined),
         getStatus: jest.fn(

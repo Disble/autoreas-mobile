@@ -14,9 +14,7 @@ export type SyncFlushReason =
   | 'network_regained'
   | 'ws_sync_required'
   | 'ws_reconnected'
-  | 'ws_disconnected'
-  | 'local_mutation'
-  | 'season_rating';
+  | 'local_mutation';
 
 /** The one request the dispatcher receives for a run, merged from every reason it serves. */
 export interface SyncFlushRequest {

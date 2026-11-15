@@ -12,7 +12,6 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import androidx.core.content.ContextCompat
 import expo.modules.foregroundsyncticker.SyncDiaryRuntime
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,16 +29,13 @@ internal typealias SyncAttemptRunner =
   (Context, String, String, Long, Boolean, (CycleOutcome) -> Unit) -> Unit
 
 /**
- * The Kotlin-owned foreground service that runs the native sync attempt (ODD
- * native-foreground-sync-service T3). This reverses the T2+T3 decision of
- * `background-service-multiday-survival.md` ("the receiver does not restore the FGS"): that
- * decision was right while Notifee owned the service, and the fix here is to move OWNERSHIP, not
- * to add a second owner alongside Notifee's `ForegroundService`. Notifee stops being started for
- * sync (T5 retires that call site); it stays in the project for any non-sync notification use.
+ * The Kotlin-owned foreground service that runs the native sync attempt. It is started by the tick
+ * alarm's receiver, by the ticker module when background sync is switched on, and by
+ * `SyncRestartReceiver` after a reboot or an app update.
  *
  * **Declared through the config plugin, not this module's own manifest.** No local Expo module in
- * this repo keeps a non-empty `AndroidManifest.xml` -- `foreground-sync-ticker`, `sync-engine` and
- * `sync-journal` all leave app-level manifest wiring to `plugins/withAndroidForegroundSync.js` --
+ * this repo keeps a non-empty `AndroidManifest.xml` -- `foreground-sync-ticker` and `sync-engine`
+ * leave app-level manifest wiring to `plugins/withAndroidForegroundSync.js` --
  * so this service's `<service>` element, its `specialUse` type, its subtype property and its
  * permissions are declared there, following that convention.
  *
@@ -47,9 +43,7 @@ internal typealias SyncAttemptRunner =
  * `TickAlarmReceiver` lives in `modules/foreground-sync-ticker`, a DIFFERENT Gradle module that
  * must never gain a Gradle dependency on this one (see [SERVICE_CLASS_NAME]'s doc) -- so the
  * receiver builds an explicit `Intent` naming this class by its fully-qualified string, never by
- * importing it. [start] and [stop] below are for callers that DO hold a dependency on this
- * module (this module's own tests, or a future JS seam); the class-name string is the actual
- * cross-module contract.
+ * importing it. The class-name string is the cross-module contract.
  *
  * **One attempt per (non-coalesced) start command, serialized.** [SyncEngineRunner]'s own single-
  * thread `worker` already serializes every attempt process-wide, so two callers (this service and
@@ -118,6 +112,7 @@ class SyncForegroundService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    isAlive = true
     ensureNotificationChannel()
     // Real state changes for the sync diary (S4): the `:sync` process's start, once per process,
     // then this service's own start. Both run off this thread and never throw.
@@ -149,6 +144,7 @@ class SyncForegroundService : Service() {
     // so this only matters if the service is destroyed with one somehow still held -- a wake
     // lock must never outlive its service.
     releaseWakeLock()
+    isAlive = false
     SyncDiaryRuntime.recordTransition(applicationContext, "service", "stopped")
     super.onDestroy()
   }
@@ -246,9 +242,7 @@ class SyncForegroundService : Service() {
    * Builds and posts the ongoing notification and promotes this service to the foreground with
    * [ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE] -- required on API 34+, and handled as a
    * safe no-op-of-the-type-argument on older platforms by [ServiceCompat.startForeground] itself,
-   * so no manual `Build.VERSION.SDK_INT` branch is needed here. Title/body copy matches the
-   * Notifee adapter's own foreground notification (`notifee-foreground-service-adapter.helpers.ts`)
-   * so the user sees continuity even though a different owner is now posting it.
+   * so no manual `Build.VERSION.SDK_INT` branch is needed here.
    */
   private fun postForegroundNotification() {
     val notification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -277,6 +271,15 @@ class SyncForegroundService : Service() {
   }
 
   companion object {
+    /**
+     * True from [onCreate] to [onDestroy] of this service in this process. The floor
+     * ([SyncFloorWorker]) runs in the same `:sync` process and skips only while this is true, so
+     * a service that died -- with its tick alarm still armed or not -- no longer silences the
+     * floor. A new process starts with `false`, which is right: a dead process has no service.
+     */
+    @Volatile
+    internal var isAlive: Boolean = false
+
     /** [SyncEngineRunner.runOnce]'s `triggerSource` for every attempt this service starts. */
     internal const val TRIGGER_SOURCE = "native_fgs_tick"
 
@@ -316,26 +319,5 @@ class SyncForegroundService : Service() {
     /** Margin over [ENGINE_BUDGET_MS] (defined in `SyncEngineDatabases.kt`, same package): see
      * [acquireWakeLock]'s doc for why this is a safety bound, not the attempt's real budget. */
     private const val WAKE_LOCK_SAFETY_TIMEOUT_MS = ENGINE_BUDGET_MS + 5_000L
-
-    /**
-     * Starts (or, if already running, redelivers a start command to) this service through an
-     * explicit intent -- the same shape a caller without a Gradle dependency on this module must
-     * build by class name (see [SERVICE_CLASS_NAME]). Provided for callers that DO hold one (this
-     * module's own tests, or a future JS seam). May throw
-     * `android.app.ForegroundServiceStartNotAllowedException` (API 31+) when the process is not
-     * allowed to start a foreground service from the background; per the ODD
-     * native-foreground-sync-service Decisions, catching that and keeping the tick alarm armed is
-     * the CALLER's responsibility (T4's receiver), so it is deliberately not swallowed here.
-     */
-    fun start(context: Context) {
-      val intent = Intent(context, SyncForegroundService::class.java)
-        .setAction(ACTION_RUN_SYNC_ATTEMPT)
-      ContextCompat.startForegroundService(context, intent)
-    }
-
-    /** Stops the service. Safe to call whether or not it is currently running. */
-    fun stop(context: Context) {
-      context.stopService(Intent(context, SyncForegroundService::class.java))
-    }
   }
 }

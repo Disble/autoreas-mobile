@@ -1,9 +1,9 @@
-import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { createNativeForegroundServicePresence } from '../native-foreground-service-presence.helpers';
 import { createNativeForegroundSyncTicker } from '../native-foreground-sync-ticker.helpers';
 import {
   FOREGROUND_SYNC_INTERVAL_MS,
+  NOTIFICATION_PERMISSION_API_LEVEL,
   SYNC_FOREGROUND_SERVICE_CHANNEL_ID,
 } from './native-foreground-sync-adapter.constants';
 import type { NativeForegroundSyncAdapter } from './native-foreground-sync-adapter.types';
@@ -21,6 +21,26 @@ function createUnsupportedStatus(): SyncExecutionStatus {
 }
 
 /**
+ * Asks for the notification permission the service's ongoing notification needs, and answers
+ * whether it is granted. Android 13+ asks for `POST_NOTIFICATIONS`; older versions grant it at
+ * install. Never throws: a failed request (no activity to show the dialog) answers `false`.
+ */
+async function requestNotificationPermission(): Promise<boolean> {
+  if (Number(Platform.Version) < NOTIFICATION_PERMISSION_API_LEVEL) {
+    return true;
+  }
+
+  try {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Creates the execution strategy adapter over the native foreground-sync service (ODD
  * native-foreground-sync-service T5). Kotlin owns the whole attempt now (T3's
  * `SyncForegroundService` + `SyncEngineRunner`): this adapter no longer runs any cycle, ticker
@@ -28,11 +48,8 @@ function createUnsupportedStatus(): SyncExecutionStatus {
  * onto the native ticker seam, which itself persists ticking state, arms the tick alarm and
  * starts/stops the native service (see `TickAlarmScheduler.kt`).
  *
- * Notifee stays a dependency for exactly one thing here: requesting the OS notification
- * permission so the native service's own notification can actually be shown (Android 13+ requires
- * `POST_NOTIFICATIONS` to post any notification). Notifee no longer owns the foreground service
- * itself -- no channel, no `displayNotification`, no `registerForegroundService`, no stop-sync
- * background event -- all retired with the JS runner/ticker wiring this adapter used to own.
+ * `register()` also asks for the notification permission, so the native service's own
+ * notification can actually be shown (see [requestNotificationPermission]).
  * Requesting permission never gates starting the native service: a background/foreground service
  * start does not require notification permission to succeed, only to be visible, and native
  * already degrades a start refusal to a logged warning rather than a crash (T4's receiver
@@ -45,15 +62,12 @@ export function createNativeForegroundSyncAdapter(): NativeForegroundSyncAdapter
   let canShowPersistentNotification = false;
 
   return {
-    mode: 'android_foreground_service',
-
     async register() {
       if (Platform.OS !== 'android') {
         return;
       }
 
-      const result = await notifee.requestPermission();
-      canShowPersistentNotification = result.authorizationStatus >= AuthorizationStatus.AUTHORIZED;
+      canShowPersistentNotification = await requestNotificationPermission();
 
       ticker.start(FOREGROUND_SYNC_INTERVAL_MS);
     },

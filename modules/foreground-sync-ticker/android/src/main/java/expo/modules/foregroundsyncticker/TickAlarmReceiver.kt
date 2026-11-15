@@ -27,9 +27,8 @@ private const val RECEIVER_LOG_TAG = "TickAlarmReceiver"
  * armed for the next interval, or the whole chain dies with it.
  *
  * **Then starts the sync-engine's foreground service (ODD native-foreground-sync-service T4).**
- * This reverses this class's own earlier design -- see "History" below: the receiver now owns
- * restoring the service, because Kotlin, not Notifee, owns it outright (T3's
- * `SyncForegroundService`). It is started by explicit intent naming the service by its
+ * The receiver owns restoring the service, because Kotlin owns it outright
+ * (`SyncForegroundService`). It is started by explicit intent naming the service by its
  * fully-qualified class name only, never by importing it -- see
  * [SYNC_FOREGROUND_SERVICE_CLASS_NAME]'s doc in `SyncForegroundServiceBridge.kt`:
  * `foreground-sync-ticker` and `sync-engine` are deliberately separate Gradle modules, and this
@@ -47,16 +46,6 @@ private const val RECEIVER_LOG_TAG = "TickAlarmReceiver"
  * [ForegroundSyncTickerModule] clears that flag specifically so this receiver has a way to stop
  * re-arming itself, and stops the service through the same `stopSyncForegroundService` this
  * receiver uses (via [startSyncForegroundServiceSafely]) to start it.
- *
- * **History.** This class used to dispatch `onTick` to a live [ForegroundSyncTickerModule]
- * instance (through its `activeInstance` companion property) so JS could run a cycle and hold a
- * per-tick wake lock, and deliberately did NOT try to restore the foreground service itself --
- * Notifee owned it then, through a JS API a bare `BroadcastReceiver` could not call, and reaching
- * into `app.notifee.core.ForegroundService` directly would have forked ownership of the service
- * between two layers. T4 retires both halves of that: Kotlin now owns the service outright (T3),
- * so there is no second owner to fork against, and the whole `onTick` dispatch / wake-lock path
- * is gone from this receiver and from [ForegroundSyncTickerModule] alike -- see that module's own
- * class doc for what stays on the JS-facing surface only for compatibility until T5.
  */
 class TickAlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context?, intent: Intent?) {
@@ -64,20 +53,29 @@ class TickAlarmReceiver : BroadcastReceiver() {
       return
     }
 
-    try {
-      val tickingState = readTickingState(context)
-      if (!tickingState.isTicking) {
-        return
-      }
+    restoreBackgroundSync(context, RECEIVER_LOG_TAG)
+  }
+}
 
-      scheduleNextTick(context, tickingState.intervalMs)
-
-      startSyncForegroundServiceSafely(context)
-    } catch (error: Exception) {
-      // Never let a tick failure escape onReceive: a crash here would take down whatever
-      // process this receiver was woken into. startSyncForegroundServiceSafely already never
-      // throws on its own, so this only guards readTickingState/scheduleNextTick.
-      Log.w(RECEIVER_LOG_TAG, "tick alarm handling failed", error)
+/**
+ * When the persisted ticking state says background sync is on, arms the next tick FIRST and then
+ * starts the sync foreground service. Shared by [TickAlarmReceiver] (every tick) and
+ * [SyncRestartReceiver] (after a reboot or an app update, which clear both the alarm and the
+ * service). Never throws: a crash would take down whatever process the receiver was woken into.
+ * [startSyncForegroundServiceSafely] already swallows a refused start, so the catch below only
+ * guards [readTickingState] and [scheduleNextTick].
+ */
+internal fun restoreBackgroundSync(context: Context, logTag: String) {
+  try {
+    val tickingState = readTickingState(context)
+    if (!tickingState.isTicking) {
+      return
     }
+
+    scheduleNextTick(context, tickingState.intervalMs)
+
+    startSyncForegroundServiceSafely(context)
+  } catch (error: Exception) {
+    Log.w(logTag, "background sync restore failed", error)
   }
 }

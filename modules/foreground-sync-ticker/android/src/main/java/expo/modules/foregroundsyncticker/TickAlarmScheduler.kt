@@ -68,13 +68,12 @@ internal fun readTickingState(context: Context): TickingState {
 }
 
 /**
- * Stable, ticker-owned answer to "does the native ticker own the background right now?".
+ * Stable, ticker-owned answer to "is the tick alarm armed right now?".
  *
- * **Why this exists (ODD native-background-sync-cutover M2).** `modules/sync-engine` adds a native
- * `WorkManager` floor that must skip its own attempt while this ticker owns the background -- the
- * exact gate the JS floor already applies through `createNativeForegroundSyncTicker().isRunning()`
- * (`src/features/sync/background-sync.helpers.ts`). A native worker has no JS module registry to
- * ask, so the check has to be reachable from Kotlin.
+ * **Why this exists.** The native `WorkManager` floor in `modules/sync-engine` skips its attempt
+ * only while the sync service is alive AND this alarm is armed: a live service whose alarm chain
+ * died syncs nothing. A native worker has no JS module registry to ask, so the check has to be
+ * reachable from Kotlin.
  *
  * **Ownership direction.** `sync-engine` may depend on this module (`implementation
  * project(':foreground-sync-ticker')` in its `build.gradle`); the reverse is what every doc in
@@ -103,7 +102,7 @@ internal fun readTickingState(context: Context): TickingState {
  * state would break silently on a rename, with no compile error and no test failure in the calling
  * module; rebuilding the `PendingIntent` from the caller side would hardcode this module's action,
  * request code and flags into a second module, where a rename would keep compiling and silently
- * answer `false` forever -- a *delivery* bug (the floor would run alongside the ticker, not skip).
+ * answer `false` forever.
  * Exposing the read through this one function keeps both details private here and makes a rename a
  * compile error at the call site instead.
  */

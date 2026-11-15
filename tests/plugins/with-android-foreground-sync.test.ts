@@ -1,6 +1,6 @@
 /**
- * Tests for `plugins/withAndroidForegroundSync.js`: the config plugin that declares the Notifee
- * foreground-service type, the native sync components and the tick-alarm receiver, and that guards
+ * Tests for `plugins/withAndroidForegroundSync.js`: the config plugin that declares the native sync
+ * components, their permissions and the tick-alarm and restart receivers, and that guards
  * the generated `MainApplication.onCreate` against booting React Native in a secondary process.
  *
  * `expo/config-plugins` is mocked at the module boundary (the convention used in
@@ -87,8 +87,11 @@ const TICK_ALARM_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.TickAlarmRec
 /** Broadcast action the plugin's intent-filter must declare; must match `TickAlarmScheduler.kt`. */
 const TICK_ALARM_ACTION = 'expo.modules.foregroundsyncticker.TICK_ALARM';
 
-/** Component name of the Notifee foreground service the plugin must keep declaring. */
-const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
+/** Full class name of the receiver that restores background sync after a reboot or an update. */
+const SYNC_RESTART_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.SyncRestartReceiver';
+
+/** Component name of the retired Notifee foreground service the plugin must no longer declare. */
+const NOTIFEE_SERVICE_NAME = 'app.notifee.core.ForegroundService';
 
 /**
  * Component name of the native Kotlin foreground service the plugin must declare (ODD
@@ -211,35 +214,38 @@ function generatedBlockOf(source: string, tag: string): string {
   return source.slice(start, end);
 }
 
+/** The manifest receiver declared under [name], if any. */
+function receiverNamed(config: FakeExpoConfig, name: string): ManifestElement | undefined {
+  return mainApplicationOf(config).receiver?.find((receiver) => receiver.$?.['android:name'] === name);
+}
+
 describe('withAndroidForegroundSync', () => {
-  it('declares the receiver with the right name, exported=false, and the intent-filter action', () => {
+  it.each([
+    [TICK_ALARM_RECEIVER_NAME, [TICK_ALARM_ACTION]],
+    [SYNC_RESTART_RECEIVER_NAME, ['android.intent.action.BOOT_COMPLETED', 'android.intent.action.MY_PACKAGE_REPLACED']],
+  ])('declares %s exported=false, in the main process, with its actions', (name, actions) => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
-    expect(receivers).toHaveLength(1);
-
-    const receiver = receivers![0];
-    expect(receiver.$?.['android:name']).toBe(TICK_ALARM_RECEIVER_NAME);
-    expect(receiver.$?.['android:exported']).toBe('false');
-    expect(receiver['intent-filter']).toEqual([
-      { action: [{ $: { 'android:name': TICK_ALARM_ACTION } }] },
+    const receiver = receiverNamed(config, name);
+    expect(receiver?.$?.['android:exported']).toBe('false');
+    expect(receiver?.['intent-filter']).toEqual([
+      { action: actions.map((action) => ({ $: { 'android:name': action } })) },
     ]);
-
-    // The receiver stays in the MAIN process on purpose: it re-arms the tick alarm from this app's
-    // persisted ticking state, whose single writer is the main process.
-    expect(receiver.$?.['android:process']).toBeUndefined();
+    // Both receivers stay in the MAIN process on purpose: they read this app's persisted ticking
+    // state, whose single writer is the main process.
+    expect(receiver?.$?.['android:process']).toBeUndefined();
   });
 
-  it('is idempotent: running it twice does not duplicate the receiver', () => {
+  it('is idempotent: running it twice does not duplicate either receiver', () => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
-    expect(receivers).toHaveLength(1);
+    const receiverNames = mainApplicationOf(config).receiver!.map((receiver) => receiver.$?.['android:name']);
+    expect(receiverNames).toEqual([TICK_ALARM_RECEIVER_NAME, SYNC_RESTART_RECEIVER_NAME]);
   });
 
   it('updates an existing receiver with that name instead of duplicating it', () => {
@@ -253,15 +259,17 @@ describe('withAndroidForegroundSync', () => {
 
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
+    const receivers = mainApplicationOf(config).receiver!.filter(
+      (receiver) => receiver.$?.['android:name'] === TICK_ALARM_RECEIVER_NAME,
+    );
     expect(receivers).toHaveLength(1);
-    expect(receivers![0].$?.['android:exported']).toBe('false');
-    expect(receivers![0]['intent-filter']).toEqual([
+    expect(receivers[0].$?.['android:exported']).toBe('false');
+    expect(receivers[0]['intent-filter']).toEqual([
       { action: [{ $: { 'android:name': TICK_ALARM_ACTION } }] },
     ]);
   });
 
-  it('declares all six required permissions, including REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', () => {
+  it('declares the six required permissions, including RECEIVE_BOOT_COMPLETED and not FOREGROUND_SERVICE_DATA_SYNC', () => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
@@ -271,36 +279,20 @@ describe('withAndroidForegroundSync', () => {
     );
     expect(permissionNames).toEqual([
       'android.permission.FOREGROUND_SERVICE',
-      'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
       'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
       'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
       'android.permission.WAKE_LOCK',
     ]);
   });
 
-  it('preserves the foreground service and its specialUse subtype after adding the receiver', () => {
+  it('no longer declares the Notifee foreground service', () => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
 
-    // The plugin now declares three services (Notifee's own, ODD
-    // native-foreground-sync-service T3's SyncForegroundService, and ODD mobile-database-recovery
-    // T3's RemoteWorkerService); this test only asserts on Notifee's, which T3 must leave untouched
-    // (T5 decides its fate, not T3).
-    const service = servicesByName(config)[FOREGROUND_SERVICE_NAME];
-    expect(service).toBeDefined();
-    expect(service!.$?.['android:name']).toBe(FOREGROUND_SERVICE_NAME);
-    expect(service!.$?.['android:foregroundServiceType']).toBe('specialUse');
-    expect(service!.property).toEqual([
-      {
-        $: {
-          'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
-          'android:value':
-            'continuous background synchronisation of local operations with the paired bridge device',
-        },
-      },
-    ]);
+    expect(servicesByName(config)[NOTIFEE_SERVICE_NAME]).toBeUndefined();
   });
 
   it('declares the native SyncForegroundService in :sync, with specialUse, exported=false, and the subtype property', () => {
@@ -325,8 +317,8 @@ describe('withAndroidForegroundSync', () => {
       },
     ]);
 
-    // All three services must coexist: T5 decides Notifee's fate, T3 only adds the native ones.
-    expect(services).toHaveLength(3);
+    // The sync service and the remote WorkManager service are the only two.
+    expect(services).toHaveLength(2);
   });
 
   it('is idempotent for SyncForegroundService: running it twice does not duplicate it', () => {
@@ -340,7 +332,7 @@ describe('withAndroidForegroundSync', () => {
       (service) => service.$?.['android:name'] === SYNC_FOREGROUND_SERVICE_NAME,
     );
     expect(syncServices).toHaveLength(1);
-    expect(services).toHaveLength(3);
+    expect(services).toHaveLength(2);
   });
 
   it('declares androidx RemoteWorkerService with exported=false, in :sync, and no foreground type', () => {
@@ -374,7 +366,7 @@ describe('withAndroidForegroundSync', () => {
     withAndroidForegroundSync(config);
 
     const services = mainApplicationOf(config).service ?? [];
-    expect(services).toHaveLength(3);
+    expect(services).toHaveLength(2);
 
     const remoteWorkerService = servicesByName(config)[REMOTE_WORKER_SERVICE_NAME];
     expect(remoteWorkerService!.$?.['android:exported']).toBe('false');
@@ -390,17 +382,16 @@ describe('withAndroidForegroundSync', () => {
     const services = mainApplicationOf(config).service ?? [];
     const names = services.map((service) => service.$?.['android:name']);
 
-    expect(services).toHaveLength(3);
-    expect(new Set(names).size).toBe(3);
+    expect(services).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
 
-    // The two native app-database owners share `:sync`; Notifee's service keeps the main process.
+    // The two native app-database owners share `:sync`.
     expect(servicesByName(config)[SYNC_FOREGROUND_SERVICE_NAME]!.$?.['android:process']).toBe(
       SYNC_PROCESS_NAME,
     );
     expect(servicesByName(config)[REMOTE_WORKER_SERVICE_NAME]!.$?.['android:process']).toBe(
       SYNC_PROCESS_NAME,
     );
-    expect(servicesByName(config)[FOREGROUND_SERVICE_NAME]!.$?.['android:process']).toBeUndefined();
   });
 
   it('guards MainApplication.onCreate once, ahead of the React Native bootstrap, with a KDoc explaining :sync', () => {

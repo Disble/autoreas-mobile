@@ -10,7 +10,7 @@ import type {
 } from './native-foreground-sync-ticker.types';
 
 // The lazily-required `expo-modules-core` loader and the guarded null lookup live in
-// `native-module-loader/`, shared by the ticker, sync-engine, and sync-journal seams.
+// `native-module-loader/`, shared by the ticker and sync-engine seams.
 
 /**
  * Creates the JS-side seam over the native foreground-sync ticker module (ODD

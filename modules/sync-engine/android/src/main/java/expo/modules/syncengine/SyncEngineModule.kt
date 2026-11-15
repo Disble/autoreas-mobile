@@ -17,7 +17,6 @@ private const val LOG_TAG = "SyncEngine"
 private val UNSUPPORTED_FLOOR_STATUS = SyncFloorStatus(
   registrationStatus = "unsupported",
   isBackgroundTaskRegistered = false,
-  ownsBackground = false,
 )
 
 /**
@@ -26,19 +25,11 @@ private val UNSUPPORTED_FLOOR_STATUS = SyncFloorStatus(
  * callers of [SyncEngineRunner], so this module exposes no attempt entry point -- and therefore no
  * JS call can open `autoreas.db` through the framework SQLite core.
  *
- * **The native floor's own surface (ODD native-background-sync-cutover M2, wired to JS by M3).**
- * `registerBackgroundSyncFloor()`, `unregisterBackgroundSyncFloor()` and
- * `getBackgroundSyncFloorStatus()` expose [SyncFloorScheduler] to JS, which M3 wires the
- * foreground runtime to, replacing the `expo-background-task` registration. All three resolve a
- * payload and NEVER reject, because a registration surface that can reject would force every
- * M3 caller to wrap it, and there is always an honest answer to give (`unsupported`).
- *
- * **M3 semantics.** `registerBackgroundSyncFloor()` resolves the status the registration LEFT
- * BEHIND, so a failed enqueue reports what is actually scheduled instead of a success; the Kotlin
- * scheduler cancels the pre-native `EXPO_BACKGROUND_WORKER` request only after WorkManager confirms
- * the new enqueue. `unregisterBackgroundSyncFloor()` cancels BOTH requests. The retired JS floor
- * (`expo-background-task`) is no longer registered from JS, so the JS floor is no longer the live
- * path; its files are removed in the next M3 work unit.
+ * **The native floor's own surface.** `registerBackgroundSyncFloor()`,
+ * `unregisterBackgroundSyncFloor()` and `getBackgroundSyncFloorStatus()` expose
+ * [SyncFloorScheduler] to JS. All three resolve a payload and NEVER reject: there is always an
+ * honest answer to give (`unsupported`). `registerBackgroundSyncFloor()` resolves the status the
+ * registration LEFT BEHIND, so a failed enqueue reports what is actually scheduled.
  *
  * **The reset's own surface (ODD mobile-database-recovery T5a).** `deleteAppDatabase()` exposes
  * [deleteAppDatabaseAndSidecars] to JS so the database reset deletes the app database TOGETHER
@@ -122,7 +113,7 @@ class SyncEngineModule : Module() {
 
   /**
    * The Expo-promise payload shape: the same field names the JS snapshot patch consumes
-   * (`registrationStatus`, `isBackgroundTaskRegistered`) plus the floor's own ticker gate. Lives
+   * (`registrationStatus`, `isBackgroundTaskRegistered`). Lives
    * HERE rather than on [SyncFloorStatus] because this adapter is INFRA -- the unit-test harness
    * cannot stand up an Expo runtime -- and a mapper in a gated class would be untestable coverage
    * debt.
@@ -130,6 +121,5 @@ class SyncEngineModule : Module() {
   private fun floorPayload(status: SyncFloorStatus): Map<String, Any?> = mapOf(
     "registrationStatus" to status.registrationStatus,
     "isBackgroundTaskRegistered" to status.isBackgroundTaskRegistered,
-    "ownsBackground" to status.ownsBackground,
   )
 }

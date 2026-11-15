@@ -2,7 +2,7 @@ import type { OptionalNativeModuleLoader } from './native-module-loader.types';
 
 /**
  * Lazily loads `expo-modules-core`'s `requireOptionalNativeModule` only when a native-sync seam
- * (ticker, sync-engine, or sync-journal) is actually constructed.
+ * (ticker or sync-engine) is actually constructed.
  *
  * Why this pattern exists at all: every native-sync seam must degrade gracefully instead of
  * crashing when the native module is unavailable -- Expo Go, iOS (where the local modules are

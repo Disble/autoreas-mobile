@@ -237,30 +237,6 @@ jest.mock('uniwind', () => {
   };
 });
 
-jest.mock('react-native-notify-kit', () => {
-  const AndroidForegroundServiceType = {
-    FOREGROUND_SERVICE_TYPE_DATA_SYNC: 1,
-  };
-  const AuthorizationStatus = {
-    DENIED: 0,
-    AUTHORIZED: 1,
-  };
-
-  return {
-    __esModule: true,
-    default: {
-      createChannel: jest.fn(async () => 'autoreas-sync-foreground'),
-      displayNotification: jest.fn(async () => undefined),
-      onBackgroundEvent: jest.fn(() => jest.fn()),
-      registerForegroundService: jest.fn(),
-      requestPermission: jest.fn(async () => ({ authorizationStatus: AuthorizationStatus.AUTHORIZED })),
-      stopForegroundService: jest.fn(async () => undefined),
-    },
-    AndroidForegroundServiceType,
-    AuthorizationStatus,
-  };
-});
-
 // Worklets ships its own Jest mock; it tracks the API Reanimated calls (for example
 // `createShareable`, which Reanimated 4.7 needs at import time).
 // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -44,7 +44,6 @@ describe("native background floor strategy", () => {
     const nativeModule = buildNativeFloorModule({
       registrationStatus: "registered",
       isBackgroundTaskRegistered: true,
-      ownsBackground: false,
     });
     const strategy = createStrategyWithModule(nativeModule);
 
@@ -65,7 +64,6 @@ describe("native background floor strategy", () => {
     const nativeModule = buildNativeFloorModule({
       registrationStatus: "unregistered",
       isBackgroundTaskRegistered: false,
-      ownsBackground: false,
     });
     const strategy = createStrategyWithModule(nativeModule);
 
@@ -108,7 +106,6 @@ describe("native background floor strategy", () => {
       buildNativeFloorModule({
         registrationStatus: 42,
         isBackgroundTaskRegistered: "true",
-        ownsBackground: 1,
       }),
     );
 
@@ -123,7 +120,6 @@ describe("native background floor strategy", () => {
       buildNativeFloorModule({
         registrationStatus: "unregistered",
         isBackgroundTaskRegistered: false,
-        ownsBackground: false,
       }),
     );
 

@@ -37,9 +37,9 @@ describe('native-module-loader degradation warning', () => {
       throw new Error('boom');
     };
 
-    expect(loadOptionalNativeModule(loader, 'SyncJournal')).toBeNull();
+    expect(loadOptionalNativeModule(loader, 'SyncEngine')).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(
-      '[nativeSeam] SyncJournal unavailable (the native-bridge lookup threw); this seam degrades to a no-op',
+      '[nativeSeam] SyncEngine unavailable (the native-bridge lookup threw); this seam degrades to a no-op',
     );
   });
 

@@ -148,7 +148,7 @@ describe('status tells the truth (ADR 009 R-9, S11)', () => {
     expect(await readVisibleStatus(adapter, 1)).toMatchObject({ title: 'Bridge conectado' });
 
     // The PC is turned off: the socket drops, and the flush it requests cannot reach the bridge.
-    await expect(requestFlush(adapter, 'ws_disconnected')).rejects.toThrow();
+    await expect(requestFlush(adapter, 'ws_sync_required')).rejects.toThrow();
 
     expect(getSyncConnectionSnapshot()).toMatchObject({ kind: 'unreachable', bridgeContact: { reached: false } });
     expect(await readVisibleStatus(adapter, 1)).toMatchObject({ chipLabel: 'Esperando a la PC', title: 'Esperando a la PC' });
