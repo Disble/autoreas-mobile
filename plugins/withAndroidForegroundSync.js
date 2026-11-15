@@ -72,6 +72,18 @@ const REMOTE_WORKER_SERVICE_NAME = 'androidx.work.multiprocess.RemoteWorkerServi
 /** Broadcast action the receiver's intent-filter listens for. */
 const TICK_ALARM_ACTION = 'expo.modules.foregroundsyncticker.TICK_ALARM';
 
+// A reboot or an app update clears the tick alarm and kills the sync foreground service; this
+// receiver (`SyncRestartReceiver.kt`) brings both back when background sync is on. Before it, only
+// the 15-minute WorkManager floor synced until the user opened the app.
+/** Full class name of the receiver that restores background sync after a reboot or an app update. */
+const SYNC_RESTART_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.SyncRestartReceiver';
+
+/** System broadcasts the restart receiver listens to. */
+const SYNC_RESTART_ACTIONS = [
+  'android.intent.action.BOOT_COMPLETED',
+  'android.intent.action.MY_PACKAGE_REPLACED',
+];
+
 /** The subtype property Android requires on a service that declares the `specialUse` type. */
 const SPECIAL_USE_FGS_SUBTYPE_PROPERTY = {
   $: {
@@ -95,6 +107,8 @@ const REQUIRED_PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.POST_NOTIFICATIONS',
+  // Delivers BOOT_COMPLETED to `SyncRestartReceiver`; declared here, not inherited from a library.
+  'android.permission.RECEIVE_BOOT_COMPLETED',
   'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
   'android.permission.WAKE_LOCK',
 ];
@@ -230,31 +244,30 @@ function ensureRemoteWorkerService(mainApplication) {
 }
 
 /**
- * Declares the manifest receiver that re-arms the tick alarm, creating or updating it
- * idempotently -- mirroring how {@link ensureForegroundService} treats the Notifee service, and
- * how {@link ensureSpecialUseSubtypeProperty} treats that service's subtype property. `exported`
- * stays `false`: the receiver is woken only by this app's own `PendingIntent`, and nothing else
- * should be able to fire it.
+ * Declares one manifest receiver, creating or updating it idempotently -- mirroring how
+ * {@link ensureSyncForegroundService} treats its service. `exported` stays `false`: the tick
+ * receiver is woken only by this app's own `PendingIntent`, and the restart receiver only by
+ * system broadcasts, which reach non-exported receivers.
  *
- * This receiver deliberately keeps the MAIN process: its re-arm decision reads this app's persisted
- * ticking state, whose single writer stays in the main process. Moving it into {@link
+ * Both receivers deliberately keep the MAIN process: their decision reads this app's persisted
+ * ticking state, whose single writer stays in the main process. Moving them into {@link
  * SYNC_PROCESS_NAME} would give that state a second process to read from -- the stale-flag defect
- * ODD mobile-database-recovery T3 slice A fixed for the floor -- for no benefit, since the receiver
- * opens no database at all.
+ * ODD mobile-database-recovery T3 slice A fixed for the floor -- for no benefit, since neither
+ * receiver opens a database.
  */
-function ensureReceiver(mainApplication) {
+function ensureReceiver(mainApplication, receiverName, actions) {
   const receivers = mainApplication.receiver ?? [];
   const existingReceiver = receivers.find(
-    (receiver) => receiver.$?.['android:name'] === TICK_ALARM_RECEIVER_NAME,
+    (receiver) => receiver.$?.['android:name'] === receiverName,
   );
 
   const receiverAttributes = {
-    'android:name': TICK_ALARM_RECEIVER_NAME,
+    'android:name': receiverName,
     'android:exported': 'false',
   };
 
   const intentFilter = {
-    action: [{ $: { 'android:name': TICK_ALARM_ACTION } }],
+    action: actions.map((action) => ({ $: { 'android:name': action } })),
   };
 
   if (existingReceiver) {
@@ -404,7 +417,8 @@ module.exports = function withAndroidForegroundSync(config) {
     ensureForegroundService(mainApplication);
     ensureSyncForegroundService(mainApplication);
     ensureRemoteWorkerService(mainApplication);
-    ensureReceiver(mainApplication);
+    ensureReceiver(mainApplication, TICK_ALARM_RECEIVER_NAME, [TICK_ALARM_ACTION]);
+    ensureReceiver(mainApplication, SYNC_RESTART_RECEIVER_NAME, SYNC_RESTART_ACTIONS);
 
     return configWithManifestAction;
   });

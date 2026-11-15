@@ -87,6 +87,9 @@ const TICK_ALARM_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.TickAlarmRec
 /** Broadcast action the plugin's intent-filter must declare; must match `TickAlarmScheduler.kt`. */
 const TICK_ALARM_ACTION = 'expo.modules.foregroundsyncticker.TICK_ALARM';
 
+/** Full class name of the receiver that restores background sync after a reboot or an update. */
+const SYNC_RESTART_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.SyncRestartReceiver';
+
 /** Component name of the Notifee foreground service the plugin must keep declaring. */
 const FOREGROUND_SERVICE_NAME = 'app.notifee.core.ForegroundService';
 
@@ -211,35 +214,38 @@ function generatedBlockOf(source: string, tag: string): string {
   return source.slice(start, end);
 }
 
+/** The manifest receiver declared under [name], if any. */
+function receiverNamed(config: FakeExpoConfig, name: string): ManifestElement | undefined {
+  return mainApplicationOf(config).receiver?.find((receiver) => receiver.$?.['android:name'] === name);
+}
+
 describe('withAndroidForegroundSync', () => {
-  it('declares the receiver with the right name, exported=false, and the intent-filter action', () => {
+  it.each([
+    [TICK_ALARM_RECEIVER_NAME, [TICK_ALARM_ACTION]],
+    [SYNC_RESTART_RECEIVER_NAME, ['android.intent.action.BOOT_COMPLETED', 'android.intent.action.MY_PACKAGE_REPLACED']],
+  ])('declares %s exported=false, in the main process, with its actions', (name, actions) => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
-    expect(receivers).toHaveLength(1);
-
-    const receiver = receivers![0];
-    expect(receiver.$?.['android:name']).toBe(TICK_ALARM_RECEIVER_NAME);
-    expect(receiver.$?.['android:exported']).toBe('false');
-    expect(receiver['intent-filter']).toEqual([
-      { action: [{ $: { 'android:name': TICK_ALARM_ACTION } }] },
+    const receiver = receiverNamed(config, name);
+    expect(receiver?.$?.['android:exported']).toBe('false');
+    expect(receiver?.['intent-filter']).toEqual([
+      { action: actions.map((action) => ({ $: { 'android:name': action } })) },
     ]);
-
-    // The receiver stays in the MAIN process on purpose: it re-arms the tick alarm from this app's
-    // persisted ticking state, whose single writer is the main process.
-    expect(receiver.$?.['android:process']).toBeUndefined();
+    // Both receivers stay in the MAIN process on purpose: they read this app's persisted ticking
+    // state, whose single writer is the main process.
+    expect(receiver?.$?.['android:process']).toBeUndefined();
   });
 
-  it('is idempotent: running it twice does not duplicate the receiver', () => {
+  it('is idempotent: running it twice does not duplicate either receiver', () => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
-    expect(receivers).toHaveLength(1);
+    const receiverNames = mainApplicationOf(config).receiver!.map((receiver) => receiver.$?.['android:name']);
+    expect(receiverNames).toEqual([TICK_ALARM_RECEIVER_NAME, SYNC_RESTART_RECEIVER_NAME]);
   });
 
   it('updates an existing receiver with that name instead of duplicating it', () => {
@@ -253,15 +259,17 @@ describe('withAndroidForegroundSync', () => {
 
     withAndroidForegroundSync(config);
 
-    const receivers = mainApplicationOf(config).receiver;
+    const receivers = mainApplicationOf(config).receiver!.filter(
+      (receiver) => receiver.$?.['android:name'] === TICK_ALARM_RECEIVER_NAME,
+    );
     expect(receivers).toHaveLength(1);
-    expect(receivers![0].$?.['android:exported']).toBe('false');
-    expect(receivers![0]['intent-filter']).toEqual([
+    expect(receivers[0].$?.['android:exported']).toBe('false');
+    expect(receivers[0]['intent-filter']).toEqual([
       { action: [{ $: { 'android:name': TICK_ALARM_ACTION } }] },
     ]);
   });
 
-  it('declares all six required permissions, including REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', () => {
+  it('declares all seven required permissions, including RECEIVE_BOOT_COMPLETED', () => {
     const config = createFakeConfig();
 
     withAndroidForegroundSync(config);
@@ -274,6 +282,7 @@ describe('withAndroidForegroundSync', () => {
       'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
       'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
       'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
       'android.permission.WAKE_LOCK',
     ]);

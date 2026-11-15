@@ -64,20 +64,29 @@ class TickAlarmReceiver : BroadcastReceiver() {
       return
     }
 
-    try {
-      val tickingState = readTickingState(context)
-      if (!tickingState.isTicking) {
-        return
-      }
+    restoreBackgroundSync(context, RECEIVER_LOG_TAG)
+  }
+}
 
-      scheduleNextTick(context, tickingState.intervalMs)
-
-      startSyncForegroundServiceSafely(context)
-    } catch (error: Exception) {
-      // Never let a tick failure escape onReceive: a crash here would take down whatever
-      // process this receiver was woken into. startSyncForegroundServiceSafely already never
-      // throws on its own, so this only guards readTickingState/scheduleNextTick.
-      Log.w(RECEIVER_LOG_TAG, "tick alarm handling failed", error)
+/**
+ * When the persisted ticking state says background sync is on, arms the next tick FIRST and then
+ * starts the sync foreground service. Shared by [TickAlarmReceiver] (every tick) and
+ * [SyncRestartReceiver] (after a reboot or an app update, which clear both the alarm and the
+ * service). Never throws: a crash would take down whatever process the receiver was woken into.
+ * [startSyncForegroundServiceSafely] already swallows a refused start, so the catch below only
+ * guards [readTickingState] and [scheduleNextTick].
+ */
+internal fun restoreBackgroundSync(context: Context, logTag: String) {
+  try {
+    val tickingState = readTickingState(context)
+    if (!tickingState.isTicking) {
+      return
     }
+
+    scheduleNextTick(context, tickingState.intervalMs)
+
+    startSyncForegroundServiceSafely(context)
+  } catch (error: Exception) {
+    Log.w(logTag, "background sync restore failed", error)
   }
 }
