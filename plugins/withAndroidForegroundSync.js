@@ -31,8 +31,8 @@ const FOREGROUND_SERVICE_TYPE = 'specialUse';
 // AlarmManager -- it then fires into a void (the `sent=0` defect this receiver fixes). A
 // manifest-declared receiver survives process death, because Android (not the RN bridge) owns
 // its lifecycle. No local Expo module in this repo keeps a non-empty AndroidManifest.xml --
-// `foreground-sync-ticker`, `sync-engine` and `sync-journal` all leave app-level manifest wiring
-// to this plugin -- so the receiver is declared here, following that convention, rather than in
+// `foreground-sync-ticker` and `sync-engine` leave app-level manifest wiring to this plugin --
+// so the receiver is declared here, following that convention, rather than in
 // `modules/foreground-sync-ticker/android/src/main/AndroidManifest.xml`.
 /** Full class name of the manifest-declared receiver that re-arms the tick alarm. */
 const TICK_ALARM_RECEIVER_NAME = 'expo.modules.foregroundsyncticker.TickAlarmReceiver';

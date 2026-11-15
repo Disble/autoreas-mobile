@@ -10,7 +10,7 @@ import type {
 } from './native-foreground-service-presence.types';
 
 // The lazily-required `expo-modules-core` loader and the guarded null lookup live in
-// `native-module-loader/`, shared by the ticker, sync-engine, sync-journal, and every other seam
+// `native-module-loader/`, shared by the ticker, sync-engine, and every other seam
 // on this native module.
 
 /**
